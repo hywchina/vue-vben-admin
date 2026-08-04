@@ -23,4 +23,15 @@ export default defineConfig({
     '*-lock.yaml',
     'skills-lock.json',
   ],
+  overrides: [
+    {
+      files: [
+        'apps/web-antd/src/components/platform/**/*.vue',
+        'apps/web-antd/src/views/platform/**/*.vue',
+      ],
+      options: {
+        htmlWhitespaceSensitivity: 'ignore',
+      },
+    },
+  ],
 });

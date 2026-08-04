@@ -1,34 +1,47 @@
 <script setup lang="ts">
+import type { Recordable } from '@vben/types';
+
 import type { VbenFormSchema } from '#/adapter/form';
 
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import { ProfilePasswordSetting, z } from '@vben/common-ui';
 
 import { message } from 'ant-design-vue';
 
+import { updateUserPasswordApi } from '#/api';
+import { useAuthStore } from '#/store';
+
+const saving = ref(false);
+const authStore = useAuthStore();
+
 const formSchema = computed((): VbenFormSchema[] => {
   return [
     {
-      fieldName: 'oldPassword',
-      label: '旧密码',
       component: 'VbenInputPassword',
       componentProps: {
-        placeholder: '请输入旧密码',
+        placeholder: '请输入当前密码',
       },
+      fieldName: 'oldPassword',
+      label: '当前密码',
+      rules: z.string().min(1, { message: '请输入当前密码' }),
     },
     {
-      fieldName: 'newPassword',
-      label: '新密码',
       component: 'VbenInputPassword',
       componentProps: {
         passwordStrength: true,
         placeholder: '请输入新密码',
       },
+      fieldName: 'newPassword',
+      label: '新密码',
+      rules: z
+        .string()
+        .min(8, { message: '密码至少需要 8 个字符' })
+        .regex(/[A-Za-z]/, { message: '密码必须包含字母' })
+        .regex(/\d/, { message: '密码必须包含数字' })
+        .regex(/[^\dA-Za-z]/, { message: '密码必须包含符号' }),
     },
     {
-      fieldName: 'confirmPassword',
-      label: '确认密码',
       component: 'VbenInputPassword',
       componentProps: {
         passwordStrength: true,
@@ -46,18 +59,33 @@ const formSchema = computed((): VbenFormSchema[] => {
         },
         triggerFields: ['newPassword'],
       },
+      fieldName: 'confirmPassword',
+      label: '确认新密码',
     },
   ];
 });
 
-function handleSubmit() {
-  message.success('密码修改成功');
+async function handleSubmit(values: Recordable<unknown>) {
+  if (saving.value) return;
+  saving.value = true;
+  try {
+    await updateUserPasswordApi({
+      newPassword: String(values.newPassword ?? ''),
+      oldPassword: String(values.oldPassword ?? ''),
+    });
+    message.success('密码已修改，请使用新密码重新登录');
+    await authStore.logout(false);
+  } finally {
+    saving.value = false;
+  }
 }
 </script>
+
 <template>
   <ProfilePasswordSetting
-    class="w-1/3"
+    class="w-1/2 max-w-xl"
     :form-schema="formSchema"
+    :submit-loading="saving"
     @submit="handleSubmit"
   />
 </template>

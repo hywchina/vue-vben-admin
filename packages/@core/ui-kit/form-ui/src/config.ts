@@ -40,7 +40,7 @@ export const COMPONENT_MAP: Record<BaseFormComponentType, Component> = {
 export const COMPONENT_BIND_EVENT_MAP: Partial<
   Record<BaseFormComponentType, string>
 > = {
-  VbenCheckbox: 'checked',
+  VbenCheckbox: 'modelValue',
 };
 
 export function setupVbenForm<

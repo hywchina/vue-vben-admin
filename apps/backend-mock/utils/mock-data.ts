@@ -16,26 +16,26 @@ export const MOCK_USERS: UserInfo[] = [
   {
     id: 0,
     password: '123456',
-    realName: 'Vben',
+    realName: '张晨',
     roles: ['super'],
     username: 'vben',
-    homePath: '/dashboard/workspace',
+    homePath: '/workspace/overview',
   },
   {
     id: 1,
     password: '123456',
-    realName: 'Admin',
+    realName: '系统管理员',
     roles: ['admin'],
     username: 'admin',
-    homePath: '/dashboard/workspace',
+    homePath: '/workspace/overview',
   },
   {
     id: 2,
     password: '123456',
-    realName: 'Jack',
+    realName: '李隽',
     roles: ['user'],
     username: 'jack',
-    homePath: '/dashboard/analytics',
+    homePath: '/workspace/overview',
   },
 ];
 

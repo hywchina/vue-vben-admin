@@ -14,6 +14,8 @@
 
 **中文** | [English](./README.md) | [日本語](./README.ja-JP.md)
 
+> [!IMPORTANT] 本仓库已基于 Vben Admin 5.7.0 二次开发为“轨道客室智能设计平台”的实际平台框架。登录、用户、权限、项目、资产、任务、通知、审计和 AI 助手会话均使用真实 API、PostgreSQL 与 MinIO；ComfyUI、大模型、LoRA 等执行服务仍通过可替换外部适配器接入。启动方式、跨机器复现步骤、架构和验收命令请从 [轨道平台开发文档](./docs/rail-platform/README.md) 开始阅读。
+
 ## 简介
 
 Vue Vben Admin 是 Vue Vben Admin 的升级版本。作为一个免费开源的中后台模板，它采用了最新的 Vue 3、Vite、TypeScript 等主流技术开发，开箱即用，可用于中后台前端开发，也适合学习参考。
@@ -34,7 +36,7 @@ Vue Vben Admin 是 Vue Vben Admin 的升级版本。作为一个免费开源的�
 
 - [Vben Admin](https://vben.pro/) - 完整版中文站点
 
-测试账号：vben/123456
+下方内容是 Vben 上游项目说明，仅用于了解技术基线；本项目不使用上游 `vben/123456` 演示账号，也不通过 `pnpm dev` 启动完整平台。请使用 `pnpm dev:rail`。
 
 <div align="center">
   <img alt="VbenAdmin Logo" width="100%" src="https://anncwb.github.io/anncwb/images/preview1.png">

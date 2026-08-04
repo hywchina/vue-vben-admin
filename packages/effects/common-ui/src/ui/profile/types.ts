@@ -11,6 +11,7 @@ export interface Props {
 
 export interface FormSchemaItem {
   description: string;
+  disabled?: boolean;
   fieldName: string;
   label: string;
   value: boolean;

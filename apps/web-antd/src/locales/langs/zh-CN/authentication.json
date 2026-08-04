@@ -1,0 +1,13 @@
+{
+  "pageTitle": "让设计资产沿同一条轨道流转",
+  "pageDesc": "人员、项目、资产和应用保持在统一工作上下文中。",
+  "loginSubtitle": "使用平台账号进入设计工作空间",
+  "selectAccount": "演示账号",
+  "username": "账号",
+  "password": "密码",
+  "usernameTip": "请输入账号",
+  "passwordTip": "请输入密码",
+  "verifyRequiredTip": "请完成滑块验证",
+  "loginSuccess": "已进入设计平台",
+  "loginSuccessDesc": "当前用户"
+}

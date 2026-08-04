@@ -1,0 +1,60 @@
+name: rail-platform
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: rail_platform
+      POSTGRES_PASSWORD: rail_platform_dev
+      POSTGRES_USER: rail_platform
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U rail_platform -d rail_platform]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - '5432:5432'
+    restart: unless-stopped
+    volumes:
+      - rail-postgres-data:/var/lib/postgresql/data
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:5666
+      MINIO_ROOT_PASSWORD: railminio-dev-secret
+      MINIO_ROOT_USER: railminio
+    healthcheck:
+      test: [CMD, curl, -f, 'http://localhost:9000/minio/health/live']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    restart: unless-stopped
+    volumes:
+      - rail-minio-data:/data
+
+  mailpit:
+    image: axllent/mailpit:v1.30.0
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 500
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+    restart: unless-stopped
+    volumes:
+      - rail-mailpit-data:/data
+
+volumes:
+  rail-mailpit-data:
+  rail-minio-data:
+  rail-postgres-data:

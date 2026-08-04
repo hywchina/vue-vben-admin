@@ -78,6 +78,34 @@ afterEach(() => {
 });
 
 describe('useVbenForm integration', () => {
+  it('syncs the built-in checkbox model with form values and validation', async () => {
+    const [Form, formApi] = useVbenForm<{ agreePolicy: boolean }>({
+      schema: [
+        {
+          component: 'VbenCheckbox',
+          defaultValue: false,
+          fieldName: 'agreePolicy',
+          rules: z.boolean().refine(Boolean, 'Policy agreement is required'),
+        },
+      ],
+      showDefaultActions: false,
+    });
+    const wrapper = mount(Form, { attachTo: document.body });
+    wrappers.push(wrapper);
+    await flushPromises();
+
+    const initialValidation = await formApi.validate();
+    expect(initialValidation.valid).toBe(false);
+    expect(await formApi.getValues()).toEqual({ agreePolicy: false });
+
+    await wrapper.get('[data-slot="checkbox"]').trigger('click');
+    await flushPromises();
+
+    expect(await formApi.getValues()).toEqual({ agreePolicy: true });
+    const checkedValidation = await formApi.validate();
+    expect(checkedValidation.valid).toBe(true);
+  });
+
   it('uses model updates as the primary channel and preserves empty strings', async () => {
     const validateValue = vi.fn();
     const [Form, formApi] = useVbenForm({

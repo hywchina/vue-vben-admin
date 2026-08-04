@@ -12,10 +12,12 @@ import { VbenButton } from '@vben-core/shadcn-ui';
 
 interface Props {
   formSchema?: VbenFormSchema[];
+  submitLoading?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   formSchema: () => [],
+  submitLoading: false,
 });
 
 const emit = defineEmits<{
@@ -52,7 +54,12 @@ defineExpose({
 <template>
   <div>
     <Form />
-    <VbenButton type="submit" class="mt-4" @click="handleSubmit">
+    <VbenButton
+      type="submit"
+      class="mt-4"
+      :loading="submitLoading"
+      @click="handleSubmit"
+    >
       {{ $t('profile.updatePassword') }}
     </VbenButton>
   </div>

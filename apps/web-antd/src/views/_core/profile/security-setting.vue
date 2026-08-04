@@ -1,43 +1,37 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 
 import { ProfileSecuritySetting } from '@vben/common-ui';
 
-const formSchema = computed(() => {
-  return [
-    {
-      value: true,
-      fieldName: 'accountPassword',
-      label: '账户密码',
-      description: '当前密码强度：强',
-    },
-    {
-      value: true,
-      fieldName: 'securityPhone',
-      label: '密保手机',
-      description: '已绑定手机：138****8293',
-    },
-    {
-      value: true,
-      fieldName: 'securityQuestion',
-      label: '密保问题',
-      description: '未设置密保问题，密保问题可有效保护账户安全',
-    },
-    {
-      value: true,
-      fieldName: 'securityEmail',
-      label: '备用邮箱',
-      description: '已绑定邮箱：ant***sign.com',
-    },
-    {
-      value: false,
-      fieldName: 'securityMfa',
-      label: 'MFA 设备',
-      description: '未绑定 MFA 设备，绑定后，可以进行二次确认',
-    },
-  ];
+import { getUserInfoApi } from '#/api';
+
+const email = ref('');
+
+function maskEmail(value: string) {
+  const [name = '', domain = ''] = value.split('@');
+  if (!domain) return value;
+  const visible = name.slice(0, Math.min(2, name.length));
+  return `${visible}${'*'.repeat(Math.max(3, name.length - visible.length))}@${domain}`;
+}
+
+const formSchema = computed(() => [
+  {
+    description: email.value
+      ? `已绑定企业邮箱：${maskEmail(email.value)}`
+      : '尚未绑定企业邮箱，请先在“基本设置”中登记',
+    disabled: true,
+    fieldName: 'securityEmail',
+    label: '企业邮箱',
+    value: Boolean(email.value),
+  },
+]);
+
+onMounted(async () => {
+  const profile = await getUserInfoApi();
+  email.value = profile.email ?? '';
 });
 </script>
+
 <template>
   <ProfileSecuritySetting :form-schema="formSchema" />
 </template>

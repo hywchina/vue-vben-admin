@@ -1,0 +1,119 @@
+import type { RouteRecordRaw } from 'vue-router';
+
+const routes: RouteRecordRaw[] = [
+  {
+    meta: {
+      icon: 'lucide:panel-top',
+      order: -100,
+      title: '设计工作台',
+    },
+    name: 'PlatformWorkspace',
+    path: '/workspace',
+    redirect: '/workspace/overview',
+    children: [
+      {
+        component: () => import('#/views/platform/overview/index.vue'),
+        meta: {
+          affixTab: true,
+          icon: 'lucide:gauge',
+          title: '平台概览',
+        },
+        name: 'PlatformOverview',
+        path: 'overview',
+      },
+      {
+        component: () => import('#/views/platform/workspace/index.vue'),
+        meta: {
+          hideInMenu: true,
+          icon: 'lucide:workflow',
+          title: '应用工作区',
+        },
+        name: 'ApplicationWorkspace',
+        path: ':appKey',
+      },
+    ],
+  },
+  {
+    component: () => import('#/views/platform/projects/index.vue'),
+    meta: {
+      icon: 'lucide:folder-kanban',
+      order: -90,
+      title: '项目空间',
+    },
+    name: 'PlatformProjects',
+    path: '/projects',
+  },
+  {
+    component: () => import('#/views/platform/assets/index.vue'),
+    meta: {
+      icon: 'lucide:library-big',
+      order: -80,
+      title: '资产中心',
+    },
+    name: 'PlatformAssets',
+    path: '/assets',
+  },
+  {
+    component: () => import('#/views/platform/applications/index.vue'),
+    meta: {
+      icon: 'lucide:blocks',
+      order: -70,
+      title: '应用中心',
+    },
+    name: 'PlatformApplications',
+    path: '/applications',
+  },
+  {
+    component: () => import('#/views/platform/jobs/index.vue'),
+    meta: {
+      icon: 'lucide:list-checks',
+      order: -60,
+      title: '任务中心',
+    },
+    name: 'PlatformJobs',
+    path: '/jobs',
+  },
+  {
+    meta: {
+      authority: ['admin'],
+      icon: 'lucide:shield-check',
+      order: -50,
+      title: '平台管理',
+    },
+    name: 'PlatformAdministration',
+    path: '/administration',
+    children: [
+      {
+        component: () => import('#/views/platform/access/index.vue'),
+        meta: {
+          icon: 'lucide:users-round',
+          title: '用户与权限',
+        },
+        name: 'PlatformAccess',
+        path: 'access',
+      },
+    ],
+  },
+  {
+    component: () => import('#/views/platform/audit/index.vue'),
+    meta: {
+      icon: 'lucide:scroll-text',
+      order: -40,
+      title: '操作日志',
+    },
+    name: 'PlatformAudit',
+    path: '/audit',
+  },
+  {
+    component: () => import('#/views/_core/profile/index.vue'),
+    meta: {
+      hideInMenu: true,
+      icon: 'lucide:user',
+      title: '个人中心',
+    },
+    name: 'Profile',
+    path: '/profile',
+  },
+];
+
+export default routes;

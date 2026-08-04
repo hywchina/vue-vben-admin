@@ -5,6 +5,7 @@ import { preferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 import { startProgress, stopProgress } from '@vben/utils';
 
+import { recordPageViewApi } from '#/api';
 import { accessRoutes, coreRouteNames } from '#/router/routes';
 import { useAuthStore } from '#/store';
 
@@ -28,7 +29,7 @@ function setupCommonGuard(router: Router) {
     return true;
   });
 
-  router.afterEach((to) => {
+  router.afterEach((to, from) => {
     // 记录页面是否加载,如果已经加载，后续的页面切换动画等效果不在重复执行
 
     loadedPaths.add(to.path);
@@ -36,6 +37,15 @@ function setupCommonGuard(router: Router) {
     // 关闭页面加载进度条
     if (preferences.transition.progress) {
       stopProgress();
+    }
+
+    const accessStore = useAccessStore();
+    if (accessStore.accessToken && !to.meta.ignoreAccess) {
+      void recordPageViewApi({
+        fromPath: from.fullPath || undefined,
+        path: to.fullPath,
+        title: typeof to.meta.title === 'string' ? to.meta.title : undefined,
+      }).catch(() => undefined);
     }
   });
 }

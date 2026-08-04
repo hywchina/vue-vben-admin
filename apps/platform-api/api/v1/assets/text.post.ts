@@ -1,0 +1,74 @@
+import { Buffer } from 'node:buffer';
+import { createHash, randomUUID } from 'node:crypto';
+
+import { z } from 'zod';
+import { getAssetView } from '~/utils/asset-repository';
+import { writeAudit } from '~/utils/audit';
+import { getConfig } from '~/utils/config';
+import { useDatabase } from '~/utils/database';
+import { requireIdentity, requirePermission } from '~/utils/identity';
+import { requireProjectAccess } from '~/utils/project-access';
+import { ApiError, apiHandler } from '~/utils/response';
+import { parseBody } from '~/utils/validation';
+
+const textSchema = z.object({
+  content: z.string().min(1),
+  description: z.string().trim().max(2000).optional().default(''),
+  mimeType: z
+    .enum(['application/json', 'text/markdown', 'text/plain'])
+    .optional()
+    .default('text/plain'),
+  name: z.string().trim().min(1).max(200),
+  projectId: z.string().uuid(),
+  tags: z.array(z.string().trim().min(1).max(50)).max(20).default([]),
+});
+
+export default apiHandler(async (event) => {
+  const identity = await requireIdentity(event);
+  requirePermission(identity, 'platform:asset:write');
+  const input = await parseBody(event, textSchema);
+  await requireProjectAccess(identity, input.projectId, 'write');
+  const contentBytes = Buffer.byteLength(input.content, 'utf8');
+  if (contentBytes > getConfig().maxInlineTextBytes) {
+    throw new ApiError(413, 'TEXT_TOO_LARGE', '文本内容过大，请改为文件上传');
+  }
+
+  const assetId = randomUUID();
+  const sql = useDatabase();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      INSERT INTO assets (
+        id, project_id, name, description, kind, owner_id, status
+      ) VALUES (
+        ${assetId}, ${input.projectId}, ${input.name}, ${input.description},
+        'text', ${identity.id}, 'available'
+      )
+    `;
+    await transaction`
+      INSERT INTO asset_versions (
+        asset_id, version, storage_kind, text_content, original_filename,
+        mime_type, size_bytes, sha256, status, created_by, completed_at
+      ) VALUES (
+        ${assetId}, 1, 'inline', ${input.content}, ${`${input.name}.txt`},
+        ${input.mimeType}, ${contentBytes},
+        ${createHash('sha256').update(input.content).digest('hex')},
+        'available', ${identity.id}, now()
+      )
+    `;
+    for (const tag of new Set(input.tags)) {
+      await transaction`
+        INSERT INTO asset_tags (asset_id, tag) VALUES (${assetId}, ${tag})
+      `;
+    }
+  });
+
+  await writeAudit(event, {
+    action: 'asset.text.create',
+    actor: identity,
+    details: { sizeBytes: contentBytes },
+    module: 'asset',
+    targetId: assetId,
+    targetType: 'asset',
+  });
+  return await getAssetView(assetId, identity.id);
+});

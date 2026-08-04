@@ -1,0 +1,242 @@
+:root {
+  --rail-red: #b91c32;
+  --rail-red-dark: #8f1426;
+  --rail-red-soft: #fff0f2;
+  --rail-ink: #20252c;
+  --rail-steel: #5e6975;
+  --rail-mist: #f4f6f8;
+  --rail-line: #dde2e7;
+  --rail-white: #fff;
+  --rail-success: #287a53;
+  --rail-warning: #a56516;
+  --rail-shadow: 0 12px 34px rgb(28 35 43 / 7%);
+}
+
+.platform-page {
+  min-height: 100%;
+  padding: 24px;
+  color: var(--rail-ink);
+  background:
+    linear-gradient(90deg, rgb(185 28 50 / 2%) 1px, transparent 1px) 0 0 / 72px
+      72px,
+    var(--rail-mist);
+}
+
+.platform-page-heading {
+  display: flex;
+  gap: 24px;
+  align-items: flex-end;
+  justify-content: space-between;
+  max-width: 1540px;
+  margin: 0 auto 22px;
+}
+
+.platform-page-heading__eyebrow {
+  margin-bottom: 6px;
+  font-size: 11px;
+  font-weight: 750;
+  color: var(--rail-red);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.platform-page-heading h1 {
+  margin: 0;
+  font-size: clamp(24px, 2.2vw, 34px);
+  font-weight: 720;
+  line-height: 1.15;
+  color: var(--rail-ink);
+  letter-spacing: -0.035em;
+}
+
+.platform-page-heading p {
+  max-width: 720px;
+  margin: 8px 0 0;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--rail-steel);
+}
+
+.platform-page-heading__extra {
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+  align-items: center;
+}
+
+.platform-content {
+  max-width: 1540px;
+  margin: 0 auto;
+}
+
+.platform-panel {
+  background: var(--rail-white);
+  border: 1px solid var(--rail-line);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgb(28 35 43 / 3%);
+}
+
+.platform-panel__header {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 64px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--rail-line);
+}
+
+.platform-panel__header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 680;
+}
+
+.platform-panel__header p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--rail-steel);
+}
+
+.platform-panel__body {
+  padding: 18px;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.status-pill--available,
+.status-pill--enabled,
+.status-pill--success,
+.status-pill--succeeded {
+  color: var(--rail-success);
+  background: #edf8f2;
+  border-color: #bfe3cf;
+}
+
+.status-pill--queued,
+.status-pill--planned {
+  color: var(--rail-warning);
+  background: #fff9ed;
+  border-color: #e6d5b4;
+}
+
+.status-pill--running,
+.status-pill--testing {
+  color: var(--rail-red);
+  background: var(--rail-red-soft);
+  border-color: #efc3ca;
+}
+
+.status-pill--cancelled,
+.status-pill--disabled,
+.status-pill--failed {
+  color: #69737e;
+  background: #f4f5f6;
+  border-color: #d9dde2;
+}
+
+.rail-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--rail-steel);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.rail-empty {
+  display: grid;
+  place-items: center;
+  min-height: 220px;
+  color: var(--rail-steel);
+  text-align: center;
+}
+
+.rail-grid-auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.rail-metric {
+  padding: 18px;
+  border-left: 3px solid var(--rail-red);
+}
+
+.rail-metric__value {
+  margin-top: 10px;
+  font-family: 'DIN Alternate', 'Arial Narrow', sans-serif;
+  font-size: 34px;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+}
+
+.rail-metric__hint {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--rail-steel);
+}
+
+.rail-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rail-line);
+}
+
+.rail-project-switcher {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  min-width: 260px;
+  padding-left: 14px;
+  margin-left: 10px;
+  border-left: 1px solid var(--rail-line);
+}
+
+.rail-project-switcher__label {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--rail-steel);
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .platform-page {
+    padding: 16px;
+  }
+
+  .platform-page-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .platform-page-heading__extra {
+    width: 100%;
+  }
+
+  .rail-project-switcher {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

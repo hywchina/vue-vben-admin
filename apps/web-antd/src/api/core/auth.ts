@@ -13,8 +13,15 @@ export namespace AuthApi {
   }
 
   export interface RefreshTokenResult {
+    code: number;
     data: string;
-    status: number;
+    message: string;
+  }
+
+  export interface RegisterParams {
+    email: string;
+    password: string;
+    username: string;
   }
 }
 
@@ -29,18 +36,45 @@ export async function loginApi(data: AuthApi.LoginParams) {
  * 刷新accessToken
  */
 export async function refreshTokenApi() {
-  return baseRequestClient.post<AuthApi.RefreshTokenResult>('/auth/refresh', {
-    withCredentials: true,
-  });
+  const response = (await baseRequestClient.post<AuthApi.RefreshTokenResult>(
+    '/auth/refresh',
+    undefined,
+    { withCredentials: true },
+  )) as unknown as { data: AuthApi.RefreshTokenResult };
+  return response.data.data;
 }
 
 /**
  * 退出登录
  */
 export async function logoutApi() {
-  return baseRequestClient.post('/auth/logout', {
+  return baseRequestClient.post('/auth/logout', undefined, {
     withCredentials: true,
   });
+}
+
+export async function registerApi(data: AuthApi.RegisterParams) {
+  return requestClient.post<{ id: string; username: string }>(
+    '/auth/register',
+    data,
+  );
+}
+
+export function requestPasswordResetApi(email: string) {
+  return requestClient.post<{ accepted: boolean; message: string }>(
+    '/auth/password-reset/request',
+    { email },
+  );
+}
+
+export function confirmPasswordResetApi(input: {
+  newPassword: string;
+  token: string;
+}) {
+  return requestClient.post<{ changed: boolean }>(
+    '/auth/password-reset/confirm',
+    input,
+  );
 }
 
 /**
