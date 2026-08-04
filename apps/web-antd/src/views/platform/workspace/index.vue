@@ -14,6 +14,7 @@ import {
 } from 'ant-design-vue';
 
 import StatusPill from '#/components/platform/status-pill.vue';
+import { assetTypeLabels } from '#/modules/platform/asset-types';
 import { usePlatformStore } from '#/store';
 
 const route = useRoute();
@@ -49,18 +50,6 @@ const latestOutput = computed(() =>
     (asset) => asset.sourceAppKey === application.value?.key,
   ),
 );
-
-const typeLabels: Record<string, string> = {
-  audio: '音频',
-  image: '图片',
-  lora: 'LoRA',
-  mask: '遮罩',
-  material: '材质',
-  model3d: '3D 模型',
-  report: '报告',
-  text: '文本',
-  video: '视频',
-};
 
 function toggleAsset(assetId: string) {
   selectedAssetIds.value = selectedAssetIds.value.includes(assetId)
@@ -159,7 +148,7 @@ watch(
             <span>允许的输入资产</span>
             <div class="input-contract-tags">
               <Tag v-for="type in application.acceptedAssetTypes" :key="type">
-                {{ typeLabels[type] }}
+                {{ assetTypeLabels[type] }}
               </Tag>
             </div>
           </div>
@@ -174,7 +163,7 @@ watch(
               <strong>
                 {{
                   application.outputAssetTypes
-                    .map((type) => typeLabels[type])
+                    .map((type) => assetTypeLabels[type])
                     .join('、')
                 }}
               </strong>
@@ -297,7 +286,7 @@ watch(
             <div>
               <strong>{{ asset.name }}</strong>
               <small>
-                {{ typeLabels[asset.type] }} · V{{ asset.version }} ·
+                {{ assetTypeLabels[asset.type] }} · V{{ asset.version }} ·
                 {{ asset.owner }}
               </small>
             </div>

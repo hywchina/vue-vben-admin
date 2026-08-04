@@ -18,6 +18,12 @@ import {
 
 import { getAssetDownloadApi, getAssetPreviewApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
+import {
+  assetTypeIcons,
+  assetTypeLabels,
+  assetTypeOptions,
+  assetUploadAccept,
+} from '#/modules/platform/asset-types';
 import { usePlatformStore } from '#/store';
 
 const platformStore = usePlatformStore();
@@ -37,55 +43,14 @@ const assetPreviewStatuses = reactive(
 );
 const assetPreviewRequestKeys = new Map<string, string>();
 
-const typeLabels: Record<AssetType, string> = {
-  audio: '音频',
-  image: '图片',
-  lora: 'LoRA',
-  mask: '遮罩',
-  material: '材质',
-  model3d: '3D 模型',
-  report: '报告',
-  text: '文本',
-  video: '视频',
-};
+const typeOptions = [{ label: '全部类型', value: 'all' }, ...assetTypeOptions];
 
-const typeIcons: Record<AssetType, string> = {
-  audio: 'lucide:audio-lines',
-  image: 'lucide:image',
-  lora: 'lucide:brain-circuit',
-  mask: 'lucide:scan',
-  material: 'lucide:swatch-book',
-  model3d: 'lucide:box',
-  report: 'lucide:file-chart-column',
-  text: 'lucide:file-text',
-  video: 'lucide:video',
-};
-
-const typeOptions = [
-  { label: '全部类型', value: 'all' },
-  ...Object.entries(typeLabels).map(([value, label]) => ({ label, value })),
-];
-
-const uploadTypeOptions = Object.entries(typeLabels).map(([value, label]) => ({
-  label,
-  value,
-}));
+const uploadTypeOptions = assetTypeOptions;
 
 const uploadFileAccept = computed(() => {
-  const acceptByType: Record<Exclude<AssetType, 'text'>, string> = {
-    audio: 'audio/*',
-    image: 'image/*',
-    lora: '.safetensors,.ckpt,.pt,.pth',
-    mask: 'image/*',
-    material: 'image/*,.zip',
-    model3d: '.glb,.gltf,.obj,.fbx,.stl,.step,.stp',
-    report: '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx',
-    video: 'video/*',
-  };
-
   return uploadType.value === 'text'
     ? undefined
-    : acceptByType[uploadType.value];
+    : assetUploadAccept[uploadType.value];
 });
 
 const filteredAssets = computed(() => {
@@ -103,7 +68,7 @@ const filteredAssets = computed(() => {
 });
 
 function canPreviewAsset(asset: PlatformAsset) {
-  const previewableType = ['image', 'mask', 'material'].includes(asset.type);
+  const previewableType = asset.type === 'image';
   const previewableMime =
     !asset.mimeType || asset.mimeType.startsWith('image/');
   const available = !asset.status || asset.status === 'available';
@@ -333,7 +298,7 @@ async function openAssetContent(asset: PlatformAsset) {
                   }}
                 </small>
               </div>
-              <IconifyIcon v-else :icon="typeIcons[asset.type]" />
+              <IconifyIcon v-else :icon="assetTypeIcons[asset.type]" />
               <button
                 :aria-label="asset.favorite ? '取消收藏' : '收藏资产'"
                 class="asset-card__favorite"
@@ -346,7 +311,9 @@ async function openAssetContent(asset: PlatformAsset) {
               </button>
             </div>
             <div class="asset-card__body">
-              <div class="asset-card__type">{{ typeLabels[asset.type] }}</div>
+              <div class="asset-card__type">
+                {{ assetTypeLabels[asset.type] }}
+              </div>
               <h2>{{ asset.name }}</h2>
               <p>{{ asset.description }}</p>
               <div class="asset-card__tags">
@@ -417,15 +384,15 @@ async function openAssetContent(asset: PlatformAsset) {
               }}
             </small>
           </div>
-          <IconifyIcon v-else :icon="typeIcons[selectedAsset.type]" />
+          <IconifyIcon v-else :icon="assetTypeIcons[selectedAsset.type]" />
           <span class="asset-detail-preview__format">
             {{ selectedAsset.format }}
           </span>
         </div>
         <div class="asset-detail-grid">
           <div>
-            <span>资产类型</span>
-            <strong>{{ typeLabels[selectedAsset.type] }}</strong>
+            <span>文件类型</span>
+            <strong>{{ assetTypeLabels[selectedAsset.type] }}</strong>
           </div>
           <div>
             <span>文件大小</span>
@@ -491,7 +458,7 @@ async function openAssetContent(asset: PlatformAsset) {
           />
         </label>
         <label>
-          <span class="form-field-label">资产类型</span>
+          <span class="form-field-label">文件类型</span>
           <Select
             v-model:value="uploadType"
             :options="uploadTypeOptions"
@@ -536,7 +503,7 @@ async function openAssetContent(asset: PlatformAsset) {
                 <span>{{ formatFileSize(uploadFile.size) }}</span>
               </small>
               <small v-else>
-                选择与资产类型匹配的图片、视频、模型或其他文件
+                选择与文件类型匹配的图片、视频、文档、模型或压缩包
               </small>
             </span>
             <span class="upload-file-action">

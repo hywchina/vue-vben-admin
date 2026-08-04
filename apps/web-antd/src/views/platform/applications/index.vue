@@ -8,6 +8,7 @@ import { Button, Input, Segmented } from 'ant-design-vue';
 
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
+import { assetTypeLabels } from '#/modules/platform/asset-types';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
@@ -22,18 +23,6 @@ const categoryOptions = [
   { label: '模型训练', value: 'training' },
   { label: '报告交付', value: 'report' },
 ];
-
-const assetTypeLabels: Record<string, string> = {
-  audio: '音频',
-  image: '图片',
-  lora: 'LoRA',
-  mask: '遮罩',
-  material: '材质',
-  model3d: '3D 模型',
-  report: '报告',
-  text: '文本',
-  video: '视频',
-};
 
 const filteredApplications = computed(() => {
   const normalized = keyword.value.trim().toLowerCase();

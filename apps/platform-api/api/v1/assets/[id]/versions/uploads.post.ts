@@ -3,7 +3,7 @@ import { extname } from 'node:path';
 
 import { getRouterParam } from 'h3';
 import { z } from 'zod';
-import { validateMimeForKind } from '~/utils/assets';
+import { validateFileForKind } from '~/utils/assets';
 import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
@@ -34,7 +34,7 @@ export default apiHandler(async (event) => {
   const versionId = randomUUID();
   const prepared = await sql.begin(async (transaction) => {
     const [asset] = await transaction<
-      { kind: Parameters<typeof validateMimeForKind>[0]; projectId: string }[]
+      { kind: Parameters<typeof validateFileForKind>[0]; projectId: string }[]
     >`
       SELECT project_id AS "projectId", kind
       FROM assets
@@ -43,11 +43,11 @@ export default apiHandler(async (event) => {
     `;
     if (!asset) throw new ApiError(404, 'ASSET_NOT_FOUND', '资产不存在');
     await requireProjectAccess(identity, asset.projectId, 'write');
-    if (!validateMimeForKind(asset.kind, input.mimeType)) {
+    if (!validateFileForKind(asset.kind, input.mimeType, input.filename)) {
       throw new ApiError(
         400,
         'MIME_KIND_MISMATCH',
-        '新版本文件类型与资产类型不匹配',
+        '新版本文件与资产的文件类型不匹配',
       );
     }
 

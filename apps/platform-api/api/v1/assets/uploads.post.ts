@@ -3,7 +3,7 @@ import { extname } from 'node:path';
 
 import { z } from 'zod';
 import { getAssetView } from '~/utils/asset-repository';
-import { ASSET_KINDS, validateMimeForKind } from '~/utils/assets';
+import { ASSET_KINDS, validateFileForKind } from '~/utils/assets';
 import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
@@ -37,8 +37,8 @@ export default apiHandler(async (event) => {
       `文件超过允许的最大大小 ${config.maxUploadBytes} 字节`,
     );
   }
-  if (!validateMimeForKind(input.kind, input.mimeType)) {
-    throw new ApiError(400, 'MIME_KIND_MISMATCH', '文件类型与资产类型不匹配');
+  if (!validateFileForKind(input.kind, input.mimeType, input.filename)) {
+    throw new ApiError(400, 'MIME_KIND_MISMATCH', '文件与所选文件类型不匹配');
   }
 
   const assetId = randomUUID();

@@ -9,7 +9,7 @@
 | Web | Vue 3、Vite、Ant Design Vue、Pinia | 页面、项目上下文、权限路由、业务交互和全局 AI 助手弹窗 |
 | 平台 API | Nitro、TypeScript、Nodemailer | 认证、邮件找回密码、RBAC、项目、资产、任务、通知、审计、AI 会话与外部服务转发 |
 | 关系数据库 | PostgreSQL 17 | 用户、密码散列、刷新会话、权限、项目、资产元数据、AI 对话与消息 |
-| 对象存储 | MinIO（S3 兼容） | 图片、视频、音频、模型、LoRA、报告以及 AI 对话附件 |
+| 对象存储 | MinIO（S3 兼容） | 图片、视频、音频、文档、3D 模型、模型文件、压缩包以及 AI 对话附件 |
 | 开发邮件沙箱 | Mailpit | 接收开发环境的密码重置邮件，不向真实邮箱投递 |
 | 本地基础设施 | Docker Compose | 可复现地运行 PostgreSQL、MinIO 与 Mailpit |
 
@@ -105,9 +105,11 @@ pnpm db:rail:reset-users -- --confirm=DELETE_ALL_USERS
 
 - 用户、角色、权限、刷新会话、项目、成员关系、任务、资产元数据、AI 对话与消息、收藏、通知和审计日志写入 PostgreSQL。
 - 文本资产在大小限制内写入 PostgreSQL。
-- 图片、视频、音频、3D 模型、LoRA 和报告等文件写入 MinIO/S3 私有桶。
+- 图片、视频、音频、文档、3D 模型、模型文件和压缩包写入 MinIO/S3 私有桶。
 - 上传流程为“平台申请预签名 PUT → 浏览器直传对象存储 → 平台校验对象并完成登记”。
 - 下载和图片预览均使用经过身份、权限和项目范围检查的短时预签名 URL。
+
+资产文件类型固定为 8 类：`image`、`video`、`audio`、`text`、`document`、`model3d`、`model`、`archive`。遮罩、CMF 材质、LoRA 和报告是业务用途，不再作为文件类型；它们通过资产标签、来源应用和任务血缘表达。
 
 ### 4.1 AI 设计助手
 

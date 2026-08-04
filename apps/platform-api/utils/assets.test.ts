@@ -4,7 +4,7 @@ import {
   assetAccent,
   assetFormat,
   formatFileSize,
-  validateMimeForKind,
+  validateFileForKind,
 } from './assets';
 
 describe('asset utilities', () => {
@@ -24,10 +24,41 @@ describe('asset utilities', () => {
     expect(formatFileSize(1_572_864)).toBe('1.5 MB');
   });
 
-  it('rejects mime types that do not match the declared asset kind', () => {
-    expect(validateMimeForKind('image', 'image/png')).toBe(true);
-    expect(validateMimeForKind('image', 'video/mp4')).toBe(false);
-    expect(validateMimeForKind('video', 'video/mp4')).toBe(true);
-    expect(validateMimeForKind('text', 'application/json')).toBe(true);
+  it('accepts files that match the declared file category', () => {
+    expect(validateFileForKind('image', 'image/png', 'reference.png')).toBe(
+      true,
+    );
+    expect(
+      validateFileForKind('document', 'application/pdf', 'review.pdf'),
+    ).toBe(true);
+    expect(
+      validateFileForKind(
+        'model',
+        'application/octet-stream',
+        'style.safetensors',
+      ),
+    ).toBe(true);
+    expect(
+      validateFileForKind('archive', 'application/zip', 'materials.zip'),
+    ).toBe(true);
+    expect(validateFileForKind('audio', 'audio/wav', 'brief.wav')).toBe(true);
+    expect(
+      validateFileForKind('model3d', 'model/gltf-binary', 'cabin.glb'),
+    ).toBe(true);
+  });
+
+  it('rejects mime types or extensions from another file category', () => {
+    expect(validateFileForKind('image', 'video/mp4', 'reference.mp4')).toBe(
+      false,
+    );
+    expect(
+      validateFileForKind('document', 'application/pdf', 'review.zip'),
+    ).toBe(false);
+    expect(validateFileForKind('video', 'video/mp4', 'walkthrough.mp4')).toBe(
+      true,
+    );
+    expect(validateFileForKind('text', 'application/json', 'prompt.json')).toBe(
+      true,
+    );
   });
 });

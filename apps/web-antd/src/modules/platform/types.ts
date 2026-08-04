@@ -7,13 +7,12 @@ export type ApplicationCategory =
 export type ApplicationStatus = 'available' | 'planned' | 'testing';
 
 export type AssetType =
+  | 'archive'
   | 'audio'
+  | 'document'
   | 'image'
-  | 'lora'
-  | 'mask'
-  | 'material'
   | 'model3d'
-  | 'report'
+  | 'model'
   | 'text'
   | 'video';
 

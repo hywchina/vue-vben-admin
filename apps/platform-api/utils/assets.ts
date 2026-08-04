@@ -1,13 +1,12 @@
 import { extname } from 'node:path';
 
 export const ASSET_KINDS = [
+  'archive',
   'audio',
+  'document',
   'image',
-  'lora',
-  'mask',
-  'material',
+  'model',
   'model3d',
-  'report',
   'text',
   'video',
 ] as const;
@@ -15,16 +14,33 @@ export const ASSET_KINDS = [
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
 const ACCENTS: Record<AssetKind, string> = {
+  archive: '#786b5f',
   audio: '#746b8f',
+  document: '#876d37',
   image: '#b91c32',
-  lora: '#62558b',
-  mask: '#4d6472',
-  material: '#9b6b43',
+  model: '#62558b',
   model3d: '#3f6b5a',
-  report: '#876d37',
   text: '#5d6470',
   video: '#315b70',
 };
+
+const EXTENSIONS: Partial<Record<AssetKind, Set<string>>> = {
+  archive: new Set(['.7z', '.gz', '.rar', '.tar', '.tgz', '.zip']),
+  document: new Set([
+    '.csv',
+    '.doc',
+    '.docx',
+    '.pdf',
+    '.ppt',
+    '.pptx',
+    '.xls',
+    '.xlsx',
+  ]),
+  model: new Set(['.ckpt', '.onnx', '.pt', '.pth', '.safetensors']),
+  model3d: new Set(['.fbx', '.glb', '.gltf', '.obj', '.step', '.stl', '.stp']),
+};
+
+const BINARY_MIME = 'application/octet-stream';
 
 export function assetAccent(kind: AssetKind) {
   return ACCENTS[kind];
@@ -45,21 +61,55 @@ export function formatFileSize(bytes: number) {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-export function validateMimeForKind(kind: AssetKind, mimeType: string) {
-  if (kind === 'image' || kind === 'mask' || kind === 'material') {
-    return mimeType.startsWith('image/');
-  }
+export function validateFileForKind(
+  kind: AssetKind,
+  mimeType: string,
+  filename: string,
+) {
+  const extension = extname(filename).toLowerCase();
+  const allowedExtensions = EXTENSIONS[kind];
+  if (allowedExtensions && !allowedExtensions.has(extension)) return false;
+
+  if (kind === 'image') return mimeType.startsWith('image/');
   if (kind === 'video') return mimeType.startsWith('video/');
   if (kind === 'audio') return mimeType.startsWith('audio/');
   if (kind === 'text') {
     return mimeType.startsWith('text/') || mimeType === 'application/json';
   }
-  return [
-    'application/octet-stream',
-    'application/pdf',
-    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    'model/gltf+json',
-    'model/gltf-binary',
-  ].includes(mimeType);
+  if (kind === 'archive') {
+    return (
+      mimeType === BINARY_MIME ||
+      [
+        'application/gzip',
+        'application/vnd.rar',
+        'application/x-7z-compressed',
+        'application/x-rar-compressed',
+        'application/x-tar',
+        'application/x-zip-compressed',
+        'application/zip',
+      ].includes(mimeType)
+    );
+  }
+  if (kind === 'document') {
+    return (
+      mimeType === BINARY_MIME ||
+      mimeType === 'application/msword' ||
+      mimeType === 'application/pdf' ||
+      mimeType === 'application/vnd.ms-excel' ||
+      mimeType === 'application/vnd.ms-powerpoint' ||
+      mimeType.startsWith('application/vnd.openxmlformats-officedocument.') ||
+      mimeType === 'text/csv'
+    );
+  }
+  if (kind === 'model') {
+    return (
+      mimeType === BINARY_MIME ||
+      ['application/onnx', 'application/x-pytorch'].includes(mimeType)
+    );
+  }
+  return (
+    mimeType === BINARY_MIME ||
+    mimeType.startsWith('model/') ||
+    ['application/sla', 'application/step'].includes(mimeType)
+  );
 }

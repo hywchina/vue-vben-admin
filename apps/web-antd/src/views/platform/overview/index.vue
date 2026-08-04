@@ -8,6 +8,7 @@ import { Button, Progress } from 'ant-design-vue';
 
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
+import { assetTypeIcons } from '#/modules/platform/asset-types';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
@@ -221,15 +222,7 @@ function openApplication(appKey: string) {
               :style="{ '--asset-accent': asset.accent }"
             >
               <span>{{ asset.format }}</span>
-              <IconifyIcon
-                :icon="
-                  asset.type === 'image'
-                    ? 'lucide:image'
-                    : asset.type === 'lora'
-                      ? 'lucide:brain-circuit'
-                      : 'lucide:layers-3'
-                "
-              />
+              <IconifyIcon :icon="assetTypeIcons[asset.type]" />
             </div>
             <div class="overview-asset__body">
               <strong>{{ asset.name }}</strong>
