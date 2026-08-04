@@ -1,0 +1,79 @@
+name: Rail platform quality gates
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rail-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  TZ: Asia/Shanghai
+
+jobs:
+  quality:
+    name: Static checks, unit tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node
+      - run: pnpm lint
+      - run: pnpm typecheck:rail
+      - run: pnpm test:rail
+      - run: pnpm build:rail
+
+  integration:
+    name: PostgreSQL, MinIO and API integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP_PUBLIC_URL: http://localhost:5666
+      BOOTSTRAP_DEMO_USERS: true
+      CORS_ALLOWED_ORIGINS: http://localhost:5666
+      DATABASE_URL: postgresql://rail_platform:rail_platform_dev@localhost:5432/rail_platform
+      JWT_SECRET: development-only-ci-integration-secret
+      NODE_ENV: development
+      S3_ACCESS_KEY: railminio
+      S3_ENDPOINT: http://localhost:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      S3_SECRET_KEY: railminio-dev-secret
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-node
+      - name: Start infrastructure
+        run: pnpm infra:rail:up
+      - name: Prepare database
+        run: pnpm db:rail:migrate && pnpm db:rail:seed
+      - name: Start API
+        run: |
+          pnpm --filter @rail/platform-api dev > /tmp/rail-platform-api.log 2>&1 &
+          echo $! > /tmp/rail-platform-api.pid
+          for attempt in $(seq 1 40); do
+            curl --fail --silent http://localhost:5320/api/v1/health/ready && exit 0
+            sleep 1
+          done
+          cat /tmp/rail-platform-api.log
+          exit 1
+      - name: Run integration acceptance
+        run: pnpm test:rail:integration
+      - name: Diagnostics
+        if: failure()
+        run: |
+          cat /tmp/rail-platform-api.log || true
+          docker compose -f deploy/rail-platform/compose.yaml logs || true
+      - name: Stop infrastructure
+        if: always()
+        run: |
+          if [ -f /tmp/rail-platform-api.pid ]; then kill "$(cat /tmp/rail-platform-api.pid)" || true; fi
+          pnpm infra:rail:down

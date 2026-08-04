@@ -72,6 +72,7 @@
     "test:unit": "vitest run --dom",
     "test:e2e": "turbo run test:e2e",
     "test:rail": "pnpm --filter @rail/platform-api test && pnpm --filter @vben/web-antd test:unit",
+    "test:rail:integration": "pnpm --filter @rail/platform-api test:integration",
     "typecheck:rail": "pnpm --filter @rail/platform-api typecheck && pnpm --filter @vben/web-antd typecheck",
     "update:deps": "npx taze -r -w",
     "version": "pnpm exec changeset version && pnpm install --no-frozen-lockfile",

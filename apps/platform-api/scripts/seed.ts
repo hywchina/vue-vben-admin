@@ -14,22 +14,26 @@ async function seed() {
       roleCode: 'admin',
       username: config.bootstrapAdminUsername,
     },
-    {
-      department: '设计部门',
-      email: config.bootstrapUser1Email,
-      name: config.bootstrapUser1Name,
-      password: config.bootstrapUser1Password,
-      roleCode: 'user',
-      username: config.bootstrapUser1Username,
-    },
-    {
-      department: '设计部门',
-      email: config.bootstrapUser2Email,
-      name: config.bootstrapUser2Name,
-      password: config.bootstrapUser2Password,
-      roleCode: 'user',
-      username: config.bootstrapUser2Username,
-    },
+    ...(config.bootstrapDemoUsers
+      ? [
+          {
+            department: '设计部门',
+            email: config.bootstrapUser1Email,
+            name: config.bootstrapUser1Name,
+            password: config.bootstrapUser1Password,
+            roleCode: 'user',
+            username: config.bootstrapUser1Username,
+          },
+          {
+            department: '设计部门',
+            email: config.bootstrapUser2Email,
+            name: config.bootstrapUser2Name,
+            password: config.bootstrapUser2Password,
+            roleCode: 'user',
+            username: config.bootstrapUser2Username,
+          },
+        ]
+      : []),
   ] as const;
 
   for (const account of accounts) {

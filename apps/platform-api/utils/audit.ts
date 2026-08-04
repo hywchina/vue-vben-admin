@@ -62,7 +62,7 @@ export async function writeRequestAudit(
   const actor = event.context.identity as CurrentIdentity | undefined;
   if (!actor) return;
   const path = event.path.split('?')[0] ?? event.path;
-  if (path === '/api/v1/health') return;
+  if (path.startsWith('/api/v1/health')) return;
   const method = event.method.toUpperCase();
   await writeAudit(event, {
     action: 'api.request',

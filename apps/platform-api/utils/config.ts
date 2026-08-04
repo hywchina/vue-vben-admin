@@ -21,6 +21,8 @@ export interface PlatformConfig {
   bootstrapUser2Name: string;
   bootstrapUser2Password: string;
   bootstrapUser2Username: string;
+  bootstrapDemoUsers: boolean;
+  corsAllowedOrigins: string[];
   databaseUrl: string;
   isProduction: boolean;
   jwtSecret: string;
@@ -59,6 +61,83 @@ function positiveInteger(value: string | undefined, fallback: number) {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function commaSeparatedValues(value: string | undefined, fallback: string) {
+  return (value ?? fallback)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function isValidOrigin(value: string) {
+  try {
+    const url = new URL(value);
+    return url.origin === value && ['http:', 'https:'].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
+export function validateProductionEnvironment(environment: NodeJS.ProcessEnv) {
+  const issues: string[] = [];
+  const requiredVariables = [
+    'APP_PUBLIC_URL',
+    'BOOTSTRAP_ADMIN_PASSWORD',
+    'CORS_ALLOWED_ORIGINS',
+    'DATABASE_URL',
+    'JWT_SECRET',
+    'S3_ACCESS_KEY',
+    'S3_PUBLIC_ENDPOINT',
+    'S3_SECRET_KEY',
+  ] as const;
+
+  for (const variable of requiredVariables) {
+    if (!environment[variable]?.trim()) issues.push(`${variable} 未配置`);
+  }
+
+  if (environment.JWT_SECRET?.startsWith('development-only-')) {
+    issues.push('JWT_SECRET 仍为开发默认值');
+  } else if ((environment.JWT_SECRET?.length ?? 0) < 32) {
+    issues.push('JWT_SECRET 长度至少需要 32 个字符');
+  }
+  if (environment.BOOTSTRAP_ADMIN_PASSWORD === 'RailAdmin123!') {
+    issues.push('BOOTSTRAP_ADMIN_PASSWORD 仍为开发默认值');
+  } else if ((environment.BOOTSTRAP_ADMIN_PASSWORD?.length ?? 0) < 12) {
+    issues.push('BOOTSTRAP_ADMIN_PASSWORD 长度至少需要 12 个字符');
+  }
+  if (environment.DATABASE_URL?.includes('rail_platform_dev@')) {
+    issues.push('DATABASE_URL 仍使用开发默认密码');
+  }
+  if (environment.S3_ACCESS_KEY === 'railminio') {
+    issues.push('S3_ACCESS_KEY 仍为开发默认值');
+  }
+  if (environment.S3_SECRET_KEY === 'railminio-dev-secret') {
+    issues.push('S3_SECRET_KEY 仍为开发默认值');
+  }
+  if (environment.BOOTSTRAP_DEMO_USERS?.toLowerCase() === 'true') {
+    issues.push('生产环境禁止启用 BOOTSTRAP_DEMO_USERS');
+  }
+
+  const origins = commaSeparatedValues(environment.CORS_ALLOWED_ORIGINS, '');
+  if (origins.includes('*'))
+    issues.push('CORS_ALLOWED_ORIGINS 不允许使用通配符');
+  for (const origin of origins) {
+    if (!isValidOrigin(origin)) {
+      issues.push(`CORS_ALLOWED_ORIGINS 包含无效来源：${origin}`);
+    }
+  }
+
+  if (
+    environment.AI_ASSISTANT_API_KEY?.trim() &&
+    !environment.AI_ASSISTANT_API_URL?.trim()
+  ) {
+    issues.push(
+      '配置 AI_ASSISTANT_API_KEY 时必须同时配置 AI_ASSISTANT_API_URL',
+    );
+  }
+
+  return issues;
+}
+
 export function getConfig(): PlatformConfig {
   if (cachedConfig) return cachedConfig;
 
@@ -67,8 +146,11 @@ export function getConfig(): PlatformConfig {
     process.env.JWT_SECRET ??
     'development-only-change-this-secret-before-production';
 
-  if (isProduction && jwtSecret.startsWith('development-only-')) {
-    throw new Error('生产环境必须通过 JWT_SECRET 配置独立的随机密钥。');
+  if (isProduction) {
+    const issues = validateProductionEnvironment(process.env);
+    if (issues.length > 0) {
+      throw new Error(`生产环境配置无效：${issues.join('；')}。`);
+    }
   }
 
   const s3Endpoint = process.env.S3_ENDPOINT ?? 'http://localhost:9000';
@@ -118,6 +200,14 @@ export function getConfig(): PlatformConfig {
     bootstrapUser2Password:
       process.env.BOOTSTRAP_USER2_PASSWORD ?? 'RailUser2!2026',
     bootstrapUser2Username: process.env.BOOTSTRAP_USER2_USERNAME ?? 'user2',
+    bootstrapDemoUsers: booleanValue(
+      process.env.BOOTSTRAP_DEMO_USERS,
+      !isProduction,
+    ),
+    corsAllowedOrigins: commaSeparatedValues(
+      process.env.CORS_ALLOWED_ORIGINS,
+      process.env.APP_PUBLIC_URL ?? 'http://localhost:5666',
+    ),
     databaseUrl:
       process.env.DATABASE_URL ??
       'postgresql://rail_platform:rail_platform_dev@localhost:5432/rail_platform',
@@ -141,10 +231,10 @@ export function getConfig(): PlatformConfig {
     ),
     s3AccessKey: process.env.S3_ACCESS_KEY ?? 'railminio',
     s3Bucket: process.env.S3_BUCKET ?? 'rail-platform-assets',
-    s3CorsOrigins: (process.env.S3_CORS_ORIGINS ?? 'http://localhost:5666')
-      .split(',')
-      .map((origin) => origin.trim())
-      .filter(Boolean),
+    s3CorsOrigins: commaSeparatedValues(
+      process.env.S3_CORS_ORIGINS,
+      'http://localhost:5666',
+    ),
     s3Endpoint,
     s3ForcePathStyle: booleanValue(process.env.S3_FORCE_PATH_STYLE, true),
     s3PresignTtlSeconds: positiveInteger(

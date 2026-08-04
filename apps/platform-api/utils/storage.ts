@@ -71,8 +71,19 @@ export function ensureStorageBucket() {
       if (statusCode !== 501) throw error;
       // MinIO 的 CORS 由 MINIO_API_CORS_ALLOW_ORIGIN 配置；AWS S3 使用桶级配置。
     }
-  })();
+  })().catch((error) => {
+    bucketReady = undefined;
+    throw error;
+  });
   return bucketReady;
+}
+
+export async function checkStorageHealth() {
+  const config = getConfig();
+  await ensureStorageBucket();
+  await useInternalClient().send(
+    new HeadBucketCommand({ Bucket: config.s3Bucket }),
+  );
 }
 
 export async function createUploadUrl(objectKey: string, mimeType: string) {

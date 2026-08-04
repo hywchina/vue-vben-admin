@@ -6,12 +6,19 @@ export default function errorHandler(
   error: H3Error,
   event: Parameters<typeof setResponseHeader>[0],
 ) {
+  const isServerError = !error.statusCode || error.statusCode >= 500;
+  const message = isServerError
+    ? '服务器内部错误'
+    : error.statusMessage || error.message || '请求失败';
+  if (isServerError) {
+    console.error(`[${event.context.requestId ?? 'unknown'}]`, error);
+  }
   setResponseHeader(event, 'content-type', 'application/json; charset=utf-8');
   return JSON.stringify({
     code: 'UNHANDLED_ERROR',
     data: null,
-    error: error.statusMessage || error.message || '服务器内部错误',
-    message: error.statusMessage || error.message || '服务器内部错误',
+    error: message,
+    message,
     requestId: event.context.requestId,
   });
 }

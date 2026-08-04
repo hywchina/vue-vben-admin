@@ -11,6 +11,7 @@
     "dev": "nitro dev --port 5320",
     "prepare": "nitro prepare",
     "test": "vitest run",
+    "test:integration": "tsx scripts/integration-test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest';
+
+import { validateProductionEnvironment } from './config';
+
+const validEnvironment = {
+  APP_PUBLIC_URL: 'https://rail.example.internal',
+  BOOTSTRAP_ADMIN_PASSWORD: 'A-unique-admin-password-2026',
+  CORS_ALLOWED_ORIGINS: 'https://rail.example.internal',
+  DATABASE_URL: 'postgresql://rail:unique@database.internal:5432/rail',
+  JWT_SECRET: 'a-unique-high-entropy-signing-secret',
+  S3_ACCESS_KEY: 'rail-production',
+  S3_PUBLIC_ENDPOINT: 'https://objects.example.internal',
+  S3_SECRET_KEY: 'a-unique-object-storage-secret',
+} satisfies NodeJS.ProcessEnv;
+
+describe('production configuration validation', () => {
+  it('accepts explicit non-development settings', () => {
+    expect(validateProductionEnvironment(validEnvironment)).toEqual([]);
+  });
+
+  it('rejects missing settings, defaults, wildcards and malformed origins', () => {
+    const issues = validateProductionEnvironment({
+      ...validEnvironment,
+      BOOTSTRAP_ADMIN_PASSWORD: 'RailAdmin123!',
+      BOOTSTRAP_DEMO_USERS: 'true',
+      CORS_ALLOWED_ORIGINS: '*,not-an-origin',
+      DATABASE_URL:
+        'postgresql://rail_platform:rail_platform_dev@localhost:5432/rail_platform',
+      JWT_SECRET: 'development-only-secret',
+      S3_ACCESS_KEY: 'railminio',
+      S3_SECRET_KEY: 'railminio-dev-secret',
+    });
+    expect(issues).toEqual(
+      expect.arrayContaining([
+        'JWT_SECRET 仍为开发默认值',
+        'BOOTSTRAP_ADMIN_PASSWORD 仍为开发默认值',
+        'DATABASE_URL 仍使用开发默认密码',
+        'S3_ACCESS_KEY 仍为开发默认值',
+        'S3_SECRET_KEY 仍为开发默认值',
+        '生产环境禁止启用 BOOTSTRAP_DEMO_USERS',
+        'CORS_ALLOWED_ORIGINS 不允许使用通配符',
+        'CORS_ALLOWED_ORIGINS 包含无效来源：not-an-origin',
+      ]),
+    );
+  });
+
+  it('requires an API URL whenever an assistant key is configured', () => {
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        AI_ASSISTANT_API_KEY: 'secret',
+      }),
+    ).toContain(
+      '配置 AI_ASSISTANT_API_KEY 时必须同时配置 AI_ASSISTANT_API_URL',
+    );
+  });
+});

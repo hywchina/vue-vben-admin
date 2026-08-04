@@ -184,6 +184,7 @@ Docker 使用命名卷保存数据，普通重启或 `docker compose down` 不�
 pnpm lint
 pnpm typecheck:rail
 pnpm test:rail
+pnpm test:rail:integration
 pnpm build:rail
 ```
 
@@ -214,4 +215,8 @@ pnpm build:rail
 ## 9. 文档索引
 
 - [系统架构与 API 边界](./ARCHITECTURE.md)
+- [产品需求与验收基线](./PRODUCT_REQUIREMENTS.md)
+- [产品成熟度审计与路线图](./PRODUCT_ROADMAP.md)
+- [质量门禁与交付证据](./QUALITY_GATES.md)
+- [运行、发布与故障处理手册](./OPERATIONS.md)
 - [二次开发详细记录](./DEVELOPMENT_LOG.md)
