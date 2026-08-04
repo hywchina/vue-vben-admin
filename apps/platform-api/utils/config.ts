@@ -91,7 +91,11 @@ export function validateProductionEnvironment(environment: NodeJS.ProcessEnv) {
   ] as const;
 
   for (const variable of requiredVariables) {
-    if (!environment[variable]?.trim()) issues.push(`${variable} 未配置`);
+    const value = environment[variable]?.trim();
+    if (!value) issues.push(`${variable} 未配置`);
+    else if (value.includes('CHANGE_ME')) {
+      issues.push(`${variable} 仍包含 CHANGE_ME 占位值`);
+    }
   }
 
   if (environment.JWT_SECRET?.startsWith('development-only-')) {

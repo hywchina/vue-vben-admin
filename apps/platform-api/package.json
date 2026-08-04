@@ -22,13 +22,13 @@
     "nitropack": "catalog:",
     "nodemailer": "catalog:",
     "postgres": "catalog:",
+    "tsx": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/nodemailer": "catalog:",
     "cross-env": "catalog:",
-    "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

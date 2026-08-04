@@ -54,4 +54,13 @@ describe('production configuration validation', () => {
       '配置 AI_ASSISTANT_API_KEY 时必须同时配置 AI_ASSISTANT_API_URL',
     );
   });
+
+  it('rejects deployment template placeholders', () => {
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        JWT_SECRET: 'CHANGE_ME_64_CHARACTER_RANDOM_SECRET',
+      }),
+    ).toContain('JWT_SECRET 仍包含 CHANGE_ME 占位值');
+  });
 });

@@ -214,6 +214,7 @@ pnpm build:rail
 
 ## 9. 文档索引
 
+- [Linux、macOS、Windows 跨平台部署手册](./DEPLOYMENT.md)
 - [系统架构与 API 边界](./ARCHITECTURE.md)
 - [产品需求与验收基线](./PRODUCT_REQUIREMENTS.md)
 - [产品成熟度审计与路线图](./PRODUCT_ROADMAP.md)

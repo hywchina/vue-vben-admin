@@ -1,0 +1,136 @@
+name: rail-platform-production
+
+x-platform-environment: &platform-environment
+  AI_ASSISTANT_API_KEY: ${AI_ASSISTANT_API_KEY:-}
+  AI_ASSISTANT_API_URL: ${AI_ASSISTANT_API_URL:-}
+  AI_ASSISTANT_MAX_ATTACHMENT_BYTES: ${AI_ASSISTANT_MAX_ATTACHMENT_BYTES:-52428800}
+  AI_ASSISTANT_MODEL: ${AI_ASSISTANT_MODEL:-rail-cabin-assistant}
+  AI_ASSISTANT_TIMEOUT_MS: ${AI_ASSISTANT_TIMEOUT_MS:-60000}
+  ALLOW_SELF_REGISTRATION: ${ALLOW_SELF_REGISTRATION:-false}
+  APP_PUBLIC_URL: ${APP_PUBLIC_URL:?请配置 APP_PUBLIC_URL}
+  BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:?请配置管理员邮箱}
+  BOOTSTRAP_ADMIN_NAME: ${BOOTSTRAP_ADMIN_NAME:-平台管理员}
+  BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?请配置管理员密码}
+  BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+  BOOTSTRAP_DEMO_USERS: 'false'
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?请配置 CORS_ALLOWED_ORIGINS}
+  DATABASE_URL: postgresql://rail_platform:${POSTGRES_PASSWORD:?请配置数据库密码}@postgres:5432/rail_platform
+  JWT_SECRET: ${JWT_SECRET:?请配置 JWT_SECRET}
+  NODE_ENV: production
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:?请配置对象存储账号}
+  S3_BUCKET: rail-platform-assets
+  S3_CORS_ORIGINS: ${CORS_ALLOWED_ORIGINS:?请配置 CORS_ALLOWED_ORIGINS}
+  S3_ENDPOINT: http://minio:9000
+  S3_FORCE_PATH_STYLE: 'true'
+  S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:?请配置浏览器可访问的对象存储地址}
+  S3_REGION: us-east-1
+  S3_SECRET_KEY: ${S3_SECRET_KEY:?请配置对象存储密码}
+  SMTP_FROM_ADDRESS: ${SMTP_FROM_ADDRESS:?请配置发件地址}
+  SMTP_FROM_NAME: ${SMTP_FROM_NAME:-轨道客室智能设计平台}
+  SMTP_HOST: ${SMTP_HOST:?请配置 SMTP_HOST}
+  SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  SMTP_PORT: ${SMTP_PORT:-25}
+  SMTP_SECURE: ${SMTP_SECURE:-false}
+  SMTP_TLS_REJECT_UNAUTHORIZED: ${SMTP_TLS_REJECT_UNAUTHORIZED:-true}
+  SMTP_USER: ${SMTP_USER:-}
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: rail_platform
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请配置数据库密码}
+      POSTGRES_USER: rail_platform
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U rail_platform -d rail_platform]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+    volumes:
+      - rail-production-postgres:/var/lib/postgresql/data
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_API_CORS_ALLOW_ORIGIN: ${CORS_ALLOWED_ORIGINS:?请配置 CORS_ALLOWED_ORIGINS}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:?请配置对象存储密码}
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:?请配置对象存储账号}
+    healthcheck:
+      test: [CMD, curl, -f, http://localhost:9000/minio/health/live]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    ports:
+      - ${S3_PORT:-9000}:9000
+      - 127.0.0.1:${S3_CONSOLE_PORT:-9001}:9001
+    restart: unless-stopped
+    volumes:
+      - rail-production-minio:/data
+
+  migration:
+    image: rail-platform-migration:${RAIL_PLATFORM_VERSION:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/rail-platform/Dockerfile.production
+      target: migration
+    environment: *platform-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: no
+
+  api:
+    image: rail-platform-api:${RAIL_PLATFORM_VERSION:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/rail-platform/Dockerfile.production
+      target: api
+    environment: *platform-environment
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1:5320/api/v1/health/ready
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    restart: unless-stopped
+
+  web:
+    image: rail-platform-web:${RAIL_PLATFORM_VERSION:-local}
+    build:
+      context: ../..
+      dockerfile: deploy/rail-platform/Dockerfile.production
+      target: web
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - http://127.0.0.1:8080/container-health
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    ports:
+      - ${WEB_PORT:-8080}:8080
+    restart: unless-stopped
+
+volumes:
+  rail-production-minio:
+  rail-production-postgres:

@@ -27,6 +27,7 @@ package-lock.json
 # local env files
 .env.local
 .env.*.local
+/deploy/rail-platform/.env.production
 .eslintcache
 
 logs

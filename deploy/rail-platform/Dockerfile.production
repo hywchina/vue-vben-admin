@@ -1,0 +1,47 @@
+# syntax=docker/dockerfile:1
+
+FROM node:24.16.0-alpine AS builder
+
+ENV CI=true
+ENV NODE_OPTIONS=--max-old-space-size=8192
+ENV PNPM_HOME=/pnpm
+ENV PATH=/pnpm:$PATH
+ENV TZ=Asia/Shanghai
+
+RUN npm install --global pnpm@11.16.0
+
+WORKDIR /workspace
+COPY . .
+RUN pnpm install --frozen-lockfile
+RUN pnpm build:rail
+RUN pnpm --filter @rail/platform-api --prod deploy --legacy /migration-runtime
+
+FROM node:24.16.0-alpine AS migration
+
+ENV NODE_ENV=production
+ENV TZ=Asia/Shanghai
+
+WORKDIR /app
+COPY --from=builder --chown=node:node /migration-runtime/ ./
+USER node
+CMD ["sh", "-c", "./node_modules/.bin/tsx scripts/migrate.ts && ./node_modules/.bin/tsx scripts/seed.ts"]
+
+FROM node:24.16.0-alpine AS api
+
+ENV NITRO_HOST=0.0.0.0
+ENV NITRO_PORT=5320
+ENV NODE_ENV=production
+ENV TZ=Asia/Shanghai
+
+WORKDIR /app
+COPY --from=builder --chown=node:node /workspace/apps/platform-api/.output/ ./
+USER node
+EXPOSE 5320
+CMD ["node", "server/index.mjs"]
+
+FROM nginx:stable-alpine AS web
+
+COPY deploy/rail-platform/nginx.production.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /workspace/apps/web-antd/dist/ /usr/share/nginx/html/
+EXPOSE 8080
+CMD ["nginx", "-g", "daemon off;"]
