@@ -216,6 +216,7 @@ pnpm build:rail
 
 ## 9. 文档索引
 
+- [仓库级 Agent 与开发协作规范](../../AGENTS.md)
 - [Linux、macOS、Windows 跨平台部署手册](./DEPLOYMENT.md)
 - [系统架构与 API 边界](./ARCHITECTURE.md)
 - [产品需求与验收基线](./PRODUCT_REQUIREMENTS.md)
