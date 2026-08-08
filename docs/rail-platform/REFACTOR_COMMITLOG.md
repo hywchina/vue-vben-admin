@@ -86,7 +86,7 @@
 
 ## style(project): format rail platform documents
 
-- 提交哈希：提交后回填。
+- 提交哈希：`8740e0177`
 - 提交范围：全仓规范检查报告的 6 份 `docs/rail-platform` Markdown 文档。
 - 优化目的：恢复仓库统一 Markdown 格式并解除发布规范门禁。
 - 解决问题：完整 `pnpm lint` 首次运行发现计划、需求、部署、质量和重构清单存在格式差异。
@@ -95,3 +95,15 @@
 - 兼容性说明：不影响运行、API、数据库、配置或部署行为。
 - 验证结果：格式化后 `pnpm lint` 通过，覆盖 1,943 个文件。
 - 遗留事项：执行真实集成与浏览器冒烟。
+
+## test(project): record core refactor acceptance
+
+- 提交哈希：提交后回填。
+- 提交范围：完整质量门禁、真实服务集成、生产 Compose 解析、浏览器冒烟和重构状态。
+- 优化目的：形成可复现的重构交付证据并关闭执行计划。
+- 解决问题：阶段测试不能单独证明跨 PostgreSQL、MinIO、浏览器和生产构建的完整可交付性。
+- 变更要点：将最终命令结果、浏览器观察、部署解析和未重复演练项回填到质量、开发和重构文档。
+- 架构细节：验证覆盖 Web barrel、Store 纯函数、Nitro 兼容导出、领域分层、对象存储、权限隔离和外部能力失败边界。
+- 兼容性说明：本提交只更新验证证据和文档状态，不改变业务行为。
+- 验证结果：`pnpm lint`、`pnpm typecheck:rail`、`pnpm test:rail`、`pnpm test:rail:integration`、`pnpm build:rail` 全部通过；生产 Compose 解析通过；管理员浏览器核心路径通过且控制台错误为 0。
+- 遗留事项：正式上线前执行生产数据备份恢复演练；既有 Vben 表单兼容与存储前缀警告后续作为独立框架维护项处理。

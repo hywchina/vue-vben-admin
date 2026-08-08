@@ -58,5 +58,8 @@
 | 开发记录 | `DEVELOPMENT_LOG.md`                            |
 | 重构基线 | Git `0c352a574`，`REFACTOR_COMMITLOG.md`        |
 | 重构范围 | `REFACTOR_INVENTORY.md`                         |
+| 重构结果 | `refactor-core-module`、`REFACTOR_COMMITLOG.md` |
 
 核心模块重构期间，Web 状态测试入口覆盖 `src/store/platform*.test.ts`，同时验证 Pinia 协调行为和抽取后的纯状态规则。平台 API 测试随实现放在 `utils/domain`、`utils/identity` 和 `utils/infrastructure` 对应目录，兼容导出层不复制测试逻辑。
+
+2026-08-08 重构分支交付证据：规范检查、目标类型检查、34 项平台单元/状态测试、真实 PostgreSQL/MinIO 集成验收、Nitro/Web 生产构建、生产 Compose 解析和管理员浏览器冒烟全部通过。生产备份恢复演练没有在本次纯代码重构中重复执行，正式上线前仍必须按 `OPERATIONS.md` 完成。
