@@ -107,3 +107,20 @@
 - 兼容性说明：本提交只更新验证证据和文档状态，不改变业务行为。
 - 验证结果：`pnpm lint`、`pnpm typecheck:rail`、`pnpm test:rail`、`pnpm test:rail:integration`、`pnpm build:rail` 全部通过；生产 Compose 解析通过；管理员浏览器核心路径通过且控制台错误为 0。
 - 遗留事项：正式上线前执行生产数据备份恢复演练；既有 Vben 表单兼容与存储前缀警告后续作为独立框架维护项处理。
+
+## 2026-08-08：移除未使用的上游工作区
+
+### `chore(project): remove unused upstream workspaces`
+
+- 删除未参与轨道平台运行的旧 Mock 服务、Ant Design Vue Next、Element Plus、Naive UI、TDesign Web 变体、Playground 和 Vben 文档站。
+- 删除 Changesets、Gitpod、Tea、旧 VS Code 工作区生成器和 Playground 发布脚本。
+- 将 pnpm 工作区显式收敛到 `apps/platform-api`、`apps/web-antd`、共享 `packages`、`internal` 与必要脚本。
+- 移除开发环境默认启用的 Nitro Mock 插件及其环境变量、类型和配置，确保本项目只连接真实平台 API。
+- 保留仍被产品 Web 与构建链使用的 Vben 共享包、内部工具和 MIT 许可证，不进行无依据的框架重写。
+
+验证结果：
+
+- `pnpm install --lockfile-only`：通过，锁文件已按精简后的 40 个工作区刷新。
+- `pnpm typecheck:rail`：通过。
+- 旧工作区、Playground、VitePress、Nitro Mock 与旧工作区文件名的保留路径扫描：无结果。
+- 额外直接编译 `internal/vite-config` 时仍会命中既有 Sass/Vite 测试类型兼容问题；该命令不是项目质量门禁，本次改动未扩大该问题。

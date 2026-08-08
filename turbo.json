@@ -15,12 +15,7 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [
-        "dist/**",
-        "dist.zip",
-        ".vitepress/dist.zip",
-        ".vitepress/dist/**"
-      ]
+      "outputs": ["dist/**", "dist.zip"]
     },
     "preview": {
       "dependsOn": ["^build"],
@@ -29,10 +24,6 @@
     "build:analyze": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**"]
-    },
-    "@vben/backend-mock#build": {
-      "dependsOn": ["^build"],
-      "outputs": [".nitro/**", ".output/**"]
     },
     "test:e2e": {},
     "dev": {

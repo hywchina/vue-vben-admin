@@ -5,7 +5,6 @@ import { cac } from 'cac';
 import { version } from '../package.json';
 import { defineCheckCircularCommand } from './check-circular';
 import { defineCheckDepCommand } from './check-dep';
-import { defineCodeWorkspaceCommand } from './code-workspace';
 import { defineLintCommand } from './lint';
 import { definePubLintCommand } from './publint';
 
@@ -13,7 +12,6 @@ import { definePubLintCommand } from './publint';
 const COMMAND_DESCRIPTIONS = {
   'check-circular': 'Check for circular dependencies',
   'check-dep': 'Check for unused dependencies',
-  'code-workspace': 'Manage VS Code workspace settings',
   lint: 'Run linting on the project',
   publint: 'Check package.json files for publishing standards',
 } as const;
@@ -28,7 +26,6 @@ async function main(): Promise<void> {
     // Register commands
     defineLintCommand(vsh);
     definePubLintCommand(vsh);
-    defineCodeWorkspaceCommand(vsh);
     defineCheckCircularCommand(vsh);
     defineCheckDepCommand(vsh);
 
