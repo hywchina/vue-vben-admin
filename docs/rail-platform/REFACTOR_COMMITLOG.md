@@ -98,7 +98,7 @@
 
 ## test(project): record core refactor acceptance
 
-- 提交哈希：提交后回填。
+- 提交哈希：`ea6599b21`
 - 提交范围：完整质量门禁、真实服务集成、生产 Compose 解析、浏览器冒烟和重构状态。
 - 优化目的：形成可复现的重构交付证据并关闭执行计划。
 - 解决问题：阶段测试不能单独证明跨 PostgreSQL、MinIO、浏览器和生产构建的完整可交付性。
