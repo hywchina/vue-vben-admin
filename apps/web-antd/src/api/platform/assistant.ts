@@ -1,5 +1,7 @@
 import { requestClient } from '#/api/request';
 
+import { uploadPresignedFile } from './uploads';
+
 export interface AiAssistantStatus {
   configured: boolean;
   maxAttachmentBytes: number;
@@ -98,14 +100,7 @@ export async function uploadAiAttachmentApi(
       sizeBytes: file.size,
     },
   );
-  const uploadResponse = await fetch(prepared.upload.url, {
-    body: file,
-    headers: prepared.upload.headers,
-    method: prepared.upload.method,
-  });
-  if (!uploadResponse.ok) {
-    throw new Error(`附件上传失败（HTTP ${uploadResponse.status}）`);
-  }
+  await uploadPresignedFile(prepared.upload, file, '附件上传失败');
   await requestClient.post<{ id: string; status: 'available' }>(
     `/assistant/attachments/${prepared.attachment.id}/complete`,
   );
