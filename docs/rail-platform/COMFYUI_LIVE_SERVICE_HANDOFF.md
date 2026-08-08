@@ -2,7 +2,7 @@
 
 > 更新日期：2026-08-08  
 > 适用范围：本仓库中已登记的 18 项 ComfyUI 能力  
-> 当前环境：平台代码、API JSON、WebUI Demo 参考、输入输出适配和模拟协议测试已完成；本机 ComfyUI 服务尚未启动。
+> 当前环境：本机 HTTPS ComfyUI 0.27.0 已启动；18 项节点和静态枚举预检通过，第一批 4 项基础协议已完成真实 GPU 推理验收，其余能力继续按批次验收。
 
 ## 1. 文档目的
 
@@ -12,7 +12,8 @@
 
 - 已实现：工作流注册、能力映射、输入资产上传、独立 Worker、轮询、取消、恢复、图片/文本/GLB 输出登记和项目资产血缘。
 - 已模拟验证：18 份真实 API JSON 的节点映射、资产注入、`/prompt`、`/history`、`/view`、文本与 3D 输出解析。
-- 尚未真实验证：目标 ComfyUI 的模型文件、自定义节点版本、GPU 推理、实际输出字段、大文件性能和图像效果。
+- 已真实验证：HTTPS CA 信任、节点与静态枚举预检、文生图、单图编辑、文本生成、多视图生三维，以及图片、文本、GLB 的项目资产登记。
+- 尚未真实验证：其余 14 项能力的完整推理、特殊输入语义、大文件性能和最终图像效果。
 
 模拟测试不等于真实模型推理通过。运行时代码不包含模拟成功分支；`COMFYUI_API_URL` 未配置时会稳定返回 `ADAPTER_NOT_CONFIGURED`。
 
@@ -99,14 +100,13 @@ python main.py --listen 0.0.0.0 --port 8188
 ComfyUI 启动后，先不启动平台任务，执行：
 
 ```bash
-pnpm --filter @rail/platform-api exec tsx scripts/comfyui-preflight.ts \
-  --url http://COMFYUI_HOST:8188
+pnpm comfyui:preflight
 ```
 
 如需 Token：
 
 ```bash
-pnpm --filter @rail/platform-api exec tsx scripts/comfyui-preflight.ts \
+pnpm --filter @rail/platform-api comfyui:preflight -- \
   --url https://comfy.internal.example \
   --token '<runtime-token>'
 ```
@@ -116,9 +116,9 @@ pnpm --filter @rail/platform-api exec tsx scripts/comfyui-preflight.ts \
 1. 验证 `/system_stats` 与 `/object_info` 可访问。
 2. 读取仓库中的 18 份 API JSON。
 3. 按工作流比对所有 `class_type`。
-4. 逐项输出缺失节点。
-5. 输出每项能力声明的模型文件清单。
-6. 存在缺失节点时以非零状态退出。
+4. 检查未被运行时参数或资产替换的枚举值是否存在于真实节点定义中。
+5. 输出缺失节点、前端兼容字段提示和每项能力声明的模型文件清单。
+6. 存在缺失节点或无效静态枚举值时以非零状态退出。
 
 预检只能确认节点类型已注册，不能确认模型文件内容完整、显存足够或节点版本语义完全一致。
 
@@ -129,9 +129,10 @@ pnpm --filter @rail/platform-api exec tsx scripts/comfyui-preflight.ts \
 ```dotenv
 COMFYUI_API_URL=http://COMFYUI_HOST:8188
 COMFYUI_API_TOKEN=
-COMFYUI_TIMEOUT_MS=60000
+NODE_EXTRA_CA_CERTS=
+COMFYUI_API_TIMEOUT_MS=60000
 COMFYUI_POLL_INTERVAL_MS=2000
-COMFYUI_LEASE_SECONDS=30
+COMFYUI_WORKER_LEASE_SECONDS=90
 COMFYUI_MAX_OUTPUT_BYTES=268435456
 ```
 
@@ -195,6 +196,8 @@ pnpm dev:rail
 4. `multiview-to-3d`：验证 GLB 下载、MIME 和 `model3d` 资产。
 
 这四项通过后，平台通用协议可认为基本成立。
+
+2026-08-08 真实验收结果：四项均通过。多视图生三维使用 `1 step / 512` 时产生空网格并由平台稳定返回 `COMFYUI_OUTPUT_MISSING`；使用工作流默认的 `20 steps / 3072` 后生成并登记约 24.4 MiB GLB。真实 `SaveGLB` 节点已不再声明旧的 `image` 输入，仓库 API JSON 已同步移除该过期字段。
 
 ### 8.2 第二组：验证输入编组
 

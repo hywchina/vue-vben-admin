@@ -144,7 +144,6 @@
   "83": {
     "inputs": {
       "filename_prefix": "mesh/ComfyUI",
-      "image": "",
       "mesh": ["82", 0]
     },
     "class_type": "SaveGLB",

@@ -6,7 +6,7 @@
 
 正式能力目录已扩展为 18 项，覆盖文生图、LoRA、单/多图编辑、局部重绘、扩图、分区标记、镜头控制、图片理解、文本生成、放大修复和多视图生三维。所有能力共用工作流注册、不可变版本、参数/资产/输出映射和独立 Worker，不复制任务系统。
 
-本机没有可访问的 ComfyUI 实例，因此当前使用测试进程内启动的临时模拟服务完成 18 项目录协议测试。运行时代码没有静态结果或模拟成功分支；未配置 ComfyUI 时稳定返回 `ADAPTER_NOT_CONFIGURED`。真实服务启动后的预检、验收矩阵和微调流程见 [COMFYUI_LIVE_SERVICE_HANDOFF.md](./COMFYUI_LIVE_SERVICE_HANDOFF.md)。
+本机 HTTPS ComfyUI 已接入，第一批基础协议能力完成真实 GPU 推理；其余能力仍保留进程内模拟服务测试并按批次执行真实验收。运行时代码没有静态结果或模拟成功分支；未配置 ComfyUI 时稳定返回 `ADAPTER_NOT_CONFIGURED`。当前验收矩阵和微调记录见 [COMFYUI_LIVE_SERVICE_HANDOFF.md](./COMFYUI_LIVE_SERVICE_HANDOFF.md)。
 
 ## 2. 总体架构
 
@@ -122,14 +122,15 @@ stateDiagram-v2
 
 API 与 Worker 使用同一组服务端环境变量：
 
-| 变量                       | 说明                               |
-| -------------------------- | ---------------------------------- |
-| `COMFYUI_API_URL`          | ComfyUI 根地址；为空时能力不可执行 |
-| `COMFYUI_API_TOKEN`        | 可选 Bearer Token，只存在服务端    |
-| `COMFYUI_TIMEOUT_MS`       | 单次 HTTP 请求超时                 |
-| `COMFYUI_POLL_INTERVAL_MS` | 状态轮询间隔                       |
-| `COMFYUI_LEASE_SECONDS`    | Worker 数据库租约时长              |
-| `COMFYUI_MAX_OUTPUT_BYTES` | 单个输出下载大小上限               |
+| 变量                           | 说明                               |
+| ------------------------------ | ---------------------------------- |
+| `COMFYUI_API_URL`              | ComfyUI 根地址；为空时能力不可执行 |
+| `COMFYUI_API_TOKEN`            | 可选 Bearer Token，只存在服务端    |
+| `NODE_EXTRA_CA_CERTS`          | 本地 HTTPS 自签 CA 证书路径        |
+| `COMFYUI_API_TIMEOUT_MS`       | 单次 HTTP 请求超时                 |
+| `COMFYUI_POLL_INTERVAL_MS`     | 状态轮询间隔                       |
+| `COMFYUI_WORKER_LEASE_SECONDS` | Worker 数据库租约时长              |
+| `COMFYUI_MAX_OUTPUT_BYTES`     | 单个输出下载大小上限               |
 
 开发模式 `pnpm dev:rail` 会启动 API、Web 和 Worker。拆分调试时使用：
 

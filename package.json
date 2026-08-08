@@ -33,6 +33,7 @@
     "check:type": "turbo run typecheck",
     "clean": "node ./scripts/clean.mjs",
     "commit": "czg",
+    "comfyui:preflight": "pnpm --filter @rail/platform-api comfyui:preflight",
     "dev": "pnpm dev:rail",
     "dev:docs": "pnpm -F @vben/docs run dev",
     "db:rail:migrate": "pnpm --filter @rail/platform-api db:migrate",

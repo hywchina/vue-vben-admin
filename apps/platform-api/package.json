@@ -5,17 +5,18 @@
   "type": "module",
   "scripts": {
     "build": "nitro build",
-    "db:migrate": "tsx scripts/migrate.ts",
-    "db:reset-users": "tsx scripts/reset-users.ts",
-    "db:seed": "tsx scripts/seed.ts",
+    "comfyui:preflight": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/comfyui-preflight.ts",
+    "db:migrate": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/migrate.ts",
+    "db:reset-users": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/reset-users.ts",
+    "db:seed": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/seed.ts",
     "dev": "pnpm run --parallel \"/^(dev:api|worker)$/\"",
-    "dev:api": "nitro dev --port 5320",
+    "dev:api": "node ../../scripts/run-with-env.mjs .env -- nitro dev --port 5320",
     "prepare": "nitro prepare",
     "test": "vitest run",
     "test:integration": "tsx scripts/integration-test.ts && tsx scripts/comfyui-worker-integration-test.ts",
     "typecheck": "tsc --noEmit",
-    "worker": "tsx scripts/worker.ts",
-    "worker:once": "tsx scripts/worker.ts --once"
+    "worker": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/worker.ts",
+    "worker:once": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/worker.ts --once"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "catalog:",

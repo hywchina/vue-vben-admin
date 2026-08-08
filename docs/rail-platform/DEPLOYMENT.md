@@ -21,7 +21,7 @@
 | Mailpit 开发邮箱 | **Docker 容器** | `compose.yaml` | 1025、8025 |
 | 用户、项目、资产、应用、任务、日志、AI 聊天 | **Web/API 内的业务模块** | 随本地 Web/API 运行，数据写入 Docker 数据库/对象存储 | 不单独占用端口 |
 | 企业 SMTP | 不使用 | Mailpit 代替 | — |
-| AI 推理、ComfyUI 工作流、LoRA 训练 | **不在本机部署** | 后续通过 API 地址接入 | 由外部系统决定 |
+| AI 推理、ComfyUI 工作流、LoRA 训练 | **平台外部进程** | 通过服务端 API 地址接入，可与平台运行在同一 Linux 主机 | 由外部服务决定 |
 
 也就是说，源码方式下 Docker 只负责数据库、文件存储和测试邮箱；前端与平台 API 仍在本地 Node.js 中运行，修改代码后可以热更新。
 
@@ -162,6 +162,20 @@ Copy-Item apps/platform-api/.env.example apps/platform-api/.env
 ```
 
 编辑 `.env` 后重新启动 API。`.env` 不应提交到 Git。
+
+本机 ComfyUI 使用 HTTPS 时可追加：
+
+```dotenv
+COMFYUI_API_URL=https://127.0.0.1:8188
+COMFYUI_API_TOKEN=
+NODE_EXTRA_CA_CERTS=/absolute/path/to/comfyui-local-ca.crt
+COMFYUI_API_TIMEOUT_MS=60000
+COMFYUI_POLL_INTERVAL_MS=2000
+COMFYUI_WORKER_LEASE_SECONDS=90
+COMFYUI_MAX_OUTPUT_BYTES=268435456
+```
+
+`NODE_EXTRA_CA_CERTS` 必须指向签发 ComfyUI 服务证书的 CA 文件，不能填写服务端私钥，也不要通过关闭 TLS 校验绕过证书问题。开发脚本会先加载 `.env`，再启动 API、数据库脚本和 Worker 子进程，确保 Node.js 在 HTTPS 初始化前读取该变量。
 
 ### 4.4 一键启动
 
