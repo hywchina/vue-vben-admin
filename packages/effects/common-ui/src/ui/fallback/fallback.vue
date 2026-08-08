@@ -4,7 +4,7 @@ import type { FallbackProps } from './fallback';
 import { computed, defineAsyncComponent } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { ArrowLeft, RotateCw } from '@vben/icons';
+import { ArrowLeft } from '@vben/icons';
 import { $t } from '@vben/locales';
 
 import { VbenButton } from '@vben-core/shadcn-ui';
@@ -20,19 +20,12 @@ const props = withDefaults(defineProps<Props>(), {
   homePath: '/',
   image: '',
   showBack: true,
-  status: 'coming-soon',
+  status: '404',
   title: '',
 });
 
 const Icon403 = defineAsyncComponent(() => import('./icons/icon-403.vue'));
 const Icon404 = defineAsyncComponent(() => import('./icons/icon-404.vue'));
-const Icon500 = defineAsyncComponent(() => import('./icons/icon-500.vue'));
-const IconHello = defineAsyncComponent(
-  () => import('./icons/icon-coming-soon.vue'),
-);
-const IconOffline = defineAsyncComponent(
-  () => import('./icons/icon-offline.vue'),
-);
 
 const titleText = computed(() => {
   if (props.title) {
@@ -45,15 +38,6 @@ const titleText = computed(() => {
     }
     case '404': {
       return $t('ui.fallback.pageNotFound');
-    }
-    case '500': {
-      return $t('ui.fallback.internalError');
-    }
-    case 'coming-soon': {
-      return $t('ui.fallback.comingSoon');
-    }
-    case 'offline': {
-      return $t('ui.fallback.offlineError');
     }
     default: {
       return '';
@@ -72,12 +56,6 @@ const descText = computed(() => {
     case '404': {
       return $t('ui.fallback.pageNotFoundDesc');
     }
-    case '500': {
-      return $t('ui.fallback.internalErrorDesc');
-    }
-    case 'offline': {
-      return $t('ui.fallback.offlineErrorDesc');
-    }
     default: {
       return '';
     }
@@ -92,15 +70,6 @@ const fallbackIcon = computed(() => {
     case '404': {
       return Icon404;
     }
-    case '500': {
-      return Icon500;
-    }
-    case 'coming-soon': {
-      return IconHello;
-    }
-    case 'offline': {
-      return IconOffline;
-    }
     default: {
       return null;
     }
@@ -111,19 +80,11 @@ const showBack = computed(() => {
   return props.status === '403' || props.status === '404';
 });
 
-const showRefresh = computed(() => {
-  return props.status === '500' || props.status === 'offline';
-});
-
 const { push } = useRouter();
 
 // 返回首页
 function back() {
   push(props.homePath);
-}
-
-function refresh() {
-  location.reload();
 }
 </script>
 
@@ -154,10 +115,6 @@ function refresh() {
       <VbenButton v-else-if="showBack" size="lg" @click="back">
         <ArrowLeft class="mr-2 size-4" />
         {{ $t('common.backToHome') }}
-      </VbenButton>
-      <VbenButton v-else-if="showRefresh" size="lg" @click="refresh">
-        <RotateCw class="mr-2 size-4" />
-        {{ $t('common.refresh') }}
       </VbenButton>
     </div>
   </div>

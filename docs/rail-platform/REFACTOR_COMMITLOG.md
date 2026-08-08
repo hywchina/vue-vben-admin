@@ -124,3 +124,19 @@
 - `pnpm typecheck:rail`：通过。
 - 旧工作区、Playground、VitePress、Nitro Mock 与旧工作区文件名的保留路径扫描：无结果。
 - 额外直接编译 `internal/vite-config` 时仍会命中既有 Sass/Vite 测试类型兼容问题；该命令不是项目质量门禁，本次改动未扩大该问题。
+
+## 2026-08-08：清理产品 Web 的上游模板页面
+
+### `refactor(project): remove unused template views`
+
+- 删除实际 Web 中的 Dashboard、Demos、About、无路由占位页、验证码登录、二维码登录和样例安全设置。
+- 将动态页面扫描从全部 `views/**/*.vue` 收窄到平台业务页面与个人中心，避免无入口页面进入生产包。
+- 删除多租户、报表标题、表格分页等样例偏好扩展及对应中英文文案。
+- 按项目实际只保留 403/404 Fallback 状态，删除 500、即将上线、离线页面组件和插图资源。
+- 将错误页组件名从 Demo 命名改为平台语义，并清理旧 Dashboard 与登录方式的页面国际化。
+
+验证结果：
+
+- `pnpm typecheck:rail`：通过。
+- `pnpm --filter @vben/web-antd build`：通过，转换 7432 个模块并生成生产压缩包。
+- 生产产物扫描：无 Dashboard、Demos、验证码/二维码登录、样例安全设置、即将上线、500 或离线页面分块。
