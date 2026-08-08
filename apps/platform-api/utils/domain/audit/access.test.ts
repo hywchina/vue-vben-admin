@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { resolveAuditVisibility } from './audit-access';
+import { resolveAuditVisibility } from './access';
 
 describe('audit visibility', () => {
   it('allows an administrator to read all actors', () => {

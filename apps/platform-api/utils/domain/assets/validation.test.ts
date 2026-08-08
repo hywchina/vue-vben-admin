@@ -5,7 +5,7 @@ import {
   assetFormat,
   formatFileSize,
   validateFileForKind,
-} from './assets';
+} from './validation';
 
 describe('asset utilities', () => {
   it('maps asset kinds to stable platform accents', () => {

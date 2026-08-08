@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AssistantProviderError,
   parseAssistantProviderResponse,
-} from './assistant-provider';
+} from './provider';
 
 describe('assistant provider response', () => {
   it('accepts direct and nested provider payloads', () => {

@@ -4,7 +4,7 @@ import {
   assistantAttachmentExtension,
   deriveAssistantConversationTitle,
   isAssistantAttachmentSupported,
-} from './assistant';
+} from './conversations';
 
 describe('ai assistant helpers', () => {
   it('accepts common design files and rejects executable content', () => {

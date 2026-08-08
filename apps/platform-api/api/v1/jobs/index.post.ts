@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { CAPABILITY_ADAPTER_NOT_CONFIGURED } from '~/utils/domain/capabilities/adapter';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
@@ -82,7 +83,7 @@ export default apiHandler(async (event) => {
           application.adapterConfigured
             ? null
             : transaction.json({
-                code: 'ADAPTER_NOT_CONFIGURED',
+                code: CAPABILITY_ADAPTER_NOT_CONFIGURED,
                 message: '该应用尚未配置外部能力适配器',
               })
         },
