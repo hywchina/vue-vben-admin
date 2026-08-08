@@ -2,7 +2,7 @@ name: rail-platform
 
 services:
   postgres:
-    image: postgres:17.6-alpine
+    image: m.daocloud.io/docker.io/library/postgres:17.6-alpine
     environment:
       POSTGRES_DB: rail_platform
       POSTGRES_PASSWORD: rail_platform_dev
@@ -38,7 +38,7 @@ services:
       - rail-minio-data:/data
 
   mailpit:
-    image: axllent/mailpit:v1.30.0
+    image: m.daocloud.io/docker.io/axllent/mailpit:v1.30.0
     environment:
       MP_DATABASE: /data/mailpit.db
       MP_MAX_MESSAGES: 500

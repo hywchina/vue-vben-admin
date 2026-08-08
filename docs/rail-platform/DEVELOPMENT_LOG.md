@@ -1,5 +1,12 @@
 # 二次开发记录
 
+## 2026-08-08：Linux 开发环境镜像源调整
+
+- 开发 Compose 的 PostgreSQL 改用 `m.daocloud.io/docker.io/library/postgres:17.6-alpine`，避免开发机直连 Docker Hub 超时。
+- Mailpit 改用 `m.daocloud.io/docker.io/axllent/mailpit:v1.30.0`，同样避免开发机直连 Docker Hub。
+- MinIO、镜像版本、端口、环境变量、健康检查和命名卷保持不变；不修改生产 Compose。
+- 开发 Compose 配置解析通过，后续仍通过 `pnpm dev:rail` 一键启动。
+
 ## 2026-08-08：核心平台模块分层重构
 
 - 从 `dev` 创建 `refactor-core-module`，以 `0c352a574` 标记未修改的原始基线，并建立独立中文 `REFACTOR_COMMITLOG.md`。

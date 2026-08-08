@@ -25,6 +25,8 @@
 
 也就是说，源码方式下 Docker 只负责数据库、文件存储和测试邮箱；前端与平台 API 仍在本地 Node.js 中运行，修改代码后可以热更新。
 
+为避免 Linux 开发机直接访问 Docker Hub 超时，开发 Compose 中 PostgreSQL 和 Mailpit 使用 DaoCloud 的 Docker Hub 前缀镜像；镜像版本、容器环境、端口和数据卷均保持不变。MinIO 继续使用 Quay 官方镜像。生产 Compose 的镜像来源不受此开发环境调整影响。
+
 ### 方式 B：Docker 单机内网部署
 
 适合在一台长期运行的 Linux、macOS 或 Windows 主机上供内网用户访问。使用 `compose.production.yaml`。
