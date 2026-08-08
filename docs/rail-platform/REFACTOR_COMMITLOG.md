@@ -157,3 +157,9 @@
 - `pnpm typecheck:rail`：通过。
 - `pnpm test:rail`：通过，API 25 项、Web 9 项。
 - `pnpm build:rail`：通过，活动 Web 产物版本为 0.1.0。
+
+## 2026-08-08 `build(project): refresh internal vite config`
+
+- **目的**：消除内部 Vite 配置历史构建产物造成的运行时上游文案残留，保证源码、构建产物和启动行为一致。
+- **改动**：轨道平台启动与构建命令先生成 `@vben/vite-config` 当前产物；移除旧文档站、Nitro Mock 和懒加载示例专用依赖；同步锁文件与验收记录。
+- **验证**：完整规范检查、类型检查、单元测试和生产构建通过；真实平台集成验收与浏览器登录验收通过。
