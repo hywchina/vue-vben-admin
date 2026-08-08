@@ -29,4 +29,29 @@ describe('comfyUI workflow catalog', () => {
       }
     }
   });
+
+  it('uses explicit current-node wiring for EasyMark region outputs', async () => {
+    const loadWorkflow = async (fileName: string) =>
+      JSON.parse(
+        await readFile(
+          resolve(process.cwd(), 'workflows/comfyui', fileName),
+          'utf8',
+        ),
+      ) as Record<
+        string,
+        { class_type: string; inputs: Record<string, unknown> }
+      >;
+    const region = await loadWorkflow('region-edit-v1.json');
+    const marker = await loadWorkflow('region-marker-edit-v1.json');
+
+    expect(region['291']?.inputs.context).toEqual(['277', 0]);
+    expect(marker['363']?.inputs.context).toEqual(['277', 0]);
+    expect(marker['366']?.inputs.images).toEqual(['359', 1]);
+    expect(Object.values(region)).not.toContainEqual(
+      expect.objectContaining({ class_type: 'Anything Everywhere' }),
+    );
+    expect(Object.values(marker)).not.toContainEqual(
+      expect.objectContaining({ class_type: 'Anything Everywhere' }),
+    );
+  });
 });

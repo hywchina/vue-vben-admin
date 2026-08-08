@@ -6,7 +6,7 @@
 
 正式能力目录已扩展为 18 项，覆盖文生图、LoRA、单/多图编辑、局部重绘、扩图、分区标记、镜头控制、图片理解、文本生成、放大修复和多视图生三维。所有能力共用工作流注册、不可变版本、参数/资产/输出映射和独立 Worker，不复制任务系统。
 
-本机 HTTPS ComfyUI 已接入，第一批基础协议能力完成真实 GPU 推理；其余能力仍保留进程内模拟服务测试并按批次执行真实验收。运行时代码没有静态结果或模拟成功分支；未配置 ComfyUI 时稳定返回 `ADAPTER_NOT_CONFIGURED`。当前验收矩阵和微调记录见 [COMFYUI_LIVE_SERVICE_HANDOFF.md](./COMFYUI_LIVE_SERVICE_HANDOFF.md)。
+本机 HTTPS ComfyUI 已接入，18 项能力均已完成真实 GPU 推理和平台资产回写验收，同时保留进程内模拟服务测试作为快速回归。运行时代码没有静态结果或模拟成功分支；未配置 ComfyUI 时稳定返回 `ADAPTER_NOT_CONFIGURED`。当前验收矩阵和微调记录见 [COMFYUI_LIVE_SERVICE_HANDOFF.md](./COMFYUI_LIVE_SERVICE_HANDOFF.md)。
 
 ## 2. 总体架构
 

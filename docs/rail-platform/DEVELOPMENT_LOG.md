@@ -442,4 +442,8 @@
 - 真实服务预检从“仅检查节点类型”扩展为同时检查静态枚举值，并将只存在于前端控件的附加字段作为兼容性提示输出；18 项能力全部通过阻断项预检。
 - 第一批真实推理通过：文生图、单图设计编辑、文本生成、多视图生三维，输出分别登记为项目图片、文本和 GLB 资产。
 - 多视图生三维在极低测试参数下产生空网格，平台正确返回 `COMFYUI_OUTPUT_MISSING`；使用工作流默认 `20 steps / 3072` 后成功登记约 24.4 MiB GLB。同步移除 `SaveGLB` 已废弃的 `image` 输入。
-- 验证：Platform API TypeScript 类型检查通过；18 项真实服务预检通过。其余 14 项能力继续按输入编组、特殊输入和全量效果三个批次验收。
+- 第二批 8 项真实推理通过：LoRA、多图融合、图片理解、放大修复、单视角镜头控制、多视角镜头生成、Base 双图编辑和 KV 双图编辑；多视角镜头一次登记 5 张图片。
+- 第三批屏幕捕获、单图/参考图遮罩、智能扩图直接通过；两项 EasyMark 分区首次被真实服务拒绝，原因是当前 `sum_stack_flux2_Klein` 要求显式 `context`。
+- 修复两项分区工作流：移除 `Anything Everywhere` 隐式广播并直接连接 `sum_load_adv` 上下文；编号分区的 `SaveImage` 改为保存采样器生成图而非缩放原图；移除旧前端预览节点和过期尺寸字段。
+- 最终结果：18/18 项能力均完成真实 GPU 推理和项目资产回写。验证覆盖单/多资产上传、Data URL、Alpha 遮罩、EasyMark 笔画、批量图片、内联文本、GLB、长队列轮询和 Worker 租约。
+- 完整门禁通过：`pnpm lint`、`pnpm typecheck:rail`、42 项 Platform API 与 9 项 Web 单元测试、真实 PostgreSQL/MinIO 集成验收、模拟 ComfyUI Worker 集成验收和 `pnpm build:rail`。
