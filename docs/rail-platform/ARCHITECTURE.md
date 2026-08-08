@@ -169,7 +169,7 @@ flowchart TB
 | 操作日志 | `/audit` | Vue、Pinia、服务端分页与筛选 | 管理员查看全部账号，普通用户只查看自身；区分姓名、用户名和角色快照 | `audit_events` |
 | AI 设计助手 | 全局右下角弹窗 | Vue Teleport、Iconify、预签名上传 | 个人历史对话、文本、图片/音视频/文档、预览、下载、清空与服务状态 | AI 助手 API + PostgreSQL + MinIO/S3 |
 
-前端 `usePlatformStore` 只缓存当前会话页面所需的 API 返回值，不再把项目、资产或任务的业务真值写入本地静态数据。`modules/platform/data.ts` 仍保留早期样例常量，但当前运行链路没有引用它，应视为待清理的遗留文件，而不是数据源。
+前端 `usePlatformStore` 只缓存当前会话页面所需的 API 返回值，不把项目、资产或任务的业务真值写入本地静态数据。早期 `modules/platform/data.ts` 样例常量已在核心模块重构中删除，平台领域目录不再保留可被误用的运行时假数据。
 
 ## 6. 平台 API 模块
 
@@ -410,7 +410,7 @@ flowchart LR
 ```ts
 interface CapabilityAdapter {
   cancel(externalJobId: string): Promise<void>;
-  getStatus(externalJobId: string): Promise<PlatformJob>;
+  getStatus(externalJobId: string): Promise<CapabilityExecutionSnapshot>;
   submit(input: {
     assetIds: string[];
     parameters: Record<string, unknown>;
@@ -525,7 +525,11 @@ vue-vben-admin/
 │       ├── middleware/                 # Request ID 等横切逻辑
 │       ├── migrations/                 # PostgreSQL 增量迁移
 │       ├── scripts/                    # migrate / seed / reset-users
-│       └── utils/                      # 身份、权限、存储、审计、领域工具
+│       └── utils/                      # 兼容导出层与分层共享实现
+│           ├── domain/                 # 资产、项目、AI、审计、通知、能力契约
+│           ├── identity/               # 身份、角色、密码、令牌、会话
+│           ├── http/                   # Cookie、请求、校验、响应与错误
+│           └── infrastructure/         # 配置、数据库、对象存储、邮件、健康检查
 ├── packages/                           # Vben 通用 UI、布局、Store、Request 等包
 ├── internal/                           # Vite、TypeScript、Lint 等仓库工具链
 ├── deploy/rail-platform/compose.yaml   # PostgreSQL + MinIO + 开发 Mailpit
@@ -572,9 +576,11 @@ flowchart LR
 - 大数据量列表的服务端分页、缩略图派生、病毒扫描、对象生命周期和配额管理。
 - Web/API 的正式容器镜像、反向代理、TLS、集中日志、指标、告警、备份和恢复演练。
 
-### 当前遗留代码
+### 当前重构兼容边界
 
-- `apps/web-antd/src/modules/platform/data.ts` 是第一版静态样例，当前 Store 没有引用。后续清理时可删除，但删除前应先确认没有测试或文档继续依赖。
+- `apps/platform-api/utils` 根目录的同名文件是兼容导出层，保留现有 API 路由、脚本和 Nitro 自动导入稳定；新增实现必须进入 `domain`、`identity`、`http` 或 `infrastructure`。
+- `apps/web-antd/src/api/platform/index.ts` 与 `modules/platform/types.ts` 是领域统一导出入口，具体实现和类型按领域拆分。
+- 原始模板的 `views/dashboard`、`views/demos` 和其他 Web 变体不在平台核心路由中，本轮隔离观察，不做无引用证据不足的删除。
 
 ## 12. 新模块接入原则
 
