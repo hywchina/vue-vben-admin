@@ -2,8 +2,7 @@
 
 > 适用系统：Linux、macOS、Windows 10/11。
 >
-> 目标：另一台电脑只拿到代码和本文档，即可完成安装、启动、验证、重启、升级和备份。
-> 项目基线：Node.js 24.16.0、pnpm 11.16.0、PostgreSQL 17.6、MinIO、Nitro、Vue 3。
+> 目标：另一台电脑只拿到代码和本文档，即可完成安装、启动、验证、重启、升级和备份。项目基线：Node.js 24.16.0、pnpm 11.16.0、PostgreSQL 17.6、MinIO、Nitro、Vue 3。
 
 ## 1. 先选择部署方式
 

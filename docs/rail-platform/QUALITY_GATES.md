@@ -57,6 +57,6 @@
 | 持续集成 | `.github/workflows/rail-platform-ci.yml`        |
 | 开发记录 | `DEVELOPMENT_LOG.md`                            |
 | 重构基线 | Git `0c352a574`，`REFACTOR_COMMITLOG.md`        |
-| 重构范围 | `REFACTOR_INVENTORY.md`                        |
+| 重构范围 | `REFACTOR_INVENTORY.md`                         |
 
 核心模块重构期间，Web 状态测试入口覆盖 `src/store/platform*.test.ts`，同时验证 Pinia 协调行为和抽取后的纯状态规则。平台 API 测试随实现放在 `utils/domain`、`utils/identity` 和 `utils/infrastructure` 对应目录，兼容导出层不复制测试逻辑。

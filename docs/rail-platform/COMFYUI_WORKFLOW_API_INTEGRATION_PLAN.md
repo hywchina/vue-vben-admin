@@ -3,12 +3,10 @@
 > 文档状态：待执行  
 > 前置条件：核心模块重构完成  
 > 适用范围：ComfyUI API 工作流接入 `项目 - 资产 - 任务 - AI/外部能力插件化平台`  
-> 输入分支：主平台 `refactor-core-module`
-> 输出分支：主平台 `refactor-webUI`
-> 参考资料（只读，不改动）：
+> 输入分支：主平台 `refactor-core-module` 输出分支：主平台 `refactor-webUI` 参考资料（只读，不改动）：
+>
 > - `/Users/huyanwei/projects/ComfyUI`
-> - `/Users/huyanwei/projects/ComfyUI/webUI`
-> 实施范围：仅修改 `vue-vben-admin` 项目，不修改原始 `ComfyUI` 项目
+> - `/Users/huyanwei/projects/ComfyUI/webUI` 实施范围：仅修改 `vue-vben-admin` 项目，不修改原始 `ComfyUI` 项目
 
 ## 1. 任务背景
 
@@ -218,8 +216,7 @@ ComfyUI 是独立于主平台之外的工作流编排与执行系统。它支持
 
 建议只选 1 个最典型、最稳定、输入输出最清晰的工作流作为样板接入，例如：
 
-- 文生图
-或
+- 文生图或
 - 单图编辑/图生图
 
 建议优先文生图，因为：
