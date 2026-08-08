@@ -361,7 +361,11 @@ onBeforeUnmount(() => releasePendingFiles());
                   class="rail-ai-status-dot"
                   :class="{ 'is-ready': status?.configured }"
                 ></span>
-                {{ status?.configured ? 'AI 服务已连接' : 'AI 服务待接入' }}
+                {{
+                  status?.configured
+                    ? `${status.provider} · ${status.model}`
+                    : 'AI 服务待接入'
+                }}
               </div>
             </div>
           </div>

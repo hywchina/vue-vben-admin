@@ -17,3 +17,9 @@ export function getJobsApi(projectId: string) {
 export function createJobApi(input: CreateJobInput) {
   return requestClient.post<PlatformJob>('/jobs', input);
 }
+
+export function cancelJobApi(jobId: string) {
+  return requestClient.post<{ id: string; status: PlatformJob['status'] }>(
+    `/jobs/${jobId}/cancel`,
+  );
+}

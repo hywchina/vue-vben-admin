@@ -668,3 +668,9 @@ COMFYUI_OUTPUT_BUCKET_PREFIX=comfyui
 ---
 
 本规划文档用于指导 ComfyUI 工作流 API 接入任务。当前阶段的重点是明确主平台接入方式、任务闭环、资产归属、主平台独立配置能力与后续能力化演进路径，而不是立即进入代码实现或依赖本地 ComfyUI 真实联调。
+
+## 实施状态（2026-08-08）
+
+第二阶段已按“完整实现”范围落地：工作流注册与不可变版本、管理员管理、能力映射、独立持久化 Worker、取消与恢复、输入/输出资产登记，以及能力自适应工作区。当前已导入并发布 18 项能力；因本机 ComfyUI 未启动，目录映射和协议已完成模拟测试，真实 GPU/模型联调按 [COMFYUI_LIVE_SERVICE_HANDOFF.md](./COMFYUI_LIVE_SERVICE_HANDOFF.md) 执行。
+
+详细代码目录对应关系、数据模型、状态机、配置、错误码和已知限制见 [COMFYUI_WORKFLOW_INTEGRATION.md](./COMFYUI_WORKFLOW_INTEGRATION.md)，逐项变更见 [COMFYUI_WORKFLOW_COMMITLOG.md](./COMFYUI_WORKFLOW_COMMITLOG.md)。

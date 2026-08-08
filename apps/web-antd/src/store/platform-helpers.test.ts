@@ -21,9 +21,10 @@ function createJob(overrides: Partial<PlatformJob> = {}): PlatformJob {
 }
 
 describe('platform store helpers', () => {
-  it('recognizes only queued and running jobs as active', () => {
+  it('recognizes queued, running and cancelling jobs as active', () => {
     expect(isActivePlatformJob(createJob({ status: 'queued' }))).toBe(true);
     expect(isActivePlatformJob(createJob({ status: 'running' }))).toBe(true);
+    expect(isActivePlatformJob(createJob({ status: 'cancelling' }))).toBe(true);
     expect(isActivePlatformJob(createJob({ status: 'failed' }))).toBe(false);
     expect(isActivePlatformJob(createJob({ status: 'succeeded' }))).toBe(false);
   });

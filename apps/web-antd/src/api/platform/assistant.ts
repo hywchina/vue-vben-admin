@@ -6,6 +6,7 @@ export interface AiAssistantStatus {
   configured: boolean;
   maxAttachmentBytes: number;
   model: string;
+  provider: null | string;
 }
 
 export interface AiConversation {

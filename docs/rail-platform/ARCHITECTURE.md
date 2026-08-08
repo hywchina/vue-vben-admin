@@ -1,8 +1,8 @@
 # 当前系统架构说明
 
-> 更新时间：2026-08-04。本文以当前仓库代码、数据库迁移和部署配置为准，不把规划中的外部能力描述成已经完成的功能。
+> 更新时间：2026-08-08。本文以当前仓库代码、数据库迁移和部署配置为准，不把模拟协议测试描述成真实 GPU 推理已验证。
 
-当前项目已经从纯前端演示升级为可持久化的平台框架。登录、企业邮箱找回密码、用户、权限、项目、资产、任务台账、通知、审计以及 AI 助手会话使用真实 API、PostgreSQL、MinIO 和 SMTP。AI 助手的外部 API 转发边界已实现；ComfyUI、LoRA、2D 生 3D、报告生成等任务型能力适配器仍待开发。
+当前项目已经从纯前端演示升级为可持久化的平台框架。登录、企业邮箱找回密码、用户、权限、项目、资产、任务、通知、审计和 AI 助手会话使用真实 API、PostgreSQL、MinIO 和 SMTP。ComfyUI 已实现 18 项工作流目录、能力映射、独立 Worker、媒体输入和图片/文本/3D 输出登记；当前环境尚未启动真实 ComfyUI，因此真实 GPU 推理仍是外部验收项。
 
 ## 1. 核心架构结论
 
@@ -62,15 +62,15 @@ flowchart TB
   Identity -->|"密码重置邮件"| Mail
 
   subgraph Capability["外部能力层"]
-    ChatAdapter["AI 助手适配器<br/>已实现转发边界"]
-    JobAdapter["任务调度器<br/>待实现"]
+    ChatAdapter["AI 助手适配器<br/>GeekAI / OpenAI 兼容协议"]
+    JobAdapter["ComfyUI 独立 Worker<br/>已实现"]
     External["LLM / ComfyUI / LoRA / 2D→3D / 报告服务"]
     ChatAdapter --> External
-    JobAdapter -.-> External
+    JobAdapter --> External
   end
 
   Domains -->|"可配置的同步聊天请求"| ChatAdapter
-  Domains -. "后续：调度任务、回传状态、登记输出" .-> JobAdapter
+  Domains -->|"调度任务、回传状态、登记输出"| JobAdapter
 ```
 
 实线表示当前已经存在的运行链路；虚线表示已经预留数据契约，但尚未实现的能力接入链路。
@@ -392,18 +392,21 @@ sequenceDiagram
 ```mermaid
 flowchart LR
   Work["应用工作区<br/>projectId + assetIds + 业务参数"] --> JobAPI["POST /jobs"]
-  JobAPI --> Verify["校验任务权限、项目范围、输入资产"]
-  Verify --> Config{"adapter_config.enabled?"}
-  Config -->|"否：当前默认"| Failed["写入 failed 任务<br/>ADAPTER_NOT_CONFIGURED"]
+  JobAPI --> Verify["校验权限、项目范围、能力绑定<br/>参数和输入资产契约"]
+  Verify --> Config{"ComfyUI 适配器可用?"}
+  Config -->|"否"| Failed["写入 failed 任务<br/>稳定错误码"]
   Failed --> Notice["写入通知和审计"]
   Notice --> UI["任务中心显示真实失败记录"]
-  Config -->|"是"| Queued["写入 queued 任务"]
-  Queued -. "当前缺少调度器，流程会停在这里" .-> Adapter["能力适配器"]
-  Adapter -. "后续" .-> External["外部服务"]
-  External -. "后续状态和文件" .-> Output["更新任务 + 登记输出资产 + job_outputs"]
+  Config -->|"是"| Queued["写入 queued 任务<br/>创建 job_execution"]
+  Queued --> Worker["独立 Worker 租约并执行"]
+  Worker --> Inputs["从对象存储读取资产<br/>上传 ComfyUI 输入目录"]
+  Inputs --> Adapter["按版本映射注入工作流 JSON"]
+  Adapter --> External["ComfyUI /prompt、/history、/view"]
+  External --> Output["更新任务 + 登记输出资产 + job_outputs"]
+  Output --> Notice
 ```
 
-因此，当前系统不会伪造 ComfyUI、LoRA 或大模型的成功结果。即使手工把某个应用的 `adapter_config.enabled` 设为 `true`，目前也只有任务入队记录，没有实际调度器消费该任务。
+因此，当前系统已具备工作流注册、能力绑定、持久化任务、独立 Worker、输入资产上传、结果回收和输出资产登记的闭环。未配置或无法访问 ComfyUI 时必须明确失败，不会伪造成功结果；真实 ComfyUI 的节点、模型和输出字段兼容性按 `COMFYUI_LIVE_SERVICE_HANDOFF.md` 完成上线前预检与微调。
 
 后续适配器应只接收平台语义数据：
 
@@ -567,9 +570,8 @@ flowchart LR
 ### 已预留但尚未完成
 
 - AI 助手的具体内网模型服务需部署时配置；平台端转发适配器已完成。
-- ComfyUI、LoRA、2D 生 3D、报告等任务型能力适配器。
-- 任务队列、后台 Worker、外部状态回调/轮询、重试和真实取消联动。
-- 外部输出上传并自动登记为 `job_outputs` 的服务流程。
+- 报告等尚未实现的其他任务型能力适配器。
+- ComfyUI 目标服务的真实 GPU、模型、自定义节点和效果验收。
 - 项目成员邀请、移除和 owner/editor/viewer 管理接口与页面。
 - 管理员创建用户、项目编辑/归档、应用配置/发布管理页面。
 - 资产版本 API 已存在，但前端尚未提供版本历史和上传新版本界面；任务取消 API 已存在，但任务中心尚未接按钮。
@@ -593,3 +595,9 @@ flowchart LR
 5. 任务、输入资产、输出资产和外部任务编号必须能够互相追溯。
 6. 状态更新、取消、失败和重试都必须写审计，必要时生成站内通知。
 7. 新能力不能直接修改 Web 固定外壳，只能提供应用定义、参数 Schema、适配器和结果呈现组件。
+
+## ComfyUI 工作流执行子系统（2026-08-08）
+
+ComfyUI 采用“平台 API 创建持久化任务、独立 Worker 执行、输入资产受控上传、输出登记为项目资产”的接入方式。浏览器不直接访问 ComfyUI。工作流定义与版本、能力绑定、任务执行、输出回执、租约和 Worker 心跳保存在 PostgreSQL；输入与输出文件保存在 MinIO/S3 私有桶。
+
+完整架构图、数据关系图、状态机和代码目录映射见 [COMFYUI_WORKFLOW_INTEGRATION.md](./COMFYUI_WORKFLOW_INTEGRATION.md)。当前能力目录包含 18 项独立工作流，真实服务联调和微调见 [COMFYUI_LIVE_SERVICE_HANDOFF.md](./COMFYUI_LIVE_SERVICE_HANDOFF.md)。

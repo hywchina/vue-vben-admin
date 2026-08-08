@@ -56,6 +56,7 @@ const projects: PlatformProject[] = [firstProject, secondProject];
 
 const application: PlatformApplication = {
   acceptedAssetTypes: ['image'],
+  adapterConfigured: false,
   category: 'generation',
   color: '#b91c32',
   description: '测试应用',

@@ -54,3 +54,13 @@ docker compose -f deploy/rail-platform/compose.yaml exec -T postgres \
 - **疑似越权**：记录时间、用户、项目、Request ID 和路径，冻结相关刷新会话，保留并导出审计现场。
 
 错误响应不得返回堆栈或数据库信息。日志可记 Request ID、路径、状态、耗时、账号快照和对象编号，但不得记录密码、令牌、服务密钥、聊天正文或文件内容。
+
+## ComfyUI Worker 运维（2026-08-08）
+
+- 管理员在“工作流管理”查看最近 Worker 心跳；超过一分钟没有心跳视为异常。
+- `ADAPTER_NOT_CONFIGURED`：检查 API 与 Worker 的 `COMFYUI_API_URL` 是否一致且容器网络可达。
+- `COMFYUI_SUBMIT_UNKNOWN`：提交确认窗口发生进程或网络中断；系统为避免重复生成不会自动重投，用户确认后重新创建任务。
+- `COMFYUI_STATUS_FAILED`：连续状态轮询失败超过重试上限，检查 ComfyUI 进程、反向代理和超时设置。
+- `COMFYUI_OUTPUT_MISSING`：检查绑定版本的输出节点/字段是否仍与 ComfyUI API JSON 一致。
+- `OUTPUT_REGISTRATION_FAILED`：检查对象存储可用性、输出大小、MIME/扩展名和项目资产约束。
+- 停止 Worker 不会删除任务；恢复服务后过期租约会重新被领取。不得通过直接修改任务为成功来处理故障。

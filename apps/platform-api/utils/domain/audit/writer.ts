@@ -2,6 +2,8 @@ import type { H3Event } from 'h3';
 
 import type { CurrentIdentity } from '../../identity';
 
+import { randomUUID } from 'node:crypto';
+
 import { useDatabase } from '../../database';
 import { getRequestMetadata } from '../../request';
 
@@ -82,4 +84,26 @@ export async function writeRequestAudit(
     targetId: `${method} ${path}`,
     targetType: 'endpoint',
   });
+}
+
+export async function writeSystemAudit(input: AuditInput) {
+  const sql = useDatabase();
+  await sql`
+    INSERT INTO audit_events (
+      actor_id, action, module, target_type, target_id, result,
+      details, request_id, actor_username, actor_real_name, actor_roles
+    ) VALUES (
+      null,
+      ${input.action},
+      ${input.module},
+      ${input.targetType},
+      ${input.targetId},
+      ${input.result ?? 'success'},
+      ${sql.json(JSON.parse(JSON.stringify(input.details ?? {})))},
+      ${`worker:${randomUUID()}`},
+      null,
+      '平台任务 Worker',
+      ARRAY['system']::text[]
+    )
+  `;
 }

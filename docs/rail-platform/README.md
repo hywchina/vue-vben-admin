@@ -224,3 +224,9 @@ pnpm build:rail
 - [质量门禁与交付证据](./QUALITY_GATES.md)
 - [运行、发布与故障处理手册](./OPERATIONS.md)
 - [二次开发详细记录](./DEVELOPMENT_LOG.md)
+
+## ComfyUI 文生图集成（2026-08-08）
+
+平台已完成《ComfyUI 工作流 API 集成计划》第二阶段：工作流注册与不可变版本、管理员管理、能力映射、独立持久化 Worker、任务取消/恢复和输出资产登记。当前只正式发布 `text-to-image`，后续工作流通过同一注册与绑定机制扩展。
+
+架构、目录对应关系、数据模型、状态机、配置和运维入口见 [COMFYUI_WORKFLOW_INTEGRATION.md](./COMFYUI_WORKFLOW_INTEGRATION.md)。本机没有真实 ComfyUI，运行时未提供模拟成功；`COMFYUI_API_URL` 为空时文生图明确显示不可执行。

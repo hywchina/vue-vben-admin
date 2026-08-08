@@ -542,3 +542,9 @@ Intel/AMD (`amd64`) 构建的镜像不能直接用于 ARM (`arm64`) 机器。App
 - [ ] 已记录防火墙、域名/IP、SMTP、外部 AI 地址和负责人。
 
 通过以上检查后，系统框架才算在该机器部署完成。外部 AI、ComfyUI、LoRA 等服务仍是独立模块，需要按照各自部署文档运行，再把服务地址和密钥配置到平台适配器中。
+
+## ComfyUI Worker 部署（2026-08-08）
+
+生产 Compose 新增独立 `platform-worker` 服务，与 Platform API 使用同一数据库、对象存储和 ComfyUI 服务端配置。至少配置 `COMFYUI_API_URL`；如网关要求鉴权，再配置 `COMFYUI_API_TOKEN`。请求超时、轮询间隔、租约时长和输出上限使用 `.env.production.example` 中的 `COMFYUI_*` 变量。
+
+ComfyUI 可以部署在另一台 GPU 主机，但地址必须从 API/Worker 容器网络可达，不能填写只对浏览器或宿主机有效的 `localhost`。升级时先运行迁移，再启动 API 与 Worker；不要启动依赖新表的 Worker 后再补迁移。

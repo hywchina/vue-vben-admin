@@ -1,5 +1,6 @@
 export type JobStatus =
   | 'cancelled'
+  | 'cancelling'
   | 'failed'
   | 'queued'
   | 'running'
@@ -9,6 +10,11 @@ export interface PlatformJob {
   appKey: string;
   createdAt: string;
   duration?: string;
+  error?: {
+    code: string;
+    message: string;
+  };
+  externalReference?: string;
   id: string;
   inputAssetIds: string[];
   name: string;
@@ -18,4 +24,5 @@ export interface PlatformJob {
   projectId: string;
   stage: string;
   status: JobStatus;
+  workflowVersion?: number;
 }

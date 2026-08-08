@@ -22,6 +22,12 @@ export interface PlatformConfig {
   bootstrapUser2Password: string;
   bootstrapUser2Username: string;
   bootstrapDemoUsers: boolean;
+  comfyuiApiToken: null | string;
+  comfyuiApiUrl: null | string;
+  comfyuiLeaseSeconds: number;
+  comfyuiMaxOutputBytes: number;
+  comfyuiPollIntervalMs: number;
+  comfyuiTimeoutMs: number;
   corsAllowedOrigins: string[];
   databaseUrl: string;
   isProduction: boolean;
@@ -138,6 +144,43 @@ export function validateProductionEnvironment(environment: NodeJS.ProcessEnv) {
       '配置 AI_ASSISTANT_API_KEY 时必须同时配置 AI_ASSISTANT_API_URL',
     );
   }
+  if (
+    environment.AI_ASSISTANT_API_URL?.trim() &&
+    !environment.AI_ASSISTANT_API_KEY?.trim()
+  ) {
+    issues.push(
+      '配置 AI_ASSISTANT_API_URL 时必须同时配置 AI_ASSISTANT_API_KEY',
+    );
+  }
+  if (environment.AI_ASSISTANT_API_KEY?.includes('CHANGE_ME')) {
+    issues.push('AI_ASSISTANT_API_KEY 仍包含 CHANGE_ME 占位值');
+  }
+  if (environment.AI_ASSISTANT_API_URL?.trim()) {
+    try {
+      const url = new URL(environment.AI_ASSISTANT_API_URL);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        issues.push('AI_ASSISTANT_API_URL 必须使用 http 或 https');
+      }
+    } catch {
+      issues.push('AI_ASSISTANT_API_URL 不是有效地址');
+    }
+  }
+  if (
+    environment.COMFYUI_API_TOKEN?.trim() &&
+    !environment.COMFYUI_API_URL?.trim()
+  ) {
+    issues.push('配置 COMFYUI_API_TOKEN 时必须同时配置 COMFYUI_API_URL');
+  }
+  if (environment.COMFYUI_API_URL?.trim()) {
+    try {
+      const url = new URL(environment.COMFYUI_API_URL);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        issues.push('COMFYUI_API_URL 必须使用 http 或 https');
+      }
+    } catch {
+      issues.push('COMFYUI_API_URL 不是有效地址');
+    }
+  }
 
   return issues;
 }
@@ -176,7 +219,7 @@ export function getConfig(): PlatformConfig {
       50 * 1024 * 1024,
     ),
     aiAssistantModel:
-      process.env.AI_ASSISTANT_MODEL?.trim() || 'rail-cabin-assistant',
+      process.env.AI_ASSISTANT_MODEL?.trim() || 'deepseek-v4-flash-0731',
     aiAssistantTimeoutMs: positiveInteger(
       process.env.AI_ASSISTANT_TIMEOUT_MS,
       60_000,
@@ -207,6 +250,24 @@ export function getConfig(): PlatformConfig {
     bootstrapDemoUsers: booleanValue(
       process.env.BOOTSTRAP_DEMO_USERS,
       !isProduction,
+    ),
+    comfyuiApiToken: process.env.COMFYUI_API_TOKEN?.trim() || null,
+    comfyuiApiUrl: process.env.COMFYUI_API_URL?.trim() || null,
+    comfyuiLeaseSeconds: positiveInteger(
+      process.env.COMFYUI_WORKER_LEASE_SECONDS,
+      90,
+    ),
+    comfyuiMaxOutputBytes: positiveInteger(
+      process.env.COMFYUI_MAX_OUTPUT_BYTES,
+      100 * 1024 * 1024,
+    ),
+    comfyuiPollIntervalMs: positiveInteger(
+      process.env.COMFYUI_POLL_INTERVAL_MS,
+      1500,
+    ),
+    comfyuiTimeoutMs: positiveInteger(
+      process.env.COMFYUI_API_TIMEOUT_MS,
+      30_000,
     ),
     corsAllowedOrigins: commaSeparatedValues(
       process.env.CORS_ALLOWED_ORIGINS,

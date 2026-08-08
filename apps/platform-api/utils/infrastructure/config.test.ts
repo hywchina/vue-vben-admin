@@ -53,6 +53,36 @@ describe('production configuration validation', () => {
     ).toContain(
       '配置 AI_ASSISTANT_API_KEY 时必须同时配置 AI_ASSISTANT_API_URL',
     );
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        AI_ASSISTANT_API_URL: 'https://geekai.co/api/v1/chat/completions',
+      }),
+    ).toContain(
+      '配置 AI_ASSISTANT_API_URL 时必须同时配置 AI_ASSISTANT_API_KEY',
+    );
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        AI_ASSISTANT_API_KEY: 'CHANGE_ME_GEEKAI_KEY',
+        AI_ASSISTANT_API_URL: 'https://geekai.co/api/v1/chat/completions',
+      }),
+    ).toContain('AI_ASSISTANT_API_KEY 仍包含 CHANGE_ME 占位值');
+  });
+
+  it('validates ComfyUI URL and token pairing', () => {
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        COMFYUI_API_TOKEN: 'secret',
+      }),
+    ).toContain('配置 COMFYUI_API_TOKEN 时必须同时配置 COMFYUI_API_URL');
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        COMFYUI_API_URL: 'file:///tmp/comfyui',
+      }),
+    ).toContain('COMFYUI_API_URL 必须使用 http 或 https');
   });
 
   it('rejects deployment template placeholders', () => {

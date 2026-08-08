@@ -8,6 +8,7 @@ const props = defineProps<{
 const labelMap: Record<string, string> = {
   available: '可使用',
   cancelled: '已取消',
+  cancelling: '取消中',
   disabled: '已停用',
   enabled: '已启用',
   failed: '失败',

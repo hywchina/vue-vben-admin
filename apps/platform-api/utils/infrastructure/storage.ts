@@ -137,6 +137,33 @@ export async function inspectObject(objectKey: string) {
   );
 }
 
+export async function readObject(objectKey: string) {
+  const config = getConfig();
+  const response = await useInternalClient().send(
+    new GetObjectCommand({ Bucket: config.s3Bucket, Key: objectKey }),
+  );
+  if (!response.Body) throw new Error('对象存储返回了空文件');
+  return new Uint8Array(await response.Body.transformToByteArray());
+}
+
+export async function storeObject(
+  objectKey: string,
+  mimeType: string,
+  body: Uint8Array,
+) {
+  const config = getConfig();
+  await ensureStorageBucket();
+  return await useInternalClient().send(
+    new PutObjectCommand({
+      Body: body,
+      Bucket: config.s3Bucket,
+      ContentLength: body.byteLength,
+      ContentType: mimeType,
+      Key: objectKey,
+    }),
+  );
+}
+
 export async function deleteObject(objectKey: string) {
   const config = getConfig();
   await useInternalClient().send(

@@ -63,3 +63,13 @@
 核心模块重构期间，Web 状态测试入口覆盖 `src/store/platform*.test.ts`，同时验证 Pinia 协调行为和抽取后的纯状态规则。平台 API 测试随实现放在 `utils/domain`、`utils/identity` 和 `utils/infrastructure` 对应目录，兼容导出层不复制测试逻辑。
 
 2026-08-08 重构分支交付证据：规范检查、目标类型检查、34 项平台单元/状态测试、真实 PostgreSQL/MinIO 集成验收、Nitro/Web 生产构建、生产 Compose 解析和管理员浏览器冒烟全部通过。生产备份恢复演练没有在本次纯代码重构中重复执行，正式上线前仍必须按 `OPERATIONS.md` 完成。
+
+## ComfyUI 工作流发布门禁（2026-08-08）
+
+- 工作流 API JSON、参数节点、输入字段和输出节点必须在登记时完成结构校验。
+- 用户能力接口不得返回节点编号、原始工作流、外部地址或服务端令牌。
+- 任务必须固定 `workflow_version_id`，切换绑定后历史和运行中任务不得漂移。
+- 必须验证页面关闭后继续、Worker 重启租约恢复、幂等输出回执、取消、超时和连续轮询失败。
+- 必须使用临时模拟 ComfyUI 验证 `/prompt`、`/history`、`/queue`、`/view` 和取消协议。
+- 发布到真实环境前必须补做真实 ComfyUI、真实模型、MinIO 资产预览和 GPU 长任务验收；本机模拟测试不能替代该门禁。
+- `ADAPTER_NOT_CONFIGURED`、外部执行失败或输出登记失败时不得产生成功任务或占位资产。

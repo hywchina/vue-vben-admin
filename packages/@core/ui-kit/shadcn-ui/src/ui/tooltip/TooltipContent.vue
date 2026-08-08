@@ -41,6 +41,10 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits);
     <TooltipContent
       v-bind="{ ...forwarded, ...$attrs }"
       data-slot="tooltip-content"
+      style="
+        color: hsl(var(--popover-foreground));
+        background-color: hsl(var(--popover));
+      "
       :class="
         cn(
           'bg-primary text-primary-foreground animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-popup w-fit origin-(--reka-tooltip-content-transform-origin) rounded-md px-3 py-1.5 text-xs text-balance border border-border',
@@ -49,7 +53,7 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits);
       "
     >
       <slot></slot>
-      <TooltipArrow class="fill-accent stroke-gray-200" />
+      <TooltipArrow class="stroke-gray-200" style="fill: hsl(var(--popover))" />
     </TooltipContent>
   </TooltipPortal>
 </template>

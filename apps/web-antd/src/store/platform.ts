@@ -5,6 +5,7 @@ import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 
 import {
+  cancelJobApi,
   createJobApi,
   createProjectApi,
   createTextAssetApi,
@@ -191,6 +192,17 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     return job;
   }
 
+  async function cancelJob(jobId: string) {
+    const result = await cancelJobApi(jobId);
+    const job = jobs.value.find((item) => item.id === jobId);
+    if (job) {
+      job.status = result.status;
+      job.stage =
+        result.status === 'cancelling' ? '正在取消外部任务' : '任务已取消';
+    }
+    return result;
+  }
+
   async function loadAdministration() {
     const [nextUsers, nextRoles] = await Promise.all([
       getUsersApi(),
@@ -238,6 +250,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     auditEvents,
     auditScope,
     auditTotal,
+    cancelJob,
     createTextAsset,
     currentAssets,
     currentJobs,

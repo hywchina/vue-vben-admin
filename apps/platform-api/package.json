@@ -8,11 +8,14 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:reset-users": "tsx scripts/reset-users.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "dev": "nitro dev --port 5320",
+    "dev": "pnpm run --parallel \"/^(dev:api|worker)$/\"",
+    "dev:api": "nitro dev --port 5320",
     "prepare": "nitro prepare",
     "test": "vitest run",
-    "test:integration": "tsx scripts/integration-test.ts",
-    "typecheck": "tsc --noEmit"
+    "test:integration": "tsx scripts/integration-test.ts && tsx scripts/comfyui-worker-integration-test.ts",
+    "typecheck": "tsc --noEmit",
+    "worker": "tsx scripts/worker.ts",
+    "worker:once": "tsx scripts/worker.ts --once"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "catalog:",

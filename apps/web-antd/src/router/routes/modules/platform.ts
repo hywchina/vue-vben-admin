@@ -92,6 +92,16 @@ const routes: RouteRecordRaw[] = [
         name: 'PlatformAccess',
         path: 'access',
       },
+      {
+        component: () =>
+          import('#/views/platform/workflow-management/index.vue'),
+        meta: {
+          icon: 'lucide:workflow',
+          title: '工作流管理',
+        },
+        name: 'PlatformWorkflowManagement',
+        path: 'workflows',
+      },
     ],
   },
   {

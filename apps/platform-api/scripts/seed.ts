@@ -1,5 +1,9 @@
+import { readFile } from 'node:fs/promises';
+
 import { getConfig } from '../utils/config';
 import { closeDatabase, useDatabase } from '../utils/database';
+import { WORKFLOW_CATALOG } from '../utils/domain/workflows/catalog';
+import { seedWorkflowCatalogEntry } from '../utils/domain/workflows/repository';
 import { hashPassword } from '../utils/password';
 
 async function seed() {
@@ -35,6 +39,7 @@ async function seed() {
         ]
       : []),
   ] as const;
+  let adminId: null | string = null;
 
   for (const account of accounts) {
     const passwordHash = await hashPassword(account.password);
@@ -55,6 +60,7 @@ async function seed() {
     `;
 
     if (!user) throw new Error(`初始化账号失败：${account.username}`);
+    if (account.roleCode === 'admin') adminId = user.id;
 
     await sql`
       INSERT INTO user_roles (user_id, role_id)
@@ -68,9 +74,20 @@ async function seed() {
     `;
   }
 
+  for (const entry of WORKFLOW_CATALOG) {
+    const workflowJson = JSON.parse(
+      await readFile(
+        new URL(`../workflows/comfyui/${entry.fileName}`, import.meta.url),
+        'utf8',
+      ),
+    ) as unknown;
+    await seedWorkflowCatalogEntry(entry, workflowJson, adminId);
+  }
+
   console.warn(
     `平台账号已就绪：${accounts.map((account) => account.username).join('、')}`,
   );
+  console.warn(`ComfyUI 工作流目录已就绪：${WORKFLOW_CATALOG.length} 项能力`);
 }
 
 try {

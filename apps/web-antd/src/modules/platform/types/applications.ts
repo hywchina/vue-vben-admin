@@ -10,6 +10,8 @@ export type ApplicationStatus = 'available' | 'planned' | 'testing';
 
 export interface PlatformApplication {
   acceptedAssetTypes: AssetType[];
+  adapterConfigured: boolean;
+  capabilityCode?: string;
   category: ApplicationCategory;
   color: string;
   description: string;

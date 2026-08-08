@@ -20,16 +20,45 @@ export default apiHandler(async (event) => {
     throw new ApiError(409, 'JOB_NOT_CANCELLABLE', '当前任务状态不能取消');
   }
 
-  await sql`
-    UPDATE jobs
-    SET
-      status = 'cancelled',
-      progress = CASE WHEN progress > 99 THEN 99 ELSE progress END,
-      stage = '已由用户取消',
-      completed_at = now(),
-      updated_at = now()
-    WHERE id = ${jobId}
+  const [execution] = await sql<
+    { externalJobId: null | string; status: string }[]
+  >`
+    SELECT
+      status,
+      external_job_id AS "externalJobId"
+    FROM job_executions
+    WHERE job_id = ${jobId}
   `;
+  await (execution
+    ? sql.begin(async (transaction) => {
+        await transaction`
+        UPDATE job_executions
+        SET
+          status = 'cancel_requested',
+          next_poll_at = now(),
+          lease_expires_at = null,
+          updated_at = now()
+        WHERE job_id = ${jobId}
+      `;
+        await transaction`
+        UPDATE jobs
+        SET
+          status = 'cancelling',
+          stage = '正在取消 ComfyUI 任务',
+          updated_at = now()
+        WHERE id = ${jobId}
+      `;
+      })
+    : sql`
+      UPDATE jobs
+      SET
+        status = 'cancelled',
+        progress = CASE WHEN progress > 99 THEN 99 ELSE progress END,
+        stage = '已由用户取消',
+        completed_at = now(),
+        updated_at = now()
+      WHERE id = ${jobId}
+      `);
   await writeAudit(event, {
     action: 'job.cancel',
     actor: identity,
@@ -37,5 +66,8 @@ export default apiHandler(async (event) => {
     targetId: jobId,
     targetType: 'job',
   });
-  return { id: jobId, status: 'cancelled' };
+  return {
+    id: jobId,
+    status: execution ? 'cancelling' : 'cancelled',
+  };
 });

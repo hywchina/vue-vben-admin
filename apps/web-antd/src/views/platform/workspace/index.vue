@@ -1,5 +1,10 @@
 <script lang="ts" setup>
-import { computed, ref, watch } from 'vue';
+import type {
+  CapabilityField,
+  PlatformCapability,
+} from '#/modules/platform/types';
+
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
@@ -7,306 +12,661 @@ import { IconifyIcon } from '@vben/icons';
 import {
   Button,
   Input,
+  InputNumber,
   message,
   Progress,
+  Select,
+  Switch,
   Tag,
   Textarea,
 } from 'ant-design-vue';
 
+import {
+  getAssetDownloadApi,
+  getAssetPreviewApi,
+  getCapabilityApi,
+} from '#/api';
 import StatusPill from '#/components/platform/status-pill.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
 import { usePlatformStore } from '#/store';
 
+import CapabilityMediaField from './capability-media-field.vue';
+
+const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
 const router = useRouter();
 const platformStore = usePlatformStore();
-const selectedAssetIds = ref<string[]>([]);
+const selectedAssets = reactive<Record<number, string>>({});
 const submitting = ref(false);
-const prompt = ref(
-  '以现代、克制的设计语言优化客室空间，保持结构关系清晰，并沿用当前项目的暖灰 CMF 方向。',
+const uploadingField = ref('');
+const capabilityLoading = ref(false);
+const capability = ref<null | PlatformCapability>(null);
+const parameterValues = reactive<Record<string, unknown>>({});
+const genericPrompt = ref(
+  '以现代、克制的设计语言优化客室空间，保持结构关系清晰。',
 );
+const outputPreviewUrl = ref('');
+const outputText = ref('');
+let pollTimer: ReturnType<typeof setInterval> | undefined;
 
 const application = computed(() =>
   platformStore.applications.find((item) => item.key === route.params.appKey),
 );
-
-const availableAssets = computed(() => {
-  if (!application.value) return [];
-  return platformStore.currentAssets.filter((asset) =>
-    application.value?.acceptedAssetTypes.includes(asset.type),
-  );
-});
-
-const activeJob = computed(() =>
-  platformStore.currentJobs.find(
-    (job) =>
-      job.appKey === application.value?.key &&
-      ['queued', 'running'].includes(job.status),
+const applicationJobs = computed(() =>
+  platformStore.currentJobs.filter(
+    (job) => job.appKey === application.value?.key,
   ),
 );
-
+const activeJob = computed(() =>
+  applicationJobs.value.find((job) =>
+    ['cancelling', 'queued', 'running'].includes(job.status),
+  ),
+);
+const latestJob = computed(() => applicationJobs.value[0]);
 const latestOutput = computed(() =>
   platformStore.currentAssets.find(
     (asset) => asset.sourceAppKey === application.value?.key,
   ),
 );
+const mediaFields = computed(
+  () =>
+    capability.value?.fields
+      .filter((field) => mediaTypes.has(field.type))
+      .toSorted((a, b) => (a.assetIndex ?? 0) - (b.assetIndex ?? 0)) ?? [],
+);
+const basicFields = computed(
+  () =>
+    capability.value?.fields.filter(
+      (field) => !field.advanced && !mediaTypes.has(field.type),
+    ) ?? [],
+);
+const advancedFields = computed(
+  () =>
+    capability.value?.fields.filter(
+      (field) => field.advanced && !mediaTypes.has(field.type),
+    ) ?? [],
+);
+const selectedAssetIds = computed(() =>
+  mediaFields.value.flatMap((field) => {
+    if (field.assetIndex === undefined) return [];
+    const id = selectedAssets[field.assetIndex];
+    return id ? [id] : [];
+  }),
+);
+const resultKind = computed(() => capability.value?.outputTypes[0] ?? 'image');
+const routeLineLabel = computed(() => {
+  const inputCount = mediaFields.value.length;
+  if (inputCount === 0) return '业务参数';
+  if (inputCount === 1) return '单项目资产';
+  return `${inputCount} 个输入位`;
+});
 
-function toggleAsset(assetId: string) {
-  selectedAssetIds.value = selectedAssetIds.value.includes(assetId)
-    ? selectedAssetIds.value.filter((id) => id !== assetId)
-    : [...selectedAssetIds.value, assetId];
+function fieldNumberValue(field: CapabilityField) {
+  const value = parameterValues[field.key];
+  return typeof value === 'number' ? value : undefined;
 }
 
-async function runFrameworkTest() {
+function fieldTextValue(field: CapabilityField) {
+  const value = parameterValues[field.key];
+  return typeof value === 'string' || typeof value === 'number'
+    ? value
+    : undefined;
+}
+
+function fieldBooleanValue(field: CapabilityField) {
+  return parameterValues[field.key] === true;
+}
+
+function setFieldValue(field: CapabilityField, value: unknown) {
+  parameterValues[field.key] = value;
+}
+
+function setFieldNumberValue(
+  field: CapabilityField,
+  value: null | number | string,
+) {
+  const normalized = typeof value === 'string' ? Number(value) : value;
+  parameterValues[field.key] = normalized ?? field.defaultValue;
+}
+
+function resetWorkspace() {
+  for (const key of Object.keys(parameterValues)) {
+    Reflect.deleteProperty(parameterValues, key);
+  }
+  for (const key of Object.keys(selectedAssets)) {
+    Reflect.deleteProperty(selectedAssets, key);
+  }
+  for (const field of capability.value?.fields ?? []) {
+    if (!mediaTypes.has(field.type) || field.type === 'region') {
+      parameterValues[field.key] = field.defaultValue;
+    }
+  }
+}
+
+async function loadCapability() {
+  capability.value = null;
+  if (!application.value?.capabilityCode) return;
+  capabilityLoading.value = true;
+  try {
+    capability.value = await getCapabilityApi(application.value.capabilityCode);
+    resetWorkspace();
+  } finally {
+    capabilityLoading.value = false;
+  }
+}
+
+function selectAsset(field: CapabilityField, assetId: string) {
+  if (field.assetIndex === undefined) return;
+  const occupied = Object.entries(selectedAssets).find(
+    ([index, id]) => Number(index) !== field.assetIndex && id === assetId,
+  );
+  if (occupied) {
+    message.warning('该资产已用于另一个输入位');
+    return;
+  }
+  selectedAssets[field.assetIndex] = assetId;
+}
+
+async function uploadMedia(field: CapabilityField, file: File) {
+  uploadingField.value = field.key;
+  try {
+    const asset = await platformStore.uploadAsset({
+      description: `${capability.value?.name ?? application.value?.name} 工作区输入`,
+      file,
+      name: file.name.replace(/\.[^.]+$/, ''),
+      tags: ['工作流输入'],
+      type: 'image',
+    });
+    selectAsset(field, asset.id);
+    message.success('图像已登记为当前项目资产');
+  } finally {
+    uploadingField.value = '';
+  }
+}
+
+function randomizeSeed() {
+  const field = capability.value?.fields.find((item) => item.key === 'seed');
+  if (!field) return;
+  parameterValues.seed = Math.floor(
+    Math.random() * Math.min(field.max ?? Number.MAX_SAFE_INTEGER, 2 ** 48),
+  );
+}
+
+function taskParameters() {
+  return Object.fromEntries(
+    (capability.value?.fields ?? [])
+      .filter((field) => !mediaTypes.has(field.type) || field.type === 'region')
+      .map((field) => [field.key, parameterValues[field.key]]),
+  );
+}
+
+async function runCapability() {
   if (!application.value || !platformStore.currentProjectId) return;
+  const missingAsset = mediaFields.value.find(
+    (field) =>
+      field.required &&
+      (field.assetIndex === undefined || !selectedAssets[field.assetIndex]),
+  );
+  if (missingAsset) {
+    message.warning(`请先完成“${missingAsset.label}”`);
+    return;
+  }
+  const missingRegion = mediaFields.value.find(
+    (field) =>
+      field.type === 'region' &&
+      field.required &&
+      !String(parameterValues[field.key] ?? '').trim(),
+  );
+  if (missingRegion) {
+    message.warning(`请在“${missingRegion.label}”上绘制至少一个区域`);
+    return;
+  }
   submitting.value = true;
   try {
-    await platformStore.runApplication(
+    const job = await platformStore.runApplication(
       application.value.key,
       selectedAssetIds.value,
-      { prompt: prompt.value },
+      capability.value ? taskParameters() : { prompt: genericPrompt.value },
     );
-    message.success('平台任务已登记；执行状态由独立能力适配器回传');
+    if (job?.status === 'failed') {
+      message.warning(job.error?.message ?? '能力服务尚未配置');
+    } else {
+      message.success('任务已进入持久化队列，关闭页面后仍会继续');
+    }
   } finally {
     submitting.value = false;
   }
 }
 
+async function cancelActiveJob() {
+  if (!activeJob.value) return;
+  await platformStore.cancelJob(activeJob.value.id);
+  message.info('取消请求已提交');
+}
+
+function stopPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = undefined;
+}
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(() => {
+    void platformStore.refreshCurrentProjectData();
+  }, 2000);
+}
+
 watch(
-  () => route.params.appKey,
-  () => {
-    selectedAssetIds.value = [];
-  },
+  () => [route.params.appKey, application.value?.capabilityCode],
+  () => void loadCapability(),
+  { immediate: true },
 );
+watch(
+  activeJob,
+  (job) => {
+    if (job) startPolling();
+    else stopPolling();
+  },
+  { immediate: true },
+);
+watch(
+  () => latestOutput.value?.id,
+  async (assetId) => {
+    outputPreviewUrl.value = '';
+    outputText.value = '';
+    if (!assetId || !latestOutput.value) return;
+    try {
+      if (latestOutput.value.type === 'image') {
+        const preview = await getAssetPreviewApi(assetId);
+        outputPreviewUrl.value = preview.url;
+      } else if (latestOutput.value.type === 'text') {
+        const result = await getAssetDownloadApi(assetId);
+        if (result.mode === 'inline') {
+          outputText.value = result.content;
+        } else {
+          const response = await fetch(result.url);
+          outputText.value = await response.text();
+        }
+      }
+    } catch {
+      outputPreviewUrl.value = '';
+      outputText.value = '';
+    }
+  },
+  { immediate: true },
+);
+onBeforeUnmount(stopPolling);
 </script>
 
 <template>
-  <main v-if="application" class="application-workspace">
-    <header class="workspace-header">
-      <div class="workspace-header__identity">
+  <main
+    v-if="application"
+    class="capability-studio"
+    :style="{ '--cap-accent': application.color }"
+  >
+    <header class="studio-hero">
+      <div class="studio-hero__identity">
         <Button
-          aria-label="返回应用中心"
+          class="back-button"
           shape="circle"
           @click="router.push('/applications')"
         >
           <IconifyIcon icon="lucide:arrow-left" />
         </Button>
-        <div
-          class="workspace-header__icon"
-          :style="{
-            backgroundColor: `${application.color}14`,
-            color: application.color,
-          }"
-        >
+        <div class="capability-glyph">
           <IconifyIcon :icon="application.icon" />
         </div>
         <div>
-          <div class="workspace-header__eyebrow">
-            应用工作区 · {{ platformStore.currentProject?.code }}
-          </div>
-          <h1>{{ application.name }}</h1>
+          <span class="studio-kicker">RAIL DESIGN CAPABILITY</span>
+          <h1>{{ capability?.name ?? application.name }}</h1>
+          <p>{{ capability?.description ?? application.description }}</p>
         </div>
       </div>
-      <div class="workspace-header__actions">
-        <StatusPill :status="application.status" />
-        <Button @click="router.push('/jobs')">任务记录</Button>
+      <div class="studio-hero__actions">
+        <StatusPill
+          :status="application.adapterConfigured ? 'available' : 'planned'"
+        />
+        <Button @click="router.push('/jobs')">
+          <IconifyIcon icon="lucide:list-checks" />
+          任务记录
+        </Button>
         <Button
-          :disabled="Boolean(activeJob) || !platformStore.currentProjectId"
+          v-if="activeJob"
+          danger
+          :disabled="activeJob.status === 'cancelling'"
+          @click="cancelActiveJob"
+        >
+          {{ activeJob.status === 'cancelling' ? '正在取消' : '取消任务' }}
+        </Button>
+        <Button
+          v-else
+          :disabled="!platformStore.currentProjectId || capabilityLoading"
           :loading="submitting"
           type="primary"
-          @click="runFrameworkTest"
+          @click="runCapability"
         >
-          <IconifyIcon class="mr-1" icon="lucide:play" />
-          {{ activeJob ? '任务运行中' : '提交任务' }}
+          <IconifyIcon icon="lucide:sparkles" />
+          开始运行
         </Button>
+      </div>
+
+      <div class="capability-line" aria-label="能力执行链路">
+        <div>
+          <i><IconifyIcon icon="lucide:package-open" /></i>
+          <span>{{ routeLineLabel }}</span>
+        </div>
+        <b><em></em></b>
+        <div class="active">
+          <i><IconifyIcon :icon="application.icon" /></i>
+          <span>{{ capability?.workflow.name ?? '工作流' }}</span>
+        </div>
+        <b><em></em></b>
+        <div>
+          <i><IconifyIcon icon="lucide:library" /></i>
+          <span>{{ assetTypeLabels[resultKind] ?? '项目资产' }}</span>
+        </div>
       </div>
     </header>
 
-    <div class="workspace-grid">
-      <aside class="workspace-panel workspace-inputs">
-        <div class="workspace-panel__head">
+    <div class="studio-grid">
+      <aside class="control-deck">
+        <div class="deck-heading">
           <div>
-            <span>01</span>
-            <h2>任务输入</h2>
+            <span>CONTROL DECK</span>
+            <h2>设计参数</h2>
           </div>
-          <small>仅使用业务语义参数</small>
+          <IconifyIcon icon="lucide:sliders-horizontal" />
         </div>
-        <div class="workspace-panel__scroll">
-          <label class="workspace-field">
-            <span>任务名称</span>
-            <Input
-              :value="`${application.shortName}方案 · ${platformStore.currentProject?.name}`"
-            />
-          </label>
-          <label class="workspace-field">
-            <span>设计要求</span>
-            <Textarea v-model:value="prompt" :rows="7" />
-            <small>能力适配器接入后由后端 Schema 决定参数内容。</small>
-          </label>
 
-          <div class="workspace-field">
-            <span>允许的输入资产</span>
-            <div class="input-contract-tags">
-              <Tag v-for="type in application.acceptedAssetTypes" :key="type">
-                {{ assetTypeLabels[type] }}
-              </Tag>
+        <div class="deck-scroll">
+          <template v-if="capability">
+            <label
+              v-for="field in basicFields"
+              :key="field.key"
+              class="studio-field"
+            >
+              <span>
+                {{ field.label }}
+                <i v-if="field.required">必填</i>
+              </span>
+              <small v-if="field.help">{{ field.help }}</small>
+              <Textarea
+                v-if="field.type === 'textarea'"
+                :value="fieldTextValue(field)"
+                :maxlength="field.maxLength"
+                :placeholder="field.placeholder"
+                :rows="6"
+                show-count
+                @update:value="setFieldValue(field, $event)"
+              />
+              <Input
+                v-else-if="field.type === 'text'"
+                :value="fieldTextValue(field)"
+                :maxlength="field.maxLength"
+                :placeholder="field.placeholder"
+                @update:value="setFieldValue(field, $event)"
+              />
+              <InputNumber
+                v-else-if="field.type === 'number'"
+                :max="field.max"
+                :min="field.min"
+                :step="field.step"
+                :value="fieldNumberValue(field)"
+                class="w-full"
+                @update:value="setFieldNumberValue(field, $event)"
+              />
+              <Select
+                v-else-if="field.type === 'select'"
+                :value="fieldTextValue(field)"
+                :options="field.options"
+                @update:value="setFieldValue(field, $event)"
+              />
+              <Switch
+                v-else
+                :checked="fieldBooleanValue(field)"
+                @update:checked="setFieldValue(field, $event)"
+              />
+            </label>
+
+            <div v-if="!basicFields.length" class="parameter-empty">
+              <IconifyIcon icon="lucide:mouse-pointer-click" />
+              <p>该能力不需要额外文本参数，完成输入编组即可运行。</p>
             </div>
-          </div>
 
-          <div class="workspace-settings">
+            <details v-if="advancedFields.length" class="advanced-deck">
+              <summary>
+                <span>高级参数</span>
+                <small>{{ advancedFields.length }} 项</small>
+              </summary>
+              <label
+                v-for="field in advancedFields"
+                :key="field.key"
+                class="studio-field"
+              >
+                <span>{{ field.label }}</span>
+                <div v-if="field.key === 'seed'" class="seed-field">
+                  <InputNumber
+                    :max="field.max"
+                    :min="field.min"
+                    :step="field.step"
+                    :value="fieldNumberValue(field)"
+                    class="w-full"
+                    @update:value="setFieldNumberValue(field, $event)"
+                  />
+                  <Button @click="randomizeSeed">随机</Button>
+                </div>
+                <InputNumber
+                  v-else-if="field.type === 'number'"
+                  :max="field.max"
+                  :min="field.min"
+                  :step="field.step"
+                  :value="fieldNumberValue(field)"
+                  class="w-full"
+                  @update:value="setFieldNumberValue(field, $event)"
+                />
+                <Textarea
+                  v-else-if="field.type === 'textarea'"
+                  :value="fieldTextValue(field)"
+                  :rows="4"
+                  @update:value="setFieldValue(field, $event)"
+                />
+                <Switch
+                  v-else-if="field.type === 'boolean'"
+                  :checked="fieldBooleanValue(field)"
+                  @update:checked="setFieldValue(field, $event)"
+                />
+                <Input
+                  v-else
+                  :value="fieldTextValue(field)"
+                  @update:value="setFieldValue(field, $event)"
+                />
+              </label>
+            </details>
+          </template>
+
+          <label v-else class="studio-field">
+            <span>设计要求</span>
+            <Textarea v-model:value="genericPrompt" :rows="7" />
+          </label>
+
+          <div class="execution-facts">
             <div>
               <span>结果归属</span>
               <strong>{{ platformStore.currentProject?.name }}</strong>
             </div>
             <div>
-              <span>输出类型</span>
+              <span>版本快照</span>
               <strong>
-                {{
-                  application.outputAssetTypes
-                    .map((type) => assetTypeLabels[type])
-                    .join('、')
-                }}
+                {{ capability ? `V${capability.workflow.version}` : '未绑定' }}
               </strong>
             </div>
             <div>
-              <span>服务适配器</span>
-              <strong>尚未配置</strong>
+              <span>后台执行</span>
+              <strong>独立 Worker</strong>
             </div>
           </div>
         </div>
       </aside>
 
-      <section class="workspace-stage">
-        <div class="stage-toolbar">
-          <div>
-            <span class="stage-toolbar__dot"></span>
-            平台任务模式
-          </div>
-          <span>输出将登记为项目资产</span>
+      <section class="result-stage">
+        <div class="stage-meta">
+          <span>
+            <i :class="{ online: application.adapterConfigured }"></i>
+            {{
+              application.adapterConfigured
+                ? '外部服务已连接'
+                : '等待 ComfyUI 配置'
+            }}
+          </span>
+          <small>{{ platformStore.currentProject?.code }} · 持久化任务</small>
         </div>
 
-        <div class="stage-canvas">
-          <div v-if="activeJob" class="stage-running">
-            <div class="stage-running__signal">
-              <span></span>
-              <span></span>
-              <span></span>
+        <div class="stage-viewport">
+          <div v-if="activeJob" class="stage-state running-state">
+            <div class="rail-pulse">
+              <i></i>
+              <i></i>
+              <i></i>
+              <i></i>
             </div>
-            <div class="rail-section-label">Platform job</div>
+            <StatusPill :status="activeJob.status" />
             <h2>{{ activeJob.name }}</h2>
             <p>{{ activeJob.stage }}</p>
             <Progress
               :percent="activeJob.progress"
               :show-info="false"
-              stroke-color="#b91c32"
+              :stroke-color="application.color"
             />
-            <small>
-              本次使用 {{ activeJob.inputAssetIds.length }} 项输入资产
+            <small v-if="activeJob.externalReference">
+              Prompt ID · {{ activeJob.externalReference }}
             </small>
           </div>
 
+          <div
+            v-else-if="latestJob?.status === 'failed'"
+            class="stage-state error-state"
+          >
+            <IconifyIcon icon="lucide:circle-alert" />
+            <StatusPill status="failed" />
+            <h2>执行边界已阻止任务</h2>
+            <p>{{ latestJob.error?.message ?? latestJob.stage }}</p>
+            <code>{{ latestJob.error?.code ?? 'JOB_FAILED' }}</code>
+            <Button type="primary" @click="runCapability">重新提交</Button>
+          </div>
+
           <div v-else-if="latestOutput" class="stage-output">
-            <div
-              class="stage-output__preview"
-              :style="{ '--output-color': application.color }"
-            >
-              <IconifyIcon :icon="application.icon" />
-              <span>{{ latestOutput.format }}</span>
+            <div class="output-visual" :class="`output-${latestOutput.type}`">
+              <img
+                v-if="outputPreviewUrl"
+                :alt="latestOutput.name"
+                :src="outputPreviewUrl"
+              />
+              <pre v-else-if="outputText">{{ outputText }}</pre>
+              <div v-else class="output-icon">
+                <IconifyIcon
+                  :icon="
+                    latestOutput.type === 'model3d'
+                      ? 'lucide:box'
+                      : application.icon
+                  "
+                />
+                <span>{{ assetTypeLabels[latestOutput.type] }}</span>
+              </div>
             </div>
-            <div class="stage-output__copy">
+            <div class="output-caption">
               <StatusPill status="succeeded" />
               <h2>{{ latestOutput.name }}</h2>
               <p>{{ latestOutput.description }}</p>
-              <div>
-                <Button @click="router.push('/assets')">在资产中心查看</Button>
-                <Button type="primary" @click="runFrameworkTest">
-                  再次联调
-                </Button>
+              <small>用户、项目、任务、应用和工作流版本已完整登记</small>
+              <div class="output-actions">
+                <Button @click="router.push('/assets')">打开资产中心</Button>
+                <Button type="primary" @click="runCapability">再次运行</Button>
               </div>
             </div>
           </div>
 
-          <div v-else class="stage-empty">
-            <div class="stage-empty__diagram">
-              <span><IconifyIcon icon="lucide:library" /></span>
-              <i></i>
-              <span class="stage-empty__core">
-                <IconifyIcon :icon="application.icon" />
-              </span>
-              <i></i>
-              <span><IconifyIcon icon="lucide:archive" /></span>
+          <div v-else class="stage-state ready-state">
+            <div class="ready-orbit">
+              <span></span>
+              <IconifyIcon :icon="application.icon" />
+              <span></span>
             </div>
-            <h2>应用工作区已就绪</h2>
+            <span class="stage-eyebrow">READY FOR DISPATCH</span>
+            <h2>{{ capability?.name ?? application.name }}</h2>
             <p>
-              从右侧选择项目资产并提交任务。当前平台会真实保存任务记录；第三方服务由独立适配器接入。
+              完成参数和输入编组后提交。页面关闭不会中断任务，结果自动回流当前项目。
             </p>
-            <Button type="primary" @click="runFrameworkTest">
-              提交平台任务
+            <Button type="primary" @click="runCapability">
+              <IconifyIcon icon="lucide:sparkles" />
+              开始运行
             </Button>
           </div>
         </div>
 
-        <div class="adapter-boundary">
+        <div class="security-strip">
           <IconifyIcon icon="lucide:shield-check" />
-          <div>
-            <strong>外部能力边界</strong>
-            <p>
-              浏览器只提交 assetId、projectId
-              和业务参数；地址、密钥和底层工作流由后端适配器管理。
-            </p>
-          </div>
+          <p>
+            浏览器只接触业务字段和项目资产；ComfyUI 地址、密钥、节点
+            ID、模型名与 API JSON 仅保留在平台后端。
+          </p>
         </div>
       </section>
 
-      <aside class="workspace-panel workspace-assets">
-        <div class="workspace-panel__head">
+      <aside class="input-deck">
+        <div class="deck-heading">
           <div>
-            <span>02</span>
-            <h2>项目资产</h2>
+            <span>INPUT CONSIST</span>
+            <h2>输入编组</h2>
           </div>
-          <small>{{ selectedAssetIds.length }} 项已选</small>
+          <Tag>{{ selectedAssetIds.length }}/{{ mediaFields.length }}</Tag>
         </div>
-        <div class="workspace-panel__scroll">
-          <button
-            v-for="asset in availableAssets"
-            :key="asset.id"
-            :class="{
-              'workspace-asset--selected': selectedAssetIds.includes(asset.id),
-            }"
-            class="workspace-asset"
-            type="button"
-            @click="toggleAsset(asset.id)"
-          >
-            <div
-              class="workspace-asset__preview"
-              :style="{ '--asset-color': asset.accent }"
-            >
-              <IconifyIcon icon="lucide:layers-3" />
-            </div>
-            <div>
-              <strong>{{ asset.name }}</strong>
-              <small>
-                {{ assetTypeLabels[asset.type] }} · V{{ asset.version }} ·
-                {{ asset.owner }}
-              </small>
-            </div>
-            <IconifyIcon
-              class="workspace-asset__check"
-              :icon="
-                selectedAssetIds.includes(asset.id)
-                  ? 'lucide:circle-check'
-                  : 'lucide:circle'
-              "
-            />
-          </button>
 
-          <div v-if="!availableAssets.length" class="rail-empty">
+        <div class="input-scroll">
+          <CapabilityMediaField
+            v-for="field in mediaFields"
+            :key="field.key"
+            :accent="application.color"
+            :assets="platformStore.currentAssets"
+            :field="field"
+            :selected-asset-id="
+              field.assetIndex === undefined
+                ? undefined
+                : selectedAssets[field.assetIndex]
+            "
+            :value="parameterValues[field.key]"
+            @select="selectAsset(field, $event)"
+            @update:value="setFieldValue(field, $event)"
+            @upload="uploadMedia(field, $event)"
+          />
+
+          <div v-if="!mediaFields.length" class="no-input-card">
+            <IconifyIcon icon="lucide:braces" />
+            <h3>无资产输入</h3>
+            <p>该能力仅使用受控业务参数，运行结果仍会登记到项目资产中心。</p>
+          </div>
+
+          <div class="asset-contract">
+            <span>资产契约</span>
             <div>
-              <IconifyIcon class="text-3xl" icon="lucide:package-open" />
-              <p>当前项目没有兼容资产</p>
-              <Button type="link" @click="router.push('/assets')">
-                前往资产中心
-              </Button>
+              <strong>输入</strong>
+              <p>
+                {{
+                  application.acceptedAssetTypes
+                    .map((type) => assetTypeLabels[type])
+                    .join(' · ') || '业务参数'
+                }}
+              </p>
+            </div>
+            <IconifyIcon icon="lucide:arrow-down" />
+            <div>
+              <strong>输出</strong>
+              <p>
+                {{
+                  application.outputAssetTypes
+                    .map((type) => assetTypeLabels[type])
+                    .join(' · ')
+                }}
+              </p>
             </div>
           </div>
         </div>
@@ -327,495 +687,761 @@ watch(
 </template>
 
 <style scoped>
-.application-workspace {
-  display: flex;
-  flex-direction: column;
+.capability-studio {
+  --studio-ink: #172027;
+  --studio-steel: #65737d;
+  --studio-line: #d9dfe2;
+
   min-height: 100%;
-  color: var(--rail-ink);
-  background: #eef1f4;
+  color: var(--studio-ink);
+  background:
+    radial-gradient(
+      circle at 72% 0%,
+      color-mix(in srgb, var(--cap-accent) 9%, transparent),
+      transparent 31rem
+    ),
+    #eef1f2;
 }
 
-.workspace-header {
-  display: flex;
+.studio-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 20px;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 78px;
-  padding: 13px 20px;
-  background: #fff;
-  border-bottom: 1px solid var(--rail-line);
+  padding: 22px 28px 19px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 94%);
+  border-bottom: 1px solid var(--studio-line);
 }
 
-.workspace-header__identity,
-.workspace-header__actions {
+.studio-hero::after {
+  position: absolute;
+  top: -68px;
+  right: 17%;
+  width: 240px;
+  height: 150px;
+  content: '';
+  border: 22px solid color-mix(in srgb, var(--cap-accent) 7%, transparent);
+  border-radius: 50%;
+  transform: rotate(-12deg);
+}
+
+.studio-hero__identity,
+.studio-hero__actions,
+.capability-line,
+.capability-line > div,
+.deck-heading,
+.stage-meta,
+.security-strip,
+.output-actions {
   display: flex;
-  gap: 10px;
   align-items: center;
 }
 
-.workspace-header__icon {
+.studio-hero__identity {
+  position: relative;
+  z-index: 1;
+  gap: 14px;
+  min-width: 0;
+}
+
+.studio-hero__actions {
+  z-index: 1;
+  gap: 8px;
+  align-self: start;
+}
+
+.back-button {
+  flex: 0 0 auto;
+}
+
+.capability-glyph {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  font-size: 27px;
+  color: #fff;
+  background: var(--cap-accent);
+  border-radius: 17px 7px;
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--cap-accent) 24%, transparent);
+}
+
+.studio-kicker,
+.deck-heading span,
+.stage-eyebrow {
+  font-family: 'IBM Plex Mono', SFMono-Regular, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--cap-accent);
+  letter-spacing: 0.18em;
+}
+
+.studio-hero h1 {
+  margin: 2px 0 3px;
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-size: clamp(22px, 2.2vw, 31px);
+  font-weight: 780;
+  letter-spacing: -0.04em;
+}
+
+.studio-hero__identity p {
+  max-width: 720px;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--studio-steel);
+  white-space: nowrap;
+}
+
+.capability-line {
+  z-index: 1;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 11px 14px;
+  margin-top: 2px;
+  background: #f7f8f8;
+  border: 1px solid #e1e5e7;
+  border-radius: 14px;
+}
+
+.capability-line > div {
+  gap: 8px;
+  min-width: 130px;
+}
+
+.capability-line i {
   display: grid;
   place-items: center;
-  width: 45px;
-  height: 45px;
-  margin-left: 4px;
-  font-size: 22px;
-  border-radius: 11px;
-}
-
-.workspace-header__eyebrow {
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--rail-steel);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
-.workspace-header h1 {
-  margin: 3px 0 0;
-  font-size: 18px;
-  font-weight: 680;
-}
-
-.workspace-grid {
-  display: grid;
-  flex: 1;
-  grid-template-columns: 296px minmax(420px, 1fr) 322px;
-  gap: 1px;
-  min-height: calc(100vh - 166px);
-  background: var(--rail-line);
-}
-
-.workspace-panel,
-.workspace-stage {
-  min-width: 0;
+  width: 28px;
+  height: 28px;
+  color: #68757e;
   background: #fff;
+  border: 1px solid #d9dfe2;
+  border-radius: 50%;
 }
 
-.workspace-panel {
+.capability-line .active i {
+  color: #fff;
+  background: var(--cap-accent);
+  border-color: var(--cap-accent);
+}
+
+.capability-line span {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.capability-line b {
+  position: relative;
+  flex: 1;
+  min-width: 30px;
+  height: 1px;
+  overflow: hidden;
+  background: #cbd2d6;
+}
+
+.capability-line em {
+  position: absolute;
+  width: 22%;
+  height: 1px;
+  background: var(--cap-accent);
+  animation: route-signal 2.4s linear infinite;
+}
+
+.studio-grid {
+  display: grid;
+  grid-template-columns: 340px minmax(430px, 1fr) 330px;
+  gap: 12px;
+  min-height: calc(100vh - 240px);
+  padding: 12px;
+}
+
+.control-deck,
+.input-deck,
+.result-stage {
+  min-width: 0;
+  overflow: hidden;
+  background: rgb(255 255 255 / 96%);
+  border: 1px solid var(--studio-line);
+  border-radius: 18px;
+  box-shadow: 0 14px 40px rgb(37 49 57 / 5%);
+}
+
+.control-deck,
+.input-deck {
   display: flex;
   flex-direction: column;
 }
 
-.workspace-panel__head {
-  display: flex;
-  align-items: center;
+.deck-heading {
   justify-content: space-between;
-  min-height: 62px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--rail-line);
+  min-height: 67px;
+  padding: 14px 17px;
+  border-bottom: 1px solid var(--studio-line);
 }
 
-.workspace-panel__head > div {
-  display: flex;
-  gap: 9px;
-  align-items: center;
+.deck-heading h2 {
+  margin: 2px 0 0;
+  font-size: 17px;
 }
 
-.workspace-panel__head span {
-  font-family: ui-monospace, monospace;
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--rail-red);
+.deck-heading > svg {
+  font-size: 21px;
+  color: var(--cap-accent);
 }
 
-.workspace-panel__head h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 680;
-}
-
-.workspace-panel__head small {
-  font-size: 9px;
-  color: var(--rail-steel);
-}
-
-.workspace-panel__scroll {
+.deck-scroll,
+.input-scroll {
   flex: 1;
-  padding: 16px;
+  padding: 17px;
   overflow: auto;
 }
 
-.workspace-field {
+.studio-field {
   display: grid;
   gap: 7px;
   margin-bottom: 18px;
 }
 
-.workspace-field > span {
+.studio-field > span {
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 720;
 }
 
-.workspace-field > small {
+.studio-field > span i {
+  padding: 2px 6px;
+  margin-left: 5px;
+  font-size: 8px;
+  font-style: normal;
+  color: var(--cap-accent);
+  background: color-mix(in srgb, var(--cap-accent) 9%, white);
+  border-radius: 99px;
+}
+
+.studio-field > small {
   font-size: 9px;
   line-height: 1.5;
-  color: var(--rail-steel);
+  color: var(--studio-steel);
 }
 
-.input-contract-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.input-contract-tags :deep(.ant-tag) {
-  margin: 0;
-  font-size: 9px;
-}
-
-.workspace-settings {
-  border: 1px solid var(--rail-line);
+.studio-field :deep(.ant-input),
+.studio-field :deep(.ant-input-number),
+.studio-field :deep(.ant-select-selector) {
+  border-color: #d5dbde;
   border-radius: 10px;
 }
 
-.workspace-settings > div {
+.studio-field :deep(textarea.ant-input) {
+  line-height: 1.7;
+  resize: vertical;
+}
+
+.advanced-deck {
+  padding: 12px;
+  margin: 8px 0 18px;
+  background: #f5f7f7;
+  border: 1px solid #dfe4e6;
+  border-radius: 13px;
+}
+
+.advanced-deck summary {
   display: flex;
-  gap: 12px;
   justify-content: space-between;
-  padding: 11px 12px;
-  border-bottom: 1px solid var(--rail-line);
+  margin-bottom: 14px;
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
 }
 
-.workspace-settings > div:last-child {
-  border-bottom: 0;
+.advanced-deck summary small {
+  color: var(--studio-steel);
 }
 
-.workspace-settings span {
-  font-size: 9px;
-  color: var(--rail-steel);
+.advanced-deck .studio-field:last-child {
+  margin-bottom: 0;
 }
 
-.workspace-settings strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 9px;
-  text-align: right;
-  white-space: nowrap;
-}
-
-.workspace-stage {
-  display: flex;
-  flex-direction: column;
-  padding: 16px;
-  background: #f6f7f8;
-}
-
-.stage-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  font-size: 9px;
-  color: var(--rail-steel);
-}
-
-.stage-toolbar div {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
-
-.stage-toolbar__dot {
-  width: 7px;
-  height: 7px;
-  background: var(--rail-warning);
-  border-radius: 50%;
-  box-shadow: 0 0 0 3px rgb(165 101 22 / 12%);
-}
-
-.stage-canvas {
+.seed-field {
   display: grid;
-  flex: 1;
-  place-items: center;
-  min-height: 480px;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+}
+
+.parameter-empty,
+.no-input-card {
+  padding: 20px;
+  margin-bottom: 18px;
+  color: var(--studio-steel);
+  text-align: center;
+  background: #f6f8f8;
+  border: 1px dashed #cfd6d9;
+  border-radius: 14px;
+}
+
+.parameter-empty svg,
+.no-input-card svg {
+  font-size: 28px;
+  color: var(--cap-accent);
+}
+
+.parameter-empty p,
+.no-input-card p {
+  margin: 8px 0 0;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.no-input-card h3 {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.execution-facts {
   overflow: hidden;
-  background-color: #fff;
-  background-image:
-    linear-gradient(#eef0f2 1px, transparent 1px),
-    linear-gradient(90deg, #eef0f2 1px, transparent 1px);
-  background-size: 28px 28px;
-  border: 1px solid #d8dde2;
+  border: 1px solid var(--studio-line);
   border-radius: 12px;
 }
 
-.stage-empty,
-.stage-running {
-  width: min(480px, 86%);
-  text-align: center;
+.execution-facts > div {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 11px;
+  border-bottom: 1px solid var(--studio-line);
 }
 
-.stage-empty__diagram {
-  display: grid;
-  grid-template-columns: 52px 60px 68px 60px 52px;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 28px;
+.execution-facts > div:last-child {
+  border-bottom: 0;
 }
 
-.stage-empty__diagram span {
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  font-size: 20px;
-  color: #69747f;
-  background: #fff;
-  border: 1px solid #cbd1d7;
+.execution-facts span,
+.execution-facts strong {
+  max-width: 175px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.execution-facts span {
+  color: var(--studio-steel);
+}
+
+.result-stage {
+  display: flex;
+  flex-direction: column;
+  padding: 15px;
+  background: #f6f8f8;
+}
+
+.stage-meta {
+  justify-content: space-between;
+  padding: 0 2px 11px;
+  font-size: 9px;
+  color: var(--studio-steel);
+}
+
+.stage-meta i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  background: #c08a38;
   border-radius: 50%;
 }
 
-.stage-empty__diagram .stage-empty__core {
-  width: 68px;
-  height: 68px;
-  color: #fff;
-  background: var(--rail-red);
-  border-color: #d79da6;
-  box-shadow: 0 0 0 8px rgb(185 28 50 / 7%);
+.stage-meta i.online {
+  background: #39705a;
+  box-shadow: 0 0 0 4px rgb(57 112 90 / 10%);
 }
 
-.stage-empty__diagram i {
-  height: 2px;
-  background: repeating-linear-gradient(
-    90deg,
-    #aab1b9 0 5px,
-    transparent 5px 9px
-  );
+.stage-viewport {
+  position: relative;
+  display: grid;
+  flex: 1;
+  min-height: 520px;
+  overflow: hidden;
+  background:
+    linear-gradient(rgb(255 255 255 / 88%), rgb(255 255 255 / 96%)),
+    repeating-linear-gradient(0deg, #dfe4e6 0 1px, transparent 1px 32px),
+    repeating-linear-gradient(90deg, #dfe4e6 0 1px, transparent 1px 32px);
+  border: 1px solid #d7dde0;
+  border-radius: 16px;
 }
 
-.stage-empty h2,
-.stage-running h2 {
-  margin: 0 0 8px;
-  font-size: 20px;
+.stage-viewport::before,
+.stage-viewport::after {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  content: '';
+  border-color: var(--cap-accent);
+  opacity: 0.38;
 }
 
-.stage-empty p,
-.stage-running p {
-  margin: 0 auto 20px;
+.stage-viewport::before {
+  top: 14px;
+  left: 14px;
+  border-top: 2px solid;
+  border-left: 2px solid;
+}
+
+.stage-viewport::after {
+  right: 14px;
+  bottom: 14px;
+  border-right: 2px solid;
+  border-bottom: 2px solid;
+}
+
+.stage-state {
+  place-self: center center;
+  width: min(510px, 84%);
+  text-align: center;
+}
+
+.stage-state h2,
+.output-caption h2 {
+  margin: 13px 0 8px;
+  font-size: clamp(20px, 2vw, 27px);
+  letter-spacing: -0.035em;
+}
+
+.stage-state p,
+.output-caption p {
   font-size: 11px;
-  line-height: 1.7;
-  color: var(--rail-steel);
+  line-height: 1.75;
+  color: var(--studio-steel);
 }
 
-.stage-running__signal {
+.ready-orbit {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 124px;
+  height: 124px;
+  margin: 0 auto 20px;
+  border: 1px solid #d4dade;
+  border-radius: 50%;
+}
+
+.ready-orbit::before {
+  position: absolute;
+  inset: 13px;
+  content: '';
+  border: 1px dashed color-mix(in srgb, var(--cap-accent) 55%, #ccd3d6);
+  border-radius: 50%;
+  animation: orbit 18s linear infinite;
+}
+
+.ready-orbit svg {
+  z-index: 1;
+  padding: 17px;
+  font-size: 62px;
+  color: #fff;
+  background: var(--cap-accent);
+  border-radius: 22px 9px;
+}
+
+.ready-orbit span {
+  position: absolute;
+  top: 50%;
+  width: 42px;
+  height: 1px;
+  background: #bcc6ca;
+}
+
+.ready-orbit span:first-child {
+  right: 100%;
+}
+
+.ready-orbit span:last-child {
+  left: 100%;
+}
+
+.rail-pulse {
   display: flex;
-  gap: 7px;
+  gap: 8px;
   justify-content: center;
-  margin-bottom: 22px;
+  margin-bottom: 24px;
 }
 
-.stage-running__signal span {
-  width: 9px;
-  height: 34px;
-  background: var(--rail-red);
-  border-radius: 9px;
-  animation: signal 1s ease-in-out infinite alternate;
+.rail-pulse i {
+  width: 8px;
+  height: 42px;
+  background: var(--cap-accent);
+  border-radius: 999px;
+  animation: pulse-bar 1.1s ease-in-out infinite alternate;
 }
 
-.stage-running__signal span:nth-child(2) {
-  animation-delay: 0.18s;
+.rail-pulse i:nth-child(2) {
+  animation-delay: 0.15s;
 }
 
-.stage-running__signal span:nth-child(3) {
-  animation-delay: 0.36s;
+.rail-pulse i:nth-child(3) {
+  animation-delay: 0.3s;
 }
 
-.stage-running small {
+.rail-pulse i:nth-child(4) {
+  animation-delay: 0.45s;
+}
+
+.error-state > svg {
   display: block;
-  margin-top: 12px;
-  font-size: 9px;
-  color: var(--rail-steel);
+  margin: 0 auto 14px;
+  font-size: 45px;
+  color: #b91c32;
+}
+
+.error-state code {
+  display: block;
+  margin: 0 0 18px;
+  font-size: 10px;
+  color: #b91c32;
 }
 
 .stage-output {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 26px;
-  align-items: center;
-  width: min(660px, 88%);
+  grid-template-rows: minmax(260px, 1fr) auto;
+  gap: 18px;
+  width: calc(100% - 44px);
+  height: calc(100% - 44px);
+  margin: 22px;
 }
 
-.stage-output__preview {
-  position: relative;
+.output-visual {
   display: grid;
   place-items: center;
-  aspect-ratio: 4 / 3;
-  font-size: 66px;
-  color: #fff;
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 38%), transparent 48%),
-    var(--output-color);
-  border-radius: 12px;
-  box-shadow: 0 20px 44px rgb(30 36 42 / 16%);
-}
-
-.stage-output__preview span {
-  position: absolute;
-  right: 10px;
-  bottom: 8px;
-  font-size: 9px;
-  font-weight: 700;
-}
-
-.stage-output__copy h2 {
-  margin: 12px 0 6px;
-  font-size: 21px;
-}
-
-.stage-output__copy p {
-  font-size: 11px;
-  line-height: 1.65;
-  color: var(--rail-steel);
-}
-
-.stage-output__copy > div {
-  display: flex;
-  gap: 8px;
-  margin-top: 18px;
-}
-
-.adapter-boundary {
-  display: flex;
-  gap: 11px;
-  align-items: flex-start;
-  padding: 12px 14px;
-  margin-top: 12px;
-  color: var(--rail-steel);
-  background: #fff;
-  border: 1px solid #dce2e6;
-  border-radius: 10px;
-}
-
-.adapter-boundary > svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-  font-size: 18px;
-  color: var(--rail-success);
-}
-
-.adapter-boundary strong {
-  font-size: 10px;
-  color: var(--rail-ink);
-}
-
-.adapter-boundary p {
-  margin: 3px 0 0;
-  font-size: 9px;
-  line-height: 1.55;
-}
-
-.workspace-asset {
-  display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 18px;
-  gap: 10px;
-  align-items: center;
-  width: 100%;
-  padding: 8px;
-  margin-bottom: 9px;
-  text-align: left;
-  cursor: pointer;
-  background: #fff;
-  border: 1px solid var(--rail-line);
-  border-radius: 9px;
-}
-
-.workspace-asset:hover {
-  border-color: #caa7ad;
-}
-
-.workspace-asset--selected {
-  background: var(--rail-red-soft);
-  border-color: #cf8995;
-  box-shadow: inset 3px 0 var(--rail-red);
-}
-
-.workspace-asset__preview {
-  display: grid;
-  place-items: center;
-  width: 54px;
-  height: 48px;
-  color: #fff;
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 30%), transparent),
-    var(--asset-color);
-  border-radius: 7px;
-}
-
-.workspace-asset > div:nth-child(2) {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.workspace-asset strong,
-.workspace-asset small {
+  min-height: 280px;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: #fff;
+  background: #1d272d;
+  border-radius: 14px;
 }
 
-.workspace-asset strong {
+.output-visual img {
+  width: 100%;
+  height: 100%;
+  max-height: 520px;
+  object-fit: contain;
+}
+
+.output-visual pre {
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+  margin: 0;
+  overflow: auto;
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 12px;
+  line-height: 1.85;
+  color: #e8edef;
+  white-space: pre-wrap;
+}
+
+.output-icon {
+  display: grid;
+  place-items: center;
+}
+
+.output-icon svg {
+  font-size: 78px;
+  color: color-mix(in srgb, var(--cap-accent) 75%, white);
+}
+
+.output-icon span {
+  margin-top: 12px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+.output-caption {
+  padding: 0 4px 5px;
+}
+
+.output-caption h2 {
+  font-size: 19px;
+}
+
+.output-actions {
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.security-strip {
+  gap: 10px;
+  padding: 11px 13px;
+  margin-top: 12px;
+  font-size: 9px;
+  color: var(--studio-steel);
+  background: #fff;
+  border: 1px solid #dce2e5;
+  border-radius: 12px;
+}
+
+.security-strip svg {
+  flex: 0 0 auto;
+  font-size: 18px;
+  color: #39705a;
+}
+
+.security-strip p {
+  margin: 0;
+}
+
+.input-scroll {
+  display: grid;
+  gap: 13px;
+  align-content: start;
+  background: #f5f7f7;
+}
+
+.asset-contract {
+  padding: 14px;
+  background: #172027;
+  border-radius: 15px;
+}
+
+.asset-contract > span {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 8px;
+  color: #9ba7ae;
+  letter-spacing: 0.16em;
+}
+
+.asset-contract div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  color: #fff;
+}
+
+.asset-contract strong,
+.asset-contract p {
+  margin: 0;
   font-size: 10px;
 }
 
-.workspace-asset small {
-  margin-top: 4px;
-  font-size: 8px;
-  color: var(--rail-steel);
+.asset-contract p {
+  color: #b7c0c5;
 }
 
-.workspace-asset__check {
-  color: var(--rail-red);
+.asset-contract > svg {
+  display: block;
+  margin: 8px auto -2px;
+  color: var(--cap-accent);
 }
 
-@keyframes signal {
+@keyframes route-signal {
+  from {
+    left: -22%;
+  }
+
   to {
-    height: 14px;
-    opacity: 0.5;
+    left: 100%;
   }
 }
 
-@media (max-width: 1150px) {
-  .workspace-grid {
-    grid-template-columns: 260px minmax(390px, 1fr);
-  }
-
-  .workspace-assets {
-    display: none;
+@keyframes orbit {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-@media (max-width: 760px) {
-  .workspace-header {
+@keyframes pulse-bar {
+  to {
+    height: 15px;
+    opacity: 0.38;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capability-line em,
+  .ready-orbit::before,
+  .rail-pulse i {
+    animation: none;
+  }
+}
+
+@media (max-width: 1280px) {
+  .studio-grid {
+    grid-template-columns: 320px minmax(420px, 1fr);
+  }
+
+  .input-deck {
+    grid-column: 1 / -1;
+  }
+
+  .input-scroll {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .studio-hero {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+
+  .studio-hero__actions {
+    flex-wrap: wrap;
+  }
+
+  .capability-line {
+    overflow-x: auto;
+  }
+
+  .capability-line b {
+    flex: 0 0 38px;
+  }
+
+  .studio-grid {
+    display: flex;
     flex-direction: column;
+    padding: 8px;
+  }
+
+  .result-stage {
+    order: -1;
+  }
+
+  .input-scroll {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-viewport {
+    min-height: 430px;
+  }
+}
+
+@media (max-width: 520px) {
+  .studio-hero__identity {
     align-items: flex-start;
   }
 
-  .workspace-header__actions {
-    flex-wrap: wrap;
-    width: 100%;
+  .capability-glyph {
+    width: 45px;
+    height: 45px;
   }
 
-  .workspace-grid {
-    display: flex;
-    flex-direction: column;
+  .studio-hero__identity p {
+    white-space: normal;
   }
 
-  .workspace-inputs {
-    min-height: auto;
-  }
-
-  .workspace-panel__scroll {
-    max-height: none;
-  }
-
-  .stage-canvas {
-    min-height: 450px;
+  .studio-hero__actions .ant-btn {
+    flex: 1;
   }
 
   .stage-output {
-    grid-template-columns: 1fr;
-    padding: 24px 0;
+    width: calc(100% - 24px);
+    height: calc(100% - 24px);
+    margin: 12px;
   }
 }
 </style>
