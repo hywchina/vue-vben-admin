@@ -1,19 +1,15 @@
 {
-  "name": "@vben/web-antd",
-  "version": "5.7.0",
-  "homepage": "https://vben.pro",
-  "bugs": "https://github.com/vbenjs/vue-vben-admin/issues",
+  "name": "@rail/web",
+  "version": "0.1.0",
+  "description": "轨道客室智能设计平台 Web",
+  "homepage": "https://github.com/hywchina/vue-vben-admin",
+  "bugs": "https://github.com/hywchina/vue-vben-admin/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vbenjs/vue-vben-admin.git",
+    "url": "git+https://github.com/hywchina/vue-vben-admin.git",
     "directory": "apps/web-antd"
   },
   "license": "MIT",
-  "author": {
-    "name": "vben",
-    "email": "ann.vben@gmail.com",
-    "url": "https://github.com/anncwb"
-  },
   "type": "module",
   "scripts": {
     "build": "pnpm vite build --mode production",

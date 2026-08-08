@@ -180,8 +180,8 @@ describe('generateAccessible - redirect normalization', () => {
   it('首子路由为绝对路径(/foo)时不生成 redirect', async () => {
     const routes = [
       {
-        name: 'Dashboard',
-        path: '/dashboard',
+        name: 'Workspace',
+        path: '/workspace',
         children: [
           {
             name: 'Analytics',
@@ -189,12 +189,12 @@ describe('generateAccessible - redirect normalization', () => {
             meta: { title: 'analytics' },
           },
         ],
-        meta: { title: 'dashboard' },
+        meta: { title: 'workspace' },
       },
     ] as unknown as RouteRecordRaw[];
 
     const result = await generate(routes);
-    expect(findByName(result, 'Dashboard')?.redirect).toBeUndefined();
+    expect(findByName(result, 'Workspace')?.redirect).toBeUndefined();
   });
 
   it('首子路由为空 path 时不生成 redirect', async () => {

@@ -140,3 +140,20 @@
 - `pnpm typecheck:rail`：通过。
 - `pnpm --filter @vben/web-antd build`：通过，转换 7432 个模块并生成生产压缩包。
 - 生产产物扫描：无 Dashboard、Demos、验证码/二维码登录、样例安全设置、即将上线、500 或离线页面分块。
+
+## 2026-08-08：统一仓库产品身份并完成 tree 审计
+
+### `refactor(project): align repository identity`
+
+- 将根目录、活动 Web 包、HTML/PWA、运行时配置、默认偏好、版权信息、VS Code 和 GitHub 协作入口统一为轨道客室智能设计平台。
+- 删除共享包中无调用的模板展示、第三方登录、图表、富文本、VXE 表格、验证码、计数和 JSON 查看器源码及专属依赖。
+- 所有内部包的仓库地址指向当前二次开发仓库；保留 `@vben/*` 技术包名和 MIT 上游归属。
+- 新增 `REPOSITORY_STRUCTURE.md`，逐类说明根文件、产品应用、共享包、工程工具、部署与文档用途。
+- 修复架构、盘点、开发入口和 ComfyUI 计划中的过期目录、隔离状态与本机绝对路径。
+
+阶段验证：
+
+- `pnpm lint`：通过。
+- `pnpm typecheck:rail`：通过。
+- `pnpm test:rail`：通过，API 25 项、Web 9 项。
+- `pnpm build:rail`：通过，活动 Web 产物版本为 0.1.0。

@@ -5,8 +5,8 @@
 > 适用范围：ComfyUI API 工作流接入 `项目 - 资产 - 任务 - AI/外部能力插件化平台`  
 > 输入分支：主平台 `refactor-core-module` 输出分支：主平台 `refactor-webUI` 参考资料（只读，不改动）：
 >
-> - `/Users/huyanwei/projects/ComfyUI`
-> - `/Users/huyanwei/projects/ComfyUI/webUI` 实施范围：仅修改 `vue-vben-admin` 项目，不修改原始 `ComfyUI` 项目
+> - `<外部 ComfyUI 仓库>`
+> - `<外部 ComfyUI 仓库>/webUI` 实施范围：仅修改 本仓库 项目，不修改原始 `ComfyUI` 项目
 
 ## 1. 任务背景
 
@@ -18,7 +18,7 @@ ComfyUI 是独立于主平台之外的工作流编排与执行系统。它支持
 
 这套 `webUI` 的定位是“工作流 API 验证台”，不是最终业务平台。现在要做的是，把这类 API 工作流正式接入主平台，使其成为主平台“应用 - 任务 - 资产”体系中的外部能力。
 
-本任务的实施对象只有 `vue-vben-admin`。`/Users/huyanwei/projects/ComfyUI` 及其 `webUI` 仅作为静态分析、交互参考和模拟测试参考来源，不在本轮改造范围内。
+本任务的实施对象只有 本仓库。`<外部 ComfyUI 仓库>` 及其 `webUI` 仅作为静态分析、交互参考和模拟测试参考来源，不在本轮改造范围内。
 
 ## 2. 核心目标
 
@@ -56,7 +56,7 @@ ComfyUI 是独立于主平台之外的工作流编排与执行系统。它支持
 - 如果主平台要求项目隔离，则工作流结果必须同时具备项目归属和用户归属。
 - 浏览器不应直接持有 ComfyUI 的地址、密钥或管理能力。
 - ComfyUI 的成功执行不能自动等价于平台任务完成，只有当结果被平台接收、校验并登记为资产后，平台任务才算完成。
-- 长期目标是让 `vue-vben-admin` 成为独立项目，工作流配置、管理入口和业务接入能力都在主平台内部闭环，不再依赖 `ComfyUI` 仓库提供配置文件。
+- 长期目标是让 本仓库 成为独立项目，工作流配置、管理入口和业务接入能力都在主平台内部闭环，不再依赖 `ComfyUI` 仓库提供配置文件。
 
 ## 3.4 Git 与提交管理约束
 
@@ -66,8 +66,8 @@ ComfyUI 是独立于主平台之外的工作流编排与执行系统。它支持
 
 - 输入分支：`refactor-core-module`
 - 输出分支：`refactor-webUI`
-- 所有本轮改动仅发生在 `vue-vben-admin` 仓库
-- 不在本轮改动 `/Users/huyanwei/projects/ComfyUI` 中的任何文件
+- 所有本轮改动仅发生在 本仓库 仓库
+- 不在本轮改动 `<外部 ComfyUI 仓库>` 中的任何文件
 
 ### 提交拆分规则
 
@@ -113,7 +113,7 @@ ComfyUI 是独立于主平台之外的工作流编排与执行系统。它支持
 
 ## 4.1 ComfyUI `webUI` 的真实定位
 
-`/Users/huyanwei/projects/ComfyUI/webUI` 当前是一个验证型控制台，不是生产业务前端。它的核心能力包括：
+`<外部 ComfyUI 仓库>/webUI` 当前是一个验证型控制台，不是生产业务前端。它的核心能力包括：
 
 - 自动扫描 `user/default/workflows_api/` 下的工作流 JSON
 - 通过 `/object_info` 自动识别可编辑输入
@@ -235,7 +235,7 @@ ComfyUI 是独立于主平台之外的工作流编排与执行系统。它支持
 - 在 `/workspace/:appKey` 工作区内提供该工作流的参数表单
 - 第一阶段允许页面参数较“技术化”，但必须在主平台统一外壳内运行
 - 表单提交后调用主平台 `/jobs` 或专用工作流任务接口，而不是直接请求 ComfyUI
-- 相关页面、表单、状态与配置均在 `vue-vben-admin` 项目内部实现
+- 相关页面、表单、状态与配置均在 本仓库 项目内部实现
 
 ### 平台 API 侧
 

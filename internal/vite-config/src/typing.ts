@@ -140,11 +140,6 @@ interface CommonPluginOptions {
    */
   env?: Record<string, any>;
   /**
-   * 是否注入元数据
-   * @default true
-   */
-  injectMetadata?: boolean;
-  /**
    * 是否为构建模式
    * @default false
    */
@@ -253,11 +248,6 @@ interface ApplicationPluginOptions extends CommonPluginOptions {
    * PWA 插件配置
    */
   pwaOptions?: Partial<PwaPluginOptions>;
-  /**
-   * 是否开启 VXE Table 懒加载
-   * @default false
-   */
-  vxeTableLazyImport?: boolean;
 }
 
 /**

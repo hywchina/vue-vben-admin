@@ -24,15 +24,13 @@ async function viteLicensePlugin(
       handler(_options, bundle) {
         const date = dateUtil().format('YYYY-MM-DD ');
         const copyrightText = `/*!
-  * Vben Admin
+  * Rail Cabin Design Platform
   * Version: ${version}
-  * Author: vben
-  * Copyright (C) 2024 Vben
+  * Based on Vben Admin
   * License: MIT License
   * Description: ${description}
   * Date Created: ${date}
   * Homepage: ${homepage}
-  * Contact: ann.vben@gmail.com
 */
               `.trim();
 

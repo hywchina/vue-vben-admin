@@ -14,14 +14,14 @@ const mockRoutes = [
       authority: ['admin', 'user'],
       hideInMenu: false,
     },
-    path: '/dashboard',
+    path: '/workspace',
     children: [
       {
-        path: '/dashboard/overview',
+        path: '/workspace/overview',
         meta: { authority: ['admin'], hideInMenu: false },
       },
       {
-        path: '/dashboard/stats',
+        path: '/workspace/stats',
         meta: { authority: ['user'], hideInMenu: true },
       },
     ],
@@ -77,7 +77,7 @@ describe('generateRoutesByFrontend', () => {
     expect(generatedRoutes).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: '/dashboard',
+          path: '/workspace',
         }),
         expect.objectContaining({
           path: '/settings',

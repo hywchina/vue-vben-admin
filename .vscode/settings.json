@@ -105,7 +105,6 @@
     "**/bower_components": true,
     "**/.turbo": true,
     "**/.idea": true,
-    "**/.vitepress": true,
     "**/tmp": true,
     "**/.git": true,
     "**/.svn": true,
@@ -113,8 +112,7 @@
     "**/CVS": true,
     "**/.stylelintcache": true,
     "**/.DS_Store": true,
-    "**/vite.config.mts.*": true,
-    "**/tea.yaml": true
+    "**/vite.config.mts.*": true
   },
   "files.watcherExclude": {
     "**/.git/objects/**": true,
@@ -145,7 +143,6 @@
     "**/.gitignore": true,
     "**/.svn": true,
     "**/.DS_Store": true,
-    "**/.vitepress/cache": true,
     "**/.idea": true,
     "**/.vscode": false,
     "**/.yarn": true,
@@ -214,7 +211,6 @@
 
   "i18n-ally.localesPaths": [
     "packages/locales/src/langs",
-    "playground/src/locales/langs",
     "apps/*/src/locales/langs"
   ],
   "i18n-ally.pathMatcher": "{locale}/{namespace}.{ext}",
@@ -233,8 +229,8 @@
     "*.ts": "$(capture).test.ts, $(capture).test.tsx, $(capture).spec.ts, $(capture).spec.tsx, $(capture).d.ts",
     "*.tsx": "$(capture).test.ts, $(capture).test.tsx, $(capture).spec.ts, $(capture).spec.tsx,$(capture).d.ts",
     "*.env": "$(capture).env.*",
-    "README.md": "README*,CHANGELOG*,LICENSE,CNAME",
-    "package.json": "pnpm-lock.yaml,pnpm-workspace.yaml,.gitattributes,.gitignore,.gitpod.yml,.npmrc,.browserslistrc,.node-version,.git*,.tazerc.json",
+    "README.md": "README*,LICENSE,CNAME",
+    "package.json": "pnpm-lock.yaml,pnpm-workspace.yaml,.gitattributes,.gitignore,.npmrc,.browserslistrc,.node-version,.git*,.tazerc.json",
     "oxlint.config.ts": ".eslintignore,.stylelintignore,.commitlintrc.*,stylelint.config.*,.lintstagedrc.mjs,cspell.json,lefthook.yml,oxfmt.config.*,eslint.config.*"
   },
   "commentTranslate.hover.enabled": false,

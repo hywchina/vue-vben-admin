@@ -131,13 +131,13 @@ describe('useAccessStore', () => {
 
   it('navigates to a specific tab', async () => {
     const store = useTabbarStore();
-    const tab: any = { meta: {}, name: 'Dashboard', path: '/dashboard' };
+    const tab: any = { meta: {}, name: 'Workspace', path: '/workspace' };
 
     await store._goToTab(tab, router);
 
     expect(router.replace).toHaveBeenCalledWith({
       params: {},
-      path: '/dashboard',
+      path: '/workspace',
       query: {},
     });
   });
@@ -285,16 +285,16 @@ describe('useAccessStore', () => {
   it('refreshes the current tab', async () => {
     const store = useTabbarStore();
     const currentTab: any = {
-      fullPath: '/dashboard',
-      meta: { name: 'Dashboard' },
-      name: 'Dashboard',
-      path: '/dashboard',
+      fullPath: '/workspace',
+      meta: { name: 'Workspace' },
+      name: 'Workspace',
+      path: '/workspace',
     };
     router.currentRoute.value = currentTab;
 
     await store.refresh(router);
 
-    expect(store.excludeCachedTabs.has('Dashboard')).toBe(false);
+    expect(store.excludeCachedTabs.has('Workspace')).toBe(false);
     expect(store.renderRouteView).toBe(true);
   });
 });

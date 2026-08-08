@@ -509,7 +509,7 @@ sequenceDiagram
 ## 10. 目录和依赖边界
 
 ```text
-vue-vben-admin/
+rail-cabin-design-platform/
 ├── apps/
 │   ├── web-antd/                       # 实际 Web 应用
 │   │   └── src/
@@ -580,7 +580,7 @@ flowchart LR
 
 - `apps/platform-api/utils` 根目录的同名文件是兼容导出层，保留现有 API 路由、脚本和 Nitro 自动导入稳定；新增实现必须进入 `domain`、`identity`、`http` 或 `infrastructure`。
 - `apps/web-antd/src/api/platform/index.ts` 与 `modules/platform/types.ts` 是领域统一导出入口，具体实现和类型按领域拆分。
-- 原始模板的 `views/dashboard`、`views/demos` 和其他 Web 变体不在平台核心路由中，本轮隔离观察，不做无引用证据不足的删除。
+- 原始模板的 Dashboard、Demos、其他 Web 变体、Mock 服务、文档站和发布设施已经在引用、类型、测试与构建验证后删除；生产动态页面扫描只覆盖平台业务与个人中心。
 
 ## 12. 新模块接入原则
 

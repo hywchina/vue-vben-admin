@@ -109,7 +109,7 @@ export function normalizeItems(
 
 /**
  * 行装箱算法：根据列数与各项 span 将列表项拆分为多行，
- * 并补齐每行最后一项以占满列数。移植自 antdv-next useRow。
+ * 并补齐每行最后一项以占满列数。
  */
 export function calcRows(
   items: InternalDescriptionsItem[],

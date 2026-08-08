@@ -1,6 +1,6 @@
 import type { Component, CSSProperties } from 'vue';
 
-/** 响应式断点，与 antdv-next 保持一致 */
+/** 响应式断点 */
 export type DescriptionsBreakpoint =
   | 'lg'
   | 'md'

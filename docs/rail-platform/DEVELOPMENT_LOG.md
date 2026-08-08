@@ -326,3 +326,14 @@
 - 依赖版本由 `package.json`、`pnpm-workspace.yaml` 和 `pnpm-lock.yaml` 共同锁定。
 - 设计决策、目录边界、故障和验证结果均记录在 `docs/rail-platform`。
 - 下一阶段接入真实 API 时，应继续追加本日志，而不要删除历史。
+
+## 2026-08-08：仓库产品化精简与身份统一
+
+- 删除 5 套替代 Web、旧 Nitro Mock、Playground、Vben 文档站、Changesets 和上游 GitHub 发布设施。
+- 删除实际 Web 与共享包中的 Dashboard/Demos、About、验证码/二维码/第三方登录、样例安全设置、无入口错误页和专属资源。
+- 删除无平台引用的 ECharts、Tiptap、VXE Table、Captcha、CountTo、JsonViewer 和替代 UI 样式，保留实际使用的表单、布局、权限、请求、状态、图片裁剪和动效。
+- 活动 Web 包改为 `@rail/web` 0.1.0；根包、HTML、PWA、运行时配置变量、默认偏好、版权头、VS Code 和 GitHub 协作文件统一为平台身份。
+- 根 README 改为中文项目入口，新增 `REPOSITORY_STRUCTURE.md`，记录完整 `tree` 审计口径和所有保留区域用途。
+- 清理本机绝对路径、旧克隆目录名和过期“隔离观察”描述。
+
+验证：`pnpm lint`、`pnpm typecheck:rail`、`pnpm test:rail`、`pnpm build:rail` 已通过；集成和浏览器验收在最终门禁阶段记录。

@@ -34,8 +34,8 @@ docker version
 ### 2.2 安装项目
 
 ```bash
-git clone <二次开发仓库地址> vue-vben-admin
-cd vue-vben-admin
+git clone <二次开发仓库地址> rail-cabin-design-platform
+cd rail-cabin-design-platform
 pnpm install --frozen-lockfile
 ```
 

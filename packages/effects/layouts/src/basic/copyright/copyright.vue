@@ -12,7 +12,7 @@ defineOptions({
 });
 
 withDefaults(defineProps<Props>(), {
-  companyName: 'Vben Admin',
+  companyName: '轨道客室智能设计平台',
   companySiteLink: '',
   date: '2024',
   icp: '',

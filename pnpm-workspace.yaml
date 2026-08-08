@@ -1,6 +1,6 @@
 packages:
-  - 'apps/platform-api'
-  - 'apps/web-antd'
+  - apps/platform-api
+  - apps/web-antd
   - 'internal/*'
   - 'internal/lint-configs/*'
   - 'packages/*'
@@ -45,7 +45,6 @@ catalog:
   '@ctrl/tinycolor': ^4.2.0
   '@eslint-community/eslint-plugin-eslint-comments': ^4.7.2
   '@eslint/js': ^10.0.1
-  '@faker-js/faker': ^10.5.0
   '@iconify/json': ^2.2.504
   '@iconify/tailwind4': ^1.2.3
   '@iconify/vue': ^5.0.1
@@ -54,32 +53,17 @@ catalog:
   '@jspm/generator': ^2.16.3
   '@lucide/vue': ^1.26.0
   '@manypkg/get-packages': ^3.1.0
-  '@playwright/test': ^1.61.1
   '@pnpm/workspace.read-manifest': ^1000.3.1
   '@stylistic/stylelint-plugin': ^5.2.1
   '@tailwindcss/typography': ^0.5.20
   '@tailwindcss/vite': ^4.3.3
   '@tanstack/store': ^0.11.0
   '@tanstack/vue-form': ^1.33.2
-  '@tanstack/vue-query': ^5.101.4
   '@tanstack/vue-store': ^0.11.0
-  '@tiptap/core': ^3.28.0
-  '@tiptap/extension-document': ^3.28.0
-  '@tiptap/extension-highlight': ^3.28.0
-  '@tiptap/extension-image': ^3.28.0
-  '@tiptap/extension-link': ^3.28.0
-  '@tiptap/extension-placeholder': ^3.28.0
-  '@tiptap/extension-text-align': ^3.28.0
-  '@tiptap/extension-text-style': ^3.28.0
-  '@tiptap/extension-underline': ^3.28.0
-  '@tiptap/pm': ^3.28.0
-  '@tiptap/starter-kit': ^3.28.0
-  '@tiptap/vue-3': ^3.28.0
   '@tsdown/css': ^0.22.13
   '@types/archiver': ^8.0.0
   '@types/html-minifier-terser': ^7.0.2
   '@types/json-bigint': ^1.0.4
-  '@types/jsonwebtoken': ^9.0.10
   '@types/lodash.clonedeep': ^4.5.9
   '@types/node': ^25.9.5
   '@types/nodemailer': ^8.0.1
@@ -96,7 +80,6 @@ catalog:
   '@vueuse/integrations': ^14.3.0
   '@vueuse/motion': ^3.0.3
   ant-design-vue: ^4.2.6
-  antdv-next: ^1.4.5
   archiver: ^8.0.0
   axios: ^1.18.1
   axios-mock-adapter: ^2.1.0
@@ -115,8 +98,6 @@ catalog:
   dayjs: ^1.11.21
   defu: ^6.1.7
   dotenv: ^17.4.2
-  echarts: ^6.1.0
-  element-plus: ^2.14.3
   es-toolkit: ^1.49.0
   eslint: ^10.7.0
   eslint-plugin-better-tailwindcss: ^4.7.0
@@ -138,12 +119,9 @@ catalog:
   is-ci: ^4.1.0
   jose: ^6.2.8
   json-bigint: ^1.0.0
-  jsonwebtoken: ^9.0.3
   knip: ^6.29.0
   lefthook: ^2.1.10
   lodash.clonedeep: ^4.5.0
-  medium-zoom: ^1.1.0
-  naive-ui: ^2.44.1
   nitropack: ^2.13.4
   nodemailer: ^9.0.3
   nprogress: ^0.2.0
@@ -180,7 +158,6 @@ catalog:
   stylelint-scss: ^7.2.0
   tailwind-merge: ^3.6.0
   tailwindcss: ^4.3.3
-  tdesign-vue-next: ^1.20.3
   theme-colors: ^0.1.0
   tippy.js: ^6.3.7
   tsdown: ^0.22.13
@@ -189,7 +166,6 @@ catalog:
   tw-animate-css: ^1.4.0
   typescript: ^6.0.3
   unplugin-dts: ^1.0.3
-  unplugin-element-plus: ^0.11.2
   unplugin-vue: ^7.2.0
   vite: ^8.1.5
   vite-plugin-compression: ^0.5.1
@@ -200,12 +176,9 @@ catalog:
   vue: ^3.5.40
   vue-eslint-parser: ^10.4.1
   vue-i18n: ^11.4.7
-  vue-json-pretty: ^2.6.0
   vue-router: ^5.2.0
   vue-tippy: ^6.7.1
   vue-tsc: ^3.3.8
-  vxe-pc-ui: ^4.16.19
-  vxe-table: ^4.20.6
   watermark-js-plus: ^1.6.6
   yaml-eslint-parser: ^2.1.0
   zod: ^4.4.3

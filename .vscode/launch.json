@@ -4,39 +4,12 @@
   "configurations": [
     {
       "type": "chrome",
-      "name": "vben admin playground dev",
-      "request": "launch",
-      "url": "http://localhost:5555",
-      "env": { "NODE_ENV": "development" },
-      "sourceMaps": true,
-      "webRoot": "${workspaceFolder}/playground"
-    },
-    {
-      "type": "chrome",
-      "name": "vben admin antd dev",
+      "name": "轨道客室智能设计平台 Web",
       "request": "launch",
       "url": "http://localhost:5666",
       "env": { "NODE_ENV": "development" },
       "sourceMaps": true,
       "webRoot": "${workspaceFolder}/apps/web-antd"
-    },
-    {
-      "type": "chrome",
-      "name": "vben admin ele dev",
-      "request": "launch",
-      "url": "http://localhost:5777",
-      "env": { "NODE_ENV": "development" },
-      "sourceMaps": true,
-      "webRoot": "${workspaceFolder}/apps/web-ele"
-    },
-    {
-      "type": "chrome",
-      "name": "vben admin naive dev",
-      "request": "launch",
-      "url": "http://localhost:5888",
-      "env": { "NODE_ENV": "development" },
-      "sourceMaps": true,
-      "webRoot": "${workspaceFolder}/apps/web-naive"
     }
   ]
 }

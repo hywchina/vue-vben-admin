@@ -1,6 +1,6 @@
 import type {
   ApplicationConfig,
-  VbenAdminProAppConfigRaw,
+  RailPlatformAppConfigRaw,
 } from '@vben/types/global';
 
 /**
@@ -10,27 +10,16 @@ export function useAppConfig(
   env: Record<string, any>,
   isProduction: boolean,
 ): ApplicationConfig {
-  // 生产环境下，直接使用 window._VBEN_ADMIN_PRO_APP_CONF_ 全局变量
+  // 生产环境下，直接使用 window._RAIL_PLATFORM_APP_CONF_ 全局变量
   const config = isProduction
-    ? window._VBEN_ADMIN_PRO_APP_CONF_
-    : (env as VbenAdminProAppConfigRaw);
+    ? window._RAIL_PLATFORM_APP_CONF_
+    : (env as RailPlatformAppConfigRaw);
 
-  const {
-    VITE_GLOB_API_URL,
-    VITE_GLOB_AUTH_DINGDING_CORP_ID,
-    VITE_GLOB_AUTH_DINGDING_CLIENT_ID,
-  } = config;
+  const { VITE_GLOB_API_URL } = config;
 
   const applicationConfig: ApplicationConfig = {
     apiURL: VITE_GLOB_API_URL,
-    auth: {},
   };
-  if (VITE_GLOB_AUTH_DINGDING_CORP_ID && VITE_GLOB_AUTH_DINGDING_CLIENT_ID) {
-    applicationConfig.auth.dingding = {
-      clientId: VITE_GLOB_AUTH_DINGDING_CLIENT_ID,
-      corpId: VITE_GLOB_AUTH_DINGDING_CORP_ID,
-    };
-  }
 
   return applicationConfig;
 }

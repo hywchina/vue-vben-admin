@@ -24,11 +24,9 @@ import { viteFormFieldSlotMigrationWarningPlugin } from './form-field-slot-migra
 import { viteHtmlPlugin } from './html';
 import { viteImportMapPlugin } from './importmap';
 import { viteInjectAppLoadingPlugin } from './inject-app-loading';
-import { viteMetadataPlugin } from './inject-metadata';
 import { viteLicensePlugin } from './license';
 import { vitePrintPlugin } from './print';
 import { viteTailwindReferencePlugin } from './tailwind-reference';
-import { viteVxeTableImportsPlugin } from './vxe-table';
 
 /**
  * 获取条件成立的 vite 插件
@@ -51,7 +49,7 @@ async function loadConditionPlugins(conditionPlugins: ConditionPlugin[]) {
 async function loadCommonPlugins(
   options: CommonPluginOptions,
 ): Promise<ConditionPlugin[]> {
-  const { devtools, injectMetadata, isBuild, visualizer } = options;
+  const { devtools, isBuild, visualizer } = options;
   return [
     {
       condition: true,
@@ -71,10 +69,6 @@ async function loadCommonPlugins(
     {
       condition: !isBuild && devtools,
       plugins: () => [viteVueDevTools()],
-    },
-    {
-      condition: injectMetadata,
-      plugins: async () => [await viteMetadataPlugin()],
     },
     {
       condition: isBuild && !!visualizer,
@@ -116,7 +110,6 @@ async function loadApplicationPlugins(
     printInfoMap,
     pwa,
     pwaOptions,
-    vxeTableLazyImport,
     ...commonOptions
   } = options;
 
@@ -145,12 +138,6 @@ async function loadApplicationPlugins(
     {
       condition: !isBuild,
       plugins: () => [viteFormFieldSlotMigrationWarningPlugin()],
-    },
-    {
-      condition: vxeTableLazyImport,
-      plugins: async () => {
-        return [await viteVxeTableImportsPlugin()];
-      },
     },
     {
       condition: injectAppLoading,
@@ -254,5 +241,4 @@ export {
   viteDtsPlugin,
   viteHtmlPlugin,
   viteVisualizerPlugin,
-  viteVxeTableImportsPlugin,
 };

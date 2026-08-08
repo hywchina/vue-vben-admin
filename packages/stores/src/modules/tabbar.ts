@@ -480,7 +480,7 @@ export const useTabbarStore = defineStore('core-tabbar', {
      *
      * @example
      * // 设置动态标题
-     * setTabTitle(tab, computed(() => t('common.dashboard')));
+     * setTabTitle(tab, computed(() => t('common.workspace')));
      */
     async setTabTitle(tab: TabDefinition, title: ComputedRef<string> | string) {
       const findTab = this.tabs.find((item) => equalTab(item, tab));
