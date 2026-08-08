@@ -20,7 +20,7 @@
     "build:analyze": "pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development",
     "preview": "vite preview",
-    "test:unit": "vitest run --dom src/store/platform.test.ts",
+    "test:unit": "vitest run --dom src/store/platform*.test.ts",
     "typecheck": "vue-tsc --noEmit --skipLibCheck"
   },
   "imports": {

@@ -1,4 +1,4 @@
-import type { AssetType, PlatformJob } from '#/modules/platform/types';
+import type { AssetType } from '#/modules/platform/types';
 
 import { computed, ref } from 'vue';
 
@@ -22,6 +22,8 @@ import {
   uploadAssetApi,
 } from '#/api';
 
+import { isActivePlatformJob, normalizePlatformJobs } from './platform/helpers';
+
 export const usePlatformStore = defineStore('rail-platform', () => {
   const currentProjectId = ref('');
   const projects = ref<Awaited<ReturnType<typeof getProjectsApi>>['items']>([]);
@@ -44,9 +46,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
   );
   const currentAssets = computed(() => assets.value);
   const currentJobs = computed(() => jobs.value);
-  const activeJobs = computed(() =>
-    jobs.value.filter((job) => ['queued', 'running'].includes(job.status)),
-  );
+  const activeJobs = computed(() => jobs.value.filter(isActivePlatformJob));
 
   async function refreshCurrentProjectData() {
     if (!currentProjectId.value) {
@@ -61,13 +61,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     ]);
     if (currentProjectId.value === projectId) {
       assets.value = nextAssets;
-      jobs.value = nextJobs.map((job) => ({
-        ...job,
-        duration:
-          typeof job.duration === 'number'
-            ? `${job.duration} 秒`
-            : job.duration,
-      })) as PlatformJob[];
+      jobs.value = normalizePlatformJobs(nextJobs);
     }
   }
 
