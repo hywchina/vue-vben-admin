@@ -4,6 +4,7 @@ import { ASSET_KINDS } from '../assets/validation';
 
 export const workflowScalarParameterTypeSchema = z.enum([
   'boolean',
+  'json',
   'number',
   'select',
   'text',
@@ -22,6 +23,13 @@ export const workflowParameterTypeSchema = z.union([
   workflowMediaParameterTypeSchema,
 ]);
 
+export const workflowUiControlSchema = z.enum([
+  'default',
+  'camera-horizontal',
+  'camera-vertical',
+  'camera-zoom',
+]);
+
 const workflowAssetTargetSchema = z.object({
   inputName: z.string().trim().min(1).max(100),
   nodeId: z.string().trim().min(1).max(100),
@@ -34,6 +42,7 @@ export const workflowParameterSchema = z
     advanced: z.boolean().default(false),
     assetIndex: z.number().int().min(0).max(99).optional(),
     defaultValue: z.unknown().optional(),
+    group: z.string().trim().max(200).optional(),
     help: z.string().trim().max(500).optional(),
     inputName: z.string().trim().min(1).max(100).optional(),
     integer: z.boolean().default(false),
@@ -62,6 +71,8 @@ export const workflowParameterSchema = z
     step: z.number().positive().optional(),
     targets: z.array(workflowAssetTargetSchema).max(20).default([]),
     type: workflowParameterTypeSchema,
+    uiControl: workflowUiControlSchema.default('default'),
+    uiGroup: z.string().trim().min(1).max(100).optional(),
   })
   .superRefine((definition, context) => {
     const media = workflowMediaParameterTypeSchema.safeParse(definition.type);
@@ -136,6 +147,16 @@ export interface ApiWorkflowNode {
   _meta?: { title?: string };
   class_type: string;
   inputs: Record<string, unknown>;
+}
+
+export function workflowValidationErrorMessage(
+  error: unknown,
+  fallback = '工作流参数无效',
+) {
+  if (error instanceof z.ZodError) {
+    return '工作流参数协议与当前服务版本不一致，请刷新服务后重新提交';
+  }
+  return error instanceof Error ? error.message : fallback;
 }
 
 export type ApiWorkflow = Record<string, ApiWorkflowNode>;
@@ -269,6 +290,24 @@ function normalizeParameterValue(
     }
     return value;
   }
+  if (definition.type === 'json') {
+    try {
+      return typeof value === 'string'
+        ? JSON.parse(value)
+        : JSON.parse(JSON.stringify(value));
+    } catch {
+      throw new TypeError(`${definition.label}必须是有效 JSON`);
+    }
+  }
+  if (definition.type === 'select') {
+    if (typeof value !== 'string' && typeof value !== 'number') {
+      throw new TypeError(`${definition.label}必须是允许的选项`);
+    }
+    if (!definition.options.some((option) => option.value === value)) {
+      throw new Error(`${definition.label}不是允许的选项`);
+    }
+    return value;
+  }
   if (typeof value !== 'string') {
     throw new TypeError(`${definition.label}必须是文本`);
   }
@@ -276,12 +315,6 @@ function normalizeParameterValue(
     throw new Error(
       `${definition.label}不能超过 ${definition.maxLength} 个字符`,
     );
-  }
-  if (
-    definition.type === 'select' &&
-    !definition.options.some((option) => option.value === value)
-  ) {
-    throw new Error(`${definition.label}不是允许的选项`);
   }
   return value;
 }

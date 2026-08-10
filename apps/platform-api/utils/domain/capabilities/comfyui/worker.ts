@@ -20,6 +20,7 @@ import {
   materializeWorkflowAssets,
   workflowOutputSchema,
   workflowParameterSchema,
+  workflowValidationErrorMessage,
 } from '../../workflows/schema';
 import { ComfyUiClient } from './client';
 
@@ -451,18 +452,19 @@ export class ComfyUiWorker {
         await transaction`
           INSERT INTO assets (
             id, project_id, name, description, kind, source, source_app_key,
-            source_job_id, owner_id, status
+            source_job_id, owner_id, status, saved_at
           ) VALUES (
             ${assetId},
             ${job.projectId},
             ${`${job.capabilityName} · ${filename}`},
-            ${`由 ${job.jobName} 生成并自动登记。`},
+            ${`由 ${job.jobName} 生成，等待用户确认是否保存到资产中心。`},
             ${output.definition.kind},
             'workflow',
             ${job.appKey},
             ${job.jobId},
             ${job.createdBy},
-            'available'
+            'available',
+            NULL
           )
         `;
         await transaction`
@@ -742,7 +744,11 @@ export class ComfyUiWorker {
       );
       prompt = await this.#materializeInputAssets(job, prompt);
     } catch (error) {
-      await this.#fail(job, 'WORKFLOW_PARAMETER_INVALID', safeError(error));
+      await this.#fail(
+        job,
+        'WORKFLOW_PARAMETER_INVALID',
+        workflowValidationErrorMessage(error),
+      );
       return;
     }
     const sql = useDatabase();

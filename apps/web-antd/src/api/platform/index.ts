@@ -6,4 +6,6 @@ export * from './jobs';
 export * from './notifications';
 export * from './projects';
 export * from './users';
+export * from './workflow-drafts';
+export * from './workflow-transfers';
 export * from './workflows';

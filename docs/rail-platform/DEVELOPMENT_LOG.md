@@ -447,3 +447,56 @@
 - 修复两项分区工作流：移除 `Anything Everywhere` 隐式广播并直接连接 `sum_load_adv` 上下文；编号分区的 `SaveImage` 改为保存采样器生成图而非缩放原图；移除旧前端预览节点和过期尺寸字段。
 - 最终结果：18/18 项能力均完成真实 GPU 推理和项目资产回写。验证覆盖单/多资产上传、Data URL、Alpha 遮罩、EasyMark 笔画、批量图片、内联文本、GLB、长队列轮询和 Worker 租约。
 - 完整门禁通过：`pnpm lint`、`pnpm typecheck:rail`、42 项 Platform API 与 9 项 Web 单元测试、真实 PostgreSQL/MinIO 集成验收、模拟 ComfyUI Worker 集成验收和 `pnpm build:rail`。
+
+## 2026-08-08：应用中心筛选、可见性管理与卡片修复
+
+- 修复应用卡片短名称水印与状态徽标重叠：水印移到卡片头部下方并限制宽度，状态与隐藏徽标保持独立层级。
+- 应用中心增加名称/描述/服务方搜索、应用状态筛选，并保留类别筛选；管理员额外获得用户可见性筛选。
+- 新增 `012_application_visibility.sql`：`applications.visible` 默认启用，新增仅管理员拥有的 `platform:application:write` 权限。
+- 新增管理员应用可见性 API 和审计事件 `application.visibility.update`。普通用户的应用列表不返回隐藏应用，并且直接请求隐藏能力详情或创建任务同样返回 404；管理员仍能查看、筛选和进入隐藏应用。
+- 前端管理员可在每张卡片持久化切换“用户可见”，隐藏卡片使用独立视觉状态；筛选无结果时显示明确空状态。
+- 验证：API/Web 类型检查通过；Platform API 42 项、Web 10 项单元测试通过；真实 PostgreSQL/MinIO 集成验收覆盖管理员隐藏/恢复、普通用户列表隔离、写权限拒绝、能力详情和任务创建防绕过。
+- 浏览器：1000×1000 管理员页面共 24 张卡片，状态徽标与短名称水印边界交叠为 0；名称搜索、状态筛选、可见性开关及恢复通过，控制台无错误。
+
+## 2026-08-08：工作流可视化交互、结果暂存与跨能力流转
+
+- 保持 `apps/platform-api/workflows/comfyui/` 内 18 份原始 API JSON 不变，只调整平台参数渲染、输入组件和结果生命周期。
+- 工作区默认展示基础业务参数并收纳高级参数，补充参数总数、说明、数值范围、默认值和高级下拉项。
+- 图片输入明确拆分为“从项目资产选择”和“本地导入”；新增资产缩略图选择器和全屏缩放预览。
+- 遮罩与分区重绘升级为全屏 Canvas 编辑器，支持画笔、橡皮、颜色、粗细、撤销、重做、清除和缩放；实时捕捉支持屏幕/摄像头预览与可视化选区裁剪。
+- 新增 `013_workflow_output_staging.sql`。Worker 输出默认 `saved_at = NULL`，仅在任务结果区可见；用户点击保存后才进入资产中心。
+- 任务接口返回项目范围内的全部暂存输出；结果可下载、放大或手动加入资产。未加入资产时后端不允许当作其他工作流输入。
+- 资产中心新增后端强制项目写权限的软删除接口、对象清理和 `asset.delete` 审计；历史任务外键与血缘记录继续保留。
+- 自动化验收覆盖暂存结果不进入资产列表、任务接口可读取、确认保存后进入列表、删除后不可访问，以及 Worker 输出保持暂存状态。
+
+## 2026-08-10：Linux 本地开发环境管理脚本
+
+- 根目录新增 `rail-platform.sh`，统一提供 `check_env`、`start`、`status`、`stop`、`restart`、`logs` 和 `help`。
+- 新增 `.nvmrc` 固定 Node.js `24.16.0`；脚本自动加载 NVM，并校验项目允许的 Node 版本和锁定的 pnpm `11.16.0`。
+- `start` 在后台复用 `pnpm dev:rail`，保留原有 Compose、迁移、种子、API、Worker 和 Web 启动链路；PID 和日志写入 Git 忽略的 `.rail-platform-runtime/`。
+- 每次 `start/restart` 生成带年月日时分秒的独立日志 `dev-YYYYMMDD-HHMMSS.log`，文件头记录完整启动时间和时区；稳定入口 `dev.log` 始终指向本次日志，历史日志不再被覆盖。
+- `status` 同时检查受管进程、Compose 服务、Web/API HTTP 健康以及 MinIO/Mailpit 端口。
+- `stop` 使用进程组停止 Node 开发服务并执行不带 `-v` 的 Compose down，保留 PostgreSQL 和 MinIO 数据；`--keep-infra` 可只停止 Node 进程。
+
+## 2026-08-09：工作区状态、完整参数、资产预览与精确流转
+
+- 执行链路横线默认保持静态，仅当当前应用存在 `queued`、`running` 或 `cancelling` 任务时显示运行动效，减少错误的“正在工作”感知。
+- 动态应用页签使用应用/能力名称；重新进入应用时不恢复旧的已完成结果，但仍恢复后台正在运行的任务。
+- 新增参数同步器与 `parameter-schemas.generated.json`，根据真实 ComfyUI `/object_info` 为 18 份 API JSON 补齐每个非连线输入；完整性测试强制未映射数为 0。
+- `ScreenShare` 实现与参考 ComfyUI webUI 一致的屏幕/摄像头、拖拽选区、裁剪实时预览、`refresh_rate`、画面差异检测和串行实时任务；停止时关闭媒体轨道并取消本页活跃任务。
+- 资产预览 API 按项目权限返回内联文本或图片/视频/音频/PDF 短时地址；资产中心支持图片放大、文本阅读与媒体播放。
+- 新增 `014_workflow_asset_transfers.sql`。流转记录按用户、项目、目标工作流和输入位持久化；多输入工作流中用户必须明确选择“基础空间”、“样式参考”或“材质参考”等语义输入，刷新后仍回填到同一位置，任务创建后标记为已消费。
+- 后端同时强制“只有已登记项目资产才能流转”；暂存结果会返回 `WORKFLOW_OUTPUT_NOT_SAVED`，前端只在用户明确确认“加入资产并流转”后连续完成两步。
+- 最终门禁通过：`pnpm lint`、API/Web 类型检查、Platform API 48 项测试、Web 12 项状态测试、真实 PostgreSQL/MinIO 集成验收、模拟 ComfyUI Worker 端到端验收、真实 Chromium 页面验收和 `pnpm build:rail`。浏览器验收同时使用真实 ComfyUI 配置创建并停止一次 ScreenShare 实时任务；临时账号、项目、对象和流转记录均完成清理。
+
+## 2026-08-09：工作区草稿、专用控制器与 Worker 协议同步
+
+- 高级参数首次进入时默认折叠；基础参数、专用控制器和高级参数仍共同使用同一份公开参数 Schema 与任务提交契约。
+- 新增 `015_workflow_workspace_drafts.sql` 和 `/workflow-drafts` 接口。当前用户在指定项目和应用中的参数、图片输入位及 EasyMark 数据持久化到 PostgreSQL；再次点击应用标签、切换回来或刷新页面后恢复，已完成任务结果仍不自动恢复到工作区。
+- 草稿接口校验用户项目范围、应用可见性、公开参数键、精确输入位、资产登记状态和类型兼容性；已删除、跨项目、暂存或重复占位的资产不会恢复。
+- Qwen 单视角和五镜头工作流增加轨道式镜头可视化控制器，水平角、俯仰角和镜头距离仍写入各自真实 ComfyUI 节点。
+- EasyMark 分区编辑与参考 webUI 协议对齐，支持自由画笔、方框、色块、橡皮、六种颜色、透明度和 1–6 编号，序列化结果直接写入 `brush_data`。
+- ScreenShare 输入改为工作区内直接展示“共享屏幕、摄像头、Set Area、Live On”，保留选区裁剪、变化检测、串行提交和停止清理。
+- 修复开发环境 API 热更新但 Worker 不重载的问题：`dev:rail` 现在使用 `tsx watch` 启动 Worker；工作流参数协议变化会自动重启 Worker。即使出现版本不一致，也只返回稳定的中文错误，不再把 Zod 联合类型明细显示给用户。
+- 验证覆盖参数 Schema、草稿纯函数、真实 PostgreSQL/MinIO 草稿读写与隔离、模拟 ComfyUI Worker，以及 Chromium 中高级参数折叠、直接实时捕获、角度草稿恢复、图片输入恢复和 EasyMark 编号序列化。
+- 最终门禁通过：`pnpm lint`、API/Web 类型检查、Platform API 55 项测试、Web 12 项状态测试、真实 PostgreSQL/MinIO 集成验收、模拟 ComfyUI Worker 端到端验收、真实 Chromium 页面验收和 `pnpm build:rail`。浏览器验收产出了实时捕获、镜头控制、分区打标和草稿恢复四组截图，运行期没有 JavaScript 页面错误。

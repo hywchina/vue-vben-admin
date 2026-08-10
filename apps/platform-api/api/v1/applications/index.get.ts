@@ -1,10 +1,11 @@
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
-import { requireIdentity } from '~/utils/identity';
+import { hasAdministrativeRole, requireIdentity } from '~/utils/identity';
 import { apiHandler } from '~/utils/response';
 
 export default apiHandler(async (event) => {
-  await requireIdentity(event);
+  const identity = await requireIdentity(event);
+  const canManageVisibility = hasAdministrativeRole(identity);
   const sql = useDatabase();
   const applications = await sql<
     {
@@ -23,6 +24,7 @@ export default apiHandler(async (event) => {
       shortName: string;
       status: string;
       updatedAt: Date;
+      visible: boolean;
     }[]
   >`
     SELECT
@@ -35,6 +37,7 @@ export default apiHandler(async (event) => {
       applications.color,
       applications.provider,
       applications.status,
+      applications.visible,
       COALESCE((applications.adapter_config ->> 'enabled')::boolean, false)
         AS "adapterEnabled",
       c.code AS "capabilityCode",
@@ -47,6 +50,7 @@ export default apiHandler(async (event) => {
       ON c.app_key = applications.key AND c.status = 'published'
     LEFT JOIN capability_workflows cw
       ON cw.capability_code = c.code AND cw.active = true
+    WHERE applications.visible = true OR ${canManageVisibility}
     ORDER BY applications.created_at
   `;
   return applications.map((application) => ({
@@ -54,6 +58,7 @@ export default apiHandler(async (event) => {
     adapterConfigured: application.capabilityCode
       ? application.capabilityReady && Boolean(getConfig().comfyuiApiUrl)
       : application.adapterEnabled,
+    canManageVisibility,
     updatedAt: application.updatedAt.toISOString(),
   }));
 });

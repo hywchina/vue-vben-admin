@@ -20,6 +20,7 @@ export default apiHandler(async (event) => {
       projectId: string;
       status: string;
       storageKind: 'inline' | 'object';
+      textContent: null | string;
     }[]
   >`
     SELECT
@@ -27,6 +28,7 @@ export default apiHandler(async (event) => {
       a.status,
       av.storage_kind AS "storageKind",
       av.object_key AS "objectKey",
+      av.text_content AS "textContent",
       av.mime_type AS "mimeType"
     FROM assets a
     JOIN asset_versions av
@@ -39,15 +41,25 @@ export default apiHandler(async (event) => {
   if (asset.status !== 'available') {
     throw new ApiError(409, 'ASSET_NOT_READY', '资产尚未完成上传');
   }
-  if (
-    asset.storageKind !== 'object' ||
-    !asset.objectKey ||
-    !asset.mimeType.startsWith('image/')
-  ) {
+  if (asset.storageKind === 'inline') {
+    return {
+      content: asset.textContent ?? '',
+      mimeType: asset.mimeType,
+      mode: 'inline',
+    };
+  }
+  const previewableObject =
+    asset.mimeType.startsWith('image/') ||
+    asset.mimeType.startsWith('video/') ||
+    asset.mimeType.startsWith('audio/') ||
+    asset.mimeType.startsWith('text/') ||
+    asset.mimeType === 'application/json' ||
+    asset.mimeType === 'application/pdf';
+  if (!asset.objectKey || !previewableObject) {
     throw new ApiError(
       415,
       'ASSET_PREVIEW_UNSUPPORTED',
-      '该资产不支持图片预览',
+      '该资产不支持浏览器内预览，请下载后查看',
     );
   }
 
@@ -55,6 +67,8 @@ export default apiHandler(async (event) => {
     expiresAt: new Date(
       Date.now() + getConfig().s3PresignTtlSeconds * 1000,
     ).toISOString(),
+    mimeType: asset.mimeType,
+    mode: 'url',
     url: await createPreviewUrl(asset.objectKey, asset.mimeType),
   };
 });

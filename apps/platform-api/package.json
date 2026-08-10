@@ -9,13 +9,15 @@
     "db:migrate": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/migrate.ts",
     "db:reset-users": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/reset-users.ts",
     "db:seed": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/seed.ts",
-    "dev": "pnpm run --parallel \"/^(dev:api|worker)$/\"",
+    "dev": "pnpm run --parallel \"/^(dev:api|worker:dev)$/\"",
     "dev:api": "node ../../scripts/run-with-env.mjs .env -- nitro dev --port 5320",
     "prepare": "nitro prepare",
     "test": "vitest run",
     "test:integration": "tsx scripts/integration-test.ts && tsx scripts/comfyui-worker-integration-test.ts",
     "typecheck": "tsc --noEmit",
+    "workflow:sync-parameters": "tsx scripts/sync-workflow-parameters.ts",
     "worker": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/worker.ts",
+    "worker:dev": "node ../../scripts/run-with-env.mjs .env -- tsx watch scripts/worker.ts",
     "worker:once": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/worker.ts --once"
   },
   "dependencies": {

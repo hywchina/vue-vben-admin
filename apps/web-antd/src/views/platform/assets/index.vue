@@ -17,6 +17,7 @@ import {
 } from 'ant-design-vue';
 
 import { getAssetDownloadApi, getAssetPreviewApi } from '#/api';
+import ImageLightbox from '#/components/platform/image-lightbox.vue';
 import PageHeading from '#/components/platform/page-heading.vue';
 import {
   assetTypeIcons,
@@ -42,6 +43,12 @@ const assetPreviewStatuses = reactive(
   new Map<string, 'error' | 'loading' | 'ready'>(),
 );
 const assetPreviewRequestKeys = new Map<string, string>();
+const lightboxAsset = ref<null | PlatformAsset>(null);
+const deletingAssetId = ref('');
+const detailPreviewLoading = ref(false);
+const detailPreviewText = ref('');
+const detailPreviewUrl = ref('');
+const detailPreviewUnsupported = ref(false);
 
 const typeOptions = [{ label: '全部类型', value: 'all' }, ...assetTypeOptions];
 
@@ -79,6 +86,7 @@ async function loadAssetPreview(asset: PlatformAsset, requestKey: string) {
   assetPreviewStatuses.set(asset.id, 'loading');
   try {
     const preview = await getAssetPreviewApi(asset.id);
+    if (preview.mode !== 'url') throw new Error('图片资产没有返回预览地址');
     if (assetPreviewRequestKeys.get(asset.id) !== requestKey) return;
     assetPreviewUrls.set(asset.id, preview.url);
     assetPreviewStatuses.set(asset.id, 'ready');
@@ -93,6 +101,55 @@ function handleAssetPreviewError(assetId: string) {
   assetPreviewUrls.delete(assetId);
   assetPreviewStatuses.set(assetId, 'error');
 }
+
+function resetDetailPreview() {
+  detailPreviewLoading.value = false;
+  detailPreviewText.value = '';
+  detailPreviewUrl.value = '';
+  detailPreviewUnsupported.value = false;
+}
+
+async function loadDetailPreview(asset: PlatformAsset) {
+  resetDetailPreview();
+  if (asset.type === 'image') return;
+  detailPreviewLoading.value = true;
+  try {
+    const preview = await getAssetPreviewApi(asset.id);
+    if (selectedAsset.value?.id !== asset.id) return;
+    if (preview.mode === 'inline') {
+      detailPreviewText.value = preview.content;
+    } else if (
+      asset.type === 'text' ||
+      preview.mimeType.startsWith('text/') ||
+      preview.mimeType === 'application/json'
+    ) {
+      const response = await fetch(preview.url);
+      if (!response.ok) throw new Error('读取文本预览失败');
+      detailPreviewText.value = await response.text();
+    } else {
+      detailPreviewUrl.value = preview.url;
+    }
+  } catch {
+    if (selectedAsset.value?.id === asset.id) {
+      detailPreviewUnsupported.value = true;
+    }
+  } finally {
+    if (selectedAsset.value?.id === asset.id) {
+      detailPreviewLoading.value = false;
+    }
+  }
+}
+
+watch(
+  () =>
+    selectedAsset.value
+      ? `${selectedAsset.value.id}:${selectedAsset.value.version}`
+      : '',
+  () => {
+    if (selectedAsset.value) void loadDetailPreview(selectedAsset.value);
+    else resetDetailPreview();
+  },
+);
 
 watch(
   () =>
@@ -206,6 +263,32 @@ async function openAssetContent(asset: PlatformAsset) {
     width: 640,
   });
 }
+
+function openImagePreview(asset: PlatformAsset) {
+  if (!canPreviewAsset(asset) || !assetPreviewUrls.get(asset.id)) return;
+  lightboxAsset.value = asset;
+}
+
+function confirmDeleteAsset(asset: PlatformAsset) {
+  Modal.confirm({
+    cancelText: '取消',
+    content: '删除后将从资产中心移除，相关历史任务血缘仍会保留。',
+    okButtonProps: { danger: true },
+    okText: '确认删除',
+    onOk: async () => {
+      deletingAssetId.value = asset.id;
+      try {
+        await platformStore.deleteAsset(asset.id);
+        selectedAsset.value = null;
+        lightboxAsset.value = null;
+        message.success('资产已删除');
+      } finally {
+        deletingAssetId.value = '';
+      }
+    },
+    title: `删除“${asset.name}”？`,
+  });
+}
 </script>
 
 <template>
@@ -274,6 +357,7 @@ async function openAssetContent(asset: PlatformAsset) {
                 decoding="async"
                 loading="lazy"
                 @error="handleAssetPreviewError(asset.id)"
+                @click.stop="openImagePreview(asset)"
               />
               <div
                 v-else-if="canPreviewAsset(asset)"
@@ -360,7 +444,41 @@ async function openAssetContent(asset: PlatformAsset) {
             :src="assetPreviewUrls.get(selectedAsset.id)"
             class="asset-detail-preview__image"
             @error="handleAssetPreviewError(selectedAsset.id)"
+            @click="openImagePreview(selectedAsset)"
           />
+          <pre
+            v-else-if="detailPreviewText"
+            class="asset-detail-preview__text"
+            >{{ detailPreviewText }}</pre>
+          <video
+            v-else-if="selectedAsset.type === 'video' && detailPreviewUrl"
+            :src="detailPreviewUrl"
+            class="asset-detail-preview__media"
+            controls
+            preload="metadata"
+          ></video>
+          <audio
+            v-else-if="selectedAsset.type === 'audio' && detailPreviewUrl"
+            :src="detailPreviewUrl"
+            class="asset-detail-preview__audio"
+            controls
+            preload="metadata"
+          ></audio>
+          <iframe
+            v-else-if="
+              selectedAsset.mimeType === 'application/pdf' && detailPreviewUrl
+            "
+            :src="detailPreviewUrl"
+            class="asset-detail-preview__document"
+            title="资产文档预览"
+          ></iframe>
+          <div
+            v-else-if="detailPreviewLoading"
+            class="asset-preview-state asset-detail-preview__state"
+          >
+            <IconifyIcon class="is-loading" icon="lucide:loader-circle" />
+            <small>正在读取资产内容</small>
+          </div>
           <div
             v-else-if="canPreviewAsset(selectedAsset)"
             class="asset-preview-state asset-detail-preview__state"
@@ -384,7 +502,10 @@ async function openAssetContent(asset: PlatformAsset) {
               }}
             </small>
           </div>
-          <IconifyIcon v-else :icon="assetTypeIcons[selectedAsset.type]" />
+          <div v-else class="asset-preview-state asset-detail-preview__state">
+            <IconifyIcon :icon="assetTypeIcons[selectedAsset.type]" />
+            <small v-if="detailPreviewUnsupported">当前格式请下载后查看</small>
+          </div>
           <span class="asset-detail-preview__format">
             {{ selectedAsset.format }}
           </span>
@@ -438,8 +559,25 @@ async function openAssetContent(asset: PlatformAsset) {
         >
           {{ selectedAsset.type === 'text' ? '查看文本' : '下载文件' }}
         </Button>
+        <Button
+          block
+          class="mt-2"
+          danger
+          :loading="deletingAssetId === selectedAsset.id"
+          @click="confirmDeleteAsset(selectedAsset)"
+        >
+          <IconifyIcon icon="lucide:trash-2" />
+          删除资产
+        </Button>
       </template>
     </Drawer>
+
+    <ImageLightbox
+      :open="Boolean(lightboxAsset)"
+      :title="lightboxAsset?.name"
+      :url="lightboxAsset ? assetPreviewUrls.get(lightboxAsset.id) : undefined"
+      @update:open="lightboxAsset = null"
+    />
 
     <Modal
       v-model:open="uploadOpen"
@@ -737,6 +875,45 @@ async function openAssetContent(asset: PlatformAsset) {
     linear-gradient(145deg, rgb(255 255 255 / 38%), transparent 48%),
     var(--asset-accent);
   border-radius: 12px;
+}
+
+.asset-detail-preview:has(.asset-detail-preview__text),
+.asset-detail-preview:has(.asset-detail-preview__media),
+.asset-detail-preview:has(.asset-detail-preview__document) {
+  height: min(56vh, 520px);
+  overflow: hidden;
+  color: var(--rail-ink);
+  background: #f4f6f7;
+  border: 1px solid var(--rail-line);
+}
+
+.asset-detail-preview__text {
+  width: 100%;
+  height: 100%;
+  padding: 22px;
+  margin: 0;
+  overflow: auto;
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--rail-ink);
+  white-space: pre-wrap;
+}
+
+.asset-detail-preview__media,
+.asset-detail-preview__document {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.asset-detail-preview__media {
+  object-fit: contain;
+  background: #11171b;
+}
+
+.asset-detail-preview__audio {
+  width: calc(100% - 32px);
 }
 
 .asset-detail-preview.has-image-preview {

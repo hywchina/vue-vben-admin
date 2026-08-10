@@ -7,6 +7,7 @@ import type {
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { useTabs } from '@vben/hooks';
 import { IconifyIcon } from '@vben/icons';
 
 import {
@@ -14,6 +15,7 @@ import {
   Input,
   InputNumber,
   message,
+  Modal,
   Progress,
   Select,
   Switch,
@@ -22,21 +24,30 @@ import {
 } from 'ant-design-vue';
 
 import {
+  createWorkflowInputTransferApi,
+  dismissWorkflowInputTransferApi,
   getAssetDownloadApi,
   getAssetPreviewApi,
   getCapabilityApi,
+  getPendingWorkflowInputTransfersApi,
+  getWorkflowWorkspaceDraftApi,
+  saveWorkflowWorkspaceDraftApi,
 } from '#/api';
+import ImageLightbox from '#/components/platform/image-lightbox.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
 import { usePlatformStore } from '#/store';
 
+import CameraAngleControl from './camera-angle-control.vue';
 import CapabilityMediaField from './capability-media-field.vue';
 
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
 const router = useRouter();
+const { setTabTitle } = useTabs();
 const platformStore = usePlatformStore();
 const selectedAssets = reactive<Record<number, string>>({});
+const selectedTransfers = reactive<Record<number, string>>({});
 const submitting = ref(false);
 const uploadingField = ref('');
 const capabilityLoading = ref(false);
@@ -47,14 +58,31 @@ const genericPrompt = ref(
 );
 const outputPreviewUrl = ref('');
 const outputText = ref('');
+const outputLightboxOpen = ref(false);
+const flowModalOpen = ref(false);
+const flowDestination = ref('');
+const flowSubmitting = ref(false);
+const flowTargetAssetIndex = ref<number>();
+const flowTargetLoading = ref(false);
+const flowTargetOptions = ref<
+  Array<{ disabled: boolean; label: string; value: number }>
+>([]);
+const activeOutputAssetId = ref('');
+const workspaceJobId = ref('');
+const loadedWorkspaceKey = ref('');
 let pollTimer: ReturnType<typeof setInterval> | undefined;
+let draftSaveTimer: ReturnType<typeof setTimeout> | undefined;
+let capabilityLoadGeneration = 0;
+let draftHydrating = false;
 
 const application = computed(() =>
   platformStore.applications.find((item) => item.key === route.params.appKey),
 );
 const applicationJobs = computed(() =>
   platformStore.currentJobs.filter(
-    (job) => job.appKey === application.value?.key,
+    (job) =>
+      job.appKey === application.value?.key &&
+      job.projectId === platformStore.currentProjectId,
   ),
 );
 const activeJob = computed(() =>
@@ -62,11 +90,17 @@ const activeJob = computed(() =>
     ['cancelling', 'queued', 'running'].includes(job.status),
   ),
 );
-const latestJob = computed(() => applicationJobs.value[0]);
-const latestOutput = computed(() =>
-  platformStore.currentAssets.find(
-    (asset) => asset.sourceAppKey === application.value?.key,
-  ),
+const latestJob = computed(
+  () =>
+    activeJob.value ??
+    applicationJobs.value.find((job) => job.id === workspaceJobId.value),
+);
+const latestOutputs = computed(() => latestJob.value?.outputs ?? []);
+const latestOutput = computed(
+  () =>
+    latestOutputs.value.find(
+      (output) => output.assetId === activeOutputAssetId.value,
+    ) ?? latestOutputs.value[0],
 );
 const mediaFields = computed(
   () =>
@@ -77,13 +111,25 @@ const mediaFields = computed(
 const basicFields = computed(
   () =>
     capability.value?.fields.filter(
-      (field) => !field.advanced && !mediaTypes.has(field.type),
+      (field) =>
+        !field.advanced &&
+        !mediaTypes.has(field.type) &&
+        field.uiControl === 'default',
     ) ?? [],
 );
 const advancedFields = computed(
   () =>
     capability.value?.fields.filter(
-      (field) => field.advanced && !mediaTypes.has(field.type),
+      (field) =>
+        field.advanced &&
+        !mediaTypes.has(field.type) &&
+        field.uiControl === 'default',
+    ) ?? [],
+);
+const cameraFields = computed(
+  () =>
+    capability.value?.fields.filter((field) =>
+      field.uiControl.startsWith('camera-'),
     ) ?? [],
 );
 const selectedAssetIds = computed(() =>
@@ -93,13 +139,33 @@ const selectedAssetIds = computed(() =>
     return id ? [id] : [];
   }),
 );
-const resultKind = computed(() => capability.value?.outputTypes[0] ?? 'image');
+const resultKind = computed(
+  () => latestOutput.value?.kind ?? capability.value?.outputTypes[0] ?? 'image',
+);
+const compatibleDestinations = computed(() =>
+  platformStore.applications
+    .filter(
+      (item) =>
+        item.key !== application.value?.key &&
+        item.visible &&
+        item.capabilityCode &&
+        item.acceptedAssetTypes.includes(resultKind.value),
+    )
+    .map((item) => ({ label: item.name, value: item.key })),
+);
 const routeLineLabel = computed(() => {
   const inputCount = mediaFields.value.length;
   if (inputCount === 0) return '业务参数';
   if (inputCount === 1) return '单项目资产';
   return `${inputCount} 个输入位`;
 });
+
+function jobErrorMessage() {
+  if (latestJob.value?.error?.code === 'WORKFLOW_PARAMETER_INVALID') {
+    return '工作流参数协议未同步。请刷新页面后重新提交；开发环境请确认 Worker 已自动重启。';
+  }
+  return latestJob.value?.error?.message ?? latestJob.value?.stage;
+}
 
 function fieldNumberValue(field: CapabilityField) {
   const value = parameterValues[field.key];
@@ -117,8 +183,15 @@ function fieldBooleanValue(field: CapabilityField) {
   return parameterValues[field.key] === true;
 }
 
+function fieldJsonValue(field: CapabilityField) {
+  const value = parameterValues[field.key];
+  if (typeof value === 'string') return value;
+  return value === undefined ? '' : JSON.stringify(value, null, 2);
+}
+
 function setFieldValue(field: CapabilityField, value: unknown) {
   parameterValues[field.key] = value;
+  scheduleWorkspaceDraftSave();
 }
 
 function setFieldNumberValue(
@@ -127,6 +200,54 @@ function setFieldNumberValue(
 ) {
   const normalized = typeof value === 'string' ? Number(value) : value;
   parameterValues[field.key] = normalized ?? field.defaultValue;
+  scheduleWorkspaceDraftSave();
+}
+
+function workspaceDraftPayload(appKey?: string, projectId?: string) {
+  if (
+    !appKey ||
+    !projectId ||
+    !capability.value ||
+    loadedWorkspaceKey.value !== `${projectId}:${appKey}`
+  ) {
+    return;
+  }
+  return {
+    appKey,
+    inputAssetIds: Object.fromEntries(
+      Object.entries(selectedAssets).filter(([, assetId]) => Boolean(assetId)),
+    ),
+    parameterValues: taskParameters(),
+    projectId,
+  };
+}
+
+async function saveWorkspaceDraftNow() {
+  if (draftHydrating) return;
+  const payload = workspaceDraftPayload(
+    application.value?.key,
+    platformStore.currentProjectId,
+  );
+  if (!payload) return;
+  try {
+    await saveWorkflowWorkspaceDraftApi(payload);
+  } catch {
+    // 通用请求层已经提示失败；保留当前页面输入，后续修改会再次尝试保存。
+  }
+}
+
+function scheduleWorkspaceDraftSave() {
+  if (draftHydrating) return;
+  const payload = workspaceDraftPayload(
+    application.value?.key,
+    platformStore.currentProjectId,
+  );
+  if (!payload) return;
+  if (draftSaveTimer) clearTimeout(draftSaveTimer);
+  draftSaveTimer = setTimeout(() => {
+    draftSaveTimer = undefined;
+    void saveWorkflowWorkspaceDraftApi(payload).catch(() => undefined);
+  }, 500);
 }
 
 function resetWorkspace() {
@@ -136,6 +257,9 @@ function resetWorkspace() {
   for (const key of Object.keys(selectedAssets)) {
     Reflect.deleteProperty(selectedAssets, key);
   }
+  for (const key of Object.keys(selectedTransfers)) {
+    Reflect.deleteProperty(selectedTransfers, key);
+  }
   for (const field of capability.value?.fields ?? []) {
     if (!mediaTypes.has(field.type) || field.type === 'region') {
       parameterValues[field.key] = field.defaultValue;
@@ -144,18 +268,90 @@ function resetWorkspace() {
 }
 
 async function loadCapability() {
+  const generation = ++capabilityLoadGeneration;
+  if (draftSaveTimer) clearTimeout(draftSaveTimer);
+  draftSaveTimer = undefined;
+  loadedWorkspaceKey.value = '';
   capability.value = null;
-  if (!application.value?.capabilityCode) return;
+  workspaceJobId.value = activeJob.value?.id ?? '';
+  const appKey = application.value?.key;
+  const capabilityCode = application.value?.capabilityCode;
+  const projectId = platformStore.currentProjectId;
+  if (!appKey || !capabilityCode || !projectId) return;
   capabilityLoading.value = true;
   try {
-    capability.value = await getCapabilityApi(application.value.capabilityCode);
+    const [nextCapability, draft] = await Promise.all([
+      getCapabilityApi(capabilityCode),
+      getWorkflowWorkspaceDraftApi(projectId, appKey),
+    ]);
+    if (
+      generation !== capabilityLoadGeneration ||
+      application.value?.key !== appKey ||
+      platformStore.currentProjectId !== projectId
+    ) {
+      return;
+    }
+    capability.value = nextCapability;
+    loadedWorkspaceKey.value = `${projectId}:${appKey}`;
+    draftHydrating = true;
     resetWorkspace();
+    const parameterKeys = new Set(
+      nextCapability.fields
+        .filter(
+          (field) => !mediaTypes.has(field.type) || field.type === 'region',
+        )
+        .map((field) => field.key),
+    );
+    for (const [key, value] of Object.entries(draft.parameterValues)) {
+      if (parameterKeys.has(key)) parameterValues[key] = value;
+    }
+    for (const [index, assetId] of Object.entries(draft.inputAssetIds)) {
+      selectedAssets[Number(index)] = assetId;
+    }
+    await applyTransferredInputs();
   } finally {
-    capabilityLoading.value = false;
+    if (generation === capabilityLoadGeneration) {
+      draftHydrating = false;
+      capabilityLoading.value = false;
+      scheduleWorkspaceDraftSave();
+    }
   }
 }
 
-function selectAsset(field: CapabilityField, assetId: string) {
+async function applyTransferredInputs() {
+  if (!application.value || !platformStore.currentProjectId) return;
+  const transfers = await getPendingWorkflowInputTransfersApi(
+    platformStore.currentProjectId,
+    application.value.key,
+  );
+  for (const transfer of transfers) {
+    const target = mediaFields.value.find(
+      (field) =>
+        field.assetIndex === transfer.targetAssetIndex &&
+        field.acceptedKinds.includes(transfer.assetKind),
+    );
+    if (target) await selectAsset(target, transfer.assetId, transfer.id);
+  }
+  const routedTransferId =
+    typeof route.query.transferId === 'string'
+      ? route.query.transferId
+      : undefined;
+  const routedTransfer = transfers.find(
+    (transfer) => transfer.id === routedTransferId,
+  );
+  if (routedTransfer) {
+    message.success(`已接收“${routedTransfer.assetName}”并填入空输入位`);
+    await router.replace({
+      query: { ...route.query, transferId: undefined },
+    });
+  }
+}
+
+async function selectAsset(
+  field: CapabilityField,
+  assetId: string,
+  transferId?: string,
+) {
   if (field.assetIndex === undefined) return;
   const occupied = Object.entries(selectedAssets).find(
     ([index, id]) => Number(index) !== field.assetIndex && id === assetId,
@@ -164,21 +360,51 @@ function selectAsset(field: CapabilityField, assetId: string) {
     message.warning('该资产已用于另一个输入位');
     return;
   }
+  const previousTransferId = selectedTransfers[field.assetIndex];
+  const previousAssetId = selectedAssets[field.assetIndex];
+  if (
+    !transferId &&
+    previousTransferId &&
+    selectedAssets[field.assetIndex] !== assetId
+  ) {
+    Reflect.deleteProperty(selectedTransfers, field.assetIndex);
+    try {
+      await dismissWorkflowInputTransferApi(previousTransferId);
+    } catch {
+      selectedTransfers[field.assetIndex] = previousTransferId;
+      message.error('暂时无法取消原流转输入，请稍后重试');
+      return;
+    }
+  }
   selectedAssets[field.assetIndex] = assetId;
+  if (
+    field.type === 'region' &&
+    previousAssetId &&
+    previousAssetId !== assetId
+  ) {
+    parameterValues[field.key] = '';
+  }
+  if (transferId) selectedTransfers[field.assetIndex] = transferId;
+  await saveWorkspaceDraftNow();
 }
 
-async function uploadMedia(field: CapabilityField, file: File) {
+async function uploadMedia(
+  field: CapabilityField,
+  file: File,
+  options: { silent?: boolean; tags?: string[] } = {},
+) {
   uploadingField.value = field.key;
   try {
     const asset = await platformStore.uploadAsset({
       description: `${capability.value?.name ?? application.value?.name} 工作区输入`,
       file,
       name: file.name.replace(/\.[^.]+$/, ''),
-      tags: ['工作流输入'],
+      tags: options.tags ?? ['工作流输入'],
       type: 'image',
     });
-    selectAsset(field, asset.id);
-    message.success('图像已登记为当前项目资产');
+    await selectAsset(field, asset.id);
+    if (!options.silent) message.success('图像已登记为当前项目资产');
+    return asset;
   } finally {
     uploadingField.value = '';
   }
@@ -190,6 +416,7 @@ function randomizeSeed() {
   parameterValues.seed = Math.floor(
     Math.random() * Math.min(field.max ?? Number.MAX_SAFE_INTEGER, 2 ** 48),
   );
+  scheduleWorkspaceDraftSave();
 }
 
 function taskParameters() {
@@ -200,7 +427,7 @@ function taskParameters() {
   );
 }
 
-async function runCapability() {
+async function submitCapability(options: { silent?: boolean } = {}) {
   if (!application.value || !platformStore.currentProjectId) return;
   const missingAsset = mediaFields.value.find(
     (field) =>
@@ -227,21 +454,174 @@ async function runCapability() {
       application.value.key,
       selectedAssetIds.value,
       capability.value ? taskParameters() : { prompt: genericPrompt.value },
+      Object.values(selectedTransfers),
     );
+    if (job) {
+      workspaceJobId.value = job.id;
+      for (const key of Object.keys(selectedTransfers)) {
+        Reflect.deleteProperty(selectedTransfers, key);
+      }
+    }
     if (job?.status === 'failed') {
-      message.warning(job.error?.message ?? '能力服务尚未配置');
-    } else {
+      if (!options.silent) {
+        message.warning(job.error?.message ?? '能力服务尚未配置');
+      }
+    } else if (!options.silent) {
       message.success('任务已进入持久化队列，关闭页面后仍会继续');
     }
+    return job;
   } finally {
     submitting.value = false;
   }
+}
+
+async function runCapability() {
+  await submitCapability();
+}
+
+function captureRefreshRate() {
+  const field = capability.value?.fields.find((item) =>
+    item.label.includes('捕获间隔'),
+  );
+  const value = field ? parameterValues[field.key] : undefined;
+  return typeof value === 'number' ? value : 500;
+}
+
+async function waitForJob(jobId: string) {
+  while (true) {
+    await platformStore.refreshCurrentProjectData();
+    const job = platformStore.currentJobs.find((item) => item.id === jobId);
+    if (job && ['cancelled', 'failed', 'succeeded'].includes(job.status)) {
+      return job.status === 'succeeded';
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+  }
+}
+
+async function runLiveCapture(field: CapabilityField, file: File) {
+  await uploadMedia(field, file, {
+    silent: true,
+    tags: ['工作流输入', '实时捕获'],
+  });
+  const job = await submitCapability({ silent: true });
+  if (!job) return false;
+  if (['cancelled', 'failed', 'succeeded'].includes(job.status)) {
+    return job.status === 'succeeded';
+  }
+  return await waitForJob(job.id);
+}
+
+async function stopLiveCapture() {
+  if (activeJob.value) await platformStore.cancelJob(activeJob.value.id);
 }
 
 async function cancelActiveJob() {
   if (!activeJob.value) return;
   await platformStore.cancelJob(activeJob.value.id);
   message.info('取消请求已提交');
+}
+
+async function saveLatestOutput() {
+  if (!latestOutput.value || latestOutput.value.saved) return;
+  await platformStore.saveWorkflowOutput(latestOutput.value.assetId);
+  message.success('生成结果已保存到当前项目资产中心');
+}
+
+async function loadFlowTargetOptions() {
+  const targetAppKey = flowDestination.value;
+  flowTargetAssetIndex.value = undefined;
+  flowTargetOptions.value = [];
+  if (!targetAppKey || !platformStore.currentProjectId) return;
+  const targetApplication = platformStore.applications.find(
+    (item) => item.key === targetAppKey,
+  );
+  if (!targetApplication?.capabilityCode) return;
+  flowTargetLoading.value = true;
+  try {
+    const [targetCapability, pendingTransfers] = await Promise.all([
+      getCapabilityApi(targetApplication.capabilityCode),
+      getPendingWorkflowInputTransfersApi(
+        platformStore.currentProjectId,
+        targetAppKey,
+      ),
+    ]);
+    if (flowDestination.value !== targetAppKey) return;
+    const occupiedIndexes = new Set(
+      pendingTransfers.map((transfer) => transfer.targetAssetIndex),
+    );
+    flowTargetOptions.value = targetCapability.fields.flatMap((field) => {
+      if (
+        field.assetIndex === undefined ||
+        !mediaTypes.has(field.type) ||
+        !field.acceptedKinds.includes(resultKind.value)
+      ) {
+        return [];
+      }
+      const occupied = occupiedIndexes.has(field.assetIndex);
+      return [
+        {
+          disabled: occupied,
+          label: `${field.label}${field.required ? '（必填）' : ''}${
+            occupied ? '（已有待流转资产）' : ''
+          }`,
+          value: field.assetIndex,
+        },
+      ];
+    });
+  } finally {
+    if (flowDestination.value === targetAppKey) {
+      flowTargetLoading.value = false;
+    }
+  }
+}
+
+function openFlowModal() {
+  flowDestination.value = compatibleDestinations.value[0]?.value ?? '';
+  flowModalOpen.value = true;
+  void loadFlowTargetOptions();
+}
+
+async function sendLatestOutput() {
+  if (
+    !latestOutput.value ||
+    !flowDestination.value ||
+    flowTargetAssetIndex.value === undefined
+  ) {
+    return;
+  }
+  flowSubmitting.value = true;
+  try {
+    if (!latestOutput.value.saved) {
+      await platformStore.saveWorkflowOutput(latestOutput.value.assetId);
+    }
+    const transfer = await createWorkflowInputTransferApi({
+      assetId: latestOutput.value.assetId,
+      targetAppKey: flowDestination.value,
+      targetAssetIndex: flowTargetAssetIndex.value,
+    });
+    flowModalOpen.value = false;
+    await router.push({
+      path: `/workspace/${flowDestination.value}`,
+      query: { transferId: transfer.id },
+    });
+  } finally {
+    flowSubmitting.value = false;
+  }
+}
+
+async function downloadLatestOutput() {
+  if (!latestOutput.value) return;
+  const result = await getAssetDownloadApi(latestOutput.value.assetId);
+  if (result.mode === 'url') {
+    window.open(result.url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  Modal.info({
+    content: result.content,
+    okText: '关闭',
+    title: latestOutput.value.name,
+    width: 720,
+  });
 }
 
 function stopPolling() {
@@ -256,30 +636,60 @@ function startPolling() {
   }, 2000);
 }
 
+watch(flowDestination, () => {
+  if (flowModalOpen.value) void loadFlowTargetOptions();
+});
 watch(
-  () => [route.params.appKey, application.value?.capabilityCode],
+  () => application.value?.name,
+  (name) => {
+    if (name) void setTabTitle(name);
+  },
+  { immediate: true },
+);
+watch(
+  () => [
+    route.params.appKey,
+    application.value?.capabilityCode,
+    platformStore.currentProjectId,
+  ],
   () => void loadCapability(),
   { immediate: true },
 );
 watch(
   activeJob,
   (job) => {
-    if (job) startPolling();
-    else stopPolling();
+    if (job) {
+      workspaceJobId.value = job.id;
+      startPolling();
+    } else stopPolling();
   },
   { immediate: true },
 );
 watch(
-  () => latestOutput.value?.id,
+  () => latestOutputs.value.map((output) => output.assetId).join('|'),
+  () => {
+    if (
+      !latestOutputs.value.some(
+        (output) => output.assetId === activeOutputAssetId.value,
+      )
+    ) {
+      activeOutputAssetId.value = latestOutputs.value[0]?.assetId ?? '';
+    }
+  },
+  { immediate: true },
+);
+watch(
+  () => latestOutput.value?.assetId,
   async (assetId) => {
     outputPreviewUrl.value = '';
     outputText.value = '';
     if (!assetId || !latestOutput.value) return;
     try {
-      if (latestOutput.value.type === 'image') {
+      if (latestOutput.value.kind === 'image') {
         const preview = await getAssetPreviewApi(assetId);
+        if (preview.mode !== 'url') throw new Error('图片结果没有预览地址');
         outputPreviewUrl.value = preview.url;
-      } else if (latestOutput.value.type === 'text') {
+      } else if (latestOutput.value.kind === 'text') {
         const result = await getAssetDownloadApi(assetId);
         if (result.mode === 'inline') {
           outputText.value = result.content;
@@ -295,7 +705,12 @@ watch(
   },
   { immediate: true },
 );
-onBeforeUnmount(stopPolling);
+onBeforeUnmount(() => {
+  stopPolling();
+  if (draftSaveTimer) clearTimeout(draftSaveTimer);
+  draftSaveTimer = undefined;
+  void saveWorkspaceDraftNow();
+});
 </script>
 
 <template>
@@ -350,7 +765,11 @@ onBeforeUnmount(stopPolling);
         </Button>
       </div>
 
-      <div class="capability-line" aria-label="能力执行链路">
+      <div
+        class="capability-line"
+        :class="{ running: Boolean(activeJob) }"
+        aria-label="能力执行链路"
+      >
         <div>
           <i><IconifyIcon icon="lucide:package-open" /></i>
           <span>{{ routeLineLabel }}</span>
@@ -373,13 +792,30 @@ onBeforeUnmount(stopPolling);
         <div class="deck-heading">
           <div>
             <span>CONTROL DECK</span>
-            <h2>设计参数</h2>
+            <h2>
+              设计参数
+              <small v-if="capability">
+                {{
+                  basicFields.length +
+                  advancedFields.length +
+                  cameraFields.length
+                }}
+                项
+              </small>
+            </h2>
           </div>
           <IconifyIcon icon="lucide:sliders-horizontal" />
         </div>
 
         <div class="deck-scroll">
           <template v-if="capability">
+            <CameraAngleControl
+              v-if="cameraFields.length"
+              :accent="application.color"
+              :fields="cameraFields"
+              :values="parameterValues"
+              @update="setFieldNumberValue"
+            />
             <label
               v-for="field in basicFields"
               :key="field.key"
@@ -390,6 +826,10 @@ onBeforeUnmount(stopPolling);
                 <i v-if="field.required">必填</i>
               </span>
               <small v-if="field.help">{{ field.help }}</small>
+              <small v-else-if="field.type === 'number'" class="field-range">
+                范围 {{ field.min ?? '不限' }}–{{ field.max ?? '不限' }}，默认
+                {{ field.defaultValue ?? '空' }}
+              </small>
               <Textarea
                 v-if="field.type === 'textarea'"
                 :value="fieldTextValue(field)"
@@ -397,6 +837,13 @@ onBeforeUnmount(stopPolling);
                 :placeholder="field.placeholder"
                 :rows="6"
                 show-count
+                @update:value="setFieldValue(field, $event)"
+              />
+              <Textarea
+                v-else-if="field.type === 'json'"
+                :value="fieldJsonValue(field)"
+                :rows="5"
+                class="json-field"
                 @update:value="setFieldValue(field, $event)"
               />
               <Input
@@ -428,7 +875,10 @@ onBeforeUnmount(stopPolling);
               />
             </label>
 
-            <div v-if="!basicFields.length" class="parameter-empty">
+            <div
+              v-if="!basicFields.length && !cameraFields.length"
+              class="parameter-empty"
+            >
               <IconifyIcon icon="lucide:mouse-pointer-click" />
               <p>该能力不需要额外文本参数，完成输入编组即可运行。</p>
             </div>
@@ -444,6 +894,11 @@ onBeforeUnmount(stopPolling);
                 class="studio-field"
               >
                 <span>{{ field.label }}</span>
+                <small v-if="field.help">{{ field.help }}</small>
+                <small v-else-if="field.type === 'number'" class="field-range">
+                  范围 {{ field.min ?? '不限' }}–{{ field.max ?? '不限' }}，默认
+                  {{ field.defaultValue ?? '空' }}
+                </small>
                 <div v-if="field.key === 'seed'" class="seed-field">
                   <InputNumber
                     :max="field.max"
@@ -470,10 +925,23 @@ onBeforeUnmount(stopPolling);
                   :rows="4"
                   @update:value="setFieldValue(field, $event)"
                 />
+                <Textarea
+                  v-else-if="field.type === 'json'"
+                  :value="fieldJsonValue(field)"
+                  :rows="5"
+                  class="json-field"
+                  @update:value="setFieldValue(field, $event)"
+                />
                 <Switch
                   v-else-if="field.type === 'boolean'"
                   :checked="fieldBooleanValue(field)"
                   @update:checked="setFieldValue(field, $event)"
+                />
+                <Select
+                  v-else-if="field.type === 'select'"
+                  :value="fieldTextValue(field)"
+                  :options="field.options"
+                  @update:value="setFieldValue(field, $event)"
                 />
                 <Input
                   v-else
@@ -549,13 +1017,37 @@ onBeforeUnmount(stopPolling);
             <IconifyIcon icon="lucide:circle-alert" />
             <StatusPill status="failed" />
             <h2>执行边界已阻止任务</h2>
-            <p>{{ latestJob.error?.message ?? latestJob.stage }}</p>
+            <p>{{ jobErrorMessage() }}</p>
             <code>{{ latestJob.error?.code ?? 'JOB_FAILED' }}</code>
             <Button type="primary" @click="runCapability">重新提交</Button>
           </div>
 
           <div v-else-if="latestOutput" class="stage-output">
-            <div class="output-visual" :class="`output-${latestOutput.type}`">
+            <div v-if="latestOutputs.length > 1" class="output-selector">
+              <button
+                v-for="(output, index) in latestOutputs"
+                :key="output.assetId"
+                :class="{ active: output.assetId === latestOutput.assetId }"
+                type="button"
+                @click="activeOutputAssetId = output.assetId"
+              >
+                <IconifyIcon
+                  :icon="
+                    output.kind === 'image' ? 'lucide:image' : 'lucide:file'
+                  "
+                />
+                结果 {{ index + 1 }}
+              </button>
+            </div>
+            <div
+              class="output-visual"
+              :class="`output-${latestOutput.kind}`"
+              @click="
+                outputPreviewUrl && latestOutput.kind === 'image'
+                  ? (outputLightboxOpen = true)
+                  : undefined
+              "
+            >
               <img
                 v-if="outputPreviewUrl"
                 :alt="latestOutput.name"
@@ -565,21 +1057,43 @@ onBeforeUnmount(stopPolling);
               <div v-else class="output-icon">
                 <IconifyIcon
                   :icon="
-                    latestOutput.type === 'model3d'
+                    latestOutput.kind === 'model3d'
                       ? 'lucide:box'
                       : application.icon
                   "
                 />
-                <span>{{ assetTypeLabels[latestOutput.type] }}</span>
+                <span>{{ assetTypeLabels[latestOutput.kind] }}</span>
               </div>
+              <span v-if="outputPreviewUrl" class="output-zoom-hint">
+                <IconifyIcon icon="lucide:maximize-2" />
+                点击放大
+              </span>
             </div>
             <div class="output-caption">
               <StatusPill status="succeeded" />
+              <Tag :color="latestOutput.saved ? 'green' : 'orange'">
+                {{ latestOutput.saved ? '已保存到资产' : '任务暂存结果' }}
+              </Tag>
               <h2>{{ latestOutput.name }}</h2>
-              <p>{{ latestOutput.description }}</p>
-              <small>用户、项目、任务、应用和工作流版本已完整登记</small>
+              <p>
+                结果仅保留在当前任务中。你可以手动加入资产；登记为项目资产后，才能流转给兼容工作流。
+              </p>
+              <small>用户、项目、任务、应用和工作流版本血缘已完整登记</small>
               <div class="output-actions">
-                <Button @click="router.push('/assets')">打开资产中心</Button>
+                <Button @click="downloadLatestOutput">下载/查看</Button>
+                <Button
+                  :disabled="latestOutput.saved"
+                  @click="saveLatestOutput"
+                >
+                  {{ latestOutput.saved ? '已加入资产' : '加入资产' }}
+                </Button>
+                <Button
+                  :disabled="!compatibleDestinations.length"
+                  @click="openFlowModal"
+                >
+                  <IconifyIcon icon="lucide:send" />
+                  流转到工作流
+                </Button>
                 <Button type="primary" @click="runCapability">再次运行</Button>
               </div>
             </div>
@@ -594,7 +1108,7 @@ onBeforeUnmount(stopPolling);
             <span class="stage-eyebrow">READY FOR DISPATCH</span>
             <h2>{{ capability?.name ?? application.name }}</h2>
             <p>
-              完成参数和输入编组后提交。页面关闭不会中断任务，结果自动回流当前项目。
+              完成参数和输入编组后提交。页面关闭不会中断任务，生成结果由你决定是否加入项目资产。
             </p>
             <Button type="primary" @click="runCapability">
               <IconifyIcon icon="lucide:sparkles" />
@@ -606,8 +1120,8 @@ onBeforeUnmount(stopPolling);
         <div class="security-strip">
           <IconifyIcon icon="lucide:shield-check" />
           <p>
-            浏览器只接触业务字段和项目资产；ComfyUI 地址、密钥、节点
-            ID、模型名与 API JSON 仅保留在平台后端。
+            浏览器只接触业务字段和项目资产；ComfyUI 地址、密钥、节点 ID 与 API
+            JSON 仅保留在平台后端。
           </p>
         </div>
       </section>
@@ -628,12 +1142,15 @@ onBeforeUnmount(stopPolling);
             :accent="application.color"
             :assets="platformStore.currentAssets"
             :field="field"
+            :live-capture="(file) => runLiveCapture(field, file)"
+            :refresh-rate="captureRefreshRate()"
             :selected-asset-id="
               field.assetIndex === undefined
                 ? undefined
                 : selectedAssets[field.assetIndex]
             "
             :value="parameterValues[field.key]"
+            :stop-live-capture="stopLiveCapture"
             @select="selectAsset(field, $event)"
             @update:value="setFieldValue(field, $event)"
             @upload="uploadMedia(field, $event)"
@@ -642,7 +1159,7 @@ onBeforeUnmount(stopPolling);
           <div v-if="!mediaFields.length" class="no-input-card">
             <IconifyIcon icon="lucide:braces" />
             <h3>无资产输入</h3>
-            <p>该能力仅使用受控业务参数，运行结果仍会登记到项目资产中心。</p>
+            <p>该能力仅使用受控业务参数，运行结果由你确认后再加入项目资产。</p>
           </div>
 
           <div class="asset-contract">
@@ -672,6 +1189,53 @@ onBeforeUnmount(stopPolling);
         </div>
       </aside>
     </div>
+
+    <ImageLightbox
+      v-model:open="outputLightboxOpen"
+      :title="latestOutput?.name"
+      :url="outputPreviewUrl"
+    />
+    <Modal
+      v-model:open="flowModalOpen"
+      :confirm-loading="flowSubmitting"
+      :ok-button-props="{
+        disabled:
+          !flowDestination ||
+          flowTargetAssetIndex === undefined ||
+          flowTargetLoading,
+      }"
+      :ok-text="latestOutput?.saved ? '流转并打开' : '加入资产并流转'"
+      title="流转到兼容工作流"
+      @ok="sendLatestOutput"
+    >
+      <p class="flow-description">
+        <template v-if="latestOutput?.saved">
+          当前项目资产会持久化发送到你指定的目标输入位，不下载、不重复上传。
+        </template>
+        <template v-else>
+          当前结果尚未加入资产。确认后会先将它登记为当前项目资产，再持久化发送到你指定的目标输入位。
+        </template>
+      </p>
+      <Select
+        v-model:value="flowDestination"
+        :options="compatibleDestinations"
+        class="w-full"
+        placeholder="选择目标工作流"
+      />
+      <Select
+        v-model:value="flowTargetAssetIndex"
+        :loading="flowTargetLoading"
+        :options="flowTargetOptions"
+        class="mt-3 w-full"
+        placeholder="选择目标工作流的具体输入位"
+      />
+      <p
+        v-if="!flowTargetLoading && !flowTargetOptions.length"
+        class="flow-hint"
+      >
+        该工作流没有与当前结果类型兼容的输入位。
+      </p>
+    </Modal>
   </main>
 
   <main v-else class="platform-page">
@@ -849,9 +1413,17 @@ onBeforeUnmount(stopPolling);
 
 .capability-line em {
   position: absolute;
+  inset: 0;
+  background: var(--cap-accent);
+  opacity: 0.26;
+}
+
+.capability-line.running em {
+  right: auto;
   width: 22%;
   height: 1px;
   background: var(--cap-accent);
+  opacity: 1;
   animation: route-signal 2.4s linear infinite;
 }
 
@@ -941,6 +1513,11 @@ onBeforeUnmount(stopPolling);
 .studio-field :deep(textarea.ant-input) {
   line-height: 1.7;
   resize: vertical;
+}
+
+.studio-field :deep(textarea.json-field) {
+  font-family: 'IBM Plex Mono', SFMono-Regular, monospace;
+  font-size: 10px;
 }
 
 .advanced-deck {
@@ -1207,21 +1784,66 @@ onBeforeUnmount(stopPolling);
 
 .stage-output {
   display: grid;
-  grid-template-rows: minmax(260px, 1fr) auto;
+  grid-template-rows: auto minmax(260px, 1fr) auto;
   gap: 18px;
   width: calc(100% - 44px);
   height: calc(100% - 44px);
   margin: 22px;
 }
 
+.output-selector {
+  display: flex;
+  grid-row: 1;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.output-selector button {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 9px;
+  color: #66737b;
+  white-space: nowrap;
+  background: #fff;
+  border: 1px solid #d8dfe2;
+  border-radius: 999px;
+}
+
+.output-selector button.active {
+  color: var(--cap-accent);
+  border-color: var(--cap-accent);
+}
+
 .output-visual {
+  position: relative;
   display: grid;
+  grid-row: 2;
   place-items: center;
   min-height: 280px;
   overflow: hidden;
   color: #fff;
   background: #1d272d;
   border-radius: 14px;
+}
+
+.output-visual:has(img) {
+  cursor: zoom-in;
+}
+
+.output-zoom-hint {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  padding: 6px 9px;
+  font-size: 9px;
+  color: #fff;
+  background: rgb(13 20 24 / 75%);
+  border-radius: 999px;
 }
 
 .output-visual img {
@@ -1261,6 +1883,7 @@ onBeforeUnmount(stopPolling);
 }
 
 .output-caption {
+  grid-row: 3;
   padding: 0 4px 5px;
 }
 
@@ -1269,8 +1892,21 @@ onBeforeUnmount(stopPolling);
 }
 
 .output-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 14px;
+}
+
+.flow-description {
+  margin-bottom: 14px;
+  color: #6d7981;
+}
+
+.flow-hint {
+  margin: 10px 0 0;
+  font-size: 11px;
+  color: #b45309;
 }
 
 .security-strip {

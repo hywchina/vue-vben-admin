@@ -30,7 +30,10 @@ export default apiHandler(async (event) => {
       count(DISTINCT a.id)::integer AS "assetCount"
     FROM projects p
     LEFT JOIN project_members pm_all ON pm_all.project_id = p.id
-    LEFT JOIN assets a ON a.project_id = p.id AND a.deleted_at IS NULL
+    LEFT JOIN assets a
+      ON a.project_id = p.id
+      AND a.deleted_at IS NULL
+      AND a.saved_at IS NOT NULL
     WHERE p.archived_at IS NULL
       AND (
         ${isAdmin}

@@ -75,7 +75,23 @@ export function getAssetDownloadApi(assetId: string) {
 }
 
 export function getAssetPreviewApi(assetId: string) {
-  return requestClient.get<{ expiresAt: string; url: string }>(
-    `/assets/${assetId}/preview`,
+  return requestClient.get<
+    | { content: string; mimeType: string; mode: 'inline' }
+    | {
+        expiresAt: string;
+        mimeType: string;
+        mode: 'url';
+        url: string;
+      }
+  >(`/assets/${assetId}/preview`);
+}
+
+export function saveWorkflowOutputApi(assetId: string) {
+  return requestClient.post<PlatformAsset>(`/assets/${assetId}/save`);
+}
+
+export function deleteAssetApi(assetId: string) {
+  return requestClient.delete<{ deleted: true; id: string }>(
+    `/assets/${assetId}`,
   );
 }

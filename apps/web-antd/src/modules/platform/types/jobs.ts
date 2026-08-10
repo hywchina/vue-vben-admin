@@ -19,6 +19,13 @@ export interface PlatformJob {
   inputAssetIds: string[];
   name: string;
   outputAssetId?: string;
+  outputs: Array<{
+    assetId: string;
+    kind: import('./assets').AssetType;
+    mimeType: string;
+    name: string;
+    saved: boolean;
+  }>;
   owner: string;
   progress: number;
   projectId: string;

@@ -1,8 +1,11 @@
+import generatedParameterSchemas from '../../../workflows/comfyui/parameter-schemas.generated.json';
+
 type MediaType = 'asset' | 'capture' | 'mask' | 'region';
 
 interface ScalarFieldInput {
   advanced?: boolean;
   defaultValue?: unknown;
+  group?: string;
   help?: string;
   inputName: string;
   integer?: boolean;
@@ -16,6 +19,12 @@ interface ScalarFieldInput {
   required?: boolean;
   step?: number;
   type: 'boolean' | 'number' | 'select' | 'text' | 'textarea';
+  uiControl?:
+    | 'camera-horizontal'
+    | 'camera-vertical'
+    | 'camera-zoom'
+    | 'default';
+  uiGroup?: string;
 }
 
 interface MediaFieldInput {
@@ -74,6 +83,7 @@ function scalar(input: ScalarFieldInput) {
   return {
     advanced: input.advanced ?? false,
     defaultValue: input.defaultValue,
+    group: input.group,
     help: input.help,
     inputName: input.inputName,
     integer: input.integer ?? false,
@@ -88,6 +98,8 @@ function scalar(input: ScalarFieldInput) {
     required: input.required ?? false,
     step: input.step,
     type: input.type,
+    uiControl: input.uiControl ?? 'default',
+    uiGroup: input.uiGroup,
   };
 }
 
@@ -162,7 +174,13 @@ function steps(nodeId: string, defaultValue = 4) {
   });
 }
 
-export const WORKFLOW_CATALOG: WorkflowCatalogEntry[] = [
+function cameraControl(inputName: unknown): ScalarFieldInput['uiControl'] {
+  if (inputName === 'horizontal_angle') return 'camera-horizontal';
+  if (inputName === 'vertical_angle') return 'camera-vertical';
+  return 'camera-zoom';
+}
+
+export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
   {
     application: {
       acceptedAssetTypes: [],
@@ -1093,6 +1111,8 @@ export const WORKFLOW_CATALOG: WorkflowCatalogEntry[] = [
             nodeId: '22',
             step: Number(step),
             type: 'number',
+            uiControl: cameraControl(inputName),
+            uiGroup: '镜头 1',
           }),
         ),
         seed('27', 'seed', 449_781_229_599_932),
@@ -1291,3 +1311,15 @@ export const WORKFLOW_CATALOG: WorkflowCatalogEntry[] = [
     },
   },
 ];
+
+export const WORKFLOW_CATALOG: WorkflowCatalogEntry[] =
+  WORKFLOW_CATALOG_BASE.map((entry) => ({
+    ...entry,
+    version: {
+      ...entry.version,
+      parameterSchema:
+        generatedParameterSchemas[
+          entry.application.key as keyof typeof generatedParameterSchemas
+        ] ?? entry.version.parameterSchema,
+    },
+  }));

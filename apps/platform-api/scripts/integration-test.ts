@@ -2,8 +2,8 @@ import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
 
-import { getConfig } from '../utils/config';
 import { closeDatabase, useDatabase } from '../utils/database';
+import { hashPassword } from '../utils/password';
 import { deleteObject } from '../utils/storage';
 
 interface ApiEnvelope<T> {
@@ -30,9 +30,9 @@ const sessions: Session[] = [];
 let requestSequence = 0;
 let projectId: null | string = null;
 let conversationId: null | string = null;
-let previousCurrentProjectId: null | string = null;
-let testOwnerId: null | string = null;
+let visibilityTestApplication: null | { key: string; visible: boolean } = null;
 const notificationIds: string[] = [];
+const testUserIds: string[] = [];
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -94,6 +94,33 @@ async function login(username: string, password: string) {
   return session;
 }
 
+async function createTestAccount(roleCode: 'admin' | 'user', index: number) {
+  const suffix = runId.replaceAll('-', '').slice(-16);
+  const username = `rail_it_${suffix}_${index}`;
+  const password = `RailIntegration${index}!2026`;
+  const sql = useDatabase();
+  const passwordHash = await hashPassword(password);
+  const [user] = await sql<{ id: string }[]>`
+    INSERT INTO users (
+      username, password_hash, real_name, department, email
+    ) VALUES (
+      ${username}, ${passwordHash}, ${`集成验收账号 ${index}`},
+      '自动化验收', ${`${username}@rail.local`}
+    )
+    RETURNING id
+  `;
+  if (!user) throw new Error('创建集成验收账号失败');
+  testUserIds.push(user.id);
+  await sql`
+    INSERT INTO user_roles (user_id, role_id)
+    SELECT ${user.id}, id FROM roles WHERE code = ${roleCode}
+  `;
+  await sql`
+    INSERT INTO user_preferences (user_id) VALUES (${user.id})
+  `;
+  return { password, username };
+}
+
 async function cleanup() {
   for (const session of sessions) {
     try {
@@ -107,6 +134,13 @@ async function cleanup() {
   }
 
   const sql = useDatabase();
+  if (visibilityTestApplication) {
+    await sql`
+      UPDATE applications
+      SET visible = ${visibilityTestApplication.visible}, updated_at = now()
+      WHERE key = ${visibilityTestApplication.key}
+    `;
+  }
   if (projectId) {
     const objects = await sql<{ objectKey: string }[]>`
       SELECT version.object_key AS "objectKey"
@@ -125,23 +159,18 @@ async function cleanup() {
     await sql`DELETE FROM ai_conversations WHERE id = ${conversationId}`;
   }
   if (projectId) await sql`DELETE FROM projects WHERE id = ${projectId}`;
-  if (testOwnerId) {
-    await sql`
-      UPDATE user_preferences
-      SET current_project_id = ${previousCurrentProjectId}, updated_at = now()
-      WHERE user_id = ${testOwnerId}
-    `;
-  }
   if (notificationIds.length > 0) {
     await sql`DELETE FROM notifications WHERE id = ANY(${notificationIds})`;
   }
   if (requestIds.length > 0) {
     await sql`DELETE FROM audit_events WHERE request_id = ANY(${requestIds})`;
   }
+  if (testUserIds.length > 0) {
+    await sql`DELETE FROM users WHERE id = ANY(${testUserIds})`;
+  }
 }
 
 async function run() {
-  const config = getConfig();
   const live = await apiRequest<{ status: string }>('/health/live');
   assert(live.envelope.data.status === 'up', '存活探针未返回 up');
   const ready = await apiRequest<{
@@ -153,26 +182,13 @@ async function run() {
     '数据库或对象存储未就绪',
   );
 
-  const user1 = await login(
-    config.bootstrapUser1Username,
-    config.bootstrapUser1Password,
-  );
-  testOwnerId = user1.id;
+  const account1 = await createTestAccount('user', 1);
+  const account2 = await createTestAccount('user', 2);
+  const adminAccount = await createTestAccount('admin', 3);
+  const user1 = await login(account1.username, account1.password);
   const sql = useDatabase();
-  const [preference] = await sql<{ currentProjectId: null | string }[]>`
-    SELECT current_project_id AS "currentProjectId"
-    FROM user_preferences
-    WHERE user_id = ${user1.id}
-  `;
-  previousCurrentProjectId = preference?.currentProjectId ?? null;
-  const user2 = await login(
-    config.bootstrapUser2Username,
-    config.bootstrapUser2Password,
-  );
-  const admin = await login(
-    config.bootstrapAdminUsername,
-    config.bootstrapAdminPassword,
-  );
+  const user2 = await login(account2.username, account2.password);
+  const admin = await login(adminAccount.username, adminAccount.password);
 
   const projectName = `自动化验收 ${runId.slice(-8)}`;
   const project = await apiRequest<{ id: string; name: string }>('/projects', {
@@ -180,6 +196,91 @@ async function run() {
     session: user1,
   });
   projectId = project.envelope.data.id;
+
+  const adminApplications = await apiRequest<
+    Array<{
+      acceptedAssetTypes: string[];
+      canManageVisibility: boolean;
+      capabilityCode?: string;
+      key: string;
+      visible: boolean;
+    }>
+  >('/applications', { session: admin });
+  const visibilityTarget = adminApplications.envelope.data.find(
+    (application) => application.capabilityCode,
+  );
+  assert(visibilityTarget, '没有可用于可见性验收的应用');
+  const flowTarget = adminApplications.envelope.data.find(
+    (application) =>
+      application.key === 'single-image-edit' &&
+      application.acceptedAssetTypes.includes('image'),
+  );
+  assert(flowTarget, '没有可用于资产流转验收的单图工作流');
+  const multiFlowTarget = adminApplications.envelope.data.find(
+    (application) =>
+      application.key === 'multi-image-edit' &&
+      application.acceptedAssetTypes.includes('image'),
+  );
+  assert(multiFlowTarget, '没有可用于精确输入位验收的多图工作流');
+  assert(
+    visibilityTarget.canManageVisibility,
+    '管理员应用列表没有返回可见性管理能力',
+  );
+  visibilityTestApplication = {
+    key: visibilityTarget.key,
+    visible: visibilityTarget.visible,
+  };
+  await apiRequest(`/applications/${visibilityTarget.key}/visibility`, {
+    body: { visible: false },
+    method: 'PATCH',
+    session: admin,
+  });
+  const hiddenAdminApplications = await apiRequest<
+    Array<{ key: string; visible: boolean }>
+  >('/applications', { session: admin });
+  assert(
+    hiddenAdminApplications.envelope.data.some(
+      (application) =>
+        application.key === visibilityTarget.key && !application.visible,
+    ),
+    '管理员无法查看已隐藏应用',
+  );
+  const userApplications = await apiRequest<Array<{ key: string }>>(
+    '/applications',
+    { session: user1 },
+  );
+  assert(
+    !userApplications.envelope.data.some(
+      (application) => application.key === visibilityTarget.key,
+    ),
+    '普通用户看到了管理员隐藏的应用',
+  );
+  await apiRequest(`/applications/${visibilityTarget.key}/visibility`, {
+    body: { visible: true },
+    expectedStatus: 403,
+    method: 'PATCH',
+    session: user1,
+  });
+  await apiRequest(`/capabilities/${visibilityTarget.capabilityCode}`, {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await apiRequest('/jobs', {
+    body: {
+      appKey: visibilityTarget.key,
+      inputAssetIds: [],
+      name: '隐藏应用越权验收',
+      parameters: {},
+      projectId,
+    },
+    expectedStatus: 404,
+    session: user1,
+  });
+  await apiRequest(`/applications/${visibilityTarget.key}/visibility`, {
+    body: { visible: visibilityTarget.visible },
+    method: 'PATCH',
+    session: admin,
+  });
 
   const user2Projects = await apiRequest<{ items: Array<{ id: string }> }>(
     '/projects',
@@ -190,7 +291,7 @@ async function run() {
     '未加入项目的用户看到了测试项目',
   );
 
-  await apiRequest('/assets/text', {
+  const textAsset = await apiRequest<{ id: string }>('/assets/text', {
     body: {
       content: '集成测试文本资产',
       description: runId,
@@ -201,6 +302,16 @@ async function run() {
     },
     session: user1,
   });
+  const textPreview = await apiRequest<{
+    content: string;
+    mimeType: string;
+    mode: string;
+  }>(`/assets/${textAsset.envelope.data.id}/preview`, { session: user1 });
+  assert(
+    textPreview.envelope.data.mode === 'inline' &&
+      textPreview.envelope.data.content === '集成测试文本资产',
+    '文本资产没有返回可阅读的内容预览',
+  );
   await apiRequest(`/assets?projectId=${projectId}`, {
     expectedStatus: 404,
     session: user2,
@@ -236,6 +347,258 @@ async function run() {
     method: 'POST',
     session: user1,
   });
+  const imagePreview = await apiRequest<{
+    mimeType: string;
+    mode: string;
+    url: string;
+  }>(`/assets/${prepared.envelope.data.asset.id}/preview`, { session: user1 });
+  assert(
+    imagePreview.envelope.data.mode === 'url' &&
+      imagePreview.envelope.data.mimeType === 'image/png',
+    '图片资产没有返回浏览器预览地址',
+  );
+  const previewObject = await fetch(imagePreview.envelope.data.url);
+  assert(previewObject.ok, `图片预览对象读取失败：${previewObject.status}`);
+  assert(
+    Buffer.from(await previewObject.arrayBuffer()).equals(image),
+    '图片预览内容与原始资产不一致',
+  );
+  await apiRequest(`/assets/${prepared.envelope.data.asset.id}/preview`, {
+    expectedStatus: 404,
+    session: user2,
+  });
+
+  const savedWorkspaceDraft = await apiRequest<{
+    inputAssetIds: Record<string, string>;
+    parameterValues: Record<string, unknown>;
+  }>('/workflow-drafts', {
+    body: {
+      appKey: flowTarget.key,
+      inputAssetIds: { 0: prepared.envelope.data.asset.id },
+      parameterValues: { prompt: '保持当前工作区输入并继续编辑' },
+      projectId,
+    },
+    method: 'PUT',
+    session: user1,
+  });
+  assert(
+    savedWorkspaceDraft.envelope.data.inputAssetIds['0'] ===
+      prepared.envelope.data.asset.id,
+    '工作区草稿没有保存图片输入位',
+  );
+  const restoredWorkspaceDraft = await apiRequest<{
+    inputAssetIds: Record<string, string>;
+    parameterValues: Record<string, unknown>;
+  }>(`/workflow-drafts?projectId=${projectId}&appKey=${flowTarget.key}`, {
+    session: user1,
+  });
+  assert(
+    restoredWorkspaceDraft.envelope.data.inputAssetIds['0'] ===
+      prepared.envelope.data.asset.id &&
+      restoredWorkspaceDraft.envelope.data.parameterValues.prompt ===
+        '保持当前工作区输入并继续编辑',
+    '重新进入应用后没有恢复工作区图片和参数',
+  );
+  await apiRequest(
+    `/workflow-drafts?projectId=${projectId}&appKey=${flowTarget.key}`,
+    { expectedStatus: 404, session: user2 },
+  );
+
+  const stagedJobId = randomUUID();
+  const stagedAssetId = randomUUID();
+  const stagedVersionId = randomUUID();
+  await sql.begin(async (transaction) => {
+    await transaction`
+      INSERT INTO jobs (
+        id, project_id, app_key, name, parameters, created_by,
+        status, progress, stage, started_at, completed_at
+      ) VALUES (
+        ${stagedJobId}, ${projectId}, ${visibilityTarget.key},
+        ${`工作流暂存验收 ${runId}`}, '{}'::jsonb, ${user1.id},
+        'succeeded', 100, '执行完成', now(), now()
+      )
+    `;
+    await transaction`
+      INSERT INTO assets (
+        id, project_id, name, description, kind, source, source_app_key,
+        source_job_id, owner_id, status, saved_at
+      ) VALUES (
+        ${stagedAssetId}, ${projectId}, '待确认工作流结果', ${runId},
+        'image', 'workflow', ${visibilityTarget.key}, ${stagedJobId},
+        ${user1.id}, 'available', NULL
+      )
+    `;
+    await transaction`
+      INSERT INTO asset_versions (
+        id, asset_id, version, storage_kind, text_content,
+        original_filename, mime_type, size_bytes, status, created_by,
+        completed_at
+      ) VALUES (
+        ${stagedVersionId}, ${stagedAssetId}, 1, 'inline',
+        '暂存工作流输出', 'workflow-output.png', 'image/png', 24,
+        'available', ${user1.id}, now()
+      )
+    `;
+    await transaction`
+      INSERT INTO job_outputs (job_id, asset_id, position)
+      VALUES (${stagedJobId}, ${stagedAssetId}, 0)
+    `;
+  });
+  const assetsBeforeSave = await apiRequest<Array<{ id: string }>>(
+    `/assets?projectId=${projectId}`,
+    { session: user1 },
+  );
+  assert(
+    !assetsBeforeSave.envelope.data.some((asset) => asset.id === stagedAssetId),
+    '未确认的工作流结果提前出现在资产中心',
+  );
+  const jobsWithStagedOutput = await apiRequest<
+    Array<{
+      id: string;
+      outputs: Array<{ assetId: string; saved: boolean }>;
+    }>
+  >(`/jobs?projectId=${projectId}`, { session: user1 });
+  assert(
+    jobsWithStagedOutput.envelope.data
+      .find((job) => job.id === stagedJobId)
+      ?.outputs.some(
+        (output) => output.assetId === stagedAssetId && !output.saved,
+      ),
+    '任务接口没有返回可流转的暂存结果',
+  );
+  const rejectedTransfer = await apiRequest<unknown>('/workflow-transfers', {
+    body: {
+      assetId: stagedAssetId,
+      targetAppKey: flowTarget.key,
+      targetAssetIndex: 0,
+    },
+    expectedStatus: 409,
+    session: user1,
+  });
+  assert(
+    rejectedTransfer.envelope.code === 'WORKFLOW_OUTPUT_NOT_SAVED',
+    '未加入资产的工作流结果没有被后端阻止流转',
+  );
+  const rejectedJobInput = await apiRequest<unknown>('/jobs', {
+    body: {
+      appKey: flowTarget.key,
+      inputAssetIds: [stagedAssetId],
+      name: '未登记结果越权复用验收',
+      parameters: {},
+      projectId,
+    },
+    expectedStatus: 400,
+    session: user1,
+  });
+  assert(
+    rejectedJobInput.envelope.code === 'INVALID_JOB_ASSETS',
+    '未加入资产的工作流结果被任务接口当作正式输入使用',
+  );
+  await apiRequest(`/assets/${stagedAssetId}/save`, {
+    method: 'POST',
+    session: user1,
+  });
+  const assetsAfterSave = await apiRequest<Array<{ id: string }>>(
+    `/assets?projectId=${projectId}`,
+    { session: user1 },
+  );
+  assert(
+    assetsAfterSave.envelope.data.some((asset) => asset.id === stagedAssetId),
+    '用户确认后工作流结果没有进入资产中心',
+  );
+  const exactSlotTransfer = await apiRequest<{
+    id: string;
+    targetAssetIndex: number;
+  }>('/workflow-transfers', {
+    body: {
+      assetId: stagedAssetId,
+      targetAppKey: multiFlowTarget.key,
+      targetAssetIndex: 2,
+    },
+    session: user1,
+  });
+  assert(
+    exactSlotTransfer.envelope.data.targetAssetIndex === 2,
+    '多图工作流没有保留用户指定的第三个输入位',
+  );
+  const multiPendingTransfers = await apiRequest<
+    Array<{ id: string; targetAssetIndex: number }>
+  >(
+    `/workflow-transfers?projectId=${projectId}&targetAppKey=${multiFlowTarget.key}`,
+    { session: user1 },
+  );
+  assert(
+    multiPendingTransfers.envelope.data.some(
+      (item) =>
+        item.id === exactSlotTransfer.envelope.data.id &&
+        item.targetAssetIndex === 2,
+    ),
+    '刷新多图工作流后没有恢复第三个输入位的流转资产',
+  );
+  await apiRequest(
+    `/workflow-transfers/${exactSlotTransfer.envelope.data.id}`,
+    { method: 'DELETE', session: user1 },
+  );
+  const transfer = await apiRequest<{
+    id: string;
+    targetAppKey: string;
+    targetAssetIndex: number;
+  }>('/workflow-transfers', {
+    body: {
+      assetId: stagedAssetId,
+      targetAppKey: flowTarget.key,
+      targetAssetIndex: 0,
+    },
+    session: user1,
+  });
+  assert(
+    transfer.envelope.data.targetAssetIndex === 0,
+    '资产没有流转到目标工作流的第一个兼容空输入位',
+  );
+  const pendingTransfers = await apiRequest<Array<{ id: string }>>(
+    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}`,
+    { session: user1 },
+  );
+  assert(
+    pendingTransfers.envelope.data.some(
+      (item) => item.id === transfer.envelope.data.id,
+    ),
+    '刷新目标工作区时无法读取持久化流转记录',
+  );
+  await apiRequest(
+    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}`,
+    { expectedStatus: 404, session: user2 },
+  );
+  await apiRequest('/jobs', {
+    body: {
+      appKey: flowTarget.key,
+      inputAssetIds: [stagedAssetId],
+      inputTransferIds: [transfer.envelope.data.id],
+      name: '持久化流转消费验收',
+      parameters: {},
+      projectId,
+    },
+    session: user1,
+  });
+  const transfersAfterJob = await apiRequest<Array<{ id: string }>>(
+    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}`,
+    { session: user1 },
+  );
+  assert(
+    !transfersAfterJob.envelope.data.some(
+      (item) => item.id === transfer.envelope.data.id,
+    ),
+    '任务提交后流转记录仍重复占用目标输入位',
+  );
+  await apiRequest(`/assets/${stagedAssetId}`, {
+    method: 'DELETE',
+    session: user1,
+  });
+  await apiRequest(`/assets/${stagedAssetId}/preview`, {
+    expectedStatus: 404,
+    session: user1,
+  });
+
   const [createdNotification] = await sql<{ id: string }[]>`
     SELECT id FROM notifications
     WHERE user_id = ${user1.id}

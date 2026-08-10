@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   createJobApi: vi.fn(),
   createProjectApi: vi.fn(),
   createTextAssetApi: vi.fn(),
+  deleteAssetApi: vi.fn(),
   getApplicationsApi: vi.fn(),
   getAssetsApi: vi.fn(),
   getAuditEventsApi: vi.fn(),
@@ -22,6 +23,8 @@ const api = vi.hoisted(() => ({
   getRolesApi: vi.fn(),
   getUsersApi: vi.fn(),
   selectCurrentProjectApi: vi.fn(),
+  saveWorkflowOutputApi: vi.fn(),
+  setApplicationVisibilityApi: vi.fn(),
   setAssetFavoriteApi: vi.fn(),
   setUserRolesApi: vi.fn(),
   setUserStatusApi: vi.fn(),
@@ -57,6 +60,7 @@ const projects: PlatformProject[] = [firstProject, secondProject];
 const application: PlatformApplication = {
   acceptedAssetTypes: ['image'],
   adapterConfigured: false,
+  canManageVisibility: true,
   category: 'generation',
   color: '#b91c32',
   description: '测试应用',
@@ -68,6 +72,7 @@ const application: PlatformApplication = {
   shortName: '测试',
   status: 'testing',
   updatedAt: '2026-08-04T00:00:00.000Z',
+  visible: true,
 };
 
 const asset: PlatformAsset = {
@@ -170,6 +175,33 @@ describe('platform store with real API contract', () => {
     );
   });
 
+  it('adds a staged workflow output only after the user saves it', async () => {
+    const store = usePlatformStore();
+    await store.initialize();
+    const generated = {
+      ...asset,
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      source: 'workflow' as const,
+    };
+    api.saveWorkflowOutputApi.mockResolvedValue(generated);
+
+    await store.saveWorkflowOutput(generated.id);
+
+    expect(api.saveWorkflowOutputApi).toHaveBeenCalledWith(generated.id);
+    expect(store.currentAssets[0]).toEqual(generated);
+  });
+
+  it('removes a deleted asset from the current project cache', async () => {
+    const store = usePlatformStore();
+    await store.initialize();
+    api.deleteAssetApi.mockResolvedValue({ deleted: true, id: asset.id });
+
+    await store.deleteAsset(asset.id);
+
+    expect(api.deleteAssetApi).toHaveBeenCalledWith(asset.id);
+    expect(store.currentAssets).toEqual([]);
+  });
+
   it('implements the global reset contract used during logout', async () => {
     const store = usePlatformStore();
     await store.initialize();
@@ -198,6 +230,25 @@ describe('platform store with real API contract', () => {
     ]);
     expect(store.users[0]?.roleCodes).toEqual(['admin']);
     expect(store.users[0]?.roles).toEqual(['管理员']);
+  });
+
+  it('updates application visibility only from the administrator API response', async () => {
+    const store = usePlatformStore();
+    await store.initialize();
+    api.setApplicationVisibilityApi.mockResolvedValue({
+      key: application.key,
+      updatedAt: '2026-08-08T00:00:00.000Z',
+      visible: false,
+    });
+
+    await store.setApplicationVisibility(application.key, false);
+
+    expect(api.setApplicationVisibilityApi).toHaveBeenCalledWith(
+      application.key,
+      false,
+    );
+    expect(store.applications[0]?.visible).toBe(false);
+    expect(store.applications[0]?.updatedAt).toBe('2026-08-08T00:00:00.000Z');
   });
 
   it('loads the audit scope and events returned by the server', async () => {

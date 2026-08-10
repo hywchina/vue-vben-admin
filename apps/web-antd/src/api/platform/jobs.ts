@@ -5,6 +5,7 @@ import { requestClient } from '#/api/request';
 export interface CreateJobInput {
   appKey: string;
   inputAssetIds: string[];
+  inputTransferIds?: string[];
   name: string;
   parameters: Record<string, unknown>;
   projectId: string;

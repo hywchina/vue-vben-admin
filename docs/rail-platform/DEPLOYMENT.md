@@ -185,6 +185,17 @@ COMFYUI_MAX_OUTPUT_BYTES=268435456
 pnpm dev:rail
 ```
 
+Linux 环境推荐使用根目录管理脚本完成环境检查和后台启动：
+
+```bash
+chmod +x ./rail-platform.sh
+./rail-platform.sh check_env
+./rail-platform.sh start
+./rail-platform.sh status
+```
+
+脚本会自动读取 `.nvmrc` 并尝试切换到 Node.js `24.16.0`，随后校验 pnpm `11.16.0`、Docker daemon、Compose、系统工具、依赖和磁盘空间。后台进程 PID 与日志保存在 Git 忽略的 `.rail-platform-runtime/`。每次启动生成独立的 `dev-YYYYMMDD-HHMMSS.log`，日志文件头包含完整启动时间和时区；`dev.log` 是指向本次日志的快捷入口。
+
 命令会按顺序完成：
 
 1. 在 Docker 中启动 PostgreSQL、MinIO 和 Mailpit并等待健康。
@@ -232,6 +243,21 @@ pnpm dev:rail:web
 - 停止 Web/API：在运行 `pnpm dev:rail` 的终端按 `Ctrl+C`。
 - 停止 Docker 但保留数据：`pnpm infra:rail:down`。
 - 电脑重启后：启动 Docker，回到仓库，再执行 `pnpm dev:rail`。
+
+使用管理脚本时：
+
+```bash
+./rail-platform.sh status
+./rail-platform.sh logs 100
+./rail-platform.sh stop
+./rail-platform.sh restart
+```
+
+如只想停止 Web、API 和 Worker，并让 PostgreSQL、MinIO、Mailpit 继续运行：
+
+```bash
+./rail-platform.sh stop --keep-infra
+```
 
 不要执行 `docker compose down -v`。`-v` 会删除数据库和对象文件的命名卷。
 

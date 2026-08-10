@@ -104,7 +104,9 @@ export async function listAssetViews(projectId: string, userId: string) {
     JOIN asset_versions av
       ON av.asset_id = a.id AND av.version = a.current_version
     LEFT JOIN asset_tags at ON at.asset_id = a.id
-    WHERE a.project_id = $1 AND a.deleted_at IS NULL
+    WHERE a.project_id = $1
+      AND a.deleted_at IS NULL
+      AND a.saved_at IS NOT NULL
     GROUP BY a.id, u.real_name, av.id
     ORDER BY a.created_at DESC`,
     [projectId, userId],

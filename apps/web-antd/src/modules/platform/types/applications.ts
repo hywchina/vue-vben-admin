@@ -11,6 +11,7 @@ export type ApplicationStatus = 'available' | 'planned' | 'testing';
 export interface PlatformApplication {
   acceptedAssetTypes: AssetType[];
   adapterConfigured: boolean;
+  canManageVisibility: boolean;
   capabilityCode?: string;
   category: ApplicationCategory;
   color: string;
@@ -23,4 +24,5 @@ export interface PlatformApplication {
   shortName: string;
   status: ApplicationStatus;
   updatedAt: string;
+  visible: boolean;
 }

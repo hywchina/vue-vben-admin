@@ -7,8 +7,14 @@ import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
   materializeWorkflow,
   validateWorkflowAssetInputs,
+  workflowValidationErrorMessage,
 } from '~/utils/domain/workflows/schema';
-import { requireIdentity, requirePermission } from '~/utils/identity';
+import { assertWorkflowTransferSelections } from '~/utils/domain/workflows/transfers';
+import {
+  hasAdministrativeRole,
+  requireIdentity,
+  requirePermission,
+} from '~/utils/identity';
 import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -17,6 +23,7 @@ import { parseBody } from '~/utils/validation';
 const createJobSchema = z.object({
   appKey: z.string().trim().min(1).max(100),
   inputAssetIds: z.array(z.string().uuid()).max(100).default([]),
+  inputTransferIds: z.array(z.string().uuid()).max(100).default([]),
   name: z.string().trim().min(1).max(200),
   parameters: z.record(z.string(), z.unknown()).default({}),
   projectId: z.string().uuid(),
@@ -30,15 +37,19 @@ export default apiHandler(async (event) => {
   const sql = useDatabase();
 
   const [application] = await sql<
-    { adapterConfigured: boolean; key: string }[]
+    { adapterConfigured: boolean; key: string; visible: boolean }[]
   >`
     SELECT
       key,
+      visible,
       COALESCE((adapter_config ->> 'enabled')::boolean, false) AS "adapterConfigured"
     FROM applications
     WHERE key = ${input.appKey}
   `;
   if (!application) {
+    throw new ApiError(404, 'APPLICATION_NOT_FOUND', '应用不存在');
+  }
+  if (!application.visible && !hasAdministrativeRole(identity)) {
     throw new ApiError(404, 'APPLICATION_NOT_FOUND', '应用不存在');
   }
 
@@ -54,7 +65,7 @@ export default apiHandler(async (event) => {
       throw new ApiError(
         400,
         'WORKFLOW_PARAMETER_INVALID',
-        error instanceof Error ? error.message : '工作流参数无效',
+        workflowValidationErrorMessage(error),
       );
     }
   }
@@ -87,6 +98,7 @@ export default apiHandler(async (event) => {
       WHERE id IN ${sql(input.inputAssetIds)}
         AND project_id = ${input.projectId}
         AND status = 'available'
+        AND saved_at IS NOT NULL
         AND deleted_at IS NULL
     `;
     const byId = new Map(rows.map((asset) => [asset.id, asset]));
@@ -98,7 +110,7 @@ export default apiHandler(async (event) => {
       throw new ApiError(
         400,
         'INVALID_JOB_ASSETS',
-        '输入资产不存在或不属于当前项目',
+        '输入资产不存在、未加入资产或不属于当前项目',
       );
     }
   }
@@ -112,12 +124,56 @@ export default apiHandler(async (event) => {
       throw new ApiError(
         400,
         'WORKFLOW_ASSET_INVALID',
-        error instanceof Error ? error.message : '工作流输入资产无效',
+        workflowValidationErrorMessage(error, '工作流输入资产无效'),
       );
     }
   }
 
   const job = await sql.begin(async (transaction) => {
+    if (
+      new Set(input.inputTransferIds).size !== input.inputTransferIds.length
+    ) {
+      throw new ApiError(
+        400,
+        'INVALID_WORKFLOW_TRANSFERS',
+        '工作流流转记录不能重复提交',
+      );
+    }
+    const transfers =
+      input.inputTransferIds.length === 0
+        ? []
+        : await transaction<
+            { assetId: string; id: string; targetAssetIndex: number }[]
+          >`
+            SELECT
+              id,
+              asset_id AS "assetId",
+              target_asset_index AS "targetAssetIndex"
+            FROM workflow_asset_transfers
+            WHERE id IN ${transaction(input.inputTransferIds)}
+              AND created_by = ${identity.id}
+              AND project_id = ${input.projectId}
+              AND target_app_key = ${input.appKey}
+              AND status = 'pending'
+            FOR UPDATE
+          `;
+    if (transfers.length !== input.inputTransferIds.length) {
+      throw new ApiError(
+        400,
+        'INVALID_WORKFLOW_TRANSFERS',
+        '工作流流转记录不存在、已消费或不属于当前用户',
+      );
+    }
+    try {
+      assertWorkflowTransferSelections(transfers, input.inputAssetIds);
+    } catch (error) {
+      throw new ApiError(
+        400,
+        'INVALID_WORKFLOW_TRANSFERS',
+        error instanceof Error ? error.message : '工作流流转记录无效',
+      );
+    }
+
     const [created] = await transaction<
       {
         createdAt: Date;
@@ -168,6 +224,17 @@ export default apiHandler(async (event) => {
         )
       `;
     }
+    if (input.inputTransferIds.length > 0) {
+      await transaction`
+        UPDATE workflow_asset_transfers
+        SET
+          status = 'consumed',
+          consumed_by_job_id = ${created.id},
+          consumed_at = now(),
+          updated_at = now()
+        WHERE id IN ${transaction(input.inputTransferIds)}
+      `;
+    }
     return created;
   });
 
@@ -177,6 +244,7 @@ export default apiHandler(async (event) => {
     details: {
       appKey: input.appKey,
       capabilityCode: capability?.code,
+      inputTransferCount: input.inputTransferIds.length,
       workflowVersion: capability?.workflowVersion,
     },
     module: 'job',

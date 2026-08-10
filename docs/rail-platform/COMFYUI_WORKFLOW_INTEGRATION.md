@@ -26,7 +26,7 @@ flowchart LR
 
 - Web 只获取公开参数定义、提交任务、查看状态和预览项目资产，不接触 ComfyUI 地址、节点编号和鉴权信息。
 - Platform API 校验身份、项目范围、应用契约和工作流参数，并创建持久化任务与执行记录。
-- Worker 使用数据库租约领取任务，向 ComfyUI 提交 API JSON、轮询、取消、下载输出并登记资产。
+- Worker 使用数据库租约领取任务，向 ComfyUI 提交 API JSON、轮询、取消、下载并暂存输出；用户确认后才进入资产中心。
 - ComfyUI 只负责工作流执行，不是平台任务、权限、资产或审计的真值来源。
 - PostgreSQL 保存工作流版本与任务血缘；MinIO/S3 保存最终输出文件。
 
@@ -67,23 +67,22 @@ erDiagram
 - `capabilities`：稳定的平台能力，当前发布 18 项 ComfyUI 业务能力。
 - `capability_workflows`：一个能力当前使用哪个已发布版本；切换不影响历史任务。
 - `job_executions`：外部任务编号、执行状态、轮询时间、租约、错误与重试信息。
-- `job_output_receipts`：按外部输出唯一键防止重复登记资产。
+- `job_output_receipts`：按外部输出唯一键防止重复暂存；关联输出必须经用户确认登记为项目资产后才能流转。
+- `workflow_asset_transfers`：持久记录用户选择的目标工作流、具体输入位和消费任务；刷新或跨页后仍能回填到同一语义输入位。
 - `worker_heartbeats`：管理员判断 Worker 是否在线的运行元数据。
 
-## 5. 首发文生图工作流
+## 5. 18 项工作流的完整参数
 
-首发工作流为 `flux2-klein-text-to-image-v1.json`，来源文件已在其他电脑的 ComfyUI 环境验证。本平台只把以下参数暴露给用户：
+平台保留 18 份经真实 ComfyUI 验证的 API JSON 版本快照。`parameter-schemas.generated.json` 基于同一服务的 `/object_info` 元数据生成：所有非连线输入都必须映射为可校验的数字、布尔、选项、文本或 JSON 字段，媒体输入则使用经人工确认的语义位置和传输方式。
 
-| 参数     | 工作流映射              |
-| -------- | ----------------------- |
-| 提示词   | `357.inputs.value`      |
-| 宽度     | `358.inputs.value`      |
-| 高度     | `359.inputs.value`      |
-| 批次数   | `346.inputs.batch_size` |
-| 随机种子 | `347.inputs.noise_seed` |
-| 采样步数 | `352.inputs.steps`      |
+参数同步命令：
 
-主要输出来自 `356.images`，登记为 `image` 项目资产。节点编号只保存在服务端版本快照中，不通过用户能力接口返回。
+```bash
+pnpm --filter @rail/platform-api workflow:sync-parameters -- \
+  --object-info <object-info.json>
+```
+
+同步后必须运行 `catalog.test.ts`，确认 18 项工作流的未映射字面输入数仍为 0。节点编号只保存在服务端版本快照中，不通过用户能力接口返回。
 
 模型依赖：
 
@@ -115,7 +114,7 @@ stateDiagram-v2
 - Worker 重启后通过过期租约继续领取任务。
 - 状态轮询的临时网络错误自动重试三次。
 - 如果 Worker 在 ComfyUI 提交确认窗口中断，任务以 `COMFYUI_SUBMIT_UNKNOWN` 失败，不自动重复提交。
-- 输出回执确保同一个外部输出不会重复登记资产。
+- 输出回执确保同一个外部输出不会重复暂存；只有用户确认后才登记为项目资产。
 - 取消同时调用队列删除和执行中断；取消失败返回明确错误，不伪造取消成功。
 
 ## 7. 配置与启动
@@ -161,7 +160,7 @@ pnpm --filter @rail/platform-api worker
 | `COMFYUI_STATUS_FAILED`      | 连续状态读取失败超过重试上限           |
 | `COMFYUI_EXECUTION_FAILED`   | ComfyUI 返回执行失败                   |
 | `COMFYUI_OUTPUT_MISSING`     | 已完成但没有配置的主要输出             |
-| `OUTPUT_REGISTRATION_FAILED` | 输出下载、校验、对象存储或资产登记失败 |
+| `OUTPUT_REGISTRATION_FAILED` | 输出下载、校验、对象存储或结果暂存失败 |
 
 ## 10. 验证范围与已知限制
 
@@ -187,5 +186,12 @@ pnpm --filter @rail/platform-api worker
 - 原始 API JSON 已以稳定英文文件名纳入 `apps/platform-api/workflows/comfyui/`。
 - 输入支持标量参数、ComfyUI 图片上传、Data URL、PNG Alpha 遮罩、EasyMark 分区和屏幕捕获资产。
 - 输出支持 ComfyUI 文件对象、PreviewAny 文本和 SaveGLB `3d` 字段。
+- 18 份原始 API JSON 作为只读版本快照保留；页面交互增强不改写这些文件。
+- 工作区公开 18 份工作流中的全部字面参数映射，生成文件来自真实 ComfyUI `/object_info`；自动化测试保证每个非连线输入都有公开字段或媒体映射。
+- 水平角、俯仰角和缩放通过相机轨道控制器写回真实 Qwen Multiangle 字段；EasyMark 使用与参考 webUI 相同的 `brush_data` 自由画笔、方框、色块和编号协议。
+- `ScreenShare` 与参考 webUI 一致：工作区直接显示共享屏幕、摄像头、Set Area 和 Live On，并支持可视化选区、裁剪后实时预览、画面变化检测，以及等待上一任务结束后才提交下一帧。
+- 工作区参数和精确输入位保存到 `workflow_workspace_drafts`，按用户、项目、应用隔离；刷新恢复时后端重新校验项目资产与类型，不依赖 `localStorage` 冒充业务持久化。
+- 结果默认只属于任务；未加入资产时不能流转。用户可单独“加入资产”，或明确确认“加入资产并流转”，并必须选择目标工作流的具体输入位。
+- 开发环境 Worker 由 `tsx watch` 启动，参数 Schema 或物化逻辑变化后自动重载，避免 API 与长驻 Worker 使用不同协议版本。
 - 工作流完整快照（API JSON、参数映射、输出映射和模型需求）共同计算校验和，任一部分微调都会创建新的不可变版本。
 - 真实 ComfyUI 上线前和微调时统一使用 [COMFYUI_LIVE_SERVICE_HANDOFF.md](./COMFYUI_LIVE_SERVICE_HANDOFF.md)。

@@ -24,6 +24,13 @@ export default apiHandler(async (event) => {
       inputAssetIds: null | string[];
       name: string;
       outputAssetId: null | string;
+      outputs: Array<{
+        assetId: string;
+        kind: string;
+        mimeType: string;
+        name: string;
+        saved: boolean;
+      }>;
       owner: string;
       progress: number;
       projectId: string;
@@ -51,7 +58,27 @@ export default apiHandler(async (event) => {
       u.real_name AS owner,
       COALESCE(array_agg(DISTINCT ji.asset_id::text)
         FILTER (WHERE ji.asset_id IS NOT NULL), '{}') AS "inputAssetIds",
-      min(jo.asset_id::text) AS "outputAssetId"
+      min(jo.asset_id::text) AS "outputAssetId",
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'assetId', output_asset.id,
+            'kind', output_asset.kind,
+            'mimeType', output_version.mime_type,
+            'name', output_asset.name,
+            'saved', output_asset.saved_at IS NOT NULL
+          )
+          ORDER BY output_link.position
+        )
+        FROM job_outputs output_link
+        JOIN assets output_asset
+          ON output_asset.id = output_link.asset_id
+          AND output_asset.deleted_at IS NULL
+        JOIN asset_versions output_version
+          ON output_version.asset_id = output_asset.id
+          AND output_version.version = output_asset.current_version
+        WHERE output_link.job_id = j.id
+      ), '[]'::jsonb) AS outputs
     FROM jobs j
     JOIN users u ON u.id = j.created_by
     LEFT JOIN job_inputs ji ON ji.job_id = j.id
@@ -73,6 +100,7 @@ export default apiHandler(async (event) => {
           )
         : undefined,
     inputAssetIds: job.inputAssetIds ?? [],
+    outputs: job.outputs ?? [],
     error:
       job.errorCode || job.errorMessage
         ? {

@@ -9,6 +9,7 @@ import {
   createJobApi,
   createProjectApi,
   createTextAssetApi,
+  deleteAssetApi,
   getApplicationsApi,
   getAssetsApi,
   getAuditEventsApi,
@@ -16,7 +17,9 @@ import {
   getProjectsApi,
   getRolesApi,
   getUsersApi,
+  saveWorkflowOutputApi,
   selectCurrentProjectApi,
+  setApplicationVisibilityApi,
   setAssetFavoriteApi,
   setUserRolesApi,
   setUserStatusApi,
@@ -115,6 +118,38 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     if (index !== -1) assets.value[index] = updated;
   }
 
+  async function deleteAsset(assetId: string) {
+    await deleteAssetApi(assetId);
+    const index = assets.value.findIndex((item) => item.id === assetId);
+    if (index !== -1) assets.value.splice(index, 1);
+    const project = currentProject.value;
+    if (project && project.assetCount > 0) project.assetCount -= 1;
+  }
+
+  async function saveWorkflowOutput(assetId: string) {
+    const asset = await saveWorkflowOutputApi(assetId);
+    if (!assets.value.some((item) => item.id === asset.id)) {
+      assets.value.unshift(asset);
+      const project = currentProject.value;
+      if (project) project.assetCount += 1;
+    }
+    for (const job of jobs.value) {
+      const output = job.outputs.find((item) => item.assetId === assetId);
+      if (output) output.saved = true;
+    }
+    return asset;
+  }
+
+  async function setApplicationVisibility(appKey: string, visible: boolean) {
+    const updated = await setApplicationVisibilityApi(appKey, visible);
+    const application = applications.value.find((item) => item.key === appKey);
+    if (application) {
+      application.visible = updated.visible;
+      application.updatedAt = updated.updatedAt;
+    }
+    return updated;
+  }
+
   async function toggleUserStatus(userId: string) {
     const user = users.value.find((item) => item.id === userId);
     if (!user) return;
@@ -178,12 +213,14 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     appKey: string,
     inputAssetIds: string[],
     parameters: Record<string, unknown>,
+    inputTransferIds: string[] = [],
   ) {
     const application = applications.value.find((item) => item.key === appKey);
     if (!application || !currentProjectId.value) return;
     const job = await createJobApi({
       appKey,
       inputAssetIds,
+      inputTransferIds,
       name: `${application.shortName}方案 · ${currentProject.value?.name ?? '未命名项目'}`,
       parameters,
       projectId: currentProjectId.value,
@@ -252,6 +289,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     auditTotal,
     cancelJob,
     createTextAsset,
+    deleteAsset,
     currentAssets,
     currentJobs,
     currentProject,
@@ -266,6 +304,8 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     refreshCurrentProjectData,
     roles,
     runApplication,
+    saveWorkflowOutput,
+    setApplicationVisibility,
     switchProject,
     toggleAssetFavorite,
     toggleUserStatus,

@@ -523,6 +523,9 @@ importers:
       tsdown:
         specifier: 'catalog:'
         version: 0.22.13(@tsdown/css@0.22.13)(@volar/typescript@2.4.28)(oxc-resolver@11.24.2)(publint@0.3.22)(tsx@4.23.5)(typescript@6.0.3)(vue-tsc@3.3.8(typescript@6.0.3))
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.5
       turbo:
         specifier: 'catalog:'
         version: 2.10.6

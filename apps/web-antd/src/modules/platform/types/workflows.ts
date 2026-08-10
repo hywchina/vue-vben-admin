@@ -4,6 +4,7 @@ export type WorkflowParameterType =
   | 'asset'
   | 'boolean'
   | 'capture'
+  | 'json'
   | 'mask'
   | 'number'
   | 'region'
@@ -11,11 +12,18 @@ export type WorkflowParameterType =
   | 'text'
   | 'textarea';
 
+export type WorkflowUiControl =
+  | 'camera-horizontal'
+  | 'camera-vertical'
+  | 'camera-zoom'
+  | 'default';
+
 export interface CapabilityField {
   acceptedKinds: AssetType[];
   advanced: boolean;
   assetIndex?: number;
   defaultValue?: unknown;
+  group?: string;
   help?: string;
   integer: boolean;
   key: string;
@@ -28,6 +36,8 @@ export interface CapabilityField {
   required: boolean;
   step?: number;
   type: WorkflowParameterType;
+  uiControl: WorkflowUiControl;
+  uiGroup?: string;
 }
 
 export interface PlatformCapability {

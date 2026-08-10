@@ -6,6 +6,8 @@ import {
   parseWorkflowVersion,
   publicParameterSchema,
   validateWorkflowAssetInputs,
+  workflowParameterSchema,
+  workflowValidationErrorMessage,
 } from './schema';
 
 const apiJson = {
@@ -107,5 +109,14 @@ describe('comfyUI workflow schema', () => {
     );
     expect(result['1']?.inputs.value).toBe('rail/input.png');
     expect(publicParameterSchema(mediaSchema)[0]).not.toHaveProperty('targets');
+  });
+
+  it('does not expose internal Zod unions when a worker schema is stale', () => {
+    const parsed = workflowParameterSchema.safeParse({ type: 'stale-type' });
+    expect(parsed.success).toBe(false);
+    if (parsed.success) return;
+    expect(workflowValidationErrorMessage(parsed.error)).toBe(
+      '工作流参数协议与当前服务版本不一致，请刷新服务后重新提交',
+    );
   });
 });

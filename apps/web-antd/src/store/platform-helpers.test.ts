@@ -12,6 +12,7 @@ function createJob(overrides: Partial<PlatformJob> = {}): PlatformJob {
     inputAssetIds: [],
     name: '测试任务',
     owner: '测试用户',
+    outputs: [],
     progress: 0,
     projectId: 'project-1',
     stage: '等待执行',

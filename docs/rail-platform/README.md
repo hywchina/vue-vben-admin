@@ -13,7 +13,9 @@
 | 开发邮件沙箱 | Mailpit | 接收开发环境的密码重置邮件，不向真实邮箱投递 |
 | 本地基础设施 | Docker Compose | 可复现地运行 PostgreSQL、MinIO 与 Mailpit |
 
-任务型外部能力目前只保留应用契约与适配器边界。未配置适配器时，任务会明确记录为失败并返回 `ADAPTER_NOT_CONFIGURED`，不会伪造成功结果。AI 助手的外部 API 调用边界已实现；未配置时仍保存用户消息，并显示明确的“AI 服务待接入”状态。
+平台已通过版本化适配器和独立 Worker 接入 18 项 ComfyUI 工作流；其他外部能力仍按同一契约边界扩展。未配置适配器时，任务会明确记录为失败并返回 `ADAPTER_NOT_CONFIGURED`，不会伪造成功结果。AI 助手的外部 API 调用边界已实现；未配置时仍保存用户消息，并显示明确的“AI 服务待接入”状态。
+
+应用工作区会按当前用户、当前项目和应用持久保存输入草稿；再次点击标签、切换回来或刷新后，已选图片和参数仍可继续使用，已结束任务的结果不会自动重新占据工作区。镜头控制、EasyMark 分区和 ScreenShare 分别使用专用交互组件，高级参数默认折叠。
 
 ## 2. 新机器从零启动
 
@@ -54,6 +56,23 @@ cp apps/platform-api/.env.example apps/platform-api/.env
 ```bash
 pnpm dev:rail
 ```
+
+Linux 开发机也可以使用仓库根目录的管理脚本，让服务在后台运行：
+
+```bash
+./rail-platform.sh check_env
+./rail-platform.sh start
+./rail-platform.sh status
+```
+
+停止和重启：
+
+```bash
+./rail-platform.sh stop
+./rail-platform.sh restart
+```
+
+脚本每次启动都会生成 `.rail-platform-runtime/dev-YYYYMMDD-HHMMSS.log`，文件头记录带时区的完整启动时间；`.rail-platform-runtime/dev.log` 始终指向本次启动日志。`stop` 会停止开发 Compose，但不会使用 `-v`，PostgreSQL 与 MinIO 命名卷数据会保留。完整命令可运行 `./rail-platform.sh help` 查看。
 
 该命令依次完成：
 
@@ -107,7 +126,7 @@ pnpm db:rail:reset-users -- --confirm=DELETE_ALL_USERS
 - 文本资产在大小限制内写入 PostgreSQL。
 - 图片、视频、音频、文档、3D 模型、模型文件和压缩包写入 MinIO/S3 私有桶。
 - 上传流程为“平台申请预签名 PUT → 浏览器直传对象存储 → 平台校验对象并完成登记”。
-- 下载和图片预览均使用经过身份、权限和项目范围检查的短时预签名 URL。
+- 下载和对象资产预览均使用经过身份、权限和项目范围检查的短时预签名 URL；文本在通过同样校验后内联阅读。
 
 资产文件类型固定为 8 类：`image`、`video`、`audio`、`text`、`document`、`model3d`、`model`、`archive`。遮罩、CMF 材质、LoRA 和报告是业务用途，不再作为文件类型；它们通过资产标签、来源应用和任务血缘表达。
 
@@ -187,8 +206,11 @@ pnpm lint
 pnpm typecheck:rail
 pnpm test:rail
 pnpm test:rail:integration
+pnpm test:rail:browser
 pnpm build:rail
 ```
+
+浏览器验收默认使用 Playwright Chromium；若使用系统已安装的 Chromium/Chrome，可通过 `RAIL_BROWSER_EXECUTABLE` 指定可执行文件。脚本只创建带唯一标识的临时账号、项目和资产，并在结束时清理本轮数据。
 
 当前自动化测试包括平台 API 的资产工具、MIME 校验、密码散列、密码重置令牌、两角色模型与审计可见范围，以及 Web 平台状态、项目切换、真实资产登记、管理员角色同步和日志范围状态。
 
@@ -225,8 +247,8 @@ pnpm build:rail
 - [运行、发布与故障处理手册](./OPERATIONS.md)
 - [二次开发详细记录](./DEVELOPMENT_LOG.md)
 
-## ComfyUI 文生图集成（2026-08-08）
+## ComfyUI 工作流集成（2026-08-08）
 
-平台已完成《ComfyUI 工作流 API 集成计划》第二阶段：工作流注册与不可变版本、管理员管理、能力映射、独立持久化 Worker、任务取消/恢复和输出资产登记。当前只正式发布 `text-to-image`，后续工作流通过同一注册与绑定机制扩展。
+平台已接入 18 项 ComfyUI 工作流能力，包括工作流注册与不可变版本、管理员管理、能力映射、独立持久化 Worker、任务取消/恢复、结果暂存、用户确认保存和跨工作流流转。原始 API JSON 作为只读快照管理，浏览器只获取平台公开的业务参数映射。
 
-架构、目录对应关系、数据模型、状态机、配置和运维入口见 [COMFYUI_WORKFLOW_INTEGRATION.md](./COMFYUI_WORKFLOW_INTEGRATION.md)。本机没有真实 ComfyUI，运行时未提供模拟成功；`COMFYUI_API_URL` 为空时文生图明确显示不可执行。
+架构、目录对应关系、数据模型、状态机、配置和运维入口见 [COMFYUI_WORKFLOW_INTEGRATION.md](./COMFYUI_WORKFLOW_INTEGRATION.md)。运行时不提供模拟成功；`COMFYUI_API_URL` 为空时工作流明确显示不可执行。

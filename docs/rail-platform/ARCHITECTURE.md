@@ -160,9 +160,9 @@ flowchart TB
 | 固定平台外壳 | `layouts/basic.vue` | Vben BasicLayout、Pinia、Ant Design Vue | 导航、当前项目切换、通知、用户菜单、退出登录 | 项目、通知、当前用户 API |
 | 平台概览 | `/workspace/overview` | Vue 计算状态、平台组件 | 当前项目、资产/任务/成员统计、应用快捷入口、最近数据 | Platform Store |
 | 项目空间 | `/projects` | Vue、Pinia、Modal/Form | 查询可见项目、创建项目、切换项目上下文 | `/projects`、当前项目偏好 API |
-| 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、真实图片缩略图、详情、下载、收藏 | 资产 API + MinIO/S3 |
-| 应用中心 | `/applications` | Vue 动态列表 | 按类别展示能力目录及输入/输出资产契约 | `applications` 表 |
-| 应用工作区 | `/workspace/:appKey` | Vue Router 动态参数、Pinia | 固定三区域、筛选兼容项目资产、提交平台任务 | 应用、资产、任务 API |
+| 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、图片放大、详情、下载、收藏和软删除；未确认的工作流结果不进入列表 | 资产 API + MinIO/S3 |
+| 应用中心 | `/applications` | Vue 动态列表 | 按名称、类别、接入状态和可见性筛选能力目录；管理员控制普通用户可见性 | `applications` 表与可见性 API |
+| 应用工作区 | `/workspace/:appKey` | Vue Router 动态参数、Pinia、Canvas、MediaDevices | 完整业务参数、持久草稿、镜头轨道控制、EasyMark 分区、屏幕/摄像头捕捉、结果放大、确认保存和精确流转 | 应用、资产、草稿、任务 API |
 | 任务中心 | `/jobs` | Vue、Pinia、状态组件 | 统一显示不同应用的任务状态、进度、来源和输出入口 | `jobs`、`job_inputs`、`job_outputs` |
 | 个人中心 | `/profile` | Vben Profile、Vue 表单 | 资料与企业邮箱更新、邮箱安全状态、真实密码修改、消息提醒偏好；角色只读 | 用户与偏好 API |
 | 用户与权限 | `/administration/access` | 路由角色守卫、管理员表格和弹窗 | 用户状态、其他用户角色管理、角色统计 | 用户、角色 API |
@@ -192,8 +192,9 @@ Nitro 使用文件路径生成 `/api/v1` 路由。每个业务接口一般按以
 | 当前用户 | `/user/info`、`profile`、`password`、`notification-preferences` | Zod、postgres.js | 资料、密码和提醒偏好；不允许自助修改角色 |
 | 项目 | `/projects`、`/users/me/current-project` | PostgreSQL 事务、项目范围校验 | 创建项目、可见项目查询、当前项目偏好 |
 | 资产 | `/assets`、`uploads`、`text`、`complete`、`favorite`、`download`、`preview`、`versions` | AWS SDK v3、预签名 URL、PostgreSQL | 多模态资产、文本资产、版本、标签、收藏、下载和预览 |
-| 应用目录 | `/applications` | PostgreSQL JSONB | 读取应用分类、状态、输入类型和输出类型契约 |
-| 任务 | `/jobs`、`/jobs/:id/cancel` | PostgreSQL、通知、审计 | 任务台账、输入关系、状态和取消；尚未接入真实执行器 |
+| 应用目录 | `/applications`、`/applications/:key/visibility` | PostgreSQL JSONB、RBAC | 读取应用分类、状态和资产契约；管理员持久化控制普通用户可见性，隐藏能力的详情和任务创建由后端阻断 |
+| 工作区草稿 | `/workflow-drafts` | PostgreSQL、Zod、项目范围校验 | 按用户、项目和应用保存参数与精确输入资产位置；恢复时过滤失效或越界资产 |
+| 任务 | `/jobs`、`/jobs/:id/cancel` | PostgreSQL、通知、审计 | 任务台账、输入关系、状态、取消和 ComfyUI Worker 调度 |
 | 站内通知 | `/notifications/**` | PostgreSQL | 查询、已读、全部已读、单条删除和清空 |
 | 用户与角色 | `/users`、`/users/:id/status`、`/users/:id/roles`、`/roles` | RBAC、事务和末位管理员保护 | 管理其他用户状态与角色、角色统计；每个账号只能分配一个角色 |
 | 审计 | `/audit-events`、`/audit-events/client` | Request ID、IP、角色快照、统一响应层 | 记录 API 请求、业务事件和页面访问；管理员全量、普通用户仅自身 |
@@ -243,6 +244,8 @@ erDiagram
   ASSETS ||--o{ JOB_INPUTS : input
   JOBS ||--o{ JOB_OUTPUTS : produces
   ASSETS ||--o{ JOB_OUTPUTS : output
+  USERS ||--o{ WORKFLOW_WORKSPACE_DRAFTS : owns
+  PROJECTS ||--o{ WORKFLOW_WORKSPACE_DRAFTS : contains
 
   USERS ||--o{ NOTIFICATIONS : receives
   USERS ||--o{ AUDIT_EVENTS : acts
@@ -261,7 +264,7 @@ erDiagram
 | 会话偏好 | `refresh_sessions`、`user_preferences` | 刷新令牌哈希、当前项目、提醒偏好 |
 | 项目 | `projects`、`project_members` | 项目元数据和 owner/editor/viewer 成员关系 |
 | 资产 | `assets`、`asset_versions`、`asset_tags`、`asset_favorites` | 统一资产、版本、来源、标签和个人收藏 |
-| 应用任务 | `applications`、`jobs`、`job_inputs`、`job_outputs` | 能力目录、参数、状态以及输入输出关系 |
+| 应用任务 | `applications`、`jobs`、`job_inputs`、`job_outputs`、`workflow_workspace_drafts`、`workflow_asset_transfers` | 能力目录、工作区草稿、精确资产流转、任务参数、状态以及输入输出关系 |
 | 运营记录 | `notifications`、`audit_events` | 站内消息；操作人快照、请求路径、状态、耗时、IP 和可追踪业务事件 |
 | AI 助手 | `ai_conversations`、`ai_messages`、`ai_attachments` | 用户私有会话、消息、上游错误/消息编号和附件对象元数据 |
 
@@ -402,11 +405,17 @@ flowchart LR
   Worker --> Inputs["从对象存储读取资产<br/>上传 ComfyUI 输入目录"]
   Inputs --> Adapter["按版本映射注入工作流 JSON"]
   Adapter --> External["ComfyUI /prompt、/history、/view"]
-  External --> Output["更新任务 + 登记输出资产 + job_outputs"]
-  Output --> Notice
+  External --> Output["更新任务 + 暂存输出 + job_outputs"]
+  Output --> Choice{"用户选择"}
+  Choice -->|"加入资产"| Asset["进入资产中心"]
+  Choice -->|"加入资产并流转"| Asset
+  Choice -->|"仅查看"| Notice
+  Asset --> Transfer["指定目标工作流与语义输入位"]
+  Asset --> Notice
+  Transfer --> Notice
 ```
 
-因此，当前系统已具备工作流注册、能力绑定、持久化任务、独立 Worker、输入资产上传、结果回收和输出资产登记的闭环。未配置或无法访问 ComfyUI 时必须明确失败，不会伪造成功结果；真实 ComfyUI 的节点、模型和输出字段兼容性按 `COMFYUI_LIVE_SERVICE_HANDOFF.md` 完成上线前预检与微调。
+因此，当前系统已具备工作流注册、能力绑定、持久化任务、独立 Worker、输入资产上传、结果暂存、用户确认保存和跨工作流复用的闭环。暂存结果仍受项目权限约束并保留任务血缘，但不会自动污染资产中心。未配置或无法访问 ComfyUI 时必须明确失败，不会伪造成功结果；真实 ComfyUI 的节点、模型和输出字段兼容性按 `COMFYUI_LIVE_SERVICE_HANDOFF.md` 完成上线前预检与微调。
 
 后续适配器应只接收平台语义数据：
 
@@ -591,7 +600,7 @@ flowchart LR
 1. 平台先创建任务，适配器不能绕开项目和权限体系自行创建用户可见数据。
 2. 浏览器只提交 `projectId`、`assetIds` 和业务参数，不提交服务密钥或底层工作流地址。
 3. 适配器通过平台受控方式读取输入资产。
-4. 外部结果先进入对象存储，再以新资产或新版本登记。
+4. 外部结果先进入对象存储和任务暂存区，只有用户确认登记为项目资产后才可跨工作流复用；“加入资产并流转”也必须是一次显式用户确认。
 5. 任务、输入资产、输出资产和外部任务编号必须能够互相追溯。
 6. 状态更新、取消、失败和重试都必须写审计，必要时生成站内通知。
 7. 新能力不能直接修改 Web 固定外壳，只能提供应用定义、参数 Schema、适配器和结果呈现组件。

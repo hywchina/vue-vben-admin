@@ -168,6 +168,7 @@ async function main() {
         jobStatus: string;
         objectKey: string;
         receiptStatus: string;
+        savedAt: Date | null;
       }[]
     >`
       SELECT
@@ -175,10 +176,12 @@ async function main() {
         je.status AS "executionStatus",
         jor.status AS "receiptStatus",
         jor.asset_id AS "assetId",
-        av.object_key AS "objectKey"
+        av.object_key AS "objectKey",
+        a.saved_at AS "savedAt"
       FROM jobs j
       JOIN job_executions je ON je.job_id = j.id
       JOIN job_output_receipts jor ON jor.job_id = j.id
+      JOIN assets a ON a.id = jor.asset_id
       JOIN asset_versions av ON av.asset_id = jor.asset_id
       WHERE j.id = ${jobId}
       ORDER BY av.version DESC
@@ -189,14 +192,15 @@ async function main() {
       result.executionStatus !== 'succeeded' ||
       result.receiptStatus !== 'available' ||
       !result.assetId ||
-      !result.objectKey
+      !result.objectKey ||
+      result.savedAt !== null
     ) {
-      throw new Error('Worker 未完成任务、输出回执和资产登记');
+      throw new Error('Worker 未完成任务、输出回执或结果未保持暂存状态');
     }
     assetId = result.assetId;
     objectKey = result.objectKey;
     console.warn(
-      'ComfyUI Worker 端到端验收通过：提交、轮询、MinIO 与项目资产登记。',
+      'ComfyUI Worker 端到端验收通过：提交、轮询、MinIO 与结果暂存。',
     );
   } finally {
     if (objectKey) await deleteObject(objectKey).catch(() => undefined);
