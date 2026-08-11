@@ -36,3 +36,22 @@ export function selectWorkspaceJobs(
         new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     );
 }
+
+export function selectDesignConversationJobs(
+  jobs: PlatformJob[],
+  designConversationId: string | undefined,
+  projectId: string,
+) {
+  if (!designConversationId || !projectId) return [];
+  return jobs
+    .filter(
+      (job) =>
+        job.designConversationId === designConversationId &&
+        job.projectId === projectId &&
+        job.ownedByCurrentUser,
+    )
+    .toSorted(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+}

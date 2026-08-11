@@ -512,6 +512,133 @@ async function run() {
     ])}
   `;
 
+  const designConversation = await apiRequest<{ id: string; title: string }>(
+    '/design-conversations',
+    {
+      body: { projectId, title: '统一设计会话验收' },
+      session: user1,
+    },
+  );
+  const parallelDesignConversation = await apiRequest<{ id: string }>(
+    '/design-conversations',
+    { body: { projectId, title: '并行设计会话验收' }, session: user1 },
+  );
+  const listedDesignConversations = await apiRequest<
+    Array<{ id: string; title: string }>
+  >(`/design-conversations?projectId=${projectId}`, { session: user1 });
+  assert(
+    listedDesignConversations.envelope.data.some(
+      (item) => item.id === designConversation.envelope.data.id,
+    ),
+    '新建设计会话没有出现在项目历史列表',
+  );
+  await apiRequest(`/design-conversations?projectId=${projectId}`, {
+    expectedStatus: 404,
+    session: user2,
+  });
+  await apiRequest(
+    `/design-conversations/${designConversation.envelope.data.id}`,
+    {
+      body: { projectId, title: '重命名后的统一设计会话' },
+      method: 'PATCH',
+      session: user1,
+    },
+  );
+
+  const activeDesignJobId = randomUUID();
+  await sql`
+    INSERT INTO jobs (
+      id, project_id, app_key, name, parameters, created_by,
+      status, progress, stage, design_conversation_id
+    ) VALUES (
+      ${activeDesignJobId}, ${projectId}, ${textToImageTarget.key},
+      '设计会话互斥验收', '{}'::jsonb, ${user1.id},
+      'queued', 0, '等待执行', ${designConversation.envelope.data.id}
+    )
+  `;
+  const duplicateDesignJob = await apiRequest<unknown>('/jobs', {
+    body: {
+      appKey: textToImageTarget.key,
+      designConversationId: designConversation.envelope.data.id,
+      inputAssetIds: [],
+      name: '同一设计会话重复任务',
+      parameters: {},
+      projectId,
+    },
+    expectedStatus: 409,
+    session: user1,
+  });
+  assert(
+    duplicateDesignJob.envelope.code === 'DESIGN_CONVERSATION_JOB_ACTIVE',
+    '同一设计会话的第二个进行中任务没有被后端阻止',
+  );
+  const parallelDesignJob = await apiRequest<{ id: string }>('/jobs', {
+    body: {
+      appKey: textToImageTarget.key,
+      designConversationId: parallelDesignConversation.envelope.data.id,
+      inputAssetIds: [],
+      name: '不同设计会话并行任务',
+      parameters: {},
+      projectId,
+    },
+    session: user1,
+  });
+  await sql`
+    UPDATE jobs
+    SET status = 'cancelled', stage = '设计会话并发验收完成', completed_at = now()
+    WHERE id IN ${sql([activeDesignJobId, parallelDesignJob.envelope.data.id])}
+  `;
+
+  const designDraftPath = `/design-conversations/${designConversation.envelope.data.id}/drafts/${flowTarget.key}`;
+  await apiRequest(designDraftPath, {
+    body: {
+      inputAssetIds: { 0: prepared.envelope.data.asset.id },
+      parameterValues: { prompt: '在同一设计会话中继续编辑' },
+      projectId,
+    },
+    method: 'PUT',
+    session: user1,
+  });
+  const restoredDesignDraft = await apiRequest<{
+    inputAssetIds: Record<string, string>;
+    parameterValues: Record<string, unknown>;
+  }>(`${designDraftPath}?projectId=${projectId}`, { session: user1 });
+  assert(
+    restoredDesignDraft.envelope.data.inputAssetIds['0'] ===
+      prepared.envelope.data.asset.id &&
+      restoredDesignDraft.envelope.data.parameterValues.prompt ===
+        '在同一设计会话中继续编辑',
+    '设计会话没有按应用恢复输入资产与参数草稿',
+  );
+  const jobsBeforeArchive = await sql<{ count: number }[]>`
+    SELECT count(*)::integer AS count
+    FROM jobs
+    WHERE design_conversation_id = ${parallelDesignConversation.envelope.data.id}
+  `;
+  await apiRequest(
+    `/design-conversations/${parallelDesignConversation.envelope.data.id}?projectId=${projectId}`,
+    { method: 'DELETE', session: user1 },
+  );
+  const jobsAfterArchive = await sql<{ count: number }[]>`
+    SELECT count(*)::integer AS count
+    FROM jobs
+    WHERE design_conversation_id = ${parallelDesignConversation.envelope.data.id}
+  `;
+  assert(
+    jobsBeforeArchive[0]?.count === jobsAfterArchive[0]?.count,
+    '软删除设计会话时任务台账被删除',
+  );
+  const conversationsAfterArchive = await apiRequest<Array<{ id: string }>>(
+    `/design-conversations?projectId=${projectId}`,
+    { session: user1 },
+  );
+  assert(
+    !conversationsAfterArchive.envelope.data.some(
+      (item) => item.id === parallelDesignConversation.envelope.data.id,
+    ),
+    '软删除后的设计会话仍显示在历史列表',
+  );
+
   const savedWorkspaceDraft = await apiRequest<{
     inputAssetIds: Record<string, string>;
     parameterValues: Record<string, unknown>;
@@ -814,7 +941,7 @@ async function run() {
   );
 
   console.warn(
-    '集成验收通过：认证、权限隔离、项目、文本/图片资产、对象存储、AI 会话和审计。',
+    '集成验收通过：认证、权限隔离、项目、设计会话、工作流并发、文本/图片资产、对象存储、AI 会话和审计。',
   );
 }
 

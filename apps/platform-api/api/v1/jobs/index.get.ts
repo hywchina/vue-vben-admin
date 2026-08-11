@@ -1,16 +1,27 @@
 import { z } from 'zod';
 import { useDatabase } from '~/utils/database';
+import { requireDesignConversation } from '~/utils/domain/design-conversations';
 import { requireIdentity } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { apiHandler } from '~/utils/response';
 import { parseQuery } from '~/utils/validation';
 
-const querySchema = z.object({ projectId: z.string().uuid() });
+const querySchema = z.object({
+  designConversationId: z.string().uuid().optional(),
+  projectId: z.string().uuid(),
+});
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const { projectId } = parseQuery(event, querySchema);
+  const { designConversationId, projectId } = parseQuery(event, querySchema);
   await requireProjectAccess(identity, projectId);
+  if (designConversationId) {
+    await requireDesignConversation({
+      conversationId: designConversationId,
+      projectId,
+      userId: identity.id,
+    });
+  }
   const sql = useDatabase();
   const jobs = await sql<
     {
@@ -18,6 +29,8 @@ export default apiHandler(async (event) => {
       completedAt: Date | null;
       createdAt: Date;
       createdBy: string;
+      designConversationId: null | string;
+      designConversationTitle: null | string;
       errorCode: null | string;
       errorMessage: null | string;
       externalReference: null | string;
@@ -50,14 +63,16 @@ export default apiHandler(async (event) => {
       startedAt: Date | null;
       status: string;
       workflowVersion: null | number;
-      workspaceInstanceId: string;
-      workspaceInstanceTitle: string;
+      workspaceInstanceId: null | string;
+      workspaceInstanceTitle: null | string;
     }[]
   >`
     SELECT
       j.id,
       j.project_id AS "projectId",
       j.app_key AS "appKey",
+      j.design_conversation_id AS "designConversationId",
+      design_conversation.title AS "designConversationTitle",
       j.workspace_instance_id AS "workspaceInstanceId",
       workspace_instance.title AS "workspaceInstanceTitle",
       j.name,
@@ -129,10 +144,16 @@ export default apiHandler(async (event) => {
       ), '[]'::jsonb) AS outputs
     FROM jobs j
     JOIN users u ON u.id = j.created_by
-    JOIN workflow_workspace_instances workspace_instance
+    LEFT JOIN workflow_workspace_instances workspace_instance
       ON workspace_instance.id = j.workspace_instance_id
+    LEFT JOIN design_conversations design_conversation
+      ON design_conversation.id = j.design_conversation_id
     LEFT JOIN workflow_versions wv ON wv.id = j.workflow_version_id
     WHERE j.project_id = ${projectId}
+      AND (
+        ${designConversationId ?? null}::uuid IS NULL
+        OR j.design_conversation_id = ${designConversationId ?? null}
+      )
     ORDER BY j.created_at DESC
   `;
 

@@ -43,6 +43,7 @@ const comparisonScreenshotPath = screenshotPath.replace(
   /\.png$/i,
   '-comparison.png',
 );
+const designScreenshotPath = screenshotPath.replace(/\.png$/i, '-design.png');
 let projectId = '';
 let userId = '';
 
@@ -83,6 +84,12 @@ async function setupAcceptanceData() {
     },
   });
   userId = registered.id;
+  const sql = useDatabase();
+  await sql`
+    UPDATE user_roles
+    SET role_id = (SELECT id FROM roles WHERE code = 'admin')
+    WHERE user_id = ${userId}
+  `;
   const login = await apiRequest<{ accessToken: string }>('/auth/login', {
     body: { password, username },
   });
@@ -143,7 +150,6 @@ async function setupAcceptanceData() {
     token,
   });
 
-  const sql = useDatabase();
   const [version] = await sql<
     {
       mimeType: string;
@@ -199,38 +205,48 @@ async function setupAcceptanceData() {
         )
     `;
     await transaction`
-      INSERT INTO jobs (
-        id, project_id, app_key, name, parameters, created_by,
-        status, progress, stage, started_at, completed_at, created_at,
-        workspace_instance_id
+      INSERT INTO design_conversations (
+        id, user_id, project_id, title
       ) VALUES (
-        ${historyJobId}, ${projectId}, 'text-to-image', '浏览器历史任务',
-        ${transaction.json({ prompt: '第一轮：阳光下的现代轨道客室设计' })},
-        ${userId}, 'succeeded', 100, '执行完成', now(), now(),
-        now() - interval '5 minutes', ${textWorkspaceInstanceId}
+        ${textWorkspaceInstanceId}, ${userId}, ${projectId},
+        '浏览器验收 · 多应用设计会话'
       )
     `;
     await transaction`
       INSERT INTO jobs (
         id, project_id, app_key, name, parameters, created_by,
-        status, progress, stage, started_at, workspace_instance_id
+        status, progress, stage, started_at, completed_at, created_at,
+        workspace_instance_id, design_conversation_id
       ) VALUES (
-        ${jobId}, ${projectId}, 'text-to-image', '浏览器活跃任务',
-        ${transaction.json({ prompt: '第二轮：夜景氛围的轨道客室设计' })},
-        ${userId}, 'running', 32, '真实页面验收中', now(),
+        ${historyJobId}, ${projectId}, 'text-to-image', '浏览器历史任务',
+        ${transaction.json({ prompt: '第一轮：阳光下的现代轨道客室设计' })},
+        ${userId}, 'succeeded', 100, '执行完成', now(), now(),
+        now() - interval '5 minutes', ${textWorkspaceInstanceId},
         ${textWorkspaceInstanceId}
       )
     `;
     await transaction`
       INSERT INTO jobs (
         id, project_id, app_key, name, parameters, created_by,
+        status, progress, stage, started_at, workspace_instance_id,
+        design_conversation_id
+      ) VALUES (
+        ${jobId}, ${projectId}, 'text-to-image', '浏览器活跃任务',
+        ${transaction.json({ prompt: '第二轮：夜景氛围的轨道客室设计' })},
+        ${userId}, 'running', 32, '真实页面验收中', now(),
+        ${textWorkspaceInstanceId}, ${textWorkspaceInstanceId}
+      )
+    `;
+    await transaction`
+      INSERT INTO jobs (
+        id, project_id, app_key, name, parameters, created_by,
         status, progress, stage, started_at, completed_at,
-        workspace_instance_id
+        workspace_instance_id, design_conversation_id
       ) VALUES (
         ${comparisonJobId}, ${projectId}, 'inpaint-single', '浏览器图像对比任务',
         ${transaction.json({ prompt: '保持结构，调整材质和照明' })},
         ${userId}, 'succeeded', 100, '执行完成', now(), now(),
-        ${comparisonWorkspaceInstanceId}
+        ${comparisonWorkspaceInstanceId}, ${textWorkspaceInstanceId}
       )
     `;
     await transaction`
@@ -410,6 +426,30 @@ async function runBrowserAcceptance() {
     await loginInputs.nth(1).fill(password);
     await page.locator('button').filter({ hasText: '登录' }).last().click();
     await page.waitForURL((url) => !url.pathname.includes('/auth/login'));
+
+    await page.goto(
+      `${webUrl}/design?conversationId=${textWorkspaceInstanceId}`,
+    );
+    await page.locator('.design-page').waitFor();
+    await page
+      .getByText('浏览器验收 · 多应用设计会话', { exact: true })
+      .first()
+      .waitFor();
+    assert(
+      (await page.locator('.thread-timeline .workflow-round').count()) === 3,
+      '统一设计会话没有按时间线恢复多个应用的历史轮次',
+    );
+    await page.getByText('第一轮：阳光下的现代轨道客室设计').first().waitFor();
+    await page.getByText('保持结构，调整材质和照明').first().waitFor();
+    assert(
+      (await page.locator('.composer-app-row button').count()) >= 18,
+      '统一设计会话没有展示已接入的应用能力',
+    );
+    assert(
+      (await page.locator('.rail-ai-float-button').count()) === 0,
+      '开始设计页面仍重复显示全局 AI 助手',
+    );
+    await page.screenshot({ fullPage: true, path: designScreenshotPath });
 
     await page.goto(`${webUrl}/assets`);
     const imageCard = page.locator('.asset-card', {
@@ -925,7 +965,7 @@ let failed = false;
 try {
   await runBrowserAcceptance();
   console.warn(
-    `浏览器验收通过，截图：${[captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
+    `浏览器验收通过，截图：${[designScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
   );
 } catch (error) {
   failed = true;

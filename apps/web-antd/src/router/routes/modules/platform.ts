@@ -2,10 +2,21 @@ import type { RouteRecordRaw } from 'vue-router';
 
 const routes: RouteRecordRaw[] = [
   {
+    component: () => import('#/views/platform/design/index.vue'),
     meta: {
-      icon: 'lucide:panel-top',
+      affixTab: true,
+      icon: 'lucide:message-square-more',
+      order: -110,
+      title: '开始设计',
+    },
+    name: 'PlatformDesign',
+    path: '/design',
+  },
+  {
+    meta: {
+      icon: 'lucide:gauge',
       order: -100,
-      title: '设计工作台',
+      title: '平台概览',
     },
     name: 'PlatformWorkspace',
     path: '/workspace',
@@ -24,6 +35,7 @@ const routes: RouteRecordRaw[] = [
       {
         component: () => import('#/views/platform/workspace/index.vue'),
         meta: {
+          authority: ['admin'],
           fullPathKey: true,
           hideInMenu: true,
           icon: 'lucide:workflow',
@@ -57,9 +69,10 @@ const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/applications/index.vue'),
     meta: {
+      authority: ['admin'],
       icon: 'lucide:blocks',
       order: -70,
-      title: '应用中心',
+      title: '应用调试中心',
     },
     name: 'PlatformApplications',
     path: '/applications',

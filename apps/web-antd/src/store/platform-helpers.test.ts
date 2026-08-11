@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isActivePlatformJob,
   normalizePlatformJobs,
+  selectDesignConversationJobs,
   selectWorkspaceJobs,
 } from './platform/helpers';
 
@@ -70,5 +71,37 @@ describe('platform store helpers', () => {
     expect(
       selectWorkspaceJobs(jobs, 'instance-1', 'project-1').map((job) => job.id),
     ).toEqual(['round-1', 'round-2']);
+  });
+
+  it('combines different applications inside one project design conversation', () => {
+    const jobs = [
+      createJob({
+        appKey: 'text-chat',
+        createdAt: '2026-08-08T00:01:00.000Z',
+        designConversationId: 'conversation-1',
+        id: 'text-round',
+      }),
+      createJob({
+        appKey: 'text-to-image',
+        createdAt: '2026-08-08T00:02:00.000Z',
+        designConversationId: 'conversation-1',
+        id: 'image-round',
+      }),
+      createJob({
+        designConversationId: 'conversation-2',
+        id: 'other-conversation',
+      }),
+      createJob({
+        designConversationId: 'conversation-1',
+        id: 'other-user',
+        ownedByCurrentUser: false,
+      }),
+    ];
+
+    expect(
+      selectDesignConversationJobs(jobs, 'conversation-1', 'project-1').map(
+        (job) => job.id,
+      ),
+    ).toEqual(['text-round', 'image-round']);
   });
 });

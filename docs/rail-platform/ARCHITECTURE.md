@@ -23,8 +23,8 @@ flowchart TB
 
   subgraph Browser["浏览器：Vue 平台"]
     Shell["固定平台外壳<br/>导航 / 顶栏 / 当前项目 / 通知 / AI 助手"]
-    Pages["业务页面<br/>项目 / 资产 / 应用 / 任务 / 管理 / 个人中心"]
-    Workspace["动态应用工作区<br/>任务输入 / 结果区域 / 项目资产"]
+    Pages["业务页面<br/>项目 / 开始设计 / 资产 / 任务 / 管理"]
+    Workspace["项目设计会话<br/>多应用轮次 / 参数 / 结果 / 资产"]
     Store["Pinia 状态<br/>当前项目与 API 返回数据"]
     Client["请求客户端<br/>Bearer Token / 自动刷新 / 错误处理"]
 
@@ -140,14 +140,15 @@ flowchart TB
   Layout --> Header["顶栏：面包屑 / 当前项目 / 通知 / 用户"]
   Layout --> RouteArea["路由内容区"]
   Layout --> Tabs["多页签区域"]
-  Layout --> Assistant["全局 AI 助手<br/>个人历史 / 文件 / 项目上下文"]
+  Layout --> Assistant["全局 AI 助手<br/>设计页隐藏 / 其他页面保留"]
 
   RouteArea --> Normal["普通平台页面"]
-  RouteArea --> AppArea["/workspace/:appKey 应用工作区"]
+  RouteArea --> DesignArea["/design 项目设计会话"]
+  RouteArea --> AppArea["管理员 /workspace/:appKey 单能力调试"]
 
-  AppArea --> Input["左：业务参数"]
-  AppArea --> Stage["中：运行状态与结果"]
-  AppArea --> Assets["右：当前项目兼容资产"]
+  DesignArea --> History["左：项目历史会话"]
+  DesignArea --> Stage["中：多应用轮次与结果"]
+  DesignArea --> Composer["下：能力选择、提示与紧凑参数"]
 ```
 
 进入不同应用时，只替换路由内容区的应用定义和参数；平台导航、当前项目、资产权限、任务台账、通知和用户身份不变。这正是“平台框架与第三方 API 模块相对独立”的实现位置。
@@ -161,13 +162,14 @@ flowchart TB
 | 平台概览 | `/workspace/overview` | Vue 计算状态、平台组件 | 当前项目、资产/任务/成员统计、应用快捷入口、最近数据 | Platform Store |
 | 项目空间 | `/projects` | Vue、Pinia、Modal/Form | 查询可见项目、创建项目、切换项目上下文 | `/projects`、当前项目偏好 API |
 | 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、图片放大、详情、下载、收藏和软删除；未确认的工作流结果不进入列表 | 资产 API + MinIO/S3 |
-| 应用中心 | `/applications` | Vue 动态列表 | 按名称、类别、接入状态和可见性筛选能力目录；管理员控制普通用户可见性 | `applications` 表与可见性 API |
-| 应用工作区 | `/workspace/:appKey?instanceId=:id` | Vue Router 动态参数、Pinia、Canvas、MediaDevices | 同一应用多会话实例、实例独立标签/草稿/多轮历史/单一进行中任务、图片滑动对比、特殊输入组件、统一遮罩编辑和目标实例精确流转 | 应用、实例、资产、草稿、任务 API |
+| 开始设计 | `/design?conversationId=:id` | Vue、Pinia、Canvas、MediaDevices | 左侧历史会话；默认文生文；同一时间线组合多个应用；紧凑参数与完整抽屉；会话内继续设计；遮罩、对比和特殊输入 | 设计会话、应用、资产、草稿、任务 API |
+| 应用调试中心 | `/applications` | 管理员权限路由、Vue 动态列表 | 管理员筛选能力、控制普通用户可见性并打开单功能调试 | `applications` 表与可见性 API |
+| 单能力调试 | `/workspace/:appKey?instanceId=:id` | 管理员权限路由、Canvas、MediaDevices | 保留应用实例、参数和旧精确流转链路，用于逐项能力联调，不作为普通用户入口 | 应用、调试实例、资产、任务 API |
 | 任务中心 | `/jobs` | Vue、Pinia、状态组件 | 统一显示不同应用的任务状态、进度、来源和输出入口 | `jobs`、`job_inputs`、`job_outputs` |
 | 个人中心 | `/profile` | Vben Profile、Vue 表单 | 资料与企业邮箱更新、邮箱安全状态、真实密码修改、消息提醒偏好；角色只读 | 用户与偏好 API |
 | 用户与权限 | `/administration/access` | 路由角色守卫、管理员表格和弹窗 | 用户状态、其他用户角色管理、角色统计 | 用户、角色 API |
 | 操作日志 | `/audit` | Vue、Pinia、服务端分页与筛选 | 管理员查看全部账号，普通用户只查看自身；区分姓名、用户名和角色快照 | `audit_events` |
-| AI 设计助手 | 全局右下角弹窗 | Vue Teleport、Iconify、预签名上传 | 个人历史对话、文本、图片/音视频/文档、预览、下载、清空与服务状态 | AI 助手 API + PostgreSQL + MinIO/S3 |
+| AI 设计助手 | 除 `/design` 外的右下角弹窗 | Vue Teleport、Iconify、预签名上传 | 个人历史对话、文本、附件、预览、下载、清空与服务状态；设计页避免重复入口 | AI 助手 API + PostgreSQL + MinIO/S3 |
 
 前端 `usePlatformStore` 只缓存当前会话页面所需的 API 返回值，不把项目、资产或任务的业务真值写入本地静态数据。早期 `modules/platform/data.ts` 样例常量已在核心模块重构中删除，平台领域目录不再保留可被误用的运行时假数据。
 
@@ -193,8 +195,9 @@ Nitro 使用文件路径生成 `/api/v1` 路由。每个业务接口一般按以
 | 项目 | `/projects`、`/users/me/current-project` | PostgreSQL 事务、项目范围校验 | 创建项目、可见项目查询、当前项目偏好 |
 | 资产 | `/assets`、`uploads`、`text`、`complete`、`favorite`、`download`、`preview`、`versions` | AWS SDK v3、预签名 URL、PostgreSQL | 多模态资产、文本资产、版本、标签、收藏、下载和预览 |
 | 应用目录 | `/applications`、`/applications/:key/visibility` | PostgreSQL JSONB、RBAC | 读取应用分类、状态和资产契约；管理员持久化控制普通用户可见性，隐藏能力的详情和任务创建由后端阻断 |
-| 应用实例 | `/workflow-instances` | PostgreSQL、Zod、项目范围校验 | 创建和列出当前用户在项目中的持久化应用会话实例；实例是草稿、多轮任务和待流转输入的归属边界 |
-| 工作区草稿 | `/workflow-drafts` | PostgreSQL、Zod、项目范围校验 | 按应用实例保存参数与精确输入资产位置；恢复时过滤失效或越界资产 |
+| 设计会话 | `/design-conversations` | PostgreSQL、Zod、项目与用户范围校验 | 项目内创建、列表、重命名和软删除会话；返回轮次数及活动任务状态 |
+| 设计草稿 | `/design-conversations/:id/drafts/:appKey` | PostgreSQL、Zod、能力契约校验 | 按设计会话和应用保存参数与精确输入位置；恢复时过滤失效、未登记或越界资产 |
+| 管理员调试实例 | `/workflow-instances`、`/workflow-drafts` | PostgreSQL、Zod、项目范围校验 | 保留旧应用实例草稿和精确流转，供应用调试中心逐项联调 |
 | 任务 | `/jobs`、`/jobs/:id/cancel` | PostgreSQL、事务级 advisory lock、通知、审计 | 任务台账、参数与有序输入/输出快照、同实例活跃任务互斥、状态、取消和 ComfyUI Worker 调度 |
 | 站内通知 | `/notifications/**` | PostgreSQL | 查询、已读、全部已读、单条删除和清空 |
 | 用户与角色 | `/users`、`/users/:id/status`、`/users/:id/roles`、`/roles` | RBAC、事务和末位管理员保护 | 管理其他用户状态与角色、角色统计；每个账号只能分配一个角色 |
@@ -271,7 +274,8 @@ erDiagram
 | 会话偏好 | `refresh_sessions`、`user_preferences` | 刷新令牌哈希、当前项目、提醒偏好 |
 | 项目 | `projects`、`project_members` | 项目元数据和 owner/editor/viewer 成员关系 |
 | 资产 | `assets`、`asset_versions`、`asset_tags`、`asset_favorites` | 统一资产、版本、来源、标签和个人收藏 |
-| 应用任务 | `applications`、`workflow_workspace_instances`、`jobs`、`job_inputs`、`job_outputs`、`workflow_workspace_drafts`、`workflow_asset_transfers` | 能力目录、用户应用会话、实例草稿、目标实例精确资产流转、任务参数、状态以及输入输出关系 |
+| 项目设计与应用任务 | `design_conversations`、`design_conversation_drafts`、`applications`、`jobs`、`job_inputs`、`job_outputs` | 用户项目设计会话、会话内多应用草稿、任务参数、状态、输入输出与资产血缘 |
+| 管理员调试兼容 | `workflow_workspace_instances`、`workflow_workspace_drafts`、`workflow_asset_transfers` | 单能力调试实例及旧精确流转；不再作为普通用户主交互模型 |
 | 运营记录 | `notifications`、`audit_events` | 站内消息；操作人快照、请求路径、状态、耗时、IP 和可追踪业务事件 |
 | AI 助手 | `ai_conversations`、`ai_messages`、`ai_attachments` | 用户私有会话、消息、上游错误/消息编号和附件对象元数据 |
 
@@ -401,7 +405,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  Work["应用工作区<br/>projectId + assetIds + 业务参数"] --> JobAPI["POST /jobs"]
+  Work["项目设计会话<br/>conversationId + appKey + assetIds + 参数"] --> JobAPI["POST /jobs"]
   JobAPI --> Verify["校验权限、项目范围、能力绑定<br/>参数和输入资产契约"]
   Verify --> Config{"ComfyUI 适配器可用?"}
   Config -->|"否"| Failed["写入 failed 任务<br/>稳定错误码"]
@@ -415,14 +419,14 @@ flowchart LR
   External --> Output["更新任务 + 暂存输出 + job_outputs"]
   Output --> Choice{"用户选择"}
   Choice -->|"加入资产"| Asset["进入资产中心"]
-  Choice -->|"加入资产并流转"| Asset
+  Choice -->|"加入资产并继续设计"| Asset
   Choice -->|"仅查看"| Notice
-  Asset --> Transfer["指定目标工作流与语义输入位"]
+  Asset --> Transfer["当前会话选择目标应用与语义输入位"]
   Asset --> Notice
   Transfer --> Notice
 ```
 
-因此，当前系统已具备工作流注册、能力绑定、持久化任务、独立 Worker、输入资产上传、结果暂存、用户确认保存和跨工作流复用的闭环。暂存结果仍受项目权限约束并保留任务血缘，但不会自动污染资产中心。未配置或无法访问 ComfyUI 时必须明确失败，不会伪造成功结果；真实 ComfyUI 的节点、模型和输出字段兼容性按 `COMFYUI_LIVE_SERVICE_HANDOFF.md` 完成上线前预检与微调。
+因此，当前系统已具备工作流注册、能力绑定、项目设计会话、持久化任务、独立 Worker、输入资产上传、结果暂存、用户确认保存和会话内跨应用复用的闭环。一个设计会话可包含不同 `app_key` 的多个轮次，`jobs.design_conversation_id` 是普通用户时间线归属；事务 advisory lock 保证同一会话只有一个活动任务，不同会话可以并行。暂存结果仍受项目权限约束并保留任务血缘，但不会自动污染资产中心。未配置或无法访问 ComfyUI 时必须明确失败，不会伪造成功结果。
 
 后续适配器应只接收平台语义数据：
 
@@ -579,7 +583,7 @@ flowchart LR
 - 创建、查看和切换项目；项目级数据范围检查。
 - 图片、视频、音频、文本、文档、3D 模型、模型文件和压缩包 8 类统一文件资产与真实对象存储。
 - 文件直传、文本入库、版本 API、收藏、下载和图片预览。
-- 应用目录、应用工作区、任务台账、通知和审计。
+- 项目“开始设计”、多应用会话时间线、管理员应用调试中心、任务台账、通知和审计。
 - 全局 AI 设计助手：按用户隔离的会话历史、文本、图片/音视频/文档附件、预览下载、清空、外部 API 转发与失败留痕。
 - PostgreSQL/MinIO 数据持久化、SMTP 邮件投递、迁移、种子、测试和生产构建。
 

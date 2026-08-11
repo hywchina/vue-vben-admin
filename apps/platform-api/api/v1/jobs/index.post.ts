@@ -3,6 +3,7 @@ import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
 import { CAPABILITY_ADAPTER_NOT_CONFIGURED } from '~/utils/domain/capabilities/adapter';
+import { requireDesignConversation } from '~/utils/domain/design-conversations';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
@@ -21,15 +22,23 @@ import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
 
-const createJobSchema = z.object({
-  appKey: z.string().trim().min(1).max(100),
-  inputAssetIds: z.array(z.string().uuid()).max(100).default([]),
-  inputTransferIds: z.array(z.string().uuid()).max(100).default([]),
-  name: z.string().trim().min(1).max(200),
-  parameters: z.record(z.string(), z.unknown()).default({}),
-  projectId: z.string().uuid(),
-  workspaceInstanceId: z.string().uuid(),
-});
+const createJobSchema = z
+  .object({
+    appKey: z.string().trim().min(1).max(100),
+    designConversationId: z.string().uuid().optional(),
+    inputAssetIds: z.array(z.string().uuid()).max(100).default([]),
+    inputTransferIds: z.array(z.string().uuid()).max(100).default([]),
+    name: z.string().trim().min(1).max(200),
+    parameters: z.record(z.string(), z.unknown()).default({}),
+    projectId: z.string().uuid(),
+    workspaceInstanceId: z.string().uuid().optional(),
+  })
+  .refine(
+    (value) =>
+      Boolean(value.designConversationId) !==
+      Boolean(value.workspaceInstanceId),
+    '任务必须且只能属于一个设计会话或管理员调试实例',
+  );
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
@@ -37,12 +46,21 @@ export default apiHandler(async (event) => {
   const input = await parseBody(event, createJobSchema);
   await requireProjectAccess(identity, input.projectId, 'write');
   const sql = useDatabase();
-  const workspaceInstance = await requireWorkflowWorkspaceInstance({
-    appKey: input.appKey,
-    instanceId: input.workspaceInstanceId,
-    projectId: input.projectId,
-    userId: identity.id,
-  });
+  const designConversation = input.designConversationId
+    ? await requireDesignConversation({
+        conversationId: input.designConversationId,
+        projectId: input.projectId,
+        userId: identity.id,
+      })
+    : undefined;
+  const workspaceInstance = input.workspaceInstanceId
+    ? await requireWorkflowWorkspaceInstance({
+        appKey: input.appKey,
+        instanceId: input.workspaceInstanceId,
+        projectId: input.projectId,
+        userId: identity.id,
+      })
+    : undefined;
 
   const [application] = await sql<
     { adapterConfigured: boolean; key: string; visible: boolean }[]
@@ -138,7 +156,10 @@ export default apiHandler(async (event) => {
   }
 
   const job = await sql.begin(async (transaction) => {
-    const workspaceLockKey = input.workspaceInstanceId;
+    const executionContextId =
+      input.designConversationId ?? input.workspaceInstanceId;
+    if (!executionContextId) throw new Error('任务缺少执行上下文');
+    const workspaceLockKey = executionContextId;
     await transaction`
       SELECT pg_advisory_xact_lock(hashtextextended(${workspaceLockKey}, 0))
     `;
@@ -146,7 +167,13 @@ export default apiHandler(async (event) => {
       SELECT id
       FROM jobs
       WHERE created_by = ${identity.id}
-        AND workspace_instance_id = ${input.workspaceInstanceId}
+        AND (
+          (${input.designConversationId ?? null}::uuid IS NOT NULL
+            AND design_conversation_id = ${input.designConversationId ?? null})
+          OR
+          (${input.workspaceInstanceId ?? null}::uuid IS NOT NULL
+            AND workspace_instance_id = ${input.workspaceInstanceId ?? null})
+        )
         AND status IN ('queued', 'running', 'cancelling')
       ORDER BY created_at DESC
       LIMIT 1
@@ -154,8 +181,12 @@ export default apiHandler(async (event) => {
     if (activeJob) {
       throw new ApiError(
         409,
-        'WORKSPACE_INSTANCE_JOB_ACTIVE',
-        '当前应用会话已有进行中的任务，请等待完成或取消后再运行',
+        input.designConversationId
+          ? 'DESIGN_CONVERSATION_JOB_ACTIVE'
+          : 'WORKSPACE_INSTANCE_JOB_ACTIVE',
+        input.designConversationId
+          ? '当前设计会话已有进行中的任务，请等待完成或取消后再运行'
+          : '当前调试实例已有进行中的任务，请等待完成或取消后再运行',
       );
     }
     if (
@@ -165,6 +196,13 @@ export default apiHandler(async (event) => {
         400,
         'INVALID_WORKFLOW_TRANSFERS',
         '工作流流转记录不能重复提交',
+      );
+    }
+    if (input.inputTransferIds.length > 0 && !input.workspaceInstanceId) {
+      throw new ApiError(
+        400,
+        'INVALID_WORKFLOW_TRANSFERS',
+        '项目设计会话直接使用已登记资产，不接受旧应用实例流转记录',
       );
     }
     const transfers =
@@ -182,7 +220,7 @@ export default apiHandler(async (event) => {
               AND created_by = ${identity.id}
               AND project_id = ${input.projectId}
               AND target_app_key = ${input.appKey}
-              AND target_instance_id = ${input.workspaceInstanceId}
+              AND target_instance_id = ${input.workspaceInstanceId ?? null}
               AND status = 'pending'
             FOR UPDATE
           `;
@@ -214,7 +252,8 @@ export default apiHandler(async (event) => {
     >`
       INSERT INTO jobs (
         project_id, app_key, name, parameters, created_by, status, stage,
-        error, completed_at, workflow_version_id, workspace_instance_id
+        error, completed_at, workflow_version_id, workspace_instance_id,
+        design_conversation_id
       ) VALUES (
         ${input.projectId},
         ${input.appKey},
@@ -233,7 +272,8 @@ export default apiHandler(async (event) => {
         },
         ${adapterConfigured ? null : new Date()},
         ${capability?.workflowVersionId ?? null},
-        ${input.workspaceInstanceId}
+        ${input.workspaceInstanceId ?? null},
+        ${input.designConversationId ?? null}
       )
       RETURNING id, status, stage, progress, created_at AS "createdAt"
     `;
@@ -265,6 +305,13 @@ export default apiHandler(async (event) => {
         WHERE id IN ${transaction(input.inputTransferIds)}
       `;
     }
+    if (input.designConversationId) {
+      await transaction`
+        UPDATE design_conversations
+        SET updated_at = now()
+        WHERE id = ${input.designConversationId}
+      `;
+    }
     return created;
   });
 
@@ -275,6 +322,7 @@ export default apiHandler(async (event) => {
       appKey: input.appKey,
       capabilityCode: capability?.code,
       inputTransferCount: input.inputTransferIds.length,
+      designConversationId: input.designConversationId,
       workspaceInstanceId: input.workspaceInstanceId,
       workflowVersion: capability?.workflowVersion,
     },
@@ -316,7 +364,9 @@ export default apiHandler(async (event) => {
     progress: job.progress,
     projectId: input.projectId,
     createdBy: identity.id,
-    workspaceInstanceId: workspaceInstance.id,
-    workspaceInstanceTitle: workspaceInstance.title,
+    designConversationId: designConversation?.id,
+    designConversationTitle: designConversation?.title,
+    workspaceInstanceId: workspaceInstance?.id,
+    workspaceInstanceTitle: workspaceInstance?.title,
   };
 });

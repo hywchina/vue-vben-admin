@@ -11,6 +11,8 @@ export interface PlatformJob {
   completedAt?: string;
   createdAt: string;
   createdBy: string;
+  designConversationId?: string;
+  designConversationTitle?: string;
   duration?: string;
   error?: {
     code: string;
@@ -31,8 +33,8 @@ export interface PlatformJob {
   stage: string;
   status: JobStatus;
   workflowVersion?: number;
-  workspaceInstanceId: string;
-  workspaceInstanceTitle: string;
+  workspaceInstanceId?: string;
+  workspaceInstanceTitle?: string;
 }
 
 export interface PlatformJobInput {

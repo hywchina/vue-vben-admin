@@ -35,7 +35,7 @@ const filteredProjects = computed(() => {
 
 async function enterProject(projectId: string) {
   await platformStore.switchProject(projectId);
-  await router.push('/workspace/overview');
+  await router.push('/design');
   message.success('已切换项目上下文');
 }
 

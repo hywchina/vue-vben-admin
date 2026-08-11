@@ -2,7 +2,7 @@
 import type { NotificationItem } from '@vben/layouts';
 
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
 import { useWatermark } from '@vben/hooks';
@@ -32,6 +32,7 @@ import LoginForm from '#/views/_core/authentication/login.vue';
 const notifications = ref<NotificationItem[]>([]);
 
 const router = useRouter();
+const route = useRoute();
 const userStore = useUserStore();
 const authStore = useAuthStore();
 const accessStore = useAccessStore();
@@ -41,6 +42,7 @@ const { isDark } = usePreferences();
 const showDot = computed(() =>
   notifications.value.some((item) => !item.isRead),
 );
+const showGlobalAssistant = computed(() => route.name !== 'PlatformDesign');
 
 const menus = computed(() => [
   {
@@ -228,5 +230,5 @@ watch(
       <LockScreen :avatar @to-login="handleLogout" />
     </template>
   </BasicLayout>
-  <AiAssistant />
+  <AiAssistant v-if="showGlobalAssistant" />
 </template>

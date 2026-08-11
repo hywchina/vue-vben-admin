@@ -213,7 +213,9 @@ export const usePlatformStore = defineStore('rail-platform', () => {
 
   async function runApplication(
     appKey: string,
-    workspaceInstanceId: string,
+    executionContext:
+      | { designConversationId: string }
+      | { workspaceInstanceId: string },
     inputAssetIds: string[],
     parameters: Record<string, unknown>,
     inputTransferIds: string[] = [],
@@ -222,12 +224,12 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     if (!application || !currentProjectId.value) return;
     const job = await createJobApi({
       appKey,
+      ...executionContext,
       inputAssetIds,
       inputTransferIds,
       name: `${application.shortName}方案 · ${currentProject.value?.name ?? '未命名项目'}`,
       parameters,
       projectId: currentProjectId.value,
-      workspaceInstanceId,
     });
     jobs.value.unshift(job);
     return job;

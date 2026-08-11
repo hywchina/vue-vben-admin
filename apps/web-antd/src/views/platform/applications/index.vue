@@ -118,7 +118,7 @@ async function openApplicationInstance(appKey: string) {
     <PageHeading
       description="应用只声明业务输入、输出资产和使用权限；外部服务地址与密钥不进入浏览器。"
       eyebrow="Application registry"
-      title="应用中心"
+      title="应用调试中心"
     >
       <template #extra>
         <Button disabled>
@@ -240,7 +240,7 @@ async function openApplicationInstance(appKey: string) {
                   type="primary"
                   @click="openApplicationInstance(application.key)"
                 >
-                  新建会话
+                  单功能调试
                 </Button>
               </div>
             </div>

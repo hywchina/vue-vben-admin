@@ -525,7 +525,7 @@ async function submitCapability(options: { silent?: boolean } = {}) {
   try {
     const job = await platformStore.runApplication(
       application.value.key,
-      workspaceInstanceId.value,
+      { workspaceInstanceId: workspaceInstanceId.value },
       selectedAssetIds.value,
       capability.value ? taskParameters() : { prompt: genericPrompt.value },
       Object.values(selectedTransfers),

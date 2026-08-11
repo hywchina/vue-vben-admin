@@ -4,9 +4,8 @@ import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, message, Progress } from 'ant-design-vue';
+import { Button, Progress } from 'ant-design-vue';
 
-import { createWorkflowWorkspaceInstanceApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import { assetTypeIcons } from '#/modules/platform/asset-types';
@@ -24,17 +23,9 @@ const availableApplications = computed(() =>
 );
 
 async function openApplication(appKey: string) {
-  if (!platformStore.currentProjectId) {
-    message.warning('请先选择项目');
-    return;
-  }
-  const instance = await createWorkflowWorkspaceInstanceApi({
-    appKey,
-    projectId: platformStore.currentProjectId,
-  });
   await router.push({
-    path: `/workspace/${appKey}`,
-    query: { instanceId: instance.id },
+    path: '/design',
+    query: { appKey },
   });
 }
 </script>
@@ -48,9 +39,7 @@ async function openApplication(appKey: string) {
     >
       <template #extra>
         <Button @click="router.push('/assets')">查看资产</Button>
-        <Button type="primary" @click="router.push('/applications')">
-          打开应用中心
-        </Button>
+        <Button type="primary" @click="router.push('/design')">开始设计</Button>
       </template>
     </PageHeading>
 
@@ -149,8 +138,8 @@ async function openApplication(appKey: string) {
               <h2>继续设计</h2>
               <p>工作区共享当前项目和资产，不重复切换上下文</p>
             </div>
-            <Button type="link" @click="router.push('/applications')">
-              全部应用
+            <Button type="link" @click="router.push('/design')">
+              打开设计会话
             </Button>
           </div>
           <div class="platform-panel__body app-shortcuts">

@@ -2,6 +2,7 @@ export * from './applications';
 export * from './assets';
 export * from './assistant';
 export * from './audit';
+export * from './design-conversations';
 export * from './jobs';
 export * from './notifications';
 export * from './projects';
