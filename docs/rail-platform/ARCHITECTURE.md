@@ -162,7 +162,7 @@ flowchart TB
 | 平台概览 | `/workspace/overview` | Vue 计算状态、平台组件 | 当前项目、资产/任务/成员统计、应用快捷入口、最近数据 | Platform Store |
 | 项目空间 | `/projects` | Vue、Pinia、Modal/Form | 查询可见项目、创建项目、切换项目上下文 | `/projects`、当前项目偏好 API |
 | 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、图片放大、详情、下载、收藏和软删除；未确认的工作流结果不进入列表 | 资产 API + MinIO/S3 |
-| 开始设计 | `/design?conversationId=:id` | 独立沉浸式 Vue 页面、Pinia、Canvas、MediaDevices | 单一左侧历史栏；无选择时默认文生文并展示应用快捷入口；选中后收起其他应用并显示紧凑参数与完整抽屉；同一时间线组合多个应用；会话内继续设计；遮罩、对比和特殊输入 | 设计会话、应用、资产、草稿、任务 API |
+| 开始设计 | `/design?conversationId=:id` | 独立沉浸式 Vue 页面、Pinia、Canvas、MediaDevices | 单一左侧历史栏；无选择时默认文生文并展示应用快捷入口；选中后收起其他应用，主参数通过底部弹层原位编辑，完整参数只由“更多”打开；输入素材在发送前和轮次时间线中直接可见；运行中可直接停止；同一时间线组合多个应用；会话内继续设计；遮罩、对比和特殊输入 | 设计会话、应用、资产、草稿、任务 API |
 | 应用调试中心 | `/applications` | 管理员权限路由、Vue 动态列表 | 管理员筛选能力、控制普通用户可见性并打开单功能调试 | `applications` 表与可见性 API |
 | 单能力调试 | `/workspace/:appKey?instanceId=:id` | 管理员权限路由、Canvas、MediaDevices | 保留应用实例、参数和旧精确流转链路，用于逐项能力联调，不作为普通用户入口 | 应用、调试实例、资产、任务 API |
 | 任务中心 | `/jobs` | Vue、Pinia、状态组件 | 统一显示不同应用的任务状态、进度、来源和输出入口 | `jobs`、`job_inputs`、`job_outputs` |

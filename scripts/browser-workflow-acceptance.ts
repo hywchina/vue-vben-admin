@@ -48,6 +48,18 @@ const designDefaultScreenshotPath = screenshotPath.replace(
   /\.png$/i,
   '-design-default.png',
 );
+const designInputScreenshotPath = screenshotPath.replace(
+  /\.png$/i,
+  '-design-input.png',
+);
+const designQuickScreenshotPath = screenshotPath.replace(
+  /\.png$/i,
+  '-design-quick.png',
+);
+const designRunningScreenshotPath = screenshotPath.replace(
+  /\.png$/i,
+  '-design-running.png',
+);
 let projectId = '';
 let userId = '';
 
@@ -451,6 +463,11 @@ async function runBrowserAcceptance() {
 
     await page.goto(`${webUrl}/design?conversationId=${designConversationId}`);
     await page.locator('.design-page').waitFor();
+    await page.waitForFunction(() => {
+      const loading = document.querySelector('#__app-loading__');
+      if (!loading) return true;
+      return Number.parseFloat(getComputedStyle(loading).opacity) < 0.01;
+    });
     await page
       .getByText('浏览器验收 · 多应用设计会话', { exact: true })
       .first()
@@ -461,6 +478,45 @@ async function runBrowserAcceptance() {
     );
     await page.getByText('第一轮：阳光下的现代轨道客室设计').first().waitFor();
     await page.getByText('保持结构，调整材质和照明').first().waitFor();
+    const stopButton = page.getByRole('button', { name: '停止生成' });
+    await stopButton.waitFor();
+    assert(
+      (await stopButton.locator('.composer-stop-mark').count()) === 1,
+      '运行中的设计会话没有显示停止图标',
+    );
+    const visibleInputImage = page.locator(
+      `[data-job-id="${comparisonJobId}"] [data-testid="round-visible-input-assets"] img`,
+    );
+    await visibleInputImage.waitFor();
+    assert(
+      await visibleInputImage.evaluate(
+        (image) =>
+          (image as HTMLImageElement).complete &&
+          (image as HTMLImageElement).naturalWidth > 0,
+      ),
+      '发送后的用户消息没有直接显示本轮输入图片',
+    );
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll('.ant-spin-spinning, .ant-spin-blur')
+          .length === 0,
+    );
+    await page.screenshot({
+      fullPage: true,
+      path: designRunningScreenshotPath,
+    });
+    await stopButton.click();
+    await page.getByText('本轮生成已停止').waitFor();
+    await page.getByRole('button', { name: '发送' }).waitFor();
+    const acceptanceSql = useDatabase();
+    await acceptanceSql`
+      UPDATE jobs
+      SET status = 'running', progress = 32, stage = '真实页面验收中',
+          completed_at = NULL, updated_at = now()
+      WHERE id = ${jobId}
+    `;
+    await page.reload();
+    await page.getByRole('button', { name: '停止生成' }).waitFor();
     const applicationCount = Number(
       await page
         .locator('.composer-application-shortcuts')
@@ -527,6 +583,33 @@ async function runBrowserAcceptance() {
           .length === 0,
     );
     await page.waitForTimeout(500);
+    const composerStyle = await page.evaluate(() => {
+      const box = document.querySelector('.composer-box');
+      const send = document.querySelector('.composer-submit');
+      const shortcut = document.querySelector(
+        '.composer-application-shortcuts button',
+      );
+      const textarea = document.querySelector('.composer-box textarea');
+      return {
+        border: box ? getComputedStyle(box).borderColor : '',
+        send: send ? getComputedStyle(send).backgroundColor : '',
+        shortcutFont: shortcut
+          ? Number.parseFloat(getComputedStyle(shortcut).fontSize)
+          : 0,
+        textareaFont: textarea
+          ? Number.parseFloat(getComputedStyle(textarea).fontSize)
+          : 0,
+      };
+    });
+    assert(
+      composerStyle.border === 'rgb(223, 142, 157)' &&
+        composerStyle.send === 'rgb(197, 31, 58)',
+      `设计输入器没有使用平台红色主题：${JSON.stringify(composerStyle)}`,
+    );
+    assert(
+      composerStyle.shortcutFont >= 14 && composerStyle.textareaFont >= 16,
+      `设计输入器字号仍然偏小：${JSON.stringify(composerStyle)}`,
+    );
     await page.screenshot({
       fullPage: true,
       path: designDefaultScreenshotPath,
@@ -549,14 +632,17 @@ async function runBrowserAcceptance() {
       .first()
       .waitFor();
 
-    await page.getByTestId('composer-add-material').click();
+    await page.locator('[data-app-key="text-chat"]').click();
     const parameterDrawer = page.locator('.design-parameter-drawer');
+    await page.getByTestId('open-design-parameters').click();
     await parameterDrawer.waitFor();
     await parameterDrawer
       .getByText(/文本生成|文生文/)
       .first()
       .waitFor();
     await page.locator('.ant-drawer:visible .ant-drawer-extra button').click();
+    await page.getByRole('button', { name: '取消选择当前应用' }).click();
+    await page.locator('.composer-application-shortcuts').waitFor();
     await page.locator('[data-app-key="text-to-image"]').click();
     await page.getByTestId('active-design-application').waitFor();
     assert(
@@ -564,6 +650,18 @@ async function runBrowserAcceptance() {
       '选择应用后其他应用入口没有隐藏',
     );
     await page.getByRole('button', { name: '取消选择当前应用' }).waitFor();
+    const quickParameter = page.locator('[data-param-key]').first();
+    await quickParameter.click();
+    const quickPanel = page.locator('.design-quick-popover:visible');
+    await quickPanel.waitFor();
+    await page.waitForTimeout(300);
+    await page.screenshot({ fullPage: true, path: designQuickScreenshotPath });
+    const quickNumberInput = quickPanel.locator('.ant-input-number-input');
+    if (await quickNumberInput.count()) {
+      await quickNumberInput.fill('1536');
+      await quickNumberInput.press('Enter');
+    }
+    await page.keyboard.press('Escape');
     await page.getByTestId('open-design-parameters').click();
     await parameterDrawer
       .getByText(/文生图/)
@@ -605,8 +703,24 @@ async function runBrowserAcceptance() {
     await continueDialog
       .getByRole('button', { name: '加入资产并继续' })
       .click();
-    await parameterDrawer.waitFor();
-    await parameterDrawer.getByText('输入内容').waitFor();
+    const composerInputAssets = page.getByTestId('composer-input-assets');
+    await composerInputAssets.waitFor();
+    const composerInputImage = composerInputAssets.locator('img').first();
+    await composerInputImage.waitFor();
+    assert(
+      await composerInputImage.evaluate(
+        (image) =>
+          (image as HTMLImageElement).complete &&
+          (image as HTMLImageElement).naturalWidth > 0,
+      ),
+      '发送前输入框没有直接显示已选择的图片素材',
+    );
+    await continueDialog.waitFor({ state: 'hidden' });
+    await page.waitForTimeout(300);
+    await page.screenshot({
+      fullPage: true,
+      path: designInputScreenshotPath,
+    });
 
     await page.goto(`${webUrl}/assets`);
     const imageCard = page.locator('.asset-card', {
@@ -1118,7 +1232,10 @@ async function runBrowserAcceptance() {
     await comparisonRound.getByRole('button', { name: '对比' }).click();
     await comparisonRound.locator('[data-image-comparison]').waitFor();
     await comparisonRound.locator('.round-input-details summary').click();
-    await comparisonRound.getByText('浏览器遮罩输入').waitFor();
+    await comparisonRound
+      .locator('.round-input-details')
+      .getByText('浏览器遮罩输入')
+      .waitFor();
     await page.screenshot({ fullPage: true, path: comparisonScreenshotPath });
 
     await page.screenshot({ fullPage: true, path: screenshotPath });
@@ -1133,7 +1250,7 @@ let failed = false;
 try {
   await runBrowserAcceptance();
   console.warn(
-    `浏览器验收通过，截图：${[designDefaultScreenshotPath, designScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
+    `浏览器验收通过，截图：${[designDefaultScreenshotPath, designScreenshotPath, designQuickScreenshotPath, designInputScreenshotPath, designRunningScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
   );
 } catch (error) {
   failed = true;

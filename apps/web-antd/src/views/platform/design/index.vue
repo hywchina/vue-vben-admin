@@ -38,6 +38,7 @@ import {
   archiveDesignConversationApi,
   createDesignConversationApi,
   getAssetDownloadApi,
+  getAssetPreviewApi,
   getCapabilityApi,
   getDesignConversationDraftApi,
   getDesignConversationsApi,
@@ -51,6 +52,7 @@ import { selectDesignConversationJobs } from '#/store/platform/helpers';
 
 import CameraAngleControl from '../workspace/camera-angle-control.vue';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
+import DesignQuickField from './design-quick-field.vue';
 
 const DEFAULT_APP_KEY = 'text-chat';
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
@@ -70,6 +72,8 @@ const capabilityCache = reactive<Record<string, PlatformCapability>>({});
 const selectedAssets = reactive<Record<number, string>>({});
 const parameterValues = reactive<Record<string, unknown>>({});
 const parameterDrawerOpen = ref(false);
+const mediaPickerOpen = ref(false);
+const composerPreviewUrls = reactive<Record<string, string>>({});
 const submitting = ref(false);
 const renameOpen = ref(false);
 const renameTitle = ref('');
@@ -205,7 +209,12 @@ const promptField = computed(() =>
 );
 const compactFields = computed(() =>
   scalarFields.value
-    .filter((field) => field.key !== promptField.value?.key)
+    .filter(
+      (field) =>
+        field.key !== promptField.value?.key &&
+        !field.advanced &&
+        ['boolean', 'number', 'select', 'text'].includes(field.type),
+    )
     .slice(0, 4),
 );
 const selectedAssetIds = computed(() =>
@@ -213,6 +222,16 @@ const selectedAssetIds = computed(() =>
     if (field.assetIndex === undefined) return [];
     const id = selectedAssets[field.assetIndex];
     return id ? [id] : [];
+  }),
+);
+const composerInputs = computed(() =>
+  mediaFields.value.flatMap((field) => {
+    if (field.assetIndex === undefined) return [];
+    const assetId = selectedAssets[field.assetIndex];
+    const asset = platformStore.currentAssets.find(
+      (item) => item.id === assetId,
+    );
+    return asset ? [{ asset, field }] : [];
   }),
 );
 const continueDestinations = computed(() => {
@@ -296,6 +315,41 @@ function setFieldNumberValue(
   const normalized = typeof value === 'string' ? Number(value) : value;
   parameterValues[field.key] = normalized ?? field.defaultValue;
   scheduleDraftSave();
+}
+
+function setQuickFieldValue(field: CapabilityField, value: unknown) {
+  if (field.type === 'number') {
+    setFieldNumberValue(field, value as null | number | string);
+    return;
+  }
+  setFieldValue(field, value);
+}
+
+async function loadComposerPreview(assetId: string) {
+  if (composerPreviewUrls[assetId]) return;
+  const asset = platformStore.currentAssets.find((item) => item.id === assetId);
+  if (asset?.type !== 'image') return;
+  try {
+    const preview = await getAssetPreviewApi(assetId);
+    if (preview.mode === 'url') composerPreviewUrls[assetId] = preview.url;
+  } catch {
+    // 预览失败不影响素材提交，仍显示资产名称和类型图标。
+  }
+}
+
+function openMediaPicker() {
+  if (mediaFields.value.length === 0) {
+    message.info('当前应用不需要输入素材');
+    return;
+  }
+  mediaPickerOpen.value = true;
+}
+
+async function removeSelectedAsset(field: CapabilityField) {
+  if (field.assetIndex === undefined) return;
+  Reflect.deleteProperty(selectedAssets, field.assetIndex);
+  if (field.type === 'region') parameterValues[field.key] = '';
+  await saveDraftNow();
 }
 
 function resetDraftState(nextCapability?: PlatformCapability) {
@@ -598,6 +652,20 @@ async function runCapability() {
   }
 }
 
+async function cancelActiveJob() {
+  const job = activeJob.value;
+  if (!job || job.status === 'cancelling') return;
+  try {
+    const result = await platformStore.cancelJob(job.id);
+    message.success(
+      result.status === 'cancelling' ? '正在停止本轮生成' : '本轮生成已停止',
+    );
+    await refreshConversations();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '停止任务失败');
+  }
+}
+
 async function rerunJob(job: PlatformJob) {
   await chooseApplication(job.appKey);
   hydratingDraft = true;
@@ -779,7 +847,8 @@ async function continueDesign() {
     if (!target) throw new Error('目标应用输入位已变化，请重新选择');
     await selectAsset(target, output.assetId);
     continueOpen.value = false;
-    parameterDrawerOpen.value = true;
+    parameterDrawerOpen.value = false;
+    mediaPickerOpen.value = false;
     message.success('结果已加入资产并填入当前会话的目标应用');
   } finally {
     continueSubmitting.value = false;
@@ -854,6 +923,15 @@ watch(activeJob, (job) => (job ? startPolling() : stopPolling()), {
 watch(continueAppKey, (appKey) => {
   if (continueOpen.value && appKey) void loadContinueCapability(appKey);
 });
+watch(
+  () => composerInputs.value.map((item) => item.asset.id).join('|'),
+  () => {
+    for (const { asset } of composerInputs.value) {
+      void loadComposerPreview(asset.id);
+    }
+  },
+  { immediate: true },
+);
 onBeforeUnmount(() => {
   stopPolling();
   if (draftTimer) clearTimeout(draftTimer);
@@ -1056,6 +1134,42 @@ onBeforeUnmount(() => {
           :data-effective-app-key="effectiveApplicationKey"
           :style="{ '--app-accent': application?.color }"
         >
+          <div
+            v-if="composerInputs.length"
+            class="composer-input-assets"
+            data-testid="composer-input-assets"
+          >
+            <article
+              v-for="item in composerInputs"
+              :key="`${item.field.key}:${item.asset.id}`"
+            >
+              <button
+                :aria-label="`编辑${item.field.label}`"
+                class="composer-input-asset__preview"
+                type="button"
+                @click="openMediaPicker"
+              >
+                <img
+                  v-if="composerPreviewUrls[item.asset.id]"
+                  :alt="item.asset.name"
+                  :src="composerPreviewUrls[item.asset.id]"
+                />
+                <IconifyIcon v-else icon="lucide:file-image" />
+              </button>
+              <span>
+                <small>{{ item.field.label }}</small>
+                <strong>{{ item.asset.name }}</strong>
+              </span>
+              <button
+                :aria-label="`移除${item.asset.name}`"
+                class="composer-input-asset__remove"
+                type="button"
+                @click="removeSelectedAsset(item.field)"
+              >
+                <IconifyIcon icon="lucide:x" />
+              </button>
+            </article>
+          </div>
           <Textarea
             v-if="promptField"
             :value="fieldTextValue(promptField)"
@@ -1069,7 +1183,7 @@ onBeforeUnmount(() => {
             "
           />
           <div v-else class="composer-no-prompt">
-            该应用主要使用图片或结构化参数，请打开“高级参数”完成输入。
+            该应用主要使用图片或结构化参数，请添加素材或打开“更多”完成输入。
           </div>
           <div class="composer-bottom">
             <div class="composer-toolbar">
@@ -1078,7 +1192,7 @@ onBeforeUnmount(() => {
                 class="composer-add-button"
                 data-testid="composer-add-material"
                 type="button"
-                @click="parameterDrawerOpen = true"
+                @click="openMediaPicker"
               >
                 <IconifyIcon icon="lucide:plus" />
               </button>
@@ -1088,18 +1202,14 @@ onBeforeUnmount(() => {
                   class="selected-application-chip"
                   data-testid="active-design-application"
                 >
-                  <button
-                    :title="`打开${application?.name ?? '应用'}参数`"
-                    type="button"
-                    @click="parameterDrawerOpen = true"
-                  >
+                  <span>
                     <IconifyIcon
                       :icon="application?.icon ?? 'lucide:message-circle'"
                     />
                     {{
                       application?.shortName ?? application?.name ?? '选择应用'
                     }}
-                  </button>
+                  </span>
                   <button
                     aria-label="取消选择当前应用"
                     title="取消选择当前应用"
@@ -1110,34 +1220,32 @@ onBeforeUnmount(() => {
                   </button>
                 </span>
                 <div class="parameter-chips">
-                  <button
+                  <DesignQuickField
                     v-for="field in compactFields"
                     :key="field.key"
-                    type="button"
-                    @click="parameterDrawerOpen = true"
-                  >
-                    {{ field.label }}
-                    <strong>{{ fieldTextValue(field) ?? '设置' }}</strong>
-                    <IconifyIcon icon="lucide:chevron-down" />
-                  </button>
+                    :field="field"
+                    :value="parameterValues[field.key]"
+                    @change="setQuickFieldValue(field, $event)"
+                  />
                   <button
                     v-if="mediaFields.length"
+                    class="composer-media-summary"
                     type="button"
-                    @click="parameterDrawerOpen = true"
+                    @click="openMediaPicker"
                   >
-                    输入素材
+                    <IconifyIcon icon="lucide:paperclip" />
+                    素材
                     <strong>
                       {{ selectedAssetIds.length }}/{{ mediaFields.length }}
                     </strong>
-                    <IconifyIcon icon="lucide:chevron-down" />
                   </button>
                   <button
                     data-testid="open-design-parameters"
                     type="button"
                     @click="parameterDrawerOpen = true"
                   >
-                    <IconifyIcon icon="lucide:sliders-horizontal" />
-                    高级参数
+                    <IconifyIcon icon="lucide:ellipsis" />
+                    更多
                   </button>
                 </div>
               </template>
@@ -1193,20 +1301,60 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <Button
-              aria-label="发送"
+              :aria-label="activeJob ? '停止生成' : '发送'"
               class="composer-submit"
-              :disabled="!activeConversationId || Boolean(activeJob)"
-              :loading="submitting"
+              :class="{ 'composer-submit--stop': activeJob }"
+              :disabled="
+                !activeConversationId || activeJob?.status === 'cancelling'
+              "
+              :loading="submitting || activeJob?.status === 'cancelling'"
               shape="circle"
               type="primary"
-              @click="runCapability"
+              @click="activeJob ? cancelActiveJob() : runCapability()"
             >
-              <IconifyIcon icon="lucide:arrow-up" />
+              <span v-if="activeJob" class="composer-stop-mark"></span>
+              <IconifyIcon v-else icon="lucide:arrow-up" />
             </Button>
           </div>
         </div>
       </footer>
     </section>
+
+    <Modal
+      v-model:open="mediaPickerOpen"
+      :footer="null"
+      title="添加输入素材"
+      width="min(780px, 94vw)"
+    >
+      <p class="media-picker-description">
+        上传新素材或从当前项目资产中选择；所选内容会立即显示在发送框中。
+      </p>
+      <div class="media-picker-fields">
+        <CapabilityMediaField
+          v-for="field in mediaFields"
+          :key="field.key"
+          accent="#c51f3a"
+          :assets="platformStore.currentAssets"
+          :field="field"
+          :live-capture="(file) => runLiveCapture(field, file)"
+          :refresh-rate="captureRefreshRate()"
+          :save-mask="(file) => saveInputMask(field, file)"
+          :selected-asset-id="
+            field.assetIndex === undefined
+              ? undefined
+              : selectedAssets[field.assetIndex]
+          "
+          :value="parameterValues[field.key]"
+          :stop-live-capture="stopLiveCapture"
+          @select="selectAsset(field, $event)"
+          @update:value="setFieldValue(field, $event)"
+          @upload="uploadMedia(field, $event)"
+        />
+      </div>
+      <div class="media-picker-footer">
+        <Button type="primary" @click="mediaPickerOpen = false">完成</Button>
+      </div>
+    </Modal>
 
     <Drawer
       v-model:open="parameterDrawerOpen"
@@ -1636,7 +1784,7 @@ onBeforeUnmount(() => {
   justify-content: center;
   min-height: 30px;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: 14px;
   color: #17191c;
   cursor: pointer;
   background: transparent;
@@ -2064,22 +2212,22 @@ main.design-page {
 .design-page .composer-box {
   max-width: 980px;
   padding: 10px 12px 9px;
-  border-color: #8ebcff;
+  border-color: #df8e9d;
   border-radius: 22px;
-  box-shadow: 0 10px 30px rgb(22 119 255 / 10%);
+  box-shadow: 0 10px 30px rgb(185 28 50 / 10%);
 }
 
 .composer-box:focus-within {
-  border-color: #579dff;
+  border-color: #c51f3a;
   box-shadow:
-    0 0 0 3px rgb(22 119 255 / 8%),
-    0 14px 36px rgb(22 119 255 / 12%);
+    0 0 0 3px rgb(185 28 50 / 8%),
+    0 14px 36px rgb(185 28 50 / 12%);
 }
 
 .design-page .composer-box :deep(textarea.ant-input) {
   min-height: 50px;
   padding: 5px 2px 8px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .design-page .composer-no-prompt {
@@ -2116,7 +2264,8 @@ main.design-page {
 .composer-add-button:hover,
 .composer-application-shortcuts button:hover,
 .parameter-chips button:hover {
-  background: #f2f6fb;
+  color: #bd1934;
+  background: #fff1f3;
 }
 
 .composer-application-shortcuts {
@@ -2133,14 +2282,20 @@ main.design-page {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  color: #0969da;
-  background: #eef6ff;
-  border: 1px solid #74adff;
+  color: #bd1934;
+  background: #fff1f3;
+  border: 1px solid #df8e9d;
   border-radius: 6px;
 }
 
+.selected-application-chip > span,
 .selected-application-chip button {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
   min-height: 28px;
+  padding: 4px 3px 4px 8px;
+  font-size: 14px;
   color: inherit;
 }
 
@@ -2161,25 +2316,149 @@ main.design-page {
 }
 
 .composer-submit.ant-btn {
+  display: inline-grid;
   flex: 0 0 auto;
-  width: 38px;
-  min-width: 38px;
-  height: 38px;
+  place-items: center;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
   color: #fff;
-  background: #1677ff;
-  border-color: #1677ff;
+  background: #c51f3a;
+  border-color: #c51f3a;
   box-shadow: none;
 }
 
 .composer-submit.ant-btn:not(:disabled):hover {
-  background: #095fd1;
-  border-color: #095fd1;
+  background: #a9142d;
+  border-color: #a9142d;
+}
+
+.composer-submit--stop.ant-btn,
+.composer-submit--stop.ant-btn:not(:disabled):hover {
+  color: #1f2428;
+  background: #f2f3f4;
+  border-color: #e5e7e9;
+}
+
+.composer-stop-mark {
+  display: block;
+  width: 11px;
+  height: 11px;
+  background: currentcolor;
+  border-radius: 2px;
 }
 
 .composer-submit.ant-btn:disabled {
   color: #fff;
-  background: #a8cfff;
-  border-color: #a8cfff;
+  background: #e6a2ad;
+  border-color: #e6a2ad;
+}
+
+.composer-input-assets {
+  display: flex;
+  gap: 9px;
+  padding: 2px 0 8px;
+  overflow-x: auto;
+}
+
+.composer-input-assets article {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px minmax(90px, 150px) 20px;
+  gap: 8px;
+  align-items: center;
+  min-width: 190px;
+  padding: 6px;
+  background: #faf7f7;
+  border: 1px solid #f0dcdf;
+  border-radius: 12px;
+}
+
+.composer-input-asset__preview {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  overflow: hidden;
+  color: #bd1934;
+  cursor: pointer;
+  background: #fff;
+  border: 0;
+  border-radius: 9px;
+}
+
+.composer-input-asset__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-input-assets article > span {
+  display: grid;
+  min-width: 0;
+}
+
+.composer-input-assets small,
+.composer-input-assets strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-input-assets small {
+  font-size: 12px;
+  color: #8a6269;
+}
+
+.composer-input-assets strong {
+  font-size: 14px;
+}
+
+.composer-input-asset__remove {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  color: #7a858c;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.composer-input-asset__remove:hover {
+  color: #bd1934;
+  background: #fff;
+}
+
+.composer-media-summary strong {
+  color: #bd1934;
+}
+
+.media-picker-description {
+  margin: 0 0 16px;
+  font-size: 14px;
+  color: #66727a;
+}
+
+.media-picker-fields {
+  display: grid;
+  gap: 14px;
+  max-height: 66vh;
+  overflow-y: auto;
+}
+
+.media-picker-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+}
+
+.media-picker-footer :deep(.ant-btn-primary) {
+  background: #c51f3a;
 }
 
 :global(.more-applications-grid) {
@@ -2206,13 +2485,13 @@ main.design-page {
 }
 
 :global(.more-applications-grid > button:hover) {
-  background: #f2f6fb;
+  background: #fff1f3;
 }
 
 :global(.more-applications-grid > button > svg) {
   flex: 0 0 auto;
   font-size: 18px;
-  color: #1677ff;
+  color: #bd1934;
 }
 
 :global(.more-applications-grid > button > span) {

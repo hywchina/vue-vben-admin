@@ -121,6 +121,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function inputFieldLabel(position: number) {
+  return (
+    props.fields.find((field) => field.assetIndex === position)?.label ??
+    `输入 ${position + 1}`
+  );
+}
+
 async function loadAssetContent(assetId: string, kind: string) {
   try {
     if (kind === 'image') {
@@ -187,9 +194,41 @@ onMounted(() => void loadPreviews());
     </header>
 
     <section class="round-input">
-      <div class="round-input__bubble">
-        <strong>{{ promptEntry?.label ?? '本轮输入' }}</strong>
-        <p>{{ promptEntry?.value ?? '使用当前参数和输入资产执行工作流。' }}</p>
+      <div class="round-input__message">
+        <div
+          v-if="job.inputs.length"
+          class="round-input__visible-assets"
+          data-testid="round-visible-input-assets"
+        >
+          <article
+            v-for="input in job.inputs"
+            :key="input.assetId"
+            :class="{
+              'is-image': input.kind === 'image' && previewUrls[input.assetId],
+            }"
+            :title="`${inputFieldLabel(input.position)}：${input.name || input.assetId}`"
+          >
+            <img
+              v-if="previewUrls[input.assetId]"
+              :alt="input.name"
+              :src="previewUrls[input.assetId]"
+            />
+            <template v-else>
+              <span>
+                <IconifyIcon icon="lucide:file-input" />
+                {{ assetTypeLabels[input.kind] }}
+              </span>
+              <small>{{ inputFieldLabel(input.position) }}</small>
+              <strong>{{ input.name || input.assetId }}</strong>
+            </template>
+          </article>
+        </div>
+        <div class="round-input__bubble">
+          <strong>{{ promptEntry?.label ?? '本轮输入' }}</strong>
+          <p>
+            {{ promptEntry?.value ?? '使用当前参数和输入素材执行工作流。' }}
+          </p>
+        </div>
       </div>
       <details class="round-input-details">
         <summary>
@@ -439,8 +478,85 @@ onMounted(() => void loadPreviews());
   align-items: flex-end;
 }
 
+.round-input__message {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  max-width: min(82%, 760px);
+}
+
+.round-input__visible-assets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.round-input__visible-assets article {
+  display: grid;
+  grid-template-rows: auto auto;
+  grid-template-columns: 72px minmax(110px, 170px);
+  gap: 3px 9px;
+  align-items: center;
+  min-width: 210px;
+  padding: 7px;
+  background: #f7f4f4;
+  border: 1px solid #eadde0;
+  border-radius: 13px;
+}
+
+.round-input__visible-assets article.is-image {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  border: 0;
+}
+
+.round-input__visible-assets img,
+.round-input__visible-assets article > span {
+  grid-row: 1 / 3;
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 9px;
+}
+
+.round-input__visible-assets article.is-image img {
+  width: 176px;
+  height: 176px;
+  border: 1px solid #eadde0;
+  border-radius: 16px;
+}
+
+.round-input__visible-assets article > span {
+  display: grid;
+  gap: 3px;
+  place-items: center;
+  font-size: 11px;
+  color: #7a858c;
+  background: #fff;
+}
+
+.round-input__visible-assets small,
+.round-input__visible-assets strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.round-input__visible-assets small {
+  font-size: 12px;
+  color: #8a6269;
+}
+
+.round-input__visible-assets strong {
+  font-size: 14px;
+}
+
 .round-input__bubble {
-  max-width: min(78%, 680px);
+  max-width: 680px;
   padding: 12px 15px;
   background: #f0f2f3;
   border-radius: 15px 15px 4px;
