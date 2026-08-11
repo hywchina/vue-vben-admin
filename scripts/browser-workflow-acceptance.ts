@@ -60,6 +60,14 @@ const designRunningScreenshotPath = screenshotPath.replace(
   /\.png$/i,
   '-design-running.png',
 );
+const designInputHoverScreenshotPath = screenshotPath.replace(
+  /\.png$/i,
+  '-design-input-hover.png',
+);
+const designMarkdownScreenshotPath = screenshotPath.replace(
+  /\.png$/i,
+  '-design-markdown.png',
+);
 let projectId = '';
 let userId = '';
 
@@ -186,6 +194,7 @@ async function setupAcceptanceData() {
   const jobId = randomUUID();
   const historyJobId = randomUUID();
   const comparisonJobId = randomUUID();
+  const markdownJobId = randomUUID();
   const designConversationId = randomUUID();
   const textWorkspaceInstanceId = randomUUID();
   const comparisonWorkspaceInstanceId = randomUUID();
@@ -194,6 +203,7 @@ async function setupAcceptanceData() {
   const historyOutputAssetId = randomUUID();
   const comparisonOutputAssetId = randomUUID();
   const comparisonMaskAssetId = randomUUID();
+  const markdownOutputAssetId = randomUUID();
   const outputObjectKey = `${projectId}/browser-acceptance/${randomUUID()}.png`;
   const historyOutputObjectKey = `${projectId}/browser-acceptance/${randomUUID()}.png`;
   const comparisonOutputObjectKey = `${projectId}/browser-acceptance/${randomUUID()}.png`;
@@ -258,6 +268,18 @@ async function setupAcceptanceData() {
     await transaction`
       INSERT INTO jobs (
         id, project_id, app_key, name, parameters, created_by,
+        status, progress, stage, started_at, completed_at, created_at,
+        design_conversation_id
+      ) VALUES (
+        ${markdownJobId}, ${projectId}, 'text-chat', '浏览器 Markdown 任务',
+        ${transaction.json({ prompt: '整理一份轨道客室方案说明' })},
+        ${userId}, 'succeeded', 100, '执行完成', now(), now(),
+        now() - interval '2 minutes', ${designConversationId}
+      )
+    `;
+    await transaction`
+      INSERT INTO jobs (
+        id, project_id, app_key, name, parameters, created_by,
         status, progress, stage, started_at, workspace_instance_id,
         design_conversation_id
       ) VALUES (
@@ -287,6 +309,16 @@ async function setupAcceptanceData() {
         ${comparisonMaskAssetId}, ${projectId}, '浏览器遮罩输入',
         '由原始底图派生的带 Alpha 遮罩输入。', 'image', 'upload',
         ${userId}, 'available', now()
+      )
+    `;
+    await transaction`
+      INSERT INTO assets (
+        id, project_id, name, description, kind, source, source_app_key,
+        source_job_id, owner_id, status, saved_at
+      ) VALUES (
+        ${markdownOutputAssetId}, ${projectId}, '文本生成 · browser-output.md',
+        '用于 Markdown 文本结果验收。', 'text', 'workflow',
+        'text-chat', ${markdownJobId}, ${userId}, 'available', NULL
       )
     `;
     await transaction`
@@ -330,6 +362,17 @@ async function setupAcceptanceData() {
         'available',
         ${transaction.json({ derivedFromAssetId: prepared.asset.id })},
         ${userId}, now()
+      )
+    `;
+    await transaction`
+      INSERT INTO asset_versions (
+        asset_id, version, storage_kind, text_content, original_filename,
+        mime_type, size_bytes, status, created_by, completed_at
+      ) VALUES (
+        ${markdownOutputAssetId}, 1, 'inline',
+        ${'# 轨道客室方案\n\n围绕空间、人机、材质与维护形成以下设计建议。\n\n- 优化乘客动线\n- 使用耐久易维护材料\n\n> 本方案可继续流转到图像生成能力。'},
+        'browser-output.md', 'text/markdown', 186,
+        'available', ${userId}, now()
       )
     `;
     await transaction`
@@ -378,6 +421,10 @@ async function setupAcceptanceData() {
       INSERT INTO job_outputs (job_id, asset_id, position)
       VALUES (${comparisonJobId}, ${comparisonOutputAssetId}, 0)
     `;
+    await transaction`
+      INSERT INTO job_outputs (job_id, asset_id, position)
+      VALUES (${markdownJobId}, ${markdownOutputAssetId}, 0)
+    `;
   });
   return {
     comparisonJobId,
@@ -388,6 +435,7 @@ async function setupAcceptanceData() {
     historyJobId,
     imageAssetId: prepared.asset.id,
     jobId,
+    markdownJobId,
     multiWorkspaceInstanceId,
     textWorkspaceInstanceId,
   };
@@ -423,6 +471,7 @@ async function runBrowserAcceptance() {
     designConversationId,
     historyJobId,
     jobId,
+    markdownJobId,
     multiWorkspaceInstanceId,
     textWorkspaceInstanceId,
   } = await setupAcceptanceData();
@@ -439,6 +488,9 @@ async function runBrowserAcceptance() {
   const context = await browser.newContext({
     locale: 'zh-CN',
     viewport: { height: 1000, width: 1600 },
+  });
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], {
+    origin: webUrl,
   });
   const page = await context.newPage();
   const pageErrors: string[] = [];
@@ -473,11 +525,68 @@ async function runBrowserAcceptance() {
       .first()
       .waitFor();
     assert(
-      (await page.locator('.thread-timeline .workflow-round').count()) === 3,
+      (await page.locator('.thread-timeline .workflow-round').count()) === 4,
       '统一设计会话没有按时间线恢复多个应用的历史轮次',
     );
     await page.getByText('第一轮：阳光下的现代轨道客室设计').first().waitFor();
     await page.getByText('保持结构，调整材质和照明').first().waitFor();
+    const markdownRound = page.locator(`[data-job-id="${markdownJobId}"]`);
+    await markdownRound.getByTestId('markdown-output').waitFor();
+    await markdownRound
+      .getByRole('heading', { name: '轨道客室方案' })
+      .waitFor();
+    await markdownRound.getByText('browser-output.md').waitFor();
+    assert(
+      (await markdownRound.getByText(/browser-output\.txt/).count()) === 0,
+      'Markdown 文本任务仍显示为 txt 文件',
+    );
+    assert(
+      (await markdownRound.getByText('查看本轮完整输入').count()) === 0,
+      '本轮完整输入仍以突兀的常驻栏显示',
+    );
+    const markdownInputActions = markdownRound.getByTestId(
+      'round-input-actions',
+    );
+    const inputActionsBeforeHover = await markdownInputActions.evaluate(
+      (element) => getComputedStyle(element).opacity,
+    );
+    assert(
+      inputActionsBeforeHover === '0',
+      `输入操作没有默认收起：${inputActionsBeforeHover}`,
+    );
+    await markdownRound.locator('.round-input__cluster').hover();
+    await page.waitForTimeout(200);
+    assert(
+      (await markdownInputActions.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).opacity),
+      )) > 0.9,
+      '悬浮用户输入后没有显示轻量操作图标',
+    );
+    await markdownRound.screenshot({ path: designInputHoverScreenshotPath });
+    await markdownRound.getByRole('button', { name: '查看本轮参数' }).click();
+    const inputDetailsDialog = page.getByRole('dialog', {
+      name: '本轮完整输入',
+    });
+    await inputDetailsDialog.getByText('整理一份轨道客室方案说明').waitFor();
+    await inputDetailsDialog.locator('.ant-modal-close').click();
+    await markdownRound.getByRole('button', { name: '复制 Markdown' }).click();
+    await page.getByText('Markdown 已复制').waitFor();
+    const copiedMarkdown = await page.evaluate(() =>
+      navigator.clipboard.readText(),
+    );
+    assert(
+      copiedMarkdown.startsWith('# 轨道客室方案'),
+      '复制图标没有复制完整 Markdown 原文',
+    );
+    const markdownActions = markdownRound.locator('.round-output-actions');
+    assert(
+      (await markdownActions.locator('button').count()) === 5 &&
+        (await markdownActions.getByText('下载/查看').count()) === 0,
+      '生成结果操作仍使用文字按钮或图标数量不完整',
+    );
+    await markdownRound.getByRole('button', { name: '下载或查看结果' }).hover();
+    await page.getByRole('tooltip').getByText('下载或查看结果').waitFor();
+    await markdownRound.screenshot({ path: designMarkdownScreenshotPath });
     const stopButton = page.getByRole('button', { name: '停止生成' });
     await stopButton.waitFor();
     assert(
@@ -1180,12 +1289,17 @@ async function runBrowserAcceptance() {
     const historicalRound = page
       .locator('.capability-studio:visible .workflow-round')
       .first();
-    await historicalRound.locator('.round-input-details summary').click();
-    await historicalRound.locator('dt').getByText('画面描述').waitFor();
+    await historicalRound.locator('.round-input__cluster').hover();
+    await historicalRound.getByRole('button', { name: '查看本轮参数' }).click();
+    const historicalInputDialog = page.getByRole('dialog', {
+      name: '本轮完整输入',
+    });
+    await historicalInputDialog.locator('dt').getByText('画面描述').waitFor();
     await page.screenshot({
       fullPage: true,
       path: conversationScreenshotPath,
     });
+    await historicalInputDialog.locator('.ant-modal-close').click();
 
     await page.goto(
       `${webUrl}/workspace/inpaint-single?instanceId=${comparisonWorkspaceInstanceId}`,
@@ -1225,18 +1339,22 @@ async function runBrowserAcceptance() {
         .count()) === 1,
       '图片对比模式没有保留遮罩编辑入口',
     );
-    await comparisonRound.getByRole('button', { name: '结果' }).click();
+    await comparisonRound
+      .getByRole('button', { exact: true, name: '结果' })
+      .click();
     await comparisonRound
       .locator('.round-output-visual.output-image')
       .waitFor();
     await comparisonRound.getByRole('button', { name: '对比' }).click();
     await comparisonRound.locator('[data-image-comparison]').waitFor();
-    await comparisonRound.locator('.round-input-details summary').click();
-    await comparisonRound
-      .locator('.round-input-details')
-      .getByText('浏览器遮罩输入')
-      .waitFor();
+    await comparisonRound.locator('.round-input__cluster').hover();
+    await comparisonRound.getByRole('button', { name: '查看本轮参数' }).click();
+    const comparisonInputDialog = page.getByRole('dialog', {
+      name: '本轮完整输入',
+    });
+    await comparisonInputDialog.getByText('浏览器遮罩输入').waitFor();
     await page.screenshot({ fullPage: true, path: comparisonScreenshotPath });
+    await comparisonInputDialog.locator('.ant-modal-close').click();
 
     await page.screenshot({ fullPage: true, path: screenshotPath });
     assert(pageErrors.length === 0, `页面脚本错误：${pageErrors.join(' | ')}`);
@@ -1250,7 +1368,7 @@ let failed = false;
 try {
   await runBrowserAcceptance();
   console.warn(
-    `浏览器验收通过，截图：${[designDefaultScreenshotPath, designScreenshotPath, designQuickScreenshotPath, designInputScreenshotPath, designRunningScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
+    `浏览器验收通过，截图：${[designDefaultScreenshotPath, designScreenshotPath, designQuickScreenshotPath, designInputScreenshotPath, designInputHoverScreenshotPath, designMarkdownScreenshotPath, designRunningScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
   );
 } catch (error) {
   failed = true;

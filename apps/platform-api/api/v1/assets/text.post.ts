@@ -34,6 +34,15 @@ export default apiHandler(async (event) => {
   }
 
   const assetId = randomUUID();
+  const extensionByMimeType = {
+    'application/json': '.json',
+    'text/markdown': '.md',
+    'text/plain': '.txt',
+  } as const;
+  const extension = extensionByMimeType[input.mimeType];
+  const originalFilename = input.name.toLowerCase().endsWith(extension)
+    ? input.name
+    : `${input.name}${extension}`;
   const sql = useDatabase();
   await sql.begin(async (transaction) => {
     await transaction`
@@ -49,7 +58,7 @@ export default apiHandler(async (event) => {
         asset_id, version, storage_kind, text_content, original_filename,
         mime_type, size_bytes, sha256, status, created_by, completed_at
       ) VALUES (
-        ${assetId}, 1, 'inline', ${input.content}, ${`${input.name}.txt`},
+        ${assetId}, 1, 'inline', ${input.content}, ${originalFilename},
         ${input.mimeType}, ${contentBytes},
         ${createHash('sha256').update(input.content).digest('hex')},
         'available', ${identity.id}, now()

@@ -55,6 +55,7 @@ export async function uploadAssetApi(input: PrepareAssetUploadInput) {
 export function createTextAssetApi(input: {
   content: string;
   description: string;
+  mimeType?: 'application/json' | 'text/markdown' | 'text/plain';
   name: string;
   projectId: string;
   tags?: string[];

@@ -56,6 +56,27 @@ export interface ComfyMappedOutput {
   };
 }
 
+export function normalizeComfyOutputMetadata(input: {
+  filename: string;
+  kind: WorkflowOutputDefinition['kind'];
+  mimeType: string;
+}) {
+  const safeFilename = basename(input.filename).slice(0, 255);
+  if (input.kind !== 'text') {
+    return { filename: safeFilename, mimeType: input.mimeType };
+  }
+  const extension = extname(safeFilename);
+  const stem = (
+    extension ? safeFilename.slice(0, -extension.length) : safeFilename
+  )
+    .trim()
+    .slice(0, 252);
+  return {
+    filename: `${stem || 'output'}.md`,
+    mimeType: 'text/markdown',
+  };
+}
+
 export function extractComfyOutputFiles(
   outputs: Record<string, Record<string, unknown>>,
   rawSchema: unknown,
@@ -81,12 +102,12 @@ export function extractComfyOutputFiles(
             digest,
           ]),
           file: {
-            filename: `${definition.nodeId}-${definition.field}.txt`,
+            filename: `${definition.nodeId}-${definition.field}.md`,
             type: 'inline',
           },
           inline: {
             bytes: new TextEncoder().encode(content),
-            mimeType: 'text/plain',
+            mimeType: 'text/markdown',
           },
         });
         continue;
@@ -423,17 +444,15 @@ export class ComfyUiWorker {
         `ComfyUI 输出超过最大限制 ${config.comfyuiMaxOutputBytes} 字节`,
       );
     }
-    const filename = basename(output.file.filename).slice(0, 255);
-    if (
-      !validateFileForKind(
-        output.definition.kind,
-        downloaded.mimeType,
-        filename,
-      )
-    ) {
-      throw new Error(
-        `ComfyUI 输出类型不匹配：${filename} / ${downloaded.mimeType}`,
-      );
+    const normalized = normalizeComfyOutputMetadata({
+      filename: output.file.filename,
+      kind: output.definition.kind,
+      mimeType: downloaded.mimeType,
+    });
+    const filename = normalized.filename;
+    const mimeType = normalized.mimeType;
+    if (!validateFileForKind(output.definition.kind, mimeType, filename)) {
+      throw new Error(`ComfyUI 输出类型不匹配：${filename} / ${mimeType}`);
     }
     const assetId = randomUUID();
     const versionId = randomUUID();
@@ -442,11 +461,7 @@ export class ComfyUiWorker {
       .replaceAll(/[^.\da-z]/g, '')
       .slice(0, 16);
     const objectKey = `${job.projectId}/${assetId}/v1/${versionId}${extension}`;
-    const stored = await storeObject(
-      objectKey,
-      downloaded.mimeType,
-      downloaded.bytes,
-    );
+    const stored = await storeObject(objectKey, mimeType, downloaded.bytes);
     try {
       await sql.begin(async (transaction) => {
         await transaction`
@@ -479,7 +494,7 @@ export class ComfyUiWorker {
             'object',
             ${objectKey},
             ${filename},
-            ${downloaded.mimeType},
+            ${mimeType},
             ${downloaded.bytes.byteLength},
             ${createHash('sha256').update(downloaded.bytes).digest('hex')},
             ${stored.ETag?.replaceAll('"', '') ?? null},

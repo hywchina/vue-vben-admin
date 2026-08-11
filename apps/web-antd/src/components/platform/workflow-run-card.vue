@@ -9,13 +9,14 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, Progress, Tag } from 'ant-design-vue';
+import { message, Modal, Progress, Tag, Tooltip } from 'ant-design-vue';
 
 import { getAssetDownloadApi, getAssetPreviewApi } from '#/api';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
 
 import ComfyMaskIcon from './comfy-mask-icon.vue';
 import ImageComparisonSlider from './image-comparison-slider.vue';
+import PlatformMarkdown from './platform-markdown.vue';
 import StatusPill from './status-pill.vue';
 
 const props = defineProps<{
@@ -37,6 +38,7 @@ const emit = defineEmits<{
 
 const activeOutputAssetId = ref('');
 const comparisonMode = ref(true);
+const inputDetailsOpen = ref(false);
 const previewUrls = reactive<Record<string, string>>({});
 const textContents = reactive<Record<string, string>>({});
 
@@ -128,6 +130,41 @@ function inputFieldLabel(position: number) {
   );
 }
 
+async function copyText(content: string, successMessage: string) {
+  let copied = false;
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(content);
+      copied = true;
+    } catch {
+      // 非安全来源可能拒绝 Clipboard API，继续使用浏览器兼容方案。
+    }
+  }
+  if (!copied) {
+    const textarea = document.createElement('textarea');
+    textarea.value = content;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.append(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    textarea.remove();
+  }
+  message.success(successMessage);
+}
+
+async function copyInput() {
+  const content =
+    promptEntry.value?.value ?? JSON.stringify(props.job.parameters, null, 2);
+  await copyText(content, '本轮输入已复制');
+}
+
+async function copyOutput(output: PlatformJobOutput) {
+  const content = textContents[output.assetId];
+  if (!content) return;
+  await copyText(content, 'Markdown 已复制');
+}
+
 async function loadAssetContent(assetId: string, kind: string) {
   try {
     if (kind === 'image') {
@@ -194,51 +231,67 @@ onMounted(() => void loadPreviews());
     </header>
 
     <section class="round-input">
-      <div class="round-input__message">
-        <div
-          v-if="job.inputs.length"
-          class="round-input__visible-assets"
-          data-testid="round-visible-input-assets"
-        >
-          <article
-            v-for="input in job.inputs"
-            :key="input.assetId"
-            :class="{
-              'is-image': input.kind === 'image' && previewUrls[input.assetId],
-            }"
-            :title="`${inputFieldLabel(input.position)}：${input.name || input.assetId}`"
+      <div class="round-input__cluster">
+        <div class="round-input__message">
+          <div
+            v-if="job.inputs.length"
+            class="round-input__visible-assets"
+            data-testid="round-visible-input-assets"
           >
-            <img
-              v-if="previewUrls[input.assetId]"
-              :alt="input.name"
-              :src="previewUrls[input.assetId]"
-            />
-            <template v-else>
-              <span>
-                <IconifyIcon icon="lucide:file-input" />
-                {{ assetTypeLabels[input.kind] }}
-              </span>
-              <small>{{ inputFieldLabel(input.position) }}</small>
-              <strong>{{ input.name || input.assetId }}</strong>
-            </template>
-          </article>
+            <article
+              v-for="input in job.inputs"
+              :key="input.assetId"
+              :class="{
+                'is-image':
+                  input.kind === 'image' && previewUrls[input.assetId],
+              }"
+              :title="`${inputFieldLabel(input.position)}：${input.name || input.assetId}`"
+            >
+              <img
+                v-if="previewUrls[input.assetId]"
+                :alt="input.name"
+                :src="previewUrls[input.assetId]"
+              />
+              <template v-else>
+                <span>
+                  <IconifyIcon icon="lucide:file-input" />
+                  {{ assetTypeLabels[input.kind] }}
+                </span>
+                <small>{{ inputFieldLabel(input.position) }}</small>
+                <strong>{{ input.name || input.assetId }}</strong>
+              </template>
+            </article>
+          </div>
+          <div class="round-input__bubble">
+            <strong>{{ promptEntry?.label ?? '本轮输入' }}</strong>
+            <p>
+              {{ promptEntry?.value ?? '使用当前参数和输入素材执行工作流。' }}
+            </p>
+          </div>
         </div>
-        <div class="round-input__bubble">
-          <strong>{{ promptEntry?.label ?? '本轮输入' }}</strong>
-          <p>
-            {{ promptEntry?.value ?? '使用当前参数和输入素材执行工作流。' }}
-          </p>
+        <div class="round-input-actions" data-testid="round-input-actions">
+          <Tooltip title="复制本轮输入">
+            <button aria-label="复制本轮输入" type="button" @click="copyInput">
+              <IconifyIcon icon="lucide:copy" />
+            </button>
+          </Tooltip>
+          <Tooltip title="查看本轮参数">
+            <button
+              aria-label="查看本轮参数"
+              type="button"
+              @click="inputDetailsOpen = true"
+            >
+              <IconifyIcon icon="lucide:ellipsis" />
+            </button>
+          </Tooltip>
         </div>
       </div>
-      <details class="round-input-details">
-        <summary>
-          <IconifyIcon icon="lucide:scan-search" />
-          查看本轮完整输入
-          <small>
-            {{ parameterEntries.length }} 项参数 ·
-            {{ job.inputs.length }} 个资产
-          </small>
-        </summary>
+      <Modal
+        v-model:open="inputDetailsOpen"
+        :footer="null"
+        title="本轮完整输入"
+        width="720px"
+      >
         <div class="round-input-details__body">
           <div v-if="job.inputs.length" class="round-input-assets">
             <div v-for="input in job.inputs" :key="input.assetId">
@@ -259,7 +312,7 @@ onMounted(() => void loadPreviews());
             </div>
           </dl>
         </div>
-      </details>
+      </Modal>
     </section>
 
     <section class="round-response">
@@ -290,7 +343,16 @@ onMounted(() => void loadPreviews());
           <p>{{ job.error?.message ?? job.stage }}</p>
           <code>{{ job.error?.code ?? 'JOB_FAILED' }}</code>
         </div>
-        <Button @click="emit('rerun', job)">复用本轮输入</Button>
+        <Tooltip title="复用本轮输入">
+          <button
+            aria-label="复用本轮输入"
+            class="round-action-button"
+            type="button"
+            @click="emit('rerun', job)"
+          >
+            <IconifyIcon icon="lucide:refresh-cw" />
+          </button>
+        </Tooltip>
       </div>
 
       <div v-else-if="activeOutput" class="round-output">
@@ -369,9 +431,10 @@ onMounted(() => void loadPreviews());
             :alt="activeOutput.name"
             :src="previewUrls[activeOutput.assetId]"
           />
-          <pre v-else-if="textContents[activeOutput.assetId]">{{
-            textContents[activeOutput.assetId]
-          }}</pre>
+          <PlatformMarkdown
+            v-else-if="textContents[activeOutput.assetId]"
+            :content="textContents[activeOutput.assetId]!"
+          />
           <div v-else class="round-output-icon">
             <IconifyIcon
               :icon="
@@ -402,20 +465,62 @@ onMounted(() => void loadPreviews());
             <strong>{{ activeOutput.name }}</strong>
           </div>
           <div class="round-output-actions">
-            <Button @click="emit('download', activeOutput)">下载/查看</Button>
-            <Button
-              :disabled="activeOutput.saved"
-              @click="emit('save', activeOutput)"
-            >
-              {{ activeOutput.saved ? '已加入资产' : '加入资产' }}
-            </Button>
-            <Button @click="emit('flow', activeOutput)">
-              <IconifyIcon icon="lucide:send" />
-              {{ flowLabel ?? '流转到工作流' }}
-            </Button>
-            <Button type="primary" @click="emit('rerun', job)">
-              复用本轮再运行
-            </Button>
+            <Tooltip v-if="activeOutput.kind === 'text'" title="复制 Markdown">
+              <button
+                aria-label="复制 Markdown"
+                class="round-action-button"
+                :disabled="!textContents[activeOutput.assetId]"
+                type="button"
+                @click="copyOutput(activeOutput)"
+              >
+                <IconifyIcon icon="lucide:copy" />
+              </button>
+            </Tooltip>
+            <Tooltip title="下载或查看结果">
+              <button
+                aria-label="下载或查看结果"
+                class="round-action-button"
+                type="button"
+                @click="emit('download', activeOutput)"
+              >
+                <IconifyIcon icon="lucide:download" />
+              </button>
+            </Tooltip>
+            <Tooltip :title="activeOutput.saved ? '已加入资产' : '加入资产'">
+              <button
+                :aria-label="activeOutput.saved ? '已加入资产' : '加入资产'"
+                class="round-action-button"
+                :disabled="activeOutput.saved"
+                type="button"
+                @click="emit('save', activeOutput)"
+              >
+                <IconifyIcon
+                  :icon="
+                    activeOutput.saved ? 'lucide:check' : 'lucide:folder-plus'
+                  "
+                />
+              </button>
+            </Tooltip>
+            <Tooltip :title="flowLabel ?? '流转到工作流'">
+              <button
+                :aria-label="flowLabel ?? '流转到工作流'"
+                class="round-action-button"
+                type="button"
+                @click="emit('flow', activeOutput)"
+              >
+                <IconifyIcon icon="lucide:send" />
+              </button>
+            </Tooltip>
+            <Tooltip title="复用本轮再运行">
+              <button
+                aria-label="复用本轮再运行"
+                class="round-action-button round-action-button--accent"
+                type="button"
+                @click="emit('rerun', job)"
+              >
+                <IconifyIcon icon="lucide:refresh-cw" />
+              </button>
+            </Tooltip>
           </div>
         </footer>
       </div>
@@ -478,11 +583,18 @@ onMounted(() => void loadPreviews());
   align-items: flex-end;
 }
 
+.round-input__cluster {
+  display: grid;
+  gap: 5px;
+  justify-items: end;
+  max-width: min(82%, 760px);
+}
+
 .round-input__message {
   display: grid;
   gap: 8px;
   justify-items: end;
-  max-width: min(82%, 760px);
+  max-width: 100%;
 }
 
 .round-input__visible-assets {
@@ -574,33 +686,69 @@ onMounted(() => void loadPreviews());
   white-space: pre-wrap;
 }
 
-.round-input-details {
-  width: min(88%, 760px);
-  margin-top: 7px;
-  border: 1px solid #e0e5e7;
-  border-radius: 10px;
-}
-
-.round-input-details summary {
+.round-input-actions {
   display: flex;
-  gap: 6px;
+  gap: 2px;
   align-items: center;
-  padding: 8px 10px;
-  font-size: 12px;
-  color: #65737b;
-  cursor: pointer;
-  list-style: none;
+  min-height: 28px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-3px);
+  transition:
+    opacity 150ms ease,
+    transform 150ms ease;
 }
 
-.round-input-details summary small {
-  margin-left: auto;
+.round-input__cluster:hover .round-input-actions,
+.round-input__cluster:focus-within .round-input-actions {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.round-input-actions button,
+.round-action-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 16px;
+  color: #6f7a80;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.round-input-actions button:hover,
+.round-input-actions button:focus-visible,
+.round-action-button:hover,
+.round-action-button:focus-visible {
+  color: var(--round-accent);
+  outline: none;
+  background: color-mix(in srgb, var(--round-accent) 9%, #fff);
+}
+
+.round-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.round-action-button--accent {
+  color: var(--round-accent);
+  background: color-mix(in srgb, var(--round-accent) 8%, #fff);
 }
 
 .round-input-details__body {
   display: grid;
   gap: 10px;
-  padding: 11px;
-  border-top: 1px solid #e5e9eb;
+  max-height: min(66vh, 660px);
+  padding-top: 4px;
+  overflow: auto;
 }
 
 .round-input-assets {
@@ -813,6 +961,18 @@ onMounted(() => void loadPreviews());
   box-shadow: 0 10px 34px rgb(24 34 40 / 14%);
 }
 
+.round-output-visual.output-text {
+  display: block;
+  width: 100%;
+  min-height: 0;
+  padding: 10px 18px;
+  color: #20282d;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .round-comparison-shell {
   position: relative;
   width: fit-content;
@@ -832,16 +992,6 @@ onMounted(() => void loadPreviews());
   height: auto;
   max-height: min(68vh, 720px);
   object-fit: contain;
-}
-
-.round-output-visual pre {
-  max-height: 520px;
-  padding: 22px;
-  margin: 0;
-  overflow: auto;
-  font-size: 14px;
-  line-height: 1.8;
-  white-space: pre-wrap;
 }
 
 .round-output-icon {
@@ -891,7 +1041,7 @@ onMounted(() => void loadPreviews());
 
 .round-output-actions {
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 2px;
 }
 
 .round-empty-output {
@@ -909,9 +1059,15 @@ onMounted(() => void loadPreviews());
 
 @media (max-width: 900px) {
   .round-input__bubble,
-  .round-input-details {
+  .round-input__cluster {
     width: 100%;
     max-width: 100%;
+  }
+
+  .round-input-actions {
+    pointer-events: auto;
+    opacity: 1;
+    transform: none;
   }
 
   .round-parameters {

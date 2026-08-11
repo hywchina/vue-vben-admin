@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { extractComfyOutputFiles } from './worker';
+import {
+  extractComfyOutputFiles,
+  normalizeComfyOutputMetadata,
+} from './worker';
 
 describe('comfyUI worker output mapping', () => {
   it('extracts only files from explicitly configured output fields', () => {
@@ -44,9 +47,27 @@ describe('comfyUI worker output mapping', () => {
         },
       ],
     );
-    expect(mapped?.file.filename).toBe('5-text.txt');
+    expect(mapped?.file.filename).toBe('5-text.md');
+    expect(mapped?.inline?.mimeType).toBe('text/markdown');
     expect(new TextDecoder().decode(mapped?.inline?.bytes)).toBe(
       '客室方案说明',
     );
+  });
+
+  it('normalizes downloaded ComfyUI text files to Markdown metadata', () => {
+    expect(
+      normalizeComfyOutputMetadata({
+        filename: '方案说明.txt',
+        kind: 'text',
+        mimeType: 'text/plain',
+      }),
+    ).toEqual({ filename: '方案说明.md', mimeType: 'text/markdown' });
+    expect(
+      normalizeComfyOutputMetadata({
+        filename: 'render.png',
+        kind: 'image',
+        mimeType: 'image/png',
+      }),
+    ).toEqual({ filename: 'render.png', mimeType: 'image/png' });
   });
 });
