@@ -18,6 +18,7 @@ export default apiHandler(async (event) => {
       createdAt: Date;
       id: string;
       lastAppKey: null | string;
+      legacy: boolean;
       roundCount: number;
       title: string;
       updatedAt: Date;
@@ -28,6 +29,11 @@ export default apiHandler(async (event) => {
       conversation.title,
       conversation.created_at AS "createdAt",
       conversation.updated_at AS "updatedAt",
+      EXISTS (
+        SELECT 1
+        FROM workflow_workspace_instances legacy_instance
+        WHERE legacy_instance.id = conversation.id
+      ) AS legacy,
       count(job.id)::integer AS "roundCount",
       count(job.id) FILTER (
         WHERE job.status IN ('queued', 'running', 'cancelling')

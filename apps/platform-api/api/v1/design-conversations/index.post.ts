@@ -41,6 +41,7 @@ export default apiHandler(async (event) => {
     ...conversation,
     activeJobCount: 0,
     createdAt: conversation.createdAt.toISOString(),
+    legacy: false,
     lastAppKey: null,
     roundCount: 0,
     updatedAt: conversation.updatedAt.toISOString(),

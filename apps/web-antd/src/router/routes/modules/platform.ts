@@ -4,8 +4,9 @@ const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/design/index.vue'),
     meta: {
-      affixTab: true,
+      hideInTab: true,
       icon: 'lucide:message-square-more',
+      noBasicLayout: true,
       order: -110,
       title: '开始设计',
     },

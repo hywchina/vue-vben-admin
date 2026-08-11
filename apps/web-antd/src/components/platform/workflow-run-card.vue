@@ -21,6 +21,7 @@ import StatusPill from './status-pill.vue';
 const props = defineProps<{
   accent: string;
   fields: CapabilityField[];
+  flowLabel?: string;
   job: PlatformJob;
   round: number;
   supportsImageComparison: boolean;
@@ -371,7 +372,7 @@ onMounted(() => void loadPreviews());
             </Button>
             <Button @click="emit('flow', activeOutput)">
               <IconifyIcon icon="lucide:send" />
-              流转到工作流
+              {{ flowLabel ?? '流转到工作流' }}
             </Button>
             <Button type="primary" @click="emit('rerun', job)">
               复用本轮再运行

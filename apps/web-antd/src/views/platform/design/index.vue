@@ -7,10 +7,18 @@ import type {
   PlatformJobOutput,
 } from '#/modules/platform/types';
 
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
+import { useUserStore } from '@vben/stores';
 
 import {
   Button,
@@ -19,6 +27,7 @@ import {
   InputNumber,
   message,
   Modal,
+  Popover,
   Select,
   Spin,
   Switch,
@@ -48,11 +57,13 @@ const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
 const router = useRouter();
 const platformStore = usePlatformStore();
+const userStore = useUserStore();
 
 const loading = ref(false);
 const conversations = ref<DesignConversation[]>([]);
+const conversationSearch = ref('');
 const activeConversationId = ref('');
-const selectedAppKey = ref(DEFAULT_APP_KEY);
+const selectedAppKey = ref('');
 const capability = ref<null | PlatformCapability>(null);
 const capabilityLoading = ref(false);
 const capabilityCache = reactive<Record<string, PlatformCapability>>({});
@@ -76,12 +87,28 @@ let draftTimer: ReturnType<typeof setTimeout> | undefined;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let loadGeneration = 0;
 let hydratingDraft = false;
+let pageReady = false;
 
 const activeConversation = computed(() =>
   conversations.value.find((item) => item.id === activeConversationId.value),
 );
-const application = computed(() =>
-  platformStore.applications.find((item) => item.key === selectedAppKey.value),
+const regularConversations = computed(() =>
+  conversations.value.filter((item) => !item.legacy),
+);
+const legacyConversationCount = computed(
+  () => conversations.value.filter((item) => item.legacy).length,
+);
+const visibleConversations = computed(() => {
+  const query = conversationSearch.value.trim().toLowerCase();
+  return regularConversations.value.filter(
+    (item) => !query || item.title.toLowerCase().includes(query),
+  );
+});
+const projectOptions = computed(() =>
+  platformStore.projects.map((project) => ({
+    label: project.name,
+    value: project.id,
+  })),
 );
 const availableApplications = computed(() => {
   const query = appSearch.value.trim().toLowerCase();
@@ -100,6 +127,44 @@ const availableApplications = computed(() => {
       return a.name.localeCompare(b.name, 'zh-CN');
     });
 });
+const defaultApplicationKey = computed(
+  () =>
+    availableApplications.value.find((item) => item.key === DEFAULT_APP_KEY)
+      ?.key ?? availableApplications.value[0]?.key,
+);
+const effectiveApplicationKey = computed(
+  () => selectedAppKey.value || defaultApplicationKey.value || DEFAULT_APP_KEY,
+);
+const application = computed(() =>
+  platformStore.applications.find(
+    (item) => item.key === effectiveApplicationKey.value,
+  ),
+);
+const primaryApplicationKeys = [
+  'text-chat',
+  'text-to-image',
+  'image-understanding',
+  'inpaint-single',
+  'outpaint',
+  'multi-image-edit',
+  'image-upscale',
+];
+const orderedApplicationShortcuts = computed(() =>
+  availableApplications.value.toSorted((a, b) => {
+    const aIndex = primaryApplicationKeys.indexOf(a.key);
+    const bIndex = primaryApplicationKeys.indexOf(b.key);
+    if (aIndex === -1 && bIndex === -1) return 0;
+    if (aIndex === -1) return 1;
+    if (bIndex === -1) return -1;
+    return aIndex - bIndex;
+  }),
+);
+const applicationShortcuts = computed(() =>
+  orderedApplicationShortcuts.value.slice(0, 7),
+);
+const overflowApplications = computed(() =>
+  orderedApplicationShortcuts.value.slice(7),
+);
 const conversationJobs = computed(() =>
   selectDesignConversationJobs(
     platformStore.currentJobs,
@@ -179,6 +244,11 @@ const continueInputOptions = computed(() => {
       : [],
   );
 });
+const welcomeSuggestions = [
+  '梳理一份轨道客室空间设计方案',
+  '分析当前项目资产可以支持哪些设计方向',
+  '给出客室色彩、材料与照明的组合建议',
+];
 
 function formatConversationTime(value: string) {
   const date = new Date(value);
@@ -282,7 +352,7 @@ function scheduleDraftSave() {
   }, 500);
 }
 
-async function loadCapability(appKey = selectedAppKey.value) {
+async function loadCapability(appKey = effectiveApplicationKey.value) {
   const generation = ++loadGeneration;
   if (draftTimer) clearTimeout(draftTimer);
   draftTimer = undefined;
@@ -304,7 +374,7 @@ async function loadCapability(appKey = selectedAppKey.value) {
     );
     if (
       generation !== loadGeneration ||
-      selectedAppKey.value !== appKey ||
+      effectiveApplicationKey.value !== appKey ||
       activeConversationId.value !== conversationId
     ) {
       return;
@@ -371,8 +441,8 @@ async function ensureConversation() {
       ? route.query.appKey
       : undefined;
   const target =
-    conversations.value.find((item) => item.id === requestedId) ??
-    conversations.value[0];
+    regularConversations.value.find((item) => item.id === requestedId) ??
+    regularConversations.value[0];
   if (target) {
     await selectConversation(target.id, requestedAppKey);
     return;
@@ -403,9 +473,6 @@ async function selectConversation(
   }
   await saveDraftNow();
   activeConversationId.value = conversationId;
-  const conversation = conversations.value.find(
-    (item) => item.id === conversationId,
-  );
   const availablePreferredApp =
     preferredAppKey &&
     platformStore.applications.some(
@@ -413,15 +480,7 @@ async function selectConversation(
     )
       ? preferredAppKey
       : undefined;
-  const availableLastApp =
-    conversation?.lastAppKey &&
-    platformStore.applications.some(
-      (item) => item.key === conversation.lastAppKey && item.visible,
-    )
-      ? conversation.lastAppKey
-      : undefined;
-  selectedAppKey.value =
-    availablePreferredApp ?? availableLastApp ?? DEFAULT_APP_KEY;
+  selectedAppKey.value = availablePreferredApp ?? '';
   await router.replace({ query: { conversationId } });
   await loadCapability();
   void hydrateTimelineCapabilities();
@@ -432,6 +491,13 @@ async function chooseApplication(appKey: string) {
   await saveDraftNow();
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
+}
+
+async function clearApplicationSelection() {
+  if (!selectedAppKey.value) return;
+  await saveDraftNow();
+  selectedAppKey.value = '';
+  await loadCapability();
 }
 
 function openRename() {
@@ -470,7 +536,7 @@ function archiveConversation(conversation: DesignConversation) {
       );
       if (activeConversationId.value === conversation.id) {
         activeConversationId.value = '';
-        const next = conversations.value[0];
+        const next = regularConversations.value[0];
         await (next ? selectConversation(next.id) : createConversation());
       }
     },
@@ -720,6 +786,24 @@ async function continueDesign() {
   }
 }
 
+async function useWelcomeSuggestion(value: string) {
+  const textApp = availableApplications.value.find(
+    (item) => item.key === DEFAULT_APP_KEY,
+  );
+  if (textApp && effectiveApplicationKey.value !== textApp.key) {
+    await clearApplicationSelection();
+  }
+  const field = promptField.value;
+  if (!field) return;
+  setFieldValue(field, value);
+}
+
+async function switchProject(projectId: string) {
+  if (projectId === platformStore.currentProjectId) return;
+  await saveDraftNow();
+  await platformStore.switchProject(projectId);
+}
+
 function jobApplication(job: PlatformJob) {
   return platformStore.applications.find((item) => item.key === job.appKey);
 }
@@ -741,9 +825,20 @@ function stopPolling() {
   pollTimer = undefined;
 }
 
+onMounted(async () => {
+  loading.value = true;
+  try {
+    await platformStore.initialize();
+    await ensureConversation();
+    pageReady = true;
+  } finally {
+    loading.value = false;
+  }
+});
 watch(
   () => platformStore.currentProjectId,
   async () => {
+    if (!pageReady) return;
     loading.value = true;
     activeConversationId.value = '';
     try {
@@ -752,7 +847,6 @@ watch(
       loading.value = false;
     }
   },
-  { immediate: true },
 );
 watch(activeJob, (job) => (job ? startPolling() : stopPolling()), {
   immediate: true,
@@ -771,26 +865,57 @@ onBeforeUnmount(() => {
   <main class="design-page">
     <aside class="conversation-sidebar">
       <div class="conversation-brand">
-        <span>PROJECT DESIGN</span>
-        <h1>开始设计</h1>
-        <p>{{ platformStore.currentProject?.name ?? '请先选择项目' }}</p>
+        <img alt="轨道客室智能设计平台" src="/rail-logo.svg" />
+        <div>
+          <strong>轨道客室智能设计</strong>
+          <span>RAIL DESIGN</span>
+        </div>
       </div>
-      <Button block type="primary" @click="createConversation">
+      <Select
+        :options="projectOptions"
+        :value="platformStore.currentProjectId"
+        class="project-select"
+        placeholder="选择项目"
+        @change="(value) => switchProject(String(value))"
+      />
+      <Button
+        block
+        data-testid="design-new-conversation"
+        type="primary"
+        @click="createConversation"
+      >
         <IconifyIcon icon="lucide:square-pen" />
         新建会话
       </Button>
-      <div class="conversation-list-heading">历史会话</div>
+      <Input
+        v-model:value="conversationSearch"
+        allow-clear
+        class="conversation-search"
+        placeholder="搜索会话"
+      >
+        <template #prefix>
+          <IconifyIcon icon="lucide:search" />
+        </template>
+      </Input>
+      <div class="conversation-list-heading">
+        <span>历史会话</span>
+        <small>{{ regularConversations.length }}</small>
+      </div>
       <div class="conversation-list">
-        <button
-          v-for="item in conversations"
+        <div
+          v-for="item in visibleConversations"
           :key="item.id"
           :class="{ active: item.id === activeConversationId }"
+          :data-conversation-id="item.id"
           class="conversation-item"
-          type="button"
+          role="button"
+          tabindex="0"
           @click="selectConversation(item.id)"
+          @keydown.enter="selectConversation(item.id)"
+          @keydown.space.prevent="selectConversation(item.id)"
         >
           <span class="conversation-item__icon">
-            <IconifyIcon icon="lucide:messages-square" />
+            <IconifyIcon icon="lucide:message-circle" />
           </span>
           <span class="conversation-item__body">
             <strong>{{ item.title }}</strong>
@@ -804,10 +929,16 @@ onBeforeUnmount(() => {
             v-if="item.id === activeConversationId"
             class="conversation-actions"
           >
-            <button title="重命名" type="button" @click.stop="openRename">
+            <button
+              aria-label="重命名当前会话"
+              title="重命名"
+              type="button"
+              @click.stop="openRename"
+            >
               <IconifyIcon icon="lucide:pencil" />
             </button>
             <button
+              aria-label="删除当前会话"
               title="删除"
               type="button"
               @click.stop="archiveConversation(item)"
@@ -815,19 +946,61 @@ onBeforeUnmount(() => {
               <IconifyIcon icon="lucide:trash-2" />
             </button>
           </span>
+        </div>
+        <div
+          v-if="visibleConversations.length === 0"
+          class="conversation-empty"
+        >
+          {{ conversationSearch ? '没有匹配的会话' : '还没有设计会话' }}
+        </div>
+      </div>
+      <div class="conversation-sidebar__footer">
+        <button
+          v-if="legacyConversationCount"
+          class="legacy-history-link"
+          type="button"
+          @click="router.push('/jobs')"
+        >
+          <IconifyIcon icon="lucide:archive" />
+          {{ legacyConversationCount }} 条旧版应用记录已移至任务中心
         </button>
+        <div class="sidebar-user">
+          <span>{{ userStore.userInfo?.realName?.slice(0, 1) ?? '用' }}</span>
+          <div>
+            <strong>{{ userStore.userInfo?.realName ?? '当前用户' }}</strong>
+            <small>@{{ userStore.userInfo?.username }}</small>
+          </div>
+          <button
+            aria-label="返回平台概览"
+            title="返回平台概览"
+            type="button"
+            @click="router.push('/workspace/overview')"
+          >
+            <IconifyIcon icon="lucide:panel-left-close" />
+          </button>
+        </div>
       </div>
     </aside>
 
     <section class="design-thread">
       <header class="thread-header">
-        <div>
+        <div class="thread-header__center">
           <strong>{{ activeConversation?.title ?? '新设计会话' }}</strong>
-          <span>同一会话内组合使用多项设计能力</span>
+          <span>{{ application?.name ?? '默认文生文' }}</span>
         </div>
-        <div class="thread-status">
-          <i :class="{ running: activeJob }"></i>
-          {{ activeJob ? '正在生成' : '可以开始' }}
+        <div class="thread-header__actions">
+          <div class="thread-status">
+            <i :class="{ running: activeJob }"></i>
+            {{ activeJob ? '正在生成' : '可以开始' }}
+          </div>
+          <button
+            aria-label="打开项目资产"
+            title="打开项目资产"
+            type="button"
+            @click="router.push('/assets')"
+          >
+            <IconifyIcon icon="lucide:library-big" />
+          </button>
         </div>
       </header>
 
@@ -839,6 +1012,7 @@ onBeforeUnmount(() => {
               :key="job.id"
               :accent="jobApplication(job)?.color ?? '#b91c32'"
               :fields="jobCapability(job)?.fields ?? []"
+              flow-label="继续设计"
               :job="job"
               :round="index + 1"
               :supports-image-comparison="
@@ -858,45 +1032,30 @@ onBeforeUnmount(() => {
             <span>RAIL DESIGN COPILOT</span>
             <h2>从一个设计问题开始</h2>
             <p>
-              默认使用“文生文”工作流。你可以随时切换到文生图、重绘、扩图等能力，所有输入与结果都会保留在本会话中。
+              你好，我是你的轨道客室设计助手。默认使用“文生文”工作流，你也可以在下方随时切换其他设计能力。
             </p>
+            <div class="welcome-suggestions">
+              <button
+                v-for="suggestion in welcomeSuggestions"
+                :key="suggestion"
+                type="button"
+                @click="useWelcomeSuggestion(suggestion)"
+              >
+                {{ suggestion }}
+                <IconifyIcon icon="lucide:arrow-up-right" />
+              </button>
+            </div>
           </div>
         </Spin>
       </div>
 
-      <footer class="design-composer">
-        <div class="composer-app-row">
-          <button
-            v-for="item in availableApplications"
-            :key="item.key"
-            :class="{ active: item.key === selectedAppKey }"
-            type="button"
-            @click="chooseApplication(item.key)"
-          >
-            <IconifyIcon :icon="item.icon" />
-            {{ item.shortName }}
-          </button>
-        </div>
+      <footer class="design-composer" data-testid="design-composer">
         <div
           class="composer-box"
+          :data-application-count="availableApplications.length"
+          :data-effective-app-key="effectiveApplicationKey"
           :style="{ '--app-accent': application?.color }"
         >
-          <div class="composer-title">
-            <span>
-              <IconifyIcon
-                :icon="application?.icon ?? 'lucide:message-circle'"
-              />
-              {{ application?.name ?? '选择应用' }}
-            </span>
-            <Button
-              size="small"
-              type="text"
-              @click="parameterDrawerOpen = true"
-            >
-              <IconifyIcon icon="lucide:sliders-horizontal" />
-              全部参数
-            </Button>
-          </div>
           <Textarea
             v-if="promptField"
             :value="fieldTextValue(promptField)"
@@ -910,31 +1069,132 @@ onBeforeUnmount(() => {
             "
           />
           <div v-else class="composer-no-prompt">
-            该应用主要使用图片或结构化参数，请打开“全部参数”完成输入。
+            该应用主要使用图片或结构化参数，请打开“高级参数”完成输入。
           </div>
           <div class="composer-bottom">
-            <div class="parameter-chips">
+            <div class="composer-toolbar">
               <button
-                v-for="field in compactFields"
-                :key="field.key"
+                aria-label="添加输入素材"
+                class="composer-add-button"
+                data-testid="composer-add-material"
                 type="button"
                 @click="parameterDrawerOpen = true"
               >
-                {{ field.label }}
-                <strong>{{ fieldTextValue(field) ?? '设置' }}</strong>
+                <IconifyIcon icon="lucide:plus" />
               </button>
-              <button
-                v-if="mediaFields.length"
-                type="button"
-                @click="parameterDrawerOpen = true"
+
+              <template v-if="selectedAppKey">
+                <span
+                  class="selected-application-chip"
+                  data-testid="active-design-application"
+                >
+                  <button
+                    :title="`打开${application?.name ?? '应用'}参数`"
+                    type="button"
+                    @click="parameterDrawerOpen = true"
+                  >
+                    <IconifyIcon
+                      :icon="application?.icon ?? 'lucide:message-circle'"
+                    />
+                    {{
+                      application?.shortName ?? application?.name ?? '选择应用'
+                    }}
+                  </button>
+                  <button
+                    aria-label="取消选择当前应用"
+                    title="取消选择当前应用"
+                    type="button"
+                    @click="clearApplicationSelection"
+                  >
+                    <IconifyIcon icon="lucide:x" />
+                  </button>
+                </span>
+                <div class="parameter-chips">
+                  <button
+                    v-for="field in compactFields"
+                    :key="field.key"
+                    type="button"
+                    @click="parameterDrawerOpen = true"
+                  >
+                    {{ field.label }}
+                    <strong>{{ fieldTextValue(field) ?? '设置' }}</strong>
+                    <IconifyIcon icon="lucide:chevron-down" />
+                  </button>
+                  <button
+                    v-if="mediaFields.length"
+                    type="button"
+                    @click="parameterDrawerOpen = true"
+                  >
+                    输入素材
+                    <strong>
+                      {{ selectedAssetIds.length }}/{{ mediaFields.length }}
+                    </strong>
+                    <IconifyIcon icon="lucide:chevron-down" />
+                  </button>
+                  <button
+                    data-testid="open-design-parameters"
+                    type="button"
+                    @click="parameterDrawerOpen = true"
+                  >
+                    <IconifyIcon icon="lucide:sliders-horizontal" />
+                    高级参数
+                  </button>
+                </div>
+              </template>
+
+              <div
+                v-else
+                aria-label="设计应用"
+                class="composer-application-shortcuts"
+                :data-application-count="availableApplications.length"
               >
-                输入资产
-                <strong>
-                  {{ selectedAssetIds.length }}/{{ mediaFields.length }}
-                </strong>
-              </button>
+                <button
+                  v-for="item in applicationShortcuts"
+                  :key="item.key"
+                  :data-app-key="item.key"
+                  :title="item.name"
+                  type="button"
+                  @click="chooseApplication(item.key)"
+                >
+                  <IconifyIcon :icon="item.icon" />
+                  {{ item.shortName }}
+                </button>
+                <Popover
+                  v-if="overflowApplications.length"
+                  placement="topLeft"
+                  trigger="click"
+                >
+                  <template #content>
+                    <div class="more-applications-grid">
+                      <button
+                        v-for="item in overflowApplications"
+                        :key="item.key"
+                        :data-app-key="item.key"
+                        type="button"
+                        @click="chooseApplication(item.key)"
+                      >
+                        <IconifyIcon :icon="item.icon" />
+                        <span>
+                          <strong>{{ item.shortName }}</strong>
+                          <small>{{ item.description }}</small>
+                        </span>
+                      </button>
+                    </div>
+                  </template>
+                  <button
+                    data-testid="more-design-applications"
+                    title="查看更多应用"
+                    type="button"
+                  >
+                    <IconifyIcon icon="lucide:grid-2x2" />
+                    更多
+                  </button>
+                </Popover>
+              </div>
             </div>
             <Button
+              aria-label="发送"
+              class="composer-submit"
               :disabled="!activeConversationId || Boolean(activeJob)"
               :loading="submitting"
               shape="circle"
@@ -1352,34 +1612,36 @@ onBeforeUnmount(() => {
   background: linear-gradient(transparent, #f5f6f7 24%);
 }
 
-.composer-app-row {
+.composer-toolbar,
+.composer-application-shortcuts,
+.parameter-chips {
   display: flex;
-  gap: 6px;
-  max-width: 980px;
-  padding: 8px 0;
-  margin: 0 auto;
+  align-items: center;
+  min-width: 0;
+}
+
+.composer-application-shortcuts,
+.parameter-chips {
+  gap: 2px;
   overflow-x: auto;
 }
 
-.composer-app-row button,
-.parameter-chips button {
+.composer-application-shortcuts button,
+.parameter-chips button,
+.selected-application-chip button {
   display: inline-flex;
   flex: 0 0 auto;
   gap: 5px;
   align-items: center;
-  padding: 6px 10px;
-  font-size: 12px;
-  color: #4d5961;
+  justify-content: center;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+  color: #17191c;
   cursor: pointer;
-  background: #fff;
-  border: 1px solid var(--design-border);
-  border-radius: 999px;
-}
-
-.composer-app-row button.active {
-  color: var(--rail-red);
-  background: #fff3f5;
-  border-color: #e5a9b2;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
 }
 
 .composer-box {
@@ -1422,18 +1684,6 @@ onBeforeUnmount(() => {
   padding: 14px 0;
   font-size: 13px;
   color: var(--design-muted);
-}
-
-.parameter-chips {
-  display: flex;
-  gap: 5px;
-  min-width: 0;
-  overflow-x: auto;
-}
-
-.parameter-chips button {
-  padding: 4px 8px;
-  background: #f7f8f8;
 }
 
 .parameter-chips strong {
@@ -1504,6 +1754,499 @@ onBeforeUnmount(() => {
   .design-composer {
     padding-right: 14px;
     padding-left: 14px;
+  }
+}
+
+/* 沉浸式设计会话：覆盖后台壳层尺寸，保持单一会话侧栏与固定输入区。 */
+main.design-page {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  grid-template-columns: 276px minmax(0, 1fr);
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  background: #fff;
+}
+
+.design-page .conversation-sidebar {
+  padding: 14px 12px 12px;
+  background: #f7f7f8;
+  border-color: #e6e6e8;
+}
+
+.design-page .conversation-brand {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 2px 4px 14px;
+}
+
+.conversation-brand img {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgb(185 28 50 / 18%);
+}
+
+.conversation-brand div {
+  display: grid;
+  min-width: 0;
+}
+
+.conversation-brand strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.design-page .conversation-brand span {
+  margin-top: 2px;
+  font-size: 9px;
+  color: var(--rail-red);
+  letter-spacing: 0.14em;
+}
+
+.project-select {
+  width: 100%;
+  margin-bottom: 9px;
+}
+
+.conversation-search {
+  margin-top: 10px;
+}
+
+.conversation-search :deep(.ant-input-affix-wrapper) {
+  background: #fff;
+  border-color: transparent;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.design-page .conversation-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 7px 7px;
+}
+
+.conversation-list-heading small {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.design-page .conversation-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding-right: 2px;
+}
+
+.design-page .conversation-item {
+  min-height: 52px;
+  padding: 7px;
+  border-radius: 12px;
+}
+
+.design-page .conversation-item:hover,
+.design-page .conversation-item.active {
+  background: #fff;
+}
+
+.design-page .conversation-item.active {
+  box-shadow:
+    inset 3px 0 var(--rail-red),
+    0 3px 12px rgb(25 31 35 / 5%);
+}
+
+.design-page .conversation-item__icon {
+  width: 28px;
+  height: 28px;
+  background: #fff7f8;
+  border: 0;
+}
+
+.design-page .conversation-item__body strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.conversation-empty {
+  padding: 24px 10px;
+  font-size: 12px;
+  color: var(--design-muted);
+  text-align: center;
+}
+
+.conversation-sidebar__footer {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  margin-top: auto;
+  border-top: 1px solid #e6e6e8;
+}
+
+.legacy-history-link {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 7px 9px;
+  font-size: 11px;
+  color: var(--design-muted);
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+.legacy-history-link:hover {
+  color: #253038;
+  background: #fff;
+}
+
+.sidebar-user {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 30px;
+  gap: 9px;
+  align-items: center;
+  padding: 8px;
+  background: #fff;
+  border-radius: 11px;
+}
+
+.sidebar-user > span {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--rail-red);
+  border-radius: 50%;
+}
+
+.sidebar-user > div {
+  display: grid;
+  min-width: 0;
+}
+
+.sidebar-user strong,
+.sidebar-user small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-user strong {
+  font-size: 12px;
+}
+
+.sidebar-user small {
+  font-size: 10px;
+  color: var(--design-muted);
+}
+
+.sidebar-user button,
+.thread-header__actions > button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--design-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+.sidebar-user button:hover,
+.thread-header__actions > button:hover {
+  color: var(--rail-red);
+  background: #fff1f3;
+}
+
+.design-page .design-thread {
+  height: 100dvh;
+  background: #fff;
+}
+
+.design-page .thread-header {
+  position: relative;
+  justify-content: center;
+  min-height: 56px;
+  padding: 7px 20px;
+  background: rgb(255 255 255 / 96%);
+  backdrop-filter: blur(12px);
+}
+
+.thread-header__center {
+  display: grid;
+  text-align: center;
+}
+
+.thread-header__center strong {
+  max-width: min(520px, 48vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-header__actions {
+  position: absolute;
+  right: 18px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.design-page .thread-scroll {
+  min-height: 0;
+  padding: 26px clamp(20px, 6vw, 88px) 18px;
+  background: #fff;
+}
+
+.thread-scroll > :deep(.ant-spin-nested-loading),
+.thread-scroll > :deep(.ant-spin-nested-loading > .ant-spin-container) {
+  min-height: 100%;
+}
+
+.design-page .thread-timeline {
+  max-width: 1120px;
+}
+
+.design-page .thread-welcome {
+  max-width: 720px;
+  min-height: 100%;
+  padding: 48px 20px;
+}
+
+.design-page .thread-welcome p {
+  max-width: 620px;
+}
+
+.welcome-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.welcome-suggestions button {
+  display: inline-flex;
+  gap: 7px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #536069;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid var(--design-border);
+  border-radius: 999px;
+}
+
+.welcome-suggestions button:hover {
+  color: var(--rail-red);
+  border-color: #d9a1aa;
+}
+
+.design-page .design-composer {
+  position: relative;
+  z-index: 4;
+  padding: 10px clamp(20px, 6vw, 88px) 18px;
+  background: linear-gradient(rgb(255 255 255 / 10%), #fff 20%);
+}
+
+.design-page .composer-box {
+  max-width: 980px;
+  padding: 10px 12px 9px;
+  border-color: #8ebcff;
+  border-radius: 22px;
+  box-shadow: 0 10px 30px rgb(22 119 255 / 10%);
+}
+
+.composer-box:focus-within {
+  border-color: #579dff;
+  box-shadow:
+    0 0 0 3px rgb(22 119 255 / 8%),
+    0 14px 36px rgb(22 119 255 / 12%);
+}
+
+.design-page .composer-box :deep(textarea.ant-input) {
+  min-height: 50px;
+  padding: 5px 2px 8px;
+  font-size: 14px;
+}
+
+.design-page .composer-no-prompt {
+  padding: 10px 2px 14px;
+}
+
+.composer-bottom {
+  gap: 10px;
+  min-height: 34px;
+}
+
+.composer-toolbar {
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.composer-add-button {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 34px;
+  height: 30px;
+  padding: 0;
+  font-size: 19px;
+  color: #16191d;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #d9dde2;
+}
+
+.composer-add-button:hover,
+.composer-application-shortcuts button:hover,
+.parameter-chips button:hover {
+  background: #f2f6fb;
+}
+
+.composer-application-shortcuts {
+  flex: 1;
+  scrollbar-width: none;
+}
+
+.composer-application-shortcuts::-webkit-scrollbar,
+.parameter-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.selected-application-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  color: #0969da;
+  background: #eef6ff;
+  border: 1px solid #74adff;
+  border-radius: 6px;
+}
+
+.selected-application-chip button {
+  min-height: 28px;
+  color: inherit;
+}
+
+.selected-application-chip button:last-child {
+  width: 24px;
+  padding: 0 5px 0 1px;
+}
+
+.design-page .parameter-chips {
+  flex: 1;
+  padding: 0;
+}
+
+.design-page .parameter-chips button {
+  padding: 4px 7px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.composer-submit.ant-btn {
+  flex: 0 0 auto;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  color: #fff;
+  background: #1677ff;
+  border-color: #1677ff;
+  box-shadow: none;
+}
+
+.composer-submit.ant-btn:not(:disabled):hover {
+  background: #095fd1;
+  border-color: #095fd1;
+}
+
+.composer-submit.ant-btn:disabled {
+  color: #fff;
+  background: #a8cfff;
+  border-color: #a8cfff;
+}
+
+:global(.more-applications-grid) {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 220px));
+  gap: 4px;
+  width: min(460px, 80vw);
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+:global(.more-applications-grid > button) {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 9px;
+  color: #20262b;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+:global(.more-applications-grid > button:hover) {
+  background: #f2f6fb;
+}
+
+:global(.more-applications-grid > button > svg) {
+  flex: 0 0 auto;
+  font-size: 18px;
+  color: #1677ff;
+}
+
+:global(.more-applications-grid > button > span) {
+  display: grid;
+  min-width: 0;
+}
+
+:global(.more-applications-grid strong),
+:global(.more-applications-grid small) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.more-applications-grid strong) {
+  font-size: 13px;
+}
+
+:global(.more-applications-grid small) {
+  font-size: 11px;
+  color: #73808a;
+}
+
+@media (max-width: 900px) {
+  main.design-page {
+    grid-template-columns: 224px minmax(0, 1fr);
+  }
+
+  .conversation-brand strong {
+    font-size: 12px;
+  }
+
+  .thread-status {
+    display: none;
   }
 }
 </style>

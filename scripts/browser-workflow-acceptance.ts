@@ -44,6 +44,10 @@ const comparisonScreenshotPath = screenshotPath.replace(
   '-comparison.png',
 );
 const designScreenshotPath = screenshotPath.replace(/\.png$/i, '-design.png');
+const designDefaultScreenshotPath = screenshotPath.replace(
+  /\.png$/i,
+  '-design-default.png',
+);
 let projectId = '';
 let userId = '';
 
@@ -170,6 +174,7 @@ async function setupAcceptanceData() {
   const jobId = randomUUID();
   const historyJobId = randomUUID();
   const comparisonJobId = randomUUID();
+  const designConversationId = randomUUID();
   const textWorkspaceInstanceId = randomUUID();
   const comparisonWorkspaceInstanceId = randomUUID();
   const multiWorkspaceInstanceId = randomUUID();
@@ -207,10 +212,23 @@ async function setupAcceptanceData() {
     await transaction`
       INSERT INTO design_conversations (
         id, user_id, project_id, title
-      ) VALUES (
-        ${textWorkspaceInstanceId}, ${userId}, ${projectId},
-        '浏览器验收 · 多应用设计会话'
-      )
+      ) VALUES
+        (
+          ${designConversationId}, ${userId}, ${projectId},
+          '浏览器验收 · 多应用设计会话'
+        ),
+        (
+          ${textWorkspaceInstanceId}, ${userId}, ${projectId},
+          '文生图 · 旧版应用记录'
+        ),
+        (
+          ${comparisonWorkspaceInstanceId}, ${userId}, ${projectId},
+          '单图局部重绘 · 旧版应用记录'
+        ),
+        (
+          ${multiWorkspaceInstanceId}, ${userId}, ${projectId},
+          '多图融合编辑 · 旧版应用记录'
+        )
     `;
     await transaction`
       INSERT INTO jobs (
@@ -222,7 +240,7 @@ async function setupAcceptanceData() {
         ${transaction.json({ prompt: '第一轮：阳光下的现代轨道客室设计' })},
         ${userId}, 'succeeded', 100, '执行完成', now(), now(),
         now() - interval '5 minutes', ${textWorkspaceInstanceId},
-        ${textWorkspaceInstanceId}
+        ${designConversationId}
       )
     `;
     await transaction`
@@ -234,7 +252,7 @@ async function setupAcceptanceData() {
         ${jobId}, ${projectId}, 'text-to-image', '浏览器活跃任务',
         ${transaction.json({ prompt: '第二轮：夜景氛围的轨道客室设计' })},
         ${userId}, 'running', 32, '真实页面验收中', now(),
-        ${textWorkspaceInstanceId}, ${textWorkspaceInstanceId}
+        ${textWorkspaceInstanceId}, ${designConversationId}
       )
     `;
     await transaction`
@@ -246,7 +264,7 @@ async function setupAcceptanceData() {
         ${comparisonJobId}, ${projectId}, 'inpaint-single', '浏览器图像对比任务',
         ${transaction.json({ prompt: '保持结构，调整材质和照明' })},
         ${userId}, 'succeeded', 100, '执行完成', now(), now(),
-        ${comparisonWorkspaceInstanceId}, ${textWorkspaceInstanceId}
+        ${comparisonWorkspaceInstanceId}, ${designConversationId}
       )
     `;
     await transaction`
@@ -354,6 +372,8 @@ async function setupAcceptanceData() {
     comparisonMaskAssetId,
     comparisonOriginalAssetId: prepared.asset.id,
     comparisonWorkspaceInstanceId,
+    designConversationId,
+    historyJobId,
     imageAssetId: prepared.asset.id,
     jobId,
     multiWorkspaceInstanceId,
@@ -388,6 +408,8 @@ async function runBrowserAcceptance() {
     comparisonMaskAssetId,
     comparisonOriginalAssetId,
     comparisonWorkspaceInstanceId,
+    designConversationId,
+    historyJobId,
     jobId,
     multiWorkspaceInstanceId,
     textWorkspaceInstanceId,
@@ -427,9 +449,7 @@ async function runBrowserAcceptance() {
     await page.locator('button').filter({ hasText: '登录' }).last().click();
     await page.waitForURL((url) => !url.pathname.includes('/auth/login'));
 
-    await page.goto(
-      `${webUrl}/design?conversationId=${textWorkspaceInstanceId}`,
-    );
+    await page.goto(`${webUrl}/design?conversationId=${designConversationId}`);
     await page.locator('.design-page').waitFor();
     await page
       .getByText('浏览器验收 · 多应用设计会话', { exact: true })
@@ -441,15 +461,152 @@ async function runBrowserAcceptance() {
     );
     await page.getByText('第一轮：阳光下的现代轨道客室设计').first().waitFor();
     await page.getByText('保持结构，调整材质和照明').first().waitFor();
-    assert(
-      (await page.locator('.composer-app-row button').count()) >= 18,
-      '统一设计会话没有展示已接入的应用能力',
+    const applicationCount = Number(
+      await page
+        .locator('.composer-application-shortcuts')
+        .getAttribute('data-application-count'),
     );
+    assert(applicationCount >= 18, '统一设计会话没有接入全部应用能力');
+    assert(
+      (await page.locator('.composer-application-shortcuts button').count()) <=
+        8,
+      '未选择应用时没有按快捷应用加“更多”的形式收起能力列表',
+    );
+    await page.getByTestId('more-design-applications').waitFor();
     assert(
       (await page.locator('.rail-ai-float-button').count()) === 0,
       '开始设计页面仍重复显示全局 AI 助手',
     );
+    const designPageBox = await page.locator('.design-page').boundingBox();
+    assert(
+      Boolean(
+        designPageBox &&
+        designPageBox.x === 0 &&
+        designPageBox.y === 0 &&
+        designPageBox.width === 1600 &&
+        designPageBox.height === 1000,
+      ),
+      '开始设计没有脱离后台壳层形成全屏沉浸式工作台',
+    );
+    const composerBox = await page.getByTestId('design-composer').boundingBox();
+    assert(
+      Boolean(
+        composerBox &&
+        composerBox.y > 0 &&
+        composerBox.y + composerBox.height <= 1000,
+      ),
+      '设计输入器没有固定显示在当前视口底部',
+    );
+    assert(
+      (await page.locator('.conversation-item').count()) === 1,
+      '旧应用实例仍占用普通设计会话历史栏',
+    );
+    await page.getByText(/3 条旧版应用记录已移至任务中心/).waitFor();
+
+    await page.getByTestId('design-new-conversation').click();
+    await page.waitForFunction(
+      (previousId) =>
+        new URL(window.location.href).searchParams.get('conversationId') !==
+        previousId,
+      designConversationId,
+    );
+    assert(
+      (await page.getByTestId('active-design-application').count()) === 0,
+      '新会话不应在用户未选择时显示已选应用标签',
+    );
+    assert(
+      (await page
+        .locator('.composer-box')
+        .getAttribute('data-effective-app-key')) === 'text-chat',
+      '未选择应用时没有在后台默认使用文生文能力',
+    );
+    await page.locator('.composer-application-shortcuts').waitFor();
+    await page.waitForFunction(
+      () =>
+        document.querySelectorAll('.ant-spin-spinning, .ant-spin-blur')
+          .length === 0,
+    );
+    await page.waitForTimeout(500);
+    await page.screenshot({
+      fullPage: true,
+      path: designDefaultScreenshotPath,
+    });
+
+    const activeConversationItem = page.locator('.conversation-item.active');
+    await activeConversationItem.hover();
+    await activeConversationItem
+      .locator('button[aria-label="重命名当前会话"]')
+      .click();
+    const renameDialog = page.getByRole('dialog', {
+      name: '重命名设计会话',
+    });
+    await renameDialog.getByRole('textbox').fill('浏览器验收 · 重命名会话');
+    await page
+      .locator('.ant-modal:visible .ant-modal-footer .ant-btn-primary')
+      .click();
+    await page
+      .getByText('浏览器验收 · 重命名会话', { exact: true })
+      .first()
+      .waitFor();
+
+    await page.getByTestId('composer-add-material').click();
+    const parameterDrawer = page.locator('.design-parameter-drawer');
+    await parameterDrawer.waitFor();
+    await parameterDrawer
+      .getByText(/文本生成|文生文/)
+      .first()
+      .waitFor();
+    await page.locator('.ant-drawer:visible .ant-drawer-extra button').click();
+    await page.locator('[data-app-key="text-to-image"]').click();
+    await page.getByTestId('active-design-application').waitFor();
+    assert(
+      (await page.locator('.composer-application-shortcuts').count()) === 0,
+      '选择应用后其他应用入口没有隐藏',
+    );
+    await page.getByRole('button', { name: '取消选择当前应用' }).waitFor();
+    await page.getByTestId('open-design-parameters').click();
+    await parameterDrawer
+      .getByText(/文生图/)
+      .first()
+      .waitFor();
+    await page.locator('.ant-drawer:visible .ant-drawer-extra button').click();
+    await page.waitForTimeout(500);
     await page.screenshot({ fullPage: true, path: designScreenshotPath });
+    await page.getByRole('button', { name: '取消选择当前应用' }).click();
+    await page.locator('.composer-application-shortcuts').waitFor();
+    await page.locator('[data-app-key="text-to-image"]').click();
+
+    await activeConversationItem.hover();
+    await activeConversationItem
+      .locator('button[aria-label="删除当前会话"]')
+      .click();
+    const archiveDialog = page.getByRole('dialog');
+    await archiveDialog.getByText(/项目资产、任务台账和审计记录/).waitFor();
+    await archiveDialog.getByRole('button', { name: '删除会话' }).click();
+    await page
+      .getByText('浏览器验收 · 多应用设计会话', { exact: true })
+      .first()
+      .waitFor();
+
+    const firstCompletedRound = page.locator('.workflow-round').first();
+    await firstCompletedRound.getByRole('button', { name: '继续设计' }).click();
+    const continueDialog = page.getByRole('dialog', {
+      name: '在本会话中继续设计',
+    });
+    await continueDialog
+      .getByText(/不需要选择其他应用会话，也不需要重复上传/)
+      .waitFor();
+    const continueSelects = continueDialog.locator('.ant-select');
+    await continueSelects.nth(1).click();
+    await page
+      .locator('.ant-select-dropdown:visible .ant-select-item-option')
+      .first()
+      .click();
+    await continueDialog
+      .getByRole('button', { name: '加入资产并继续' })
+      .click();
+    await parameterDrawer.waitFor();
+    await parameterDrawer.getByText('输入内容').waitFor();
 
     await page.goto(`${webUrl}/assets`);
     const imageCard = page.locator('.asset-card', {
@@ -872,15 +1029,24 @@ async function runBrowserAcceptance() {
       .getByText('浏览器暂存结果')
       .first()
       .waitFor();
+    const restoredJobIds = await page
+      .locator('.capability-studio:visible .workflow-round')
+      .evaluateAll((elements) =>
+        elements.map((element) =>
+          (element as HTMLElement).dataset.jobId?.trim(),
+        ),
+      );
     assert(
-      (await page.locator('.workflow-round').count()) === 2,
-      '重新进入应用标签后多轮结果没有恢复',
+      restoredJobIds.includes(historyJobId) && restoredJobIds.includes(jobId),
+      `重新进入应用标签后没有恢复两轮历史任务：${JSON.stringify(restoredJobIds)}`,
     );
     await page.goto(`${webUrl}/workspace/text-to-image`);
     await waitForWorkspaceTransition(true);
     await page.getByRole('button', { name: '开始运行' }).first().waitFor();
     assert(
-      (await page.locator('.workflow-round').count()) === 0,
+      (await page
+        .locator('.capability-studio:visible .workflow-round')
+        .count()) === 0,
       '同一应用的新会话错误复用了其他会话的历史轮次',
     );
     const textToImageTabs = page
@@ -897,7 +1063,9 @@ async function runBrowserAcceptance() {
       `${webUrl}/workspace/text-to-image?instanceId=${textWorkspaceInstanceId}`,
     );
     await waitForWorkspaceTransition();
-    const historicalRound = page.locator('.workflow-round').first();
+    const historicalRound = page
+      .locator('.capability-studio:visible .workflow-round')
+      .first();
     await historicalRound.locator('.round-input-details summary').click();
     await historicalRound.locator('dt').getByText('画面描述').waitFor();
     await page.screenshot({
@@ -965,7 +1133,7 @@ let failed = false;
 try {
   await runBrowserAcceptance();
   console.warn(
-    `浏览器验收通过，截图：${[designScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
+    `浏览器验收通过，截图：${[designDefaultScreenshotPath, designScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
   );
 } catch (error) {
   failed = true;
