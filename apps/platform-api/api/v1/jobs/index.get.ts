@@ -17,11 +17,20 @@ export default apiHandler(async (event) => {
       appKey: string;
       completedAt: Date | null;
       createdAt: Date;
+      createdBy: string;
       errorCode: null | string;
       errorMessage: null | string;
       externalReference: null | string;
       id: string;
       inputAssetIds: null | string[];
+      inputs: Array<{
+        assetId: string;
+        derivedFromAssetId?: string;
+        kind: string;
+        mimeType: string;
+        name: string;
+        position: number;
+      }>;
       name: string;
       outputAssetId: null | string;
       outputs: Array<{
@@ -29,36 +38,74 @@ export default apiHandler(async (event) => {
         kind: string;
         mimeType: string;
         name: string;
+        position: number;
         saved: boolean;
       }>;
+      ownedByCurrentUser: boolean;
       owner: string;
+      parameters: Record<string, unknown>;
       progress: number;
       projectId: string;
       stage: string;
       startedAt: Date | null;
       status: string;
       workflowVersion: null | number;
+      workspaceInstanceId: string;
+      workspaceInstanceTitle: string;
     }[]
   >`
     SELECT
       j.id,
       j.project_id AS "projectId",
       j.app_key AS "appKey",
+      j.workspace_instance_id AS "workspaceInstanceId",
+      workspace_instance.title AS "workspaceInstanceTitle",
       j.name,
+      j.parameters,
       j.status,
       j.progress,
       j.stage,
       j.created_at AS "createdAt",
       j.started_at AS "startedAt",
       j.completed_at AS "completedAt",
+      j.created_by AS "createdBy",
+      (j.created_by = ${identity.id}) AS "ownedByCurrentUser",
       j.external_reference AS "externalReference",
       j.error ->> 'code' AS "errorCode",
       j.error ->> 'message' AS "errorMessage",
       wv.version AS "workflowVersion",
       u.real_name AS owner,
-      COALESCE(array_agg(DISTINCT ji.asset_id::text)
-        FILTER (WHERE ji.asset_id IS NOT NULL), '{}') AS "inputAssetIds",
-      min(jo.asset_id::text) AS "outputAssetId",
+      COALESCE((
+        SELECT array_agg(input_link.asset_id::text ORDER BY input_link.position)
+        FROM job_inputs input_link
+        WHERE input_link.job_id = j.id
+      ), '{}') AS "inputAssetIds",
+      COALESCE((
+        SELECT jsonb_agg(
+          jsonb_build_object(
+            'assetId', input_asset.id,
+            'derivedFromAssetId', input_version.metadata ->> 'derivedFromAssetId',
+            'kind', input_asset.kind,
+            'mimeType', input_version.mime_type,
+            'name', input_asset.name,
+            'position', input_link.position
+          )
+          ORDER BY input_link.position
+        )
+        FROM job_inputs input_link
+        JOIN assets input_asset ON input_asset.id = input_link.asset_id
+        JOIN asset_versions input_version
+          ON input_version.asset_id = input_asset.id
+          AND input_version.version = input_asset.current_version
+        WHERE input_link.job_id = j.id
+      ), '[]'::jsonb) AS inputs,
+      (
+        SELECT output_link.asset_id::text
+        FROM job_outputs output_link
+        WHERE output_link.job_id = j.id
+        ORDER BY output_link.position
+        LIMIT 1
+      ) AS "outputAssetId",
       COALESCE((
         SELECT jsonb_agg(
           jsonb_build_object(
@@ -66,6 +113,7 @@ export default apiHandler(async (event) => {
             'kind', output_asset.kind,
             'mimeType', output_version.mime_type,
             'name', output_asset.name,
+            'position', output_link.position,
             'saved', output_asset.saved_at IS NOT NULL
           )
           ORDER BY output_link.position
@@ -81,16 +129,16 @@ export default apiHandler(async (event) => {
       ), '[]'::jsonb) AS outputs
     FROM jobs j
     JOIN users u ON u.id = j.created_by
-    LEFT JOIN job_inputs ji ON ji.job_id = j.id
-    LEFT JOIN job_outputs jo ON jo.job_id = j.id
+    JOIN workflow_workspace_instances workspace_instance
+      ON workspace_instance.id = j.workspace_instance_id
     LEFT JOIN workflow_versions wv ON wv.id = j.workflow_version_id
     WHERE j.project_id = ${projectId}
-    GROUP BY j.id, u.real_name, wv.version
     ORDER BY j.created_at DESC
   `;
 
   return jobs.map(({ completedAt, startedAt, ...job }) => ({
     ...job,
+    completedAt: completedAt?.toISOString(),
     createdAt: job.createdAt.toISOString(),
     duration:
       completedAt && startedAt
@@ -100,6 +148,7 @@ export default apiHandler(async (event) => {
           )
         : undefined,
     inputAssetIds: job.inputAssetIds ?? [],
+    inputs: job.inputs ?? [],
     outputs: job.outputs ?? [],
     error:
       job.errorCode || job.errorMessage

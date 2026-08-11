@@ -8,6 +8,7 @@ import { parseQuery } from '~/utils/validation';
 const querySchema = z.object({
   projectId: z.string().uuid(),
   targetAppKey: z.string().trim().min(1).max(100),
+  targetInstanceId: z.string().uuid(),
 });
 
 export default apiHandler(async (event) => {
@@ -26,6 +27,7 @@ export default apiHandler(async (event) => {
       sourceJobId: null | string;
       targetAppKey: string;
       targetAssetIndex: number;
+      targetInstanceId: string;
     }[]
   >`
     SELECT
@@ -36,6 +38,7 @@ export default apiHandler(async (event) => {
       asset.kind AS "assetKind",
       transfer.source_job_id AS "sourceJobId",
       transfer.target_app_key AS "targetAppKey",
+      transfer.target_instance_id AS "targetInstanceId",
       transfer.target_asset_index AS "targetAssetIndex",
       transfer.created_at AS "createdAt"
     FROM workflow_asset_transfers transfer
@@ -47,6 +50,7 @@ export default apiHandler(async (event) => {
     WHERE transfer.created_by = ${identity.id}
       AND transfer.project_id = ${input.projectId}
       AND transfer.target_app_key = ${input.targetAppKey}
+      AND transfer.target_instance_id = ${input.targetInstanceId}
       AND transfer.status = 'pending'
     ORDER BY transfer.target_asset_index, transfer.created_at
   `;

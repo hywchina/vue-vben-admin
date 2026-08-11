@@ -49,6 +49,22 @@ describe('comfyUI workflow schema', () => {
     );
   });
 
+  it('applies internal parameter prefixes without exposing them', () => {
+    const prefixedSchema = [
+      {
+        ...parameterSchema[0],
+        valuePrefix: '固定工作流协议：',
+      },
+    ];
+    const result = materializeWorkflow(apiJson, prefixedSchema, {
+      prompt: '用户设计要求',
+    });
+    expect(result['1']?.inputs.value).toBe('固定工作流协议：用户设计要求');
+    expect(publicParameterSchema(prefixedSchema)[0]).not.toHaveProperty(
+      'valuePrefix',
+    );
+  });
+
   it('rejects unknown parameters and connection mappings', () => {
     expect(() =>
       materializeWorkflow(apiJson, parameterSchema, { hidden: true }),

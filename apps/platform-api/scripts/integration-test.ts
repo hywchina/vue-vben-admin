@@ -222,6 +222,10 @@ async function run() {
       application.acceptedAssetTypes.includes('image'),
   );
   assert(multiFlowTarget, '没有可用于精确输入位验收的多图工作流');
+  const textToImageTarget = adminApplications.envelope.data.find(
+    (application) => application.key === 'text-to-image',
+  );
+  assert(textToImageTarget, '没有可用于应用单任务互斥验收的文生图工作流');
   assert(
     visibilityTarget.canManageVisibility,
     '管理员应用列表没有返回可见性管理能力',
@@ -230,6 +234,13 @@ async function run() {
     key: visibilityTarget.key,
     visible: visibilityTarget.visible,
   };
+  const visibilityWorkspace = await apiRequest<{ id: string }>(
+    '/workflow-instances',
+    {
+      body: { appKey: visibilityTarget.key, projectId },
+      session: user1,
+    },
+  );
   await apiRequest(`/applications/${visibilityTarget.key}/visibility`, {
     body: { visible: false },
     method: 'PATCH',
@@ -272,6 +283,7 @@ async function run() {
       name: '隐藏应用越权验收',
       parameters: {},
       projectId,
+      workspaceInstanceId: visibilityWorkspace.envelope.data.id,
     },
     expectedStatus: 404,
     session: user1,
@@ -347,6 +359,61 @@ async function run() {
     method: 'POST',
     session: user1,
   });
+  const derivedPrepared = await apiRequest<{
+    asset: { id: string };
+    upload: { headers: Record<string, string>; method: string; url: string };
+  }>('/assets/uploads', {
+    body: {
+      derivedFromAssetId: prepared.envelope.data.asset.id,
+      description: `${runId} mask`,
+      filename: 'acceptance-mask.png',
+      kind: 'image',
+      mimeType: 'image/png',
+      name: '验收遮罩输入',
+      projectId,
+      sizeBytes: image.byteLength,
+      tags: ['integration-test', '遮罩'],
+    },
+    session: user1,
+  });
+  const derivedUpload = await fetch(derivedPrepared.envelope.data.upload.url, {
+    body: image,
+    headers: derivedPrepared.envelope.data.upload.headers,
+    method: derivedPrepared.envelope.data.upload.method,
+  });
+  assert(derivedUpload.ok, `遮罩资产上传失败：${derivedUpload.status}`);
+  await apiRequest(
+    `/assets/${derivedPrepared.envelope.data.asset.id}/complete`,
+    { method: 'POST', session: user1 },
+  );
+  const assetsWithLineage = await apiRequest<
+    Array<{ derivedFromAssetId?: string; id: string }>
+  >(`/assets?projectId=${projectId}`, { session: user1 });
+  assert(
+    assetsWithLineage.envelope.data.find(
+      (asset) => asset.id === derivedPrepared.envelope.data.asset.id,
+    )?.derivedFromAssetId === prepared.envelope.data.asset.id,
+    '遮罩资产没有返回遮罩前原始底图血缘',
+  );
+  const rejectedDerivedAsset = await apiRequest<unknown>('/assets/uploads', {
+    body: {
+      derivedFromAssetId: textAsset.envelope.data.id,
+      description: `${runId} invalid mask source`,
+      filename: 'invalid-mask-source.png',
+      kind: 'image',
+      mimeType: 'image/png',
+      name: '非法遮罩血缘',
+      projectId,
+      sizeBytes: image.byteLength,
+      tags: ['integration-test'],
+    },
+    expectedStatus: 400,
+    session: user1,
+  });
+  assert(
+    rejectedDerivedAsset.envelope.code === 'INVALID_DERIVED_ASSET',
+    '遮罩资产接受了非图片原始资产作为血缘',
+  );
   const imagePreview = await apiRequest<{
     mimeType: string;
     mode: string;
@@ -368,6 +435,83 @@ async function run() {
     session: user2,
   });
 
+  const textWorkspace = await apiRequest<{ id: string }>(
+    '/workflow-instances',
+    {
+      body: { appKey: textToImageTarget.key, projectId },
+      session: user1,
+    },
+  );
+  const alternateTextWorkspace = await apiRequest<{ id: string }>(
+    '/workflow-instances',
+    {
+      body: { appKey: textToImageTarget.key, projectId },
+      session: user1,
+    },
+  );
+  const flowWorkspace = await apiRequest<{ id: string }>(
+    '/workflow-instances',
+    {
+      body: { appKey: flowTarget.key, projectId },
+      session: user1,
+    },
+  );
+  const multiFlowWorkspace = await apiRequest<{ id: string }>(
+    '/workflow-instances',
+    {
+      body: { appKey: multiFlowTarget.key, projectId },
+      session: user1,
+    },
+  );
+  const stagingWorkspace = visibilityWorkspace;
+
+  const activeWorkspaceJobId = randomUUID();
+  await sql`
+    INSERT INTO jobs (
+      id, project_id, app_key, name, parameters, created_by,
+      status, progress, stage, workspace_instance_id
+    ) VALUES (
+      ${activeWorkspaceJobId}, ${projectId}, ${textToImageTarget.key},
+      '单实例互斥验收', '{}'::jsonb, ${user1.id},
+      'queued', 0, '等待执行', ${textWorkspace.envelope.data.id}
+    )
+  `;
+  const duplicateWorkspaceJob = await apiRequest<unknown>('/jobs', {
+    body: {
+      appKey: textToImageTarget.key,
+      inputAssetIds: [],
+      name: '重复应用任务',
+      parameters: {},
+      projectId,
+      workspaceInstanceId: textWorkspace.envelope.data.id,
+    },
+    expectedStatus: 409,
+    session: user1,
+  });
+  assert(
+    duplicateWorkspaceJob.envelope.code === 'WORKSPACE_INSTANCE_JOB_ACTIVE',
+    '同一应用会话的第二个进行中任务没有被后端阻止',
+  );
+  const parallelWorkspaceJob = await apiRequest<{ id: string }>('/jobs', {
+    body: {
+      appKey: textToImageTarget.key,
+      inputAssetIds: [],
+      name: '另一应用会话任务',
+      parameters: {},
+      projectId,
+      workspaceInstanceId: alternateTextWorkspace.envelope.data.id,
+    },
+    session: user1,
+  });
+  await sql`
+    UPDATE jobs
+    SET status = 'cancelled', stage = '互斥验收完成', completed_at = now()
+    WHERE id IN ${sql([
+      activeWorkspaceJobId,
+      parallelWorkspaceJob.envelope.data.id,
+    ])}
+  `;
+
   const savedWorkspaceDraft = await apiRequest<{
     inputAssetIds: Record<string, string>;
     parameterValues: Record<string, unknown>;
@@ -377,6 +521,7 @@ async function run() {
       inputAssetIds: { 0: prepared.envelope.data.asset.id },
       parameterValues: { prompt: '保持当前工作区输入并继续编辑' },
       projectId,
+      workspaceInstanceId: flowWorkspace.envelope.data.id,
     },
     method: 'PUT',
     session: user1,
@@ -389,9 +534,10 @@ async function run() {
   const restoredWorkspaceDraft = await apiRequest<{
     inputAssetIds: Record<string, string>;
     parameterValues: Record<string, unknown>;
-  }>(`/workflow-drafts?projectId=${projectId}&appKey=${flowTarget.key}`, {
-    session: user1,
-  });
+  }>(
+    `/workflow-drafts?projectId=${projectId}&appKey=${flowTarget.key}&workspaceInstanceId=${flowWorkspace.envelope.data.id}`,
+    { session: user1 },
+  );
   assert(
     restoredWorkspaceDraft.envelope.data.inputAssetIds['0'] ===
       prepared.envelope.data.asset.id &&
@@ -400,7 +546,7 @@ async function run() {
     '重新进入应用后没有恢复工作区图片和参数',
   );
   await apiRequest(
-    `/workflow-drafts?projectId=${projectId}&appKey=${flowTarget.key}`,
+    `/workflow-drafts?projectId=${projectId}&appKey=${flowTarget.key}&workspaceInstanceId=${flowWorkspace.envelope.data.id}`,
     { expectedStatus: 404, session: user2 },
   );
 
@@ -411,11 +557,13 @@ async function run() {
     await transaction`
       INSERT INTO jobs (
         id, project_id, app_key, name, parameters, created_by,
-        status, progress, stage, started_at, completed_at
+        status, progress, stage, started_at, completed_at,
+        workspace_instance_id
       ) VALUES (
         ${stagedJobId}, ${projectId}, ${visibilityTarget.key},
         ${`工作流暂存验收 ${runId}`}, '{}'::jsonb, ${user1.id},
-        'succeeded', 100, '执行完成', now(), now()
+        'succeeded', 100, '执行完成', now(), now(),
+        ${stagingWorkspace.envelope.data.id}
       )
     `;
     await transaction`
@@ -471,6 +619,7 @@ async function run() {
       assetId: stagedAssetId,
       targetAppKey: flowTarget.key,
       targetAssetIndex: 0,
+      targetInstanceId: flowWorkspace.envelope.data.id,
     },
     expectedStatus: 409,
     session: user1,
@@ -486,6 +635,7 @@ async function run() {
       name: '未登记结果越权复用验收',
       parameters: {},
       projectId,
+      workspaceInstanceId: flowWorkspace.envelope.data.id,
     },
     expectedStatus: 400,
     session: user1,
@@ -514,6 +664,7 @@ async function run() {
       assetId: stagedAssetId,
       targetAppKey: multiFlowTarget.key,
       targetAssetIndex: 2,
+      targetInstanceId: multiFlowWorkspace.envelope.data.id,
     },
     session: user1,
   });
@@ -524,7 +675,7 @@ async function run() {
   const multiPendingTransfers = await apiRequest<
     Array<{ id: string; targetAssetIndex: number }>
   >(
-    `/workflow-transfers?projectId=${projectId}&targetAppKey=${multiFlowTarget.key}`,
+    `/workflow-transfers?projectId=${projectId}&targetAppKey=${multiFlowTarget.key}&targetInstanceId=${multiFlowWorkspace.envelope.data.id}`,
     { session: user1 },
   );
   assert(
@@ -548,6 +699,7 @@ async function run() {
       assetId: stagedAssetId,
       targetAppKey: flowTarget.key,
       targetAssetIndex: 0,
+      targetInstanceId: flowWorkspace.envelope.data.id,
     },
     session: user1,
   });
@@ -556,7 +708,7 @@ async function run() {
     '资产没有流转到目标工作流的第一个兼容空输入位',
   );
   const pendingTransfers = await apiRequest<Array<{ id: string }>>(
-    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}`,
+    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}&targetInstanceId=${flowWorkspace.envelope.data.id}`,
     { session: user1 },
   );
   assert(
@@ -566,22 +718,43 @@ async function run() {
     '刷新目标工作区时无法读取持久化流转记录',
   );
   await apiRequest(
-    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}`,
+    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}&targetInstanceId=${flowWorkspace.envelope.data.id}`,
     { expectedStatus: 404, session: user2 },
   );
-  await apiRequest('/jobs', {
+  const consumedJob = await apiRequest<{ id: string }>('/jobs', {
     body: {
       appKey: flowTarget.key,
       inputAssetIds: [stagedAssetId],
       inputTransferIds: [transfer.envelope.data.id],
       name: '持久化流转消费验收',
-      parameters: {},
+      parameters: { prompt: '保留本轮输入快照并生成新方案' },
       projectId,
+      workspaceInstanceId: flowWorkspace.envelope.data.id,
     },
     session: user1,
   });
+  const jobsWithConversationSnapshot = await apiRequest<
+    Array<{
+      createdBy: string;
+      id: string;
+      inputs: Array<{ assetId: string; position: number }>;
+      ownedByCurrentUser: boolean;
+      parameters: Record<string, unknown>;
+    }>
+  >(`/jobs?projectId=${projectId}`, { session: user1 });
+  const conversationRound = jobsWithConversationSnapshot.envelope.data.find(
+    (job) => job.id === consumedJob.envelope.data.id,
+  );
+  assert(
+    conversationRound?.ownedByCurrentUser &&
+      conversationRound.createdBy === user1.id &&
+      conversationRound.parameters.prompt === '保留本轮输入快照并生成新方案' &&
+      conversationRound.inputs[0]?.assetId === stagedAssetId &&
+      conversationRound.inputs[0]?.position === 0,
+    '任务接口没有完整恢复当前用户的参数和有序输入快照',
+  );
   const transfersAfterJob = await apiRequest<Array<{ id: string }>>(
-    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}`,
+    `/workflow-transfers?projectId=${projectId}&targetAppKey=${flowTarget.key}&targetInstanceId=${flowWorkspace.envelope.data.id}`,
     { session: user1 },
   );
   assert(

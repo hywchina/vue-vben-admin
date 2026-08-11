@@ -14,6 +14,7 @@ import {
   Switch,
 } from 'ant-design-vue';
 
+import { createWorkflowWorkspaceInstanceApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
@@ -26,6 +27,7 @@ const category = ref('all');
 const status = ref('all');
 const visibility = ref('all');
 const visibilityUpdating = ref<string[]>([]);
+const openingApplication = ref('');
 
 const categoryOptions = [
   { label: '全部', value: 'all' },
@@ -87,6 +89,26 @@ async function changeVisibility(appKey: string, visible: boolean) {
     visibilityUpdating.value = visibilityUpdating.value.filter(
       (key) => key !== appKey,
     );
+  }
+}
+
+async function openApplicationInstance(appKey: string) {
+  if (!platformStore.currentProjectId) {
+    message.warning('请先选择项目');
+    return;
+  }
+  openingApplication.value = appKey;
+  try {
+    const instance = await createWorkflowWorkspaceInstanceApi({
+      appKey,
+      projectId: platformStore.currentProjectId,
+    });
+    await router.push({
+      path: `/workspace/${appKey}`,
+      query: { instanceId: instance.id },
+    });
+  } finally {
+    openingApplication.value = '';
   }
 }
 </script>
@@ -214,10 +236,11 @@ async function changeVisibility(appKey: string, visible: boolean) {
                   />
                 </label>
                 <Button
+                  :loading="openingApplication === application.key"
                   type="primary"
-                  @click="router.push(`/workspace/${application.key}`)"
+                  @click="openApplicationInstance(application.key)"
                 >
-                  打开工作区
+                  新建会话
                 </Button>
               </div>
             </div>

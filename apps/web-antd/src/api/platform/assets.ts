@@ -6,6 +6,7 @@ import { uploadPresignedFile } from './uploads';
 
 export interface PrepareAssetUploadInput {
   description: string;
+  derivedFromAssetId?: string;
   file: File;
   kind: AssetType;
   name: string;
@@ -35,6 +36,7 @@ export async function uploadAssetApi(input: PrepareAssetUploadInput) {
     '/assets/uploads',
     {
       description: input.description,
+      derivedFromAssetId: input.derivedFromAssetId,
       filename: input.file.name,
       kind: input.kind,
       mimeType: input.file.type || 'application/octet-stream',

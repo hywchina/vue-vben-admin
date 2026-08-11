@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { useDatabase } from '~/utils/database';
 import { workspaceDraftAssetSelection } from '~/utils/domain/workflows/drafts';
+import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import { hasAdministrativeRole, requireIdentity } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
@@ -10,6 +11,7 @@ import { parseQuery } from '~/utils/validation';
 const querySchema = z.object({
   appKey: z.string().trim().min(1).max(100),
   projectId: z.string().uuid(),
+  workspaceInstanceId: z.string().uuid(),
 });
 
 export default apiHandler(async (event) => {
@@ -17,6 +19,12 @@ export default apiHandler(async (event) => {
   const input = parseQuery(event, querySchema);
   await requireProjectAccess(identity, input.projectId);
   const sql = useDatabase();
+  await requireWorkflowWorkspaceInstance({
+    appKey: input.appKey,
+    instanceId: input.workspaceInstanceId,
+    projectId: input.projectId,
+    userId: identity.id,
+  });
   const [application] = await sql<{ visible: boolean }[]>`
     SELECT visible FROM applications WHERE key = ${input.appKey}
   `;
@@ -45,6 +53,7 @@ export default apiHandler(async (event) => {
     WHERE user_id = ${identity.id}
       AND project_id = ${input.projectId}
       AND app_key = ${input.appKey}
+      AND workspace_instance_id = ${input.workspaceInstanceId}
   `;
   if (!draft) {
     return { inputAssetIds: {}, parameterValues: {}, updatedAt: undefined };

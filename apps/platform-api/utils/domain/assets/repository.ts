@@ -5,6 +5,7 @@ import { assetAccent, assetFormat, formatFileSize } from './validation';
 
 interface AssetViewRow {
   createdAt: Date;
+  derivedFromAssetId: null | string;
   description: string;
   favorite: boolean;
   id: string;
@@ -27,6 +28,7 @@ function mapAsset(row: AssetViewRow) {
   return {
     accent: assetAccent(row.kind),
     createdAt: row.createdAt.toISOString(),
+    derivedFromAssetId: row.derivedFromAssetId ?? undefined,
     description: row.description,
     favorite: row.favorite,
     format: assetFormat(row.originalFilename, row.mimeType),
@@ -60,6 +62,7 @@ const selectAssetColumns = `
   a.created_at AS "createdAt",
   u.real_name AS owner,
   av.version,
+  av.metadata ->> 'derivedFromAssetId' AS "derivedFromAssetId",
   av.original_filename AS "originalFilename",
   av.mime_type AS "mimeType",
   av.size_bytes::float8 AS "sizeBytes"

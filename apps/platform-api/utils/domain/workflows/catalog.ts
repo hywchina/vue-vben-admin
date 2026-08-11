@@ -25,6 +25,7 @@ interface ScalarFieldInput {
     | 'camera-zoom'
     | 'default';
   uiGroup?: string;
+  valuePrefix?: string;
 }
 
 interface MediaFieldInput {
@@ -100,6 +101,7 @@ function scalar(input: ScalarFieldInput) {
     type: input.type,
     uiControl: input.uiControl ?? 'default',
     uiGroup: input.uiGroup,
+    valuePrefix: input.valuePrefix,
   };
 }
 
@@ -1312,14 +1314,26 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
   },
 ];
 
+const OUTPAINT_REQUIRED_PROMPT_PREFIX =
+  '删除红色扩展标记区域，并参考原图内容向画布外自然延展。不要保留红色、纯色边框或遮罩痕迹。具体设计要求：';
+
 export const WORKFLOW_CATALOG: WorkflowCatalogEntry[] =
   WORKFLOW_CATALOG_BASE.map((entry) => ({
     ...entry,
     version: {
       ...entry.version,
-      parameterSchema:
+      parameterSchema: (
         generatedParameterSchemas[
           entry.application.key as keyof typeof generatedParameterSchemas
-        ] ?? entry.version.parameterSchema,
+        ] ?? entry.version.parameterSchema
+      ).map((field) =>
+        entry.application.key === 'outpaint' && field.key === 'prompt'
+          ? {
+              ...field,
+              help: '平台会自动附加清除红色扩展标记的必要指令；这里只需描述希望延展出的设计内容。',
+              valuePrefix: OUTPAINT_REQUIRED_PROMPT_PREFIX,
+            }
+          : field,
+      ),
     },
   }));

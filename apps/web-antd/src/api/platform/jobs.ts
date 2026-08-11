@@ -9,6 +9,7 @@ export interface CreateJobInput {
   name: string;
   parameters: Record<string, unknown>;
   projectId: string;
+  workspaceInstanceId: string;
 }
 
 export function getJobsApi(projectId: string) {

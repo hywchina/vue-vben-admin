@@ -4,8 +4,9 @@ import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, Progress } from 'ant-design-vue';
+import { Button, message, Progress } from 'ant-design-vue';
 
+import { createWorkflowWorkspaceInstanceApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import { assetTypeIcons } from '#/modules/platform/asset-types';
@@ -22,8 +23,19 @@ const availableApplications = computed(() =>
     .slice(0, 4),
 );
 
-function openApplication(appKey: string) {
-  router.push(`/workspace/${appKey}`);
+async function openApplication(appKey: string) {
+  if (!platformStore.currentProjectId) {
+    message.warning('请先选择项目');
+    return;
+  }
+  const instance = await createWorkflowWorkspaceInstanceApi({
+    appKey,
+    projectId: platformStore.currentProjectId,
+  });
+  await router.push({
+    path: `/workspace/${appKey}`,
+    query: { instanceId: instance.id },
+  });
 }
 </script>
 

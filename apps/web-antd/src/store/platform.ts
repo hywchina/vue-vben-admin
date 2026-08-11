@@ -168,6 +168,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
   }
 
   async function uploadAsset(input: {
+    derivedFromAssetId?: string;
     description?: string;
     file: File;
     name: string;
@@ -177,6 +178,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     if (!currentProjectId.value) throw new Error('请先创建或选择项目');
     const asset = await uploadAssetApi({
       description: input.description ?? '',
+      derivedFromAssetId: input.derivedFromAssetId,
       file: input.file,
       kind: input.type,
       name: input.name,
@@ -211,6 +213,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
 
   async function runApplication(
     appKey: string,
+    workspaceInstanceId: string,
     inputAssetIds: string[],
     parameters: Record<string, unknown>,
     inputTransferIds: string[] = [],
@@ -224,6 +227,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
       name: `${application.shortName}方案 · ${currentProject.value?.name ?? '未命名项目'}`,
       parameters,
       projectId: currentProjectId.value,
+      workspaceInstanceId,
     });
     jobs.value.unshift(job);
     return job;

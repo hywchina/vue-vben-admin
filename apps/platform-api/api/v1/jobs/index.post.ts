@@ -3,6 +3,7 @@ import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
 import { CAPABILITY_ADAPTER_NOT_CONFIGURED } from '~/utils/domain/capabilities/adapter';
+import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
   materializeWorkflow,
@@ -27,6 +28,7 @@ const createJobSchema = z.object({
   name: z.string().trim().min(1).max(200),
   parameters: z.record(z.string(), z.unknown()).default({}),
   projectId: z.string().uuid(),
+  workspaceInstanceId: z.string().uuid(),
 });
 
 export default apiHandler(async (event) => {
@@ -35,6 +37,12 @@ export default apiHandler(async (event) => {
   const input = await parseBody(event, createJobSchema);
   await requireProjectAccess(identity, input.projectId, 'write');
   const sql = useDatabase();
+  const workspaceInstance = await requireWorkflowWorkspaceInstance({
+    appKey: input.appKey,
+    instanceId: input.workspaceInstanceId,
+    projectId: input.projectId,
+    userId: identity.id,
+  });
 
   const [application] = await sql<
     { adapterConfigured: boolean; key: string; visible: boolean }[]
@@ -130,6 +138,26 @@ export default apiHandler(async (event) => {
   }
 
   const job = await sql.begin(async (transaction) => {
+    const workspaceLockKey = input.workspaceInstanceId;
+    await transaction`
+      SELECT pg_advisory_xact_lock(hashtextextended(${workspaceLockKey}, 0))
+    `;
+    const [activeJob] = await transaction<{ id: string }[]>`
+      SELECT id
+      FROM jobs
+      WHERE created_by = ${identity.id}
+        AND workspace_instance_id = ${input.workspaceInstanceId}
+        AND status IN ('queued', 'running', 'cancelling')
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    if (activeJob) {
+      throw new ApiError(
+        409,
+        'WORKSPACE_INSTANCE_JOB_ACTIVE',
+        '当前应用会话已有进行中的任务，请等待完成或取消后再运行',
+      );
+    }
     if (
       new Set(input.inputTransferIds).size !== input.inputTransferIds.length
     ) {
@@ -154,6 +182,7 @@ export default apiHandler(async (event) => {
               AND created_by = ${identity.id}
               AND project_id = ${input.projectId}
               AND target_app_key = ${input.appKey}
+              AND target_instance_id = ${input.workspaceInstanceId}
               AND status = 'pending'
             FOR UPDATE
           `;
@@ -185,7 +214,7 @@ export default apiHandler(async (event) => {
     >`
       INSERT INTO jobs (
         project_id, app_key, name, parameters, created_by, status, stage,
-        error, completed_at, workflow_version_id
+        error, completed_at, workflow_version_id, workspace_instance_id
       ) VALUES (
         ${input.projectId},
         ${input.appKey},
@@ -203,7 +232,8 @@ export default apiHandler(async (event) => {
               })
         },
         ${adapterConfigured ? null : new Date()},
-        ${capability?.workflowVersionId ?? null}
+        ${capability?.workflowVersionId ?? null},
+        ${input.workspaceInstanceId}
       )
       RETURNING id, status, stage, progress, created_at AS "createdAt"
     `;
@@ -245,6 +275,7 @@ export default apiHandler(async (event) => {
       appKey: input.appKey,
       capabilityCode: capability?.code,
       inputTransferCount: input.inputTransferIds.length,
+      workspaceInstanceId: input.workspaceInstanceId,
       workflowVersion: capability?.workflowVersion,
     },
     module: 'job',
@@ -270,9 +301,22 @@ export default apiHandler(async (event) => {
           message: '该应用尚未配置外部能力适配器',
         },
     inputAssetIds: input.inputAssetIds,
+    inputs: orderedInputAssets.map((asset, position) => ({
+      assetId: asset.id,
+      kind: asset.kind,
+      mimeType: '',
+      name: '',
+      position,
+    })),
     name: input.name,
+    ownedByCurrentUser: true,
     owner: identity.realName,
+    outputs: [],
+    parameters: input.parameters,
     progress: job.progress,
     projectId: input.projectId,
+    createdBy: identity.id,
+    workspaceInstanceId: workspaceInstance.id,
+    workspaceInstanceTitle: workspaceInstance.title,
   };
 });

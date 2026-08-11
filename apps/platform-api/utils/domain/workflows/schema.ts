@@ -73,6 +73,7 @@ export const workflowParameterSchema = z
     type: workflowParameterTypeSchema,
     uiControl: workflowUiControlSchema.default('default'),
     uiGroup: z.string().trim().min(1).max(100).optional(),
+    valuePrefix: z.string().max(1000).optional(),
   })
   .superRefine((definition, context) => {
     const media = workflowMediaParameterTypeSchema.safeParse(definition.type);
@@ -337,10 +338,14 @@ export function materializeWorkflow(
     throw new Error(`包含未公开的工作流参数：${unknownKeys.join('、')}`);
   }
   for (const definition of scalarDefinitions) {
-    const value = normalizeParameterValue(
-      definition,
-      parameters[definition.key],
-    );
+    let value = normalizeParameterValue(definition, parameters[definition.key]);
+    if (
+      value !== undefined &&
+      typeof value === 'string' &&
+      definition.valuePrefix
+    ) {
+      value = `${definition.valuePrefix}${value}`;
+    }
     if (value !== undefined) {
       if (!definition.nodeId || !definition.inputName) {
         throw new Error('工作流参数映射已失效');
@@ -427,6 +432,7 @@ export function publicParameterSchema(value: unknown) {
         inputName: _inputName,
         nodeId: _nodeId,
         targets: _targets,
+        valuePrefix: _valuePrefix,
         ...publicDefinition
       } = definition;
       return publicDefinition;

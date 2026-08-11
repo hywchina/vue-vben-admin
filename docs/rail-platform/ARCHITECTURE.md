@@ -2,7 +2,7 @@
 
 > 更新时间：2026-08-08。本文以当前仓库代码、数据库迁移和部署配置为准，不把模拟协议测试描述成真实 GPU 推理已验证。
 
-当前项目已经从纯前端演示升级为可持久化的平台框架。登录、企业邮箱找回密码、用户、权限、项目、资产、任务、通知、审计和 AI 助手会话使用真实 API、PostgreSQL、MinIO 和 SMTP。ComfyUI 已实现 18 项工作流目录、能力映射、独立 Worker、媒体输入和图片/文本/3D 输出登记；当前环境尚未启动真实 ComfyUI，因此真实 GPU 推理仍是外部验收项。
+当前项目已经从纯前端演示升级为可持久化的平台框架。登录、企业邮箱找回密码、用户、权限、项目、资产、任务、通知、审计和 AI 助手会话使用真实 API、PostgreSQL、MinIO 和 SMTP。ComfyUI 已实现 18 项工作流目录、能力映射、独立 Worker、媒体输入和图片/文本/3D 输出登记；本机 18 项能力已完成真实 ComfyUI GPU 推理验收，其他部署环境仍需按服务、模型和自定义节点版本独立预检。
 
 ## 1. 核心架构结论
 
@@ -162,7 +162,7 @@ flowchart TB
 | 项目空间 | `/projects` | Vue、Pinia、Modal/Form | 查询可见项目、创建项目、切换项目上下文 | `/projects`、当前项目偏好 API |
 | 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、图片放大、详情、下载、收藏和软删除；未确认的工作流结果不进入列表 | 资产 API + MinIO/S3 |
 | 应用中心 | `/applications` | Vue 动态列表 | 按名称、类别、接入状态和可见性筛选能力目录；管理员控制普通用户可见性 | `applications` 表与可见性 API |
-| 应用工作区 | `/workspace/:appKey` | Vue Router 动态参数、Pinia、Canvas、MediaDevices | 完整业务参数、持久草稿、镜头轨道控制、EasyMark 分区、屏幕/摄像头捕捉、结果放大、确认保存和精确流转 | 应用、资产、草稿、任务 API |
+| 应用工作区 | `/workspace/:appKey?instanceId=:id` | Vue Router 动态参数、Pinia、Canvas、MediaDevices | 同一应用多会话实例、实例独立标签/草稿/多轮历史/单一进行中任务、图片滑动对比、特殊输入组件、统一遮罩编辑和目标实例精确流转 | 应用、实例、资产、草稿、任务 API |
 | 任务中心 | `/jobs` | Vue、Pinia、状态组件 | 统一显示不同应用的任务状态、进度、来源和输出入口 | `jobs`、`job_inputs`、`job_outputs` |
 | 个人中心 | `/profile` | Vben Profile、Vue 表单 | 资料与企业邮箱更新、邮箱安全状态、真实密码修改、消息提醒偏好；角色只读 | 用户与偏好 API |
 | 用户与权限 | `/administration/access` | 路由角色守卫、管理员表格和弹窗 | 用户状态、其他用户角色管理、角色统计 | 用户、角色 API |
@@ -193,8 +193,9 @@ Nitro 使用文件路径生成 `/api/v1` 路由。每个业务接口一般按以
 | 项目 | `/projects`、`/users/me/current-project` | PostgreSQL 事务、项目范围校验 | 创建项目、可见项目查询、当前项目偏好 |
 | 资产 | `/assets`、`uploads`、`text`、`complete`、`favorite`、`download`、`preview`、`versions` | AWS SDK v3、预签名 URL、PostgreSQL | 多模态资产、文本资产、版本、标签、收藏、下载和预览 |
 | 应用目录 | `/applications`、`/applications/:key/visibility` | PostgreSQL JSONB、RBAC | 读取应用分类、状态和资产契约；管理员持久化控制普通用户可见性，隐藏能力的详情和任务创建由后端阻断 |
-| 工作区草稿 | `/workflow-drafts` | PostgreSQL、Zod、项目范围校验 | 按用户、项目和应用保存参数与精确输入资产位置；恢复时过滤失效或越界资产 |
-| 任务 | `/jobs`、`/jobs/:id/cancel` | PostgreSQL、通知、审计 | 任务台账、输入关系、状态、取消和 ComfyUI Worker 调度 |
+| 应用实例 | `/workflow-instances` | PostgreSQL、Zod、项目范围校验 | 创建和列出当前用户在项目中的持久化应用会话实例；实例是草稿、多轮任务和待流转输入的归属边界 |
+| 工作区草稿 | `/workflow-drafts` | PostgreSQL、Zod、项目范围校验 | 按应用实例保存参数与精确输入资产位置；恢复时过滤失效或越界资产 |
+| 任务 | `/jobs`、`/jobs/:id/cancel` | PostgreSQL、事务级 advisory lock、通知、审计 | 任务台账、参数与有序输入/输出快照、同实例活跃任务互斥、状态、取消和 ComfyUI Worker 调度 |
 | 站内通知 | `/notifications/**` | PostgreSQL | 查询、已读、全部已读、单条删除和清空 |
 | 用户与角色 | `/users`、`/users/:id/status`、`/users/:id/roles`、`/roles` | RBAC、事务和末位管理员保护 | 管理其他用户状态与角色、角色统计；每个账号只能分配一个角色 |
 | 审计 | `/audit-events`、`/audit-events/client` | Request ID、IP、角色快照、统一响应层 | 记录 API 请求、业务事件和页面访问；管理员全量、普通用户仅自身 |
@@ -240,6 +241,12 @@ erDiagram
   APPLICATIONS ||--o{ JOBS : executes
   PROJECTS ||--o{ JOBS : contains
   USERS ||--o{ JOBS : creates
+  APPLICATIONS ||--o{ WORKFLOW_WORKSPACE_INSTANCES : instantiates
+  PROJECTS ||--o{ WORKFLOW_WORKSPACE_INSTANCES : contains
+  USERS ||--o{ WORKFLOW_WORKSPACE_INSTANCES : opens
+  WORKFLOW_WORKSPACE_INSTANCES ||--o{ JOBS : contains
+  WORKFLOW_WORKSPACE_INSTANCES ||--o| WORKFLOW_WORKSPACE_DRAFTS : drafts
+  WORKFLOW_WORKSPACE_INSTANCES ||--o{ WORKFLOW_ASSET_TRANSFERS : receives
   JOBS ||--o{ JOB_INPUTS : consumes
   ASSETS ||--o{ JOB_INPUTS : input
   JOBS ||--o{ JOB_OUTPUTS : produces
@@ -264,7 +271,7 @@ erDiagram
 | 会话偏好 | `refresh_sessions`、`user_preferences` | 刷新令牌哈希、当前项目、提醒偏好 |
 | 项目 | `projects`、`project_members` | 项目元数据和 owner/editor/viewer 成员关系 |
 | 资产 | `assets`、`asset_versions`、`asset_tags`、`asset_favorites` | 统一资产、版本、来源、标签和个人收藏 |
-| 应用任务 | `applications`、`jobs`、`job_inputs`、`job_outputs`、`workflow_workspace_drafts`、`workflow_asset_transfers` | 能力目录、工作区草稿、精确资产流转、任务参数、状态以及输入输出关系 |
+| 应用任务 | `applications`、`workflow_workspace_instances`、`jobs`、`job_inputs`、`job_outputs`、`workflow_workspace_drafts`、`workflow_asset_transfers` | 能力目录、用户应用会话、实例草稿、目标实例精确资产流转、任务参数、状态以及输入输出关系 |
 | 运营记录 | `notifications`、`audit_events` | 站内消息；操作人快照、请求路径、状态、耗时、IP 和可追踪业务事件 |
 | AI 助手 | `ai_conversations`、`ai_messages`、`ai_attachments` | 用户私有会话、消息、上游错误/消息编号和附件对象元数据 |
 
@@ -274,7 +281,7 @@ erDiagram
 | --- | --- | --- |
 | 用户、权限、项目、任务等结构化数据 | PostgreSQL | 完整业务字段和关系 |
 | 小文本资产 | PostgreSQL `asset_versions.text_content` | 正文、MIME、大小、SHA-256、版本 |
-| 图片、视频、音频、文档、3D、模型和压缩包 | MinIO/S3 私有桶 | 对象键、MIME、文件名、大小、ETag、版本和来源 |
+| 图片、视频、音频、文档、3D、模型和压缩包 | MinIO/S3 私有桶 | 对象键、MIME、文件名、大小、ETag、版本和来源；遮罩图片版本元数据额外登记 `derivedFromAssetId` 原始底图血缘 |
 | AI 对话正文 | PostgreSQL `ai_messages.content` | 角色、正文、状态、错误码、外部消息编号和时间 |
 | AI 对话附件 | MinIO/S3 私有桶 `assistant/` 前缀 | 对象键、原文件名、MIME、大小、状态和所属消息 |
 | 页面临时状态 | Pinia/内存 | 当前项目、列表和交互状态，不作为业务真值 |

@@ -11,6 +11,21 @@ export function workflowChecksum(snapshot: unknown) {
   return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
 }
 
+export function workflowSupportsImageComparison(
+  apiJson: Record<string, unknown>,
+) {
+  return Object.values(apiJson).some((node) => {
+    if (!node || typeof node !== 'object') return false;
+    const classType = Reflect.get(node, 'class_type');
+    return (
+      typeof classType === 'string' &&
+      ['image comparer', 'imagecompare'].some((name) =>
+        classType.toLowerCase().includes(name),
+      )
+    );
+  });
+}
+
 export async function seedWorkflowCatalogEntry(
   entry: WorkflowCatalogEntry,
   apiJson: unknown,
@@ -157,6 +172,7 @@ export function toPublicCapability(row: CapabilityRow) {
       output.kind ? [output.kind] : [],
     ),
     provider: row.provider,
+    supportsImageComparison: workflowSupportsImageComparison(row.apiJson),
     workflow: {
       code: row.workflowCode,
       name: row.workflowName,

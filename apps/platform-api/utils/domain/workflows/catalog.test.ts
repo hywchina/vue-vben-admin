@@ -154,4 +154,41 @@ describe('comfyUI workflow catalog', () => {
       expect.objectContaining({ class_type: 'Anything Everywhere' }),
     );
   });
+
+  it('preserves the required red-mask removal protocol for outpainting', async () => {
+    const outpaint = WORKFLOW_CATALOG.find(
+      (entry) => entry.application.key === 'outpaint',
+    );
+    expect(outpaint).toBeTruthy();
+    if (!outpaint) throw new Error('缺少智能扩图工作流目录');
+    const apiJson = JSON.parse(
+      await readFile(
+        resolve(process.cwd(), 'workflows/comfyui', outpaint.fileName),
+        'utf8',
+      ),
+    ) as unknown;
+    const parsed = parseWorkflowVersion({ apiJson, ...outpaint.version });
+    const parameters = Object.fromEntries(
+      parsed.parameterSchema
+        .filter(
+          (field) =>
+            !['asset', 'capture', 'mask', 'region'].includes(field.type),
+        )
+        .map((field) => [field.key, field.defaultValue]),
+    );
+    const result = materializeWorkflow(
+      parsed.apiJson,
+      parsed.parameterSchema,
+      parameters,
+    );
+    expect(result['367']?.inputs.value).toContain('删除红色扩展标记区域');
+    expect(result['367']?.inputs.value).toContain(
+      '延展原图中的客室结构、顶板、地板与灯光',
+    );
+    expect(
+      publicParameterSchema(outpaint.version.parameterSchema).find(
+        (field) => field.key === 'prompt',
+      ),
+    ).not.toHaveProperty('valuePrefix');
+  });
 });

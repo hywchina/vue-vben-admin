@@ -10,4 +10,5 @@ export interface WorkflowInputTransfer {
   sourceJobId?: string;
   targetAppKey: string;
   targetAssetIndex: number;
+  targetInstanceId: string;
 }

@@ -103,11 +103,20 @@ async function main() {
   let assetId: null | string = null;
   let jobId: null | string = null;
   let objectKey: null | string = null;
+  const workspaceInstanceId = randomUUID();
   try {
+    await sql`
+      INSERT INTO workflow_workspace_instances (
+        id, user_id, project_id, app_key, title
+      ) VALUES (
+        ${workspaceInstanceId}, ${scope.userId}, ${scope.projectId},
+        'text-to-image', ${`Worker 集成会话 ${testMarker}`}
+      )
+    `;
     const [job] = await sql<{ id: string }[]>`
       INSERT INTO jobs (
         project_id, app_key, name, parameters, created_by, status, stage,
-        workflow_version_id
+        workflow_version_id, workspace_instance_id
       ) VALUES (
         ${scope.projectId},
         'text-to-image',
@@ -123,7 +132,8 @@ async function main() {
         ${scope.userId},
         'queued',
         '等待 ComfyUI Worker 接收',
-        ${scope.workflowVersionId}
+        ${scope.workflowVersionId},
+        ${workspaceInstanceId}
       )
       RETURNING id
     `;
@@ -209,6 +219,10 @@ async function main() {
       await sql`DELETE FROM jobs WHERE id = ${jobId}`;
     }
     if (assetId) await sql`DELETE FROM assets WHERE id = ${assetId}`;
+    await sql`
+      DELETE FROM workflow_workspace_instances
+      WHERE id = ${workspaceInstanceId}
+    `;
     await sql`DELETE FROM worker_heartbeats WHERE instance_id = ${workerId}`;
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));

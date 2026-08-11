@@ -6,6 +6,7 @@ export function createWorkflowInputTransferApi(input: {
   assetId: string;
   targetAppKey: string;
   targetAssetIndex: number;
+  targetInstanceId: string;
 }) {
   return requestClient.post<WorkflowInputTransfer>(
     '/workflow-transfers',
@@ -16,9 +17,10 @@ export function createWorkflowInputTransferApi(input: {
 export function getPendingWorkflowInputTransfersApi(
   projectId: string,
   targetAppKey: string,
+  targetInstanceId: string,
 ) {
   return requestClient.get<WorkflowInputTransfer[]>('/workflow-transfers', {
-    params: { projectId, targetAppKey },
+    params: { projectId, targetAppKey, targetInstanceId },
   });
 }
 

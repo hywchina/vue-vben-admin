@@ -2,21 +2,31 @@ import type { PlatformJob } from '#/modules/platform/types';
 
 import { describe, expect, it } from 'vitest';
 
-import { isActivePlatformJob, normalizePlatformJobs } from './platform/helpers';
+import {
+  isActivePlatformJob,
+  normalizePlatformJobs,
+  selectWorkspaceJobs,
+} from './platform/helpers';
 
 function createJob(overrides: Partial<PlatformJob> = {}): PlatformJob {
   return {
     appKey: 'render',
     createdAt: '2026-08-08T00:00:00.000Z',
+    createdBy: 'user-1',
     id: 'job-1',
     inputAssetIds: [],
+    inputs: [],
     name: '测试任务',
+    ownedByCurrentUser: true,
     owner: '测试用户',
     outputs: [],
+    parameters: {},
     progress: 0,
     projectId: 'project-1',
     stage: '等待执行',
     status: 'queued',
+    workspaceInstanceId: 'instance-1',
+    workspaceInstanceTitle: '测试会话 1',
     ...overrides,
   };
 }
@@ -40,5 +50,25 @@ describe('platform store helpers', () => {
     expect(
       normalizePlatformJobs([createJob({ duration: '3 分钟' })])[0]?.duration,
     ).toBe('3 分钟');
+  });
+
+  it('keeps one application instance conversation scoped and orders rounds', () => {
+    const jobs = [
+      createJob({
+        createdAt: '2026-08-08T00:02:00.000Z',
+        id: 'round-2',
+      }),
+      createJob({
+        createdAt: '2026-08-08T00:01:00.000Z',
+        id: 'round-1',
+      }),
+      createJob({ id: 'other-user', ownedByCurrentUser: false }),
+      createJob({ id: 'other-instance', workspaceInstanceId: 'instance-2' }),
+      createJob({ id: 'other-project', projectId: 'project-2' }),
+    ];
+
+    expect(
+      selectWorkspaceJobs(jobs, 'instance-1', 'project-1').map((job) => job.id),
+    ).toEqual(['round-1', 'round-2']);
   });
 });

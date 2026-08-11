@@ -174,7 +174,7 @@ pnpm dev:rail
 | `multi-image-edit` | 基础图、样式图、材质图 | PNG/JPEG | `23.images` | 3 个资产位顺序与参考图语义 |
 | `inpaint-single` | 带 Alpha 遮罩的底图、指令 | PNG/JPEG | `363.images` | 遮罩必须是透明 Alpha，不是红色覆盖层 |
 | `inpaint-reference` | 遮罩底图、参考图、指令 | PNG/JPEG | `370.images` | 底图与参考图顺序；遮罩扩展/羽化 |
-| `outpaint` | 1 张图、四边扩展尺寸 | PNG/JPEG | `366.images` | 扩展数值与显存；输出尺寸是否被节点限制 |
+| `outpaint` | 1 张图、四边扩展尺寸 | PNG/JPEG | `366.images` | `ImagePadForOutpaint` 会生成红色扩展标记；平台必须通过后端 `valuePrefix` 注入“删除红色扩展标记区域”固定协议，不能只发送用户的设计描述；同时检查扩展数值、显存和输出尺寸限制 |
 | `region-edit` | 底图、颜色笔画、分区指令 | PNG/JPEG | `293.images` | 自定义 `sum_Ksampler` 的历史输出字段必须核对 |
 | `region-marker-edit` | 底图、颜色/编号笔画、指令 | PNG/JPEG | `366.images` | `IO_EasyMark` 笔画格式与坐标系 |
 | `multiview-to-3d` | 前、左、后、右 4 张图 | GLB | `83.3d` | `SaveGLB` 的 `3d` 数组与 `/view` MIME |

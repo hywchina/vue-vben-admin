@@ -17,3 +17,22 @@ export function normalizePlatformJobs(jobs: PlatformJob[]) {
     };
   });
 }
+
+export function selectWorkspaceJobs(
+  jobs: PlatformJob[],
+  workspaceInstanceId: string | undefined,
+  projectId: string,
+) {
+  if (!workspaceInstanceId || !projectId) return [];
+  return jobs
+    .filter(
+      (job) =>
+        job.workspaceInstanceId === workspaceInstanceId &&
+        job.projectId === projectId &&
+        job.ownedByCurrentUser,
+    )
+    .toSorted(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+}

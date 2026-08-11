@@ -168,7 +168,7 @@ watch(
   position: absolute;
   top: 6px;
   right: 2px;
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .asset-picker-grid strong,
@@ -181,12 +181,12 @@ watch(
 
 .asset-picker-grid strong {
   margin-top: 8px;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .asset-picker-grid small {
   margin-top: 3px;
-  font-size: 9px;
+  font-size: 12px;
   color: #7b878e;
 }
 

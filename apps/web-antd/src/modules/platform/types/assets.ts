@@ -11,6 +11,7 @@ export type AssetType =
 export interface PlatformAsset {
   accent: string;
   createdAt: string;
+  derivedFromAssetId?: string;
   description: string;
   favorite: boolean;
   format: string;

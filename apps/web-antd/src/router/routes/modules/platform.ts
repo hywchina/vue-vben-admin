@@ -24,6 +24,7 @@ const routes: RouteRecordRaw[] = [
       {
         component: () => import('#/views/platform/workspace/index.vue'),
         meta: {
+          fullPathKey: true,
           hideInMenu: true,
           icon: 'lucide:workflow',
           title: '应用工作区',

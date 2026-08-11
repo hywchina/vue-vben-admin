@@ -4,6 +4,7 @@ import {
   assertWorkspaceDraftParameterKeys,
   workspaceDraftAssetSelection,
 } from '~/utils/domain/workflows/drafts';
+import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
   hasAdministrativeRole,
@@ -27,6 +28,7 @@ const updateDraftSchema = z.object({
   inputAssetIds: inputAssetIdsSchema,
   parameterValues: parameterValuesSchema,
   projectId: z.string().uuid(),
+  workspaceInstanceId: z.string().uuid(),
 });
 
 export default apiHandler(async (event) => {
@@ -35,6 +37,12 @@ export default apiHandler(async (event) => {
   const input = await parseBody(event, updateDraftSchema);
   await requireProjectAccess(identity, input.projectId, 'write');
   const sql = useDatabase();
+  await requireWorkflowWorkspaceInstance({
+    appKey: input.appKey,
+    instanceId: input.workspaceInstanceId,
+    projectId: input.projectId,
+    userId: identity.id,
+  });
   const [application] = await sql<{ visible: boolean }[]>`
     SELECT visible FROM applications WHERE key = ${input.appKey}
   `;
@@ -91,13 +99,15 @@ export default apiHandler(async (event) => {
 
   const [draft] = await sql<{ updatedAt: Date }[]>`
     INSERT INTO workflow_workspace_drafts (
-      user_id, project_id, app_key, parameter_values, input_asset_ids
+      user_id, project_id, app_key, workspace_instance_id,
+      parameter_values, input_asset_ids
     ) VALUES (
       ${identity.id}, ${input.projectId}, ${input.appKey},
+      ${input.workspaceInstanceId},
       ${sql.json(JSON.parse(JSON.stringify(input.parameterValues)))},
       ${sql.json(inputAssetIds)}
     )
-    ON CONFLICT (user_id, project_id, app_key) DO UPDATE SET
+    ON CONFLICT (workspace_instance_id) DO UPDATE SET
       parameter_values = EXCLUDED.parameter_values,
       input_asset_ids = EXCLUDED.input_asset_ids,
       updated_at = now()

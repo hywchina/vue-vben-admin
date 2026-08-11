@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import { workflowTransferCompatibleAssetIndexes } from '~/utils/domain/workflows/transfers';
 import {
@@ -16,6 +17,7 @@ const createTransferSchema = z.object({
   assetId: z.string().uuid(),
   targetAppKey: z.string().trim().min(1).max(100),
   targetAssetIndex: z.number().int().min(0).max(99),
+  targetInstanceId: z.string().uuid(),
 });
 
 export default apiHandler(async (event) => {
@@ -71,11 +73,17 @@ export default apiHandler(async (event) => {
   if (!capability) {
     throw new ApiError(409, 'WORKFLOW_NOT_READY', '目标工作流尚未就绪');
   }
+  const targetInstance = await requireWorkflowWorkspaceInstance({
+    appKey: input.targetAppKey,
+    instanceId: input.targetInstanceId,
+    projectId: asset.projectId,
+    userId: identity.id,
+  });
 
   const transfer = await sql.begin(async (transaction) => {
     await transaction`
       SELECT pg_advisory_xact_lock(
-        hashtext(${`${asset.projectId}:${input.targetAppKey}`}),
+        hashtext(${input.targetInstanceId}),
         hashtext(${identity.id})
       )
     `;
@@ -94,6 +102,7 @@ export default apiHandler(async (event) => {
       WHERE created_by = ${identity.id}
         AND project_id = ${asset.projectId}
         AND target_app_key = ${input.targetAppKey}
+        AND target_instance_id = ${input.targetInstanceId}
         AND status = 'pending'
       ORDER BY created_at
       FOR UPDATE
@@ -138,10 +147,11 @@ export default apiHandler(async (event) => {
     >`
       INSERT INTO workflow_asset_transfers (
         project_id, asset_id, source_job_id, target_app_key,
-        target_asset_index, created_by
+        target_asset_index, target_instance_id, created_by
       ) VALUES (
         ${asset.projectId}, ${asset.id}, ${asset.sourceJobId},
-        ${input.targetAppKey}, ${input.targetAssetIndex}, ${identity.id}
+        ${input.targetAppKey}, ${input.targetAssetIndex},
+        ${input.targetInstanceId}, ${identity.id}
       )
       RETURNING id, target_asset_index AS "targetAssetIndex"
     `;
@@ -158,6 +168,7 @@ export default apiHandler(async (event) => {
         sourceJobId: asset.sourceJobId,
         targetAppKey: input.targetAppKey,
         targetAssetIndex: input.targetAssetIndex,
+        targetInstanceId: input.targetInstanceId,
       },
       module: 'workflow',
       targetId: transfer.id,
@@ -174,5 +185,6 @@ export default apiHandler(async (event) => {
     sourceJobId: asset.sourceJobId ?? undefined,
     targetAppKey: input.targetAppKey,
     targetAssetIndex: transfer.targetAssetIndex,
+    targetInstanceId: targetInstance.id,
   };
 });

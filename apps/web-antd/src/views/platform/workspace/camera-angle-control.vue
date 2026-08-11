@@ -259,7 +259,7 @@ function viewLabel(group: CameraGroup) {
 }
 
 .camera-control > header span {
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
   color: #80c5d6;
   letter-spacing: 0.16em;
@@ -297,7 +297,7 @@ function viewLabel(group: CameraGroup) {
 }
 
 .camera-group summary small {
-  font-size: 10px;
+  font-size: 13px;
   color: #8da7b2;
 }
 
@@ -376,11 +376,11 @@ function viewLabel(group: CameraGroup) {
 }
 
 .camera-readout strong {
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .camera-readout span {
-  font-size: 9px;
+  font-size: 12px;
   color: #9dd6df;
 }
 
@@ -391,7 +391,7 @@ function viewLabel(group: CameraGroup) {
 .camera-slider label {
   justify-content: space-between;
   margin-bottom: 4px;
-  font-size: 10px;
+  font-size: 13px;
 }
 
 .camera-slider label small {

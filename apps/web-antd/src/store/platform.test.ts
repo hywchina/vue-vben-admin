@@ -167,11 +167,19 @@ describe('platform store with real API contract', () => {
     api.uploadAssetApi.mockResolvedValue(uploaded);
     const file = new File(['image'], 'reference.png', { type: 'image/png' });
 
-    await store.uploadAsset({ file, name: '新参考图', type: 'image' });
+    await store.uploadAsset({
+      derivedFromAssetId: asset.id,
+      file,
+      name: '新参考图',
+      type: 'image',
+    });
 
     expect(store.currentAssets[0]).toEqual(uploaded);
     expect(api.uploadAssetApi).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: firstProject.id }),
+      expect.objectContaining({
+        derivedFromAssetId: asset.id,
+        projectId: firstProject.id,
+      }),
     );
   });
 

@@ -48,6 +48,7 @@ export interface PlatformCapability {
   name: string;
   outputTypes: AssetType[];
   provider: string;
+  supportsImageComparison: boolean;
   workflow: {
     code: string;
     name: string;

@@ -2,6 +2,9 @@
 import type {
   CapabilityField,
   PlatformCapability,
+  PlatformJob,
+  PlatformJobOutput,
+  WorkflowWorkspaceInstance,
 } from '#/modules/platform/types';
 
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
@@ -9,6 +12,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { useTabs } from '@vben/hooks';
 import { IconifyIcon } from '@vben/icons';
+import { useTabbarStore } from '@vben/stores';
 
 import {
   Button,
@@ -16,7 +20,6 @@ import {
   InputNumber,
   message,
   Modal,
-  Progress,
   Select,
   Switch,
   Tag,
@@ -25,18 +28,21 @@ import {
 
 import {
   createWorkflowInputTransferApi,
+  createWorkflowWorkspaceInstanceApi,
   dismissWorkflowInputTransferApi,
   getAssetDownloadApi,
-  getAssetPreviewApi,
   getCapabilityApi,
   getPendingWorkflowInputTransfersApi,
   getWorkflowWorkspaceDraftApi,
+  getWorkflowWorkspaceInstancesApi,
   saveWorkflowWorkspaceDraftApi,
 } from '#/api';
-import ImageLightbox from '#/components/platform/image-lightbox.vue';
+import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
+import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
 import { usePlatformStore } from '#/store';
+import { selectWorkspaceJobs } from '#/store/platform/helpers';
 
 import CameraAngleControl from './camera-angle-control.vue';
 import CapabilityMediaField from './capability-media-field.vue';
@@ -44,7 +50,8 @@ import CapabilityMediaField from './capability-media-field.vue';
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
 const router = useRouter();
-const { setTabTitle } = useTabs();
+const { closeTabByKey, setTabTitle } = useTabs();
+const tabbarStore = useTabbarStore();
 const platformStore = usePlatformStore();
 const selectedAssets = reactive<Record<number, string>>({});
 const selectedTransfers = reactive<Record<number, string>>({});
@@ -52,23 +59,27 @@ const submitting = ref(false);
 const uploadingField = ref('');
 const capabilityLoading = ref(false);
 const capability = ref<null | PlatformCapability>(null);
+const workspaceInstance = ref<null | WorkflowWorkspaceInstance>(null);
 const parameterValues = reactive<Record<string, unknown>>({});
 const genericPrompt = ref(
   '以现代、克制的设计语言优化客室空间，保持结构关系清晰。',
 );
-const outputPreviewUrl = ref('');
-const outputText = ref('');
-const outputLightboxOpen = ref(false);
+const outputMaskEditorOpen = ref(false);
+const outputMaskSource = ref('');
+const outputMaskTitle = ref('');
 const flowModalOpen = ref(false);
 const flowDestination = ref('');
 const flowSubmitting = ref(false);
 const flowTargetAssetIndex = ref<number>();
+const flowTargetInstanceId = ref('new');
+const flowTargetInstanceOptions = ref<Array<{ label: string; value: string }>>(
+  [],
+);
 const flowTargetLoading = ref(false);
 const flowTargetOptions = ref<
   Array<{ disabled: boolean; label: string; value: number }>
 >([]);
-const activeOutputAssetId = ref('');
-const workspaceJobId = ref('');
+const actionOutput = ref<PlatformJobOutput>();
 const loadedWorkspaceKey = ref('');
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let draftSaveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -78,29 +89,21 @@ let draftHydrating = false;
 const application = computed(() =>
   platformStore.applications.find((item) => item.key === route.params.appKey),
 );
-const applicationJobs = computed(() =>
-  platformStore.currentJobs.filter(
-    (job) =>
-      job.appKey === application.value?.key &&
-      job.projectId === platformStore.currentProjectId,
+const workspaceInstanceId = computed(() =>
+  typeof route.query.instanceId === 'string' ? route.query.instanceId : '',
+);
+const conversationJobs = computed(() =>
+  selectWorkspaceJobs(
+    platformStore.currentJobs,
+    workspaceInstanceId.value,
+    platformStore.currentProjectId,
   ),
 );
+const applicationJobs = computed(() => conversationJobs.value.toReversed());
 const activeJob = computed(() =>
   applicationJobs.value.find((job) =>
     ['cancelling', 'queued', 'running'].includes(job.status),
   ),
-);
-const latestJob = computed(
-  () =>
-    activeJob.value ??
-    applicationJobs.value.find((job) => job.id === workspaceJobId.value),
-);
-const latestOutputs = computed(() => latestJob.value?.outputs ?? []);
-const latestOutput = computed(
-  () =>
-    latestOutputs.value.find(
-      (output) => output.assetId === activeOutputAssetId.value,
-    ) ?? latestOutputs.value[0],
 );
 const mediaFields = computed(
   () =>
@@ -140,7 +143,11 @@ const selectedAssetIds = computed(() =>
   }),
 );
 const resultKind = computed(
-  () => latestOutput.value?.kind ?? capability.value?.outputTypes[0] ?? 'image',
+  () =>
+    actionOutput.value?.kind ??
+    applicationJobs.value[0]?.outputs[0]?.kind ??
+    capability.value?.outputTypes[0] ??
+    'image',
 );
 const compatibleDestinations = computed(() =>
   platformStore.applications
@@ -159,13 +166,6 @@ const routeLineLabel = computed(() => {
   if (inputCount === 1) return '单项目资产';
   return `${inputCount} 个输入位`;
 });
-
-function jobErrorMessage() {
-  if (latestJob.value?.error?.code === 'WORKFLOW_PARAMETER_INVALID') {
-    return '工作流参数协议未同步。请刷新页面后重新提交；开发环境请确认 Worker 已自动重启。';
-  }
-  return latestJob.value?.error?.message ?? latestJob.value?.stage;
-}
 
 function fieldNumberValue(field: CapabilityField) {
   const value = parameterValues[field.key];
@@ -203,12 +203,17 @@ function setFieldNumberValue(
   scheduleWorkspaceDraftSave();
 }
 
-function workspaceDraftPayload(appKey?: string, projectId?: string) {
+function workspaceDraftPayload(
+  appKey?: string,
+  projectId?: string,
+  instanceId?: string,
+) {
   if (
     !appKey ||
     !projectId ||
+    !instanceId ||
     !capability.value ||
-    loadedWorkspaceKey.value !== `${projectId}:${appKey}`
+    loadedWorkspaceKey.value !== `${projectId}:${appKey}:${instanceId}`
   ) {
     return;
   }
@@ -219,6 +224,7 @@ function workspaceDraftPayload(appKey?: string, projectId?: string) {
     ),
     parameterValues: taskParameters(),
     projectId,
+    workspaceInstanceId: instanceId,
   };
 }
 
@@ -227,6 +233,7 @@ async function saveWorkspaceDraftNow() {
   const payload = workspaceDraftPayload(
     application.value?.key,
     platformStore.currentProjectId,
+    workspaceInstanceId.value,
   );
   if (!payload) return;
   try {
@@ -241,6 +248,7 @@ function scheduleWorkspaceDraftSave() {
   const payload = workspaceDraftPayload(
     application.value?.key,
     platformStore.currentProjectId,
+    workspaceInstanceId.value,
   );
   if (!payload) return;
   if (draftSaveTimer) clearTimeout(draftSaveTimer);
@@ -273,16 +281,37 @@ async function loadCapability() {
   draftSaveTimer = undefined;
   loadedWorkspaceKey.value = '';
   capability.value = null;
-  workspaceJobId.value = activeJob.value?.id ?? '';
+  workspaceInstance.value = null;
+  actionOutput.value = undefined;
+  outputMaskEditorOpen.value = false;
+  flowModalOpen.value = false;
   const appKey = application.value?.key;
   const capabilityCode = application.value?.capabilityCode;
   const projectId = platformStore.currentProjectId;
   if (!appKey || !capabilityCode || !projectId) return;
+  const instanceId = workspaceInstanceId.value;
   capabilityLoading.value = true;
   try {
-    const [nextCapability, draft] = await Promise.all([
+    if (!instanceId) {
+      const created = await createWorkflowWorkspaceInstanceApi({
+        appKey,
+        projectId,
+      });
+      if (
+        generation === capabilityLoadGeneration &&
+        application.value?.key === appKey &&
+        platformStore.currentProjectId === projectId
+      ) {
+        await router.replace({
+          query: { ...route.query, instanceId: created.id },
+        });
+      }
+      return;
+    }
+    const [nextCapability, draft, instances] = await Promise.all([
       getCapabilityApi(capabilityCode),
-      getWorkflowWorkspaceDraftApi(projectId, appKey),
+      getWorkflowWorkspaceDraftApi(projectId, appKey, instanceId),
+      getWorkflowWorkspaceInstancesApi(projectId, appKey),
     ]);
     if (
       generation !== capabilityLoadGeneration ||
@@ -291,8 +320,20 @@ async function loadCapability() {
     ) {
       return;
     }
+    const nextInstance = instances.find((item) => item.id === instanceId);
+    if (!nextInstance) {
+      const created = await createWorkflowWorkspaceInstanceApi({
+        appKey,
+        projectId,
+      });
+      await router.replace({
+        query: { ...route.query, instanceId: created.id },
+      });
+      return;
+    }
     capability.value = nextCapability;
-    loadedWorkspaceKey.value = `${projectId}:${appKey}`;
+    workspaceInstance.value = nextInstance;
+    loadedWorkspaceKey.value = `${projectId}:${appKey}:${instanceId}`;
     draftHydrating = true;
     resetWorkspace();
     const parameterKeys = new Set(
@@ -319,10 +360,17 @@ async function loadCapability() {
 }
 
 async function applyTransferredInputs() {
-  if (!application.value || !platformStore.currentProjectId) return;
+  if (
+    !application.value ||
+    !platformStore.currentProjectId ||
+    !workspaceInstanceId.value
+  ) {
+    return;
+  }
   const transfers = await getPendingWorkflowInputTransfersApi(
     platformStore.currentProjectId,
     application.value.key,
+    workspaceInstanceId.value,
   );
   for (const transfer of transfers) {
     const target = mediaFields.value.find(
@@ -391,12 +439,17 @@ async function selectAsset(
 async function uploadMedia(
   field: CapabilityField,
   file: File,
-  options: { silent?: boolean; tags?: string[] } = {},
+  options: {
+    derivedFromAssetId?: string;
+    silent?: boolean;
+    tags?: string[];
+  } = {},
 ) {
   uploadingField.value = field.key;
   try {
     const asset = await platformStore.uploadAsset({
       description: `${capability.value?.name ?? application.value?.name} 工作区输入`,
+      derivedFromAssetId: options.derivedFromAssetId,
       file,
       name: file.name.replace(/\.[^.]+$/, ''),
       tags: options.tags ?? ['工作流输入'],
@@ -408,6 +461,20 @@ async function uploadMedia(
   } finally {
     uploadingField.value = '';
   }
+}
+
+async function saveInputMask(field: CapabilityField, file: File) {
+  const assetIndex = field.assetIndex;
+  const selectedAsset =
+    assetIndex === undefined
+      ? undefined
+      : platformStore.currentAssets.find(
+          (asset) => asset.id === selectedAssets[assetIndex],
+        );
+  await uploadMedia(field, file, {
+    derivedFromAssetId: selectedAsset?.derivedFromAssetId ?? selectedAsset?.id,
+    tags: ['工作流输入', '遮罩'],
+  });
 }
 
 function randomizeSeed() {
@@ -428,7 +495,13 @@ function taskParameters() {
 }
 
 async function submitCapability(options: { silent?: boolean } = {}) {
-  if (!application.value || !platformStore.currentProjectId) return;
+  if (
+    !application.value ||
+    !platformStore.currentProjectId ||
+    !workspaceInstanceId.value
+  ) {
+    return;
+  }
   const missingAsset = mediaFields.value.find(
     (field) =>
       field.required &&
@@ -452,12 +525,12 @@ async function submitCapability(options: { silent?: boolean } = {}) {
   try {
     const job = await platformStore.runApplication(
       application.value.key,
+      workspaceInstanceId.value,
       selectedAssetIds.value,
       capability.value ? taskParameters() : { prompt: genericPrompt.value },
       Object.values(selectedTransfers),
     );
     if (job) {
-      workspaceJobId.value = job.id;
       for (const key of Object.keys(selectedTransfers)) {
         Reflect.deleteProperty(selectedTransfers, key);
       }
@@ -470,12 +543,42 @@ async function submitCapability(options: { silent?: boolean } = {}) {
       message.success('任务已进入持久化队列，关闭页面后仍会继续');
     }
     return job;
+  } catch {
+    await platformStore.refreshCurrentProjectData();
   } finally {
     submitting.value = false;
   }
 }
 
 async function runCapability() {
+  await submitCapability();
+}
+
+async function rerunJob(job: PlatformJob) {
+  if (activeJob.value) {
+    message.warning('当前应用会话已有任务正在执行，请等待完成或先取消任务');
+    return;
+  }
+  draftHydrating = true;
+  try {
+    for (const key of Object.keys(parameterValues)) {
+      Reflect.deleteProperty(parameterValues, key);
+    }
+    for (const [key, value] of Object.entries(job.parameters)) {
+      parameterValues[key] = value;
+    }
+    for (const key of Object.keys(selectedAssets)) {
+      Reflect.deleteProperty(selectedAssets, key);
+    }
+    for (const key of Object.keys(selectedTransfers)) {
+      Reflect.deleteProperty(selectedTransfers, key);
+    }
+    for (const input of job.inputs)
+      selectedAssets[input.position] = input.assetId;
+  } finally {
+    draftHydrating = false;
+  }
+  await saveWorkspaceDraftNow();
   await submitCapability();
 }
 
@@ -521,14 +624,28 @@ async function cancelActiveJob() {
   message.info('取消请求已提交');
 }
 
-async function saveLatestOutput() {
-  if (!latestOutput.value || latestOutput.value.saved) return;
-  await platformStore.saveWorkflowOutput(latestOutput.value.assetId);
+async function saveOutput(output: PlatformJobOutput) {
+  if (output.saved) return;
+  await platformStore.saveWorkflowOutput(output.assetId);
   message.success('生成结果已保存到当前项目资产中心');
+}
+
+async function saveOutputMask(file: File) {
+  const output = actionOutput.value;
+  if (!output) throw new Error('当前没有可编辑的图片结果');
+  await platformStore.uploadAsset({
+    description: `${application.value?.name ?? '工作流'}结果遮罩编辑`,
+    file,
+    name: file.name.replace(/\.[^.]+$/, ''),
+    tags: ['工作流结果编辑', '遮罩'],
+    type: 'image',
+  });
+  message.success('遮罩编辑结果已保存到当前项目资产中心');
 }
 
 async function loadFlowTargetOptions() {
   const targetAppKey = flowDestination.value;
+  const targetInstanceId = flowTargetInstanceId.value;
   flowTargetAssetIndex.value = undefined;
   flowTargetOptions.value = [];
   if (!targetAppKey || !platformStore.currentProjectId) return;
@@ -538,14 +655,40 @@ async function loadFlowTargetOptions() {
   if (!targetApplication?.capabilityCode) return;
   flowTargetLoading.value = true;
   try {
-    const [targetCapability, pendingTransfers] = await Promise.all([
+    const [targetCapability, targetInstances] = await Promise.all([
       getCapabilityApi(targetApplication.capabilityCode),
-      getPendingWorkflowInputTransfersApi(
+      getWorkflowWorkspaceInstancesApi(
         platformStore.currentProjectId,
         targetAppKey,
       ),
     ]);
-    if (flowDestination.value !== targetAppKey) return;
+    if (
+      flowDestination.value !== targetAppKey ||
+      flowTargetInstanceId.value !== targetInstanceId
+    ) {
+      return;
+    }
+    flowTargetInstanceOptions.value = [
+      { label: '新建应用会话', value: 'new' },
+      ...targetInstances.map((instance) => ({
+        label: instance.title,
+        value: instance.id,
+      })),
+    ];
+    const pendingTransfers =
+      targetInstanceId === 'new'
+        ? []
+        : await getPendingWorkflowInputTransfersApi(
+            platformStore.currentProjectId,
+            targetAppKey,
+            targetInstanceId,
+          );
+    if (
+      flowDestination.value !== targetAppKey ||
+      flowTargetInstanceId.value !== targetInstanceId
+    ) {
+      return;
+    }
     const occupiedIndexes = new Set(
       pendingTransfers.map((transfer) => transfer.targetAssetIndex),
     );
@@ -562,7 +705,7 @@ async function loadFlowTargetOptions() {
         {
           disabled: occupied,
           label: `${field.label}${field.required ? '（必填）' : ''}${
-            occupied ? '（已有待流转资产）' : ''
+            occupied ? '（该会话输入位已占用）' : ''
           }`,
           value: field.assetIndex,
         },
@@ -575,15 +718,21 @@ async function loadFlowTargetOptions() {
   }
 }
 
-function openFlowModal() {
+function openFlowModal(output: PlatformJobOutput) {
+  actionOutput.value = output;
+  if (compatibleDestinations.value.length === 0) {
+    message.warning('当前没有接收该结果类型的其他可见工作流');
+    return;
+  }
   flowDestination.value = compatibleDestinations.value[0]?.value ?? '';
+  flowTargetInstanceId.value = 'new';
   flowModalOpen.value = true;
   void loadFlowTargetOptions();
 }
 
 async function sendLatestOutput() {
   if (
-    !latestOutput.value ||
+    !actionOutput.value ||
     !flowDestination.value ||
     flowTargetAssetIndex.value === undefined
   ) {
@@ -591,27 +740,34 @@ async function sendLatestOutput() {
   }
   flowSubmitting.value = true;
   try {
-    if (!latestOutput.value.saved) {
-      await platformStore.saveWorkflowOutput(latestOutput.value.assetId);
+    if (!actionOutput.value.saved) {
+      await platformStore.saveWorkflowOutput(actionOutput.value.assetId);
     }
+    const targetInstance =
+      flowTargetInstanceId.value === 'new'
+        ? await createWorkflowWorkspaceInstanceApi({
+            appKey: flowDestination.value,
+            projectId: platformStore.currentProjectId,
+          })
+        : { id: flowTargetInstanceId.value };
     const transfer = await createWorkflowInputTransferApi({
-      assetId: latestOutput.value.assetId,
+      assetId: actionOutput.value.assetId,
       targetAppKey: flowDestination.value,
       targetAssetIndex: flowTargetAssetIndex.value,
+      targetInstanceId: targetInstance.id,
     });
     flowModalOpen.value = false;
     await router.push({
       path: `/workspace/${flowDestination.value}`,
-      query: { transferId: transfer.id },
+      query: { instanceId: targetInstance.id, transferId: transfer.id },
     });
   } finally {
     flowSubmitting.value = false;
   }
 }
 
-async function downloadLatestOutput() {
-  if (!latestOutput.value) return;
-  const result = await getAssetDownloadApi(latestOutput.value.assetId);
+async function downloadOutput(output: PlatformJobOutput) {
+  const result = await getAssetDownloadApi(output.assetId);
   if (result.mode === 'url') {
     window.open(result.url, '_blank', 'noopener,noreferrer');
     return;
@@ -619,9 +775,16 @@ async function downloadLatestOutput() {
   Modal.info({
     content: result.content,
     okText: '关闭',
-    title: latestOutput.value.name,
+    title: output.name,
     width: 720,
   });
+}
+
+function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
+  actionOutput.value = output;
+  outputMaskSource.value = previewUrl;
+  outputMaskTitle.value = output.name;
+  outputMaskEditorOpen.value = true;
 }
 
 function stopPolling() {
@@ -636,19 +799,48 @@ function startPolling() {
   }, 2000);
 }
 
+async function canonicalizeAndDeduplicateInstanceTab() {
+  const instanceId = workspaceInstanceId.value;
+  if (!instanceId) return;
+  if (
+    Object.keys(route.query).some(
+      (key) => key !== 'instanceId' && route.query[key] !== undefined,
+    )
+  ) {
+    await router.replace({ query: { instanceId } });
+  }
+  const currentKey = route.fullPath;
+  const duplicateKeys = tabbarStore.getTabs.flatMap((tab) => {
+    const key = typeof tab.key === 'string' ? tab.key : '';
+    if (!key || key === currentKey || tab.path !== route.path) return [];
+    const parsed = new URL(key, window.location.origin);
+    const tabInstanceId = parsed.searchParams.get('instanceId');
+    return !tabInstanceId || tabInstanceId === instanceId ? [key] : [];
+  });
+  for (const key of duplicateKeys) await closeTabByKey(key);
+}
+
 watch(flowDestination, () => {
+  flowTargetInstanceId.value = 'new';
+  if (flowModalOpen.value) void loadFlowTargetOptions();
+});
+watch(flowTargetInstanceId, () => {
   if (flowModalOpen.value) void loadFlowTargetOptions();
 });
 watch(
-  () => application.value?.name,
+  () => workspaceInstance.value?.title,
   (name) => {
-    if (name) void setTabTitle(name);
+    if (name) {
+      void setTabTitle(name);
+      void canonicalizeAndDeduplicateInstanceTab();
+    }
   },
   { immediate: true },
 );
 watch(
   () => [
     route.params.appKey,
+    route.query.instanceId,
     application.value?.capabilityCode,
     platformStore.currentProjectId,
   ],
@@ -659,49 +851,8 @@ watch(
   activeJob,
   (job) => {
     if (job) {
-      workspaceJobId.value = job.id;
       startPolling();
     } else stopPolling();
-  },
-  { immediate: true },
-);
-watch(
-  () => latestOutputs.value.map((output) => output.assetId).join('|'),
-  () => {
-    if (
-      !latestOutputs.value.some(
-        (output) => output.assetId === activeOutputAssetId.value,
-      )
-    ) {
-      activeOutputAssetId.value = latestOutputs.value[0]?.assetId ?? '';
-    }
-  },
-  { immediate: true },
-);
-watch(
-  () => latestOutput.value?.assetId,
-  async (assetId) => {
-    outputPreviewUrl.value = '';
-    outputText.value = '';
-    if (!assetId || !latestOutput.value) return;
-    try {
-      if (latestOutput.value.kind === 'image') {
-        const preview = await getAssetPreviewApi(assetId);
-        if (preview.mode !== 'url') throw new Error('图片结果没有预览地址');
-        outputPreviewUrl.value = preview.url;
-      } else if (latestOutput.value.kind === 'text') {
-        const result = await getAssetDownloadApi(assetId);
-        if (result.mode === 'inline') {
-          outputText.value = result.content;
-        } else {
-          const response = await fetch(result.url);
-          outputText.value = await response.text();
-        }
-      }
-    } catch {
-      outputPreviewUrl.value = '';
-      outputText.value = '';
-    }
   },
   { immediate: true },
 );
@@ -734,7 +885,11 @@ onBeforeUnmount(() => {
         <div>
           <span class="studio-kicker">RAIL DESIGN CAPABILITY</span>
           <h1>{{ capability?.name ?? application.name }}</h1>
-          <p>{{ capability?.description ?? application.description }}</p>
+          <p>
+            <strong>{{ workspaceInstance?.title }}</strong>
+            <span>·</span>
+            {{ capability?.description ?? application.description }}
+          </p>
         </div>
       </div>
       <div class="studio-hero__actions">
@@ -888,19 +1043,36 @@ onBeforeUnmount(() => {
                 <span>高级参数</span>
                 <small>{{ advancedFields.length }} 项</small>
               </summary>
-              <label
-                v-for="field in advancedFields"
-                :key="field.key"
-                class="studio-field"
-              >
-                <span>{{ field.label }}</span>
-                <small v-if="field.help">{{ field.help }}</small>
-                <small v-else-if="field.type === 'number'" class="field-range">
-                  范围 {{ field.min ?? '不限' }}–{{ field.max ?? '不限' }}，默认
-                  {{ field.defaultValue ?? '空' }}
-                </small>
-                <div v-if="field.key === 'seed'" class="seed-field">
+              <div class="advanced-fields">
+                <label
+                  v-for="field in advancedFields"
+                  :key="field.key"
+                  class="studio-field"
+                >
+                  <span>{{ field.label }}</span>
+                  <small v-if="field.help">{{ field.help }}</small>
+                  <small
+                    v-else-if="field.type === 'number'"
+                    class="field-range"
+                  >
+                    范围 {{ field.min ?? '不限' }}–{{
+                      field.max ?? '不限'
+                    }}，默认
+                    {{ field.defaultValue ?? '空' }}
+                  </small>
+                  <div v-if="field.key === 'seed'" class="seed-field">
+                    <InputNumber
+                      :max="field.max"
+                      :min="field.min"
+                      :step="field.step"
+                      :value="fieldNumberValue(field)"
+                      class="w-full"
+                      @update:value="setFieldNumberValue(field, $event)"
+                    />
+                    <Button @click="randomizeSeed">随机</Button>
+                  </div>
                   <InputNumber
+                    v-else-if="field.type === 'number'"
                     :max="field.max"
                     :min="field.min"
                     :step="field.step"
@@ -908,47 +1080,37 @@ onBeforeUnmount(() => {
                     class="w-full"
                     @update:value="setFieldNumberValue(field, $event)"
                   />
-                  <Button @click="randomizeSeed">随机</Button>
-                </div>
-                <InputNumber
-                  v-else-if="field.type === 'number'"
-                  :max="field.max"
-                  :min="field.min"
-                  :step="field.step"
-                  :value="fieldNumberValue(field)"
-                  class="w-full"
-                  @update:value="setFieldNumberValue(field, $event)"
-                />
-                <Textarea
-                  v-else-if="field.type === 'textarea'"
-                  :value="fieldTextValue(field)"
-                  :rows="4"
-                  @update:value="setFieldValue(field, $event)"
-                />
-                <Textarea
-                  v-else-if="field.type === 'json'"
-                  :value="fieldJsonValue(field)"
-                  :rows="5"
-                  class="json-field"
-                  @update:value="setFieldValue(field, $event)"
-                />
-                <Switch
-                  v-else-if="field.type === 'boolean'"
-                  :checked="fieldBooleanValue(field)"
-                  @update:checked="setFieldValue(field, $event)"
-                />
-                <Select
-                  v-else-if="field.type === 'select'"
-                  :value="fieldTextValue(field)"
-                  :options="field.options"
-                  @update:value="setFieldValue(field, $event)"
-                />
-                <Input
-                  v-else
-                  :value="fieldTextValue(field)"
-                  @update:value="setFieldValue(field, $event)"
-                />
-              </label>
+                  <Textarea
+                    v-else-if="field.type === 'textarea'"
+                    :value="fieldTextValue(field)"
+                    :rows="4"
+                    @update:value="setFieldValue(field, $event)"
+                  />
+                  <Textarea
+                    v-else-if="field.type === 'json'"
+                    :value="fieldJsonValue(field)"
+                    :rows="5"
+                    class="json-field"
+                    @update:value="setFieldValue(field, $event)"
+                  />
+                  <Switch
+                    v-else-if="field.type === 'boolean'"
+                    :checked="fieldBooleanValue(field)"
+                    @update:checked="setFieldValue(field, $event)"
+                  />
+                  <Select
+                    v-else-if="field.type === 'select'"
+                    :value="fieldTextValue(field)"
+                    :options="field.options"
+                    @update:value="setFieldValue(field, $event)"
+                  />
+                  <Input
+                    v-else
+                    :value="fieldTextValue(field)"
+                    @update:value="setFieldValue(field, $event)"
+                  />
+                </label>
+              </div>
             </details>
           </template>
 
@@ -989,114 +1151,24 @@ onBeforeUnmount(() => {
           <small>{{ platformStore.currentProject?.code }} · 持久化任务</small>
         </div>
 
-        <div class="stage-viewport">
-          <div v-if="activeJob" class="stage-state running-state">
-            <div class="rail-pulse">
-              <i></i>
-              <i></i>
-              <i></i>
-              <i></i>
-            </div>
-            <StatusPill :status="activeJob.status" />
-            <h2>{{ activeJob.name }}</h2>
-            <p>{{ activeJob.stage }}</p>
-            <Progress
-              :percent="activeJob.progress"
-              :show-info="false"
-              :stroke-color="application.color"
-            />
-            <small v-if="activeJob.externalReference">
-              Prompt ID · {{ activeJob.externalReference }}
-            </small>
-          </div>
-
-          <div
-            v-else-if="latestJob?.status === 'failed'"
-            class="stage-state error-state"
-          >
-            <IconifyIcon icon="lucide:circle-alert" />
-            <StatusPill status="failed" />
-            <h2>执行边界已阻止任务</h2>
-            <p>{{ jobErrorMessage() }}</p>
-            <code>{{ latestJob.error?.code ?? 'JOB_FAILED' }}</code>
-            <Button type="primary" @click="runCapability">重新提交</Button>
-          </div>
-
-          <div v-else-if="latestOutput" class="stage-output">
-            <div v-if="latestOutputs.length > 1" class="output-selector">
-              <button
-                v-for="(output, index) in latestOutputs"
-                :key="output.assetId"
-                :class="{ active: output.assetId === latestOutput.assetId }"
-                type="button"
-                @click="activeOutputAssetId = output.assetId"
-              >
-                <IconifyIcon
-                  :icon="
-                    output.kind === 'image' ? 'lucide:image' : 'lucide:file'
-                  "
-                />
-                结果 {{ index + 1 }}
-              </button>
-            </div>
-            <div
-              class="output-visual"
-              :class="`output-${latestOutput.kind}`"
-              @click="
-                outputPreviewUrl && latestOutput.kind === 'image'
-                  ? (outputLightboxOpen = true)
-                  : undefined
+        <div class="stage-viewport conversation-viewport">
+          <div v-if="conversationJobs.length" class="workflow-conversation">
+            <WorkflowRunCard
+              v-for="(job, index) in conversationJobs"
+              :key="job.id"
+              :accent="application.color"
+              :fields="capability?.fields ?? []"
+              :job="job"
+              :round="index + 1"
+              :supports-image-comparison="
+                capability?.supportsImageComparison ?? false
               "
-            >
-              <img
-                v-if="outputPreviewUrl"
-                :alt="latestOutput.name"
-                :src="outputPreviewUrl"
-              />
-              <pre v-else-if="outputText">{{ outputText }}</pre>
-              <div v-else class="output-icon">
-                <IconifyIcon
-                  :icon="
-                    latestOutput.kind === 'model3d'
-                      ? 'lucide:box'
-                      : application.icon
-                  "
-                />
-                <span>{{ assetTypeLabels[latestOutput.kind] }}</span>
-              </div>
-              <span v-if="outputPreviewUrl" class="output-zoom-hint">
-                <IconifyIcon icon="lucide:maximize-2" />
-                点击放大
-              </span>
-            </div>
-            <div class="output-caption">
-              <StatusPill status="succeeded" />
-              <Tag :color="latestOutput.saved ? 'green' : 'orange'">
-                {{ latestOutput.saved ? '已保存到资产' : '任务暂存结果' }}
-              </Tag>
-              <h2>{{ latestOutput.name }}</h2>
-              <p>
-                结果仅保留在当前任务中。你可以手动加入资产；登记为项目资产后，才能流转给兼容工作流。
-              </p>
-              <small>用户、项目、任务、应用和工作流版本血缘已完整登记</small>
-              <div class="output-actions">
-                <Button @click="downloadLatestOutput">下载/查看</Button>
-                <Button
-                  :disabled="latestOutput.saved"
-                  @click="saveLatestOutput"
-                >
-                  {{ latestOutput.saved ? '已加入资产' : '加入资产' }}
-                </Button>
-                <Button
-                  :disabled="!compatibleDestinations.length"
-                  @click="openFlowModal"
-                >
-                  <IconifyIcon icon="lucide:send" />
-                  流转到工作流
-                </Button>
-                <Button type="primary" @click="runCapability">再次运行</Button>
-              </div>
-            </div>
+              @download="downloadOutput"
+              @flow="openFlowModal"
+              @mask="openOutputMask"
+              @rerun="rerunJob"
+              @save="saveOutput"
+            />
           </div>
 
           <div v-else class="stage-state ready-state">
@@ -1144,6 +1216,7 @@ onBeforeUnmount(() => {
             :field="field"
             :live-capture="(file) => runLiveCapture(field, file)"
             :refresh-rate="captureRefreshRate()"
+            :save-mask="(file) => saveInputMask(field, file)"
             :selected-asset-id="
               field.assetIndex === undefined
                 ? undefined
@@ -1190,10 +1263,12 @@ onBeforeUnmount(() => {
       </aside>
     </div>
 
-    <ImageLightbox
-      v-model:open="outputLightboxOpen"
-      :title="latestOutput?.name"
-      :url="outputPreviewUrl"
+    <ComfyMaskEditor
+      v-if="actionOutput?.kind === 'image'"
+      v-model:open="outputMaskEditorOpen"
+      :on-save="saveOutputMask"
+      :src="outputMaskSource"
+      :title="outputMaskTitle"
     />
     <Modal
       v-model:open="flowModalOpen"
@@ -1204,12 +1279,12 @@ onBeforeUnmount(() => {
           flowTargetAssetIndex === undefined ||
           flowTargetLoading,
       }"
-      :ok-text="latestOutput?.saved ? '流转并打开' : '加入资产并流转'"
+      :ok-text="actionOutput?.saved ? '流转并打开' : '加入资产并流转'"
       title="流转到兼容工作流"
       @ok="sendLatestOutput"
     >
       <p class="flow-description">
-        <template v-if="latestOutput?.saved">
+        <template v-if="actionOutput?.saved">
           当前项目资产会持久化发送到你指定的目标输入位，不下载、不重复上传。
         </template>
         <template v-else>
@@ -1220,20 +1295,27 @@ onBeforeUnmount(() => {
         v-model:value="flowDestination"
         :options="compatibleDestinations"
         class="w-full"
-        placeholder="选择目标工作流"
+        placeholder="第一步：选择目标应用"
+      />
+      <Select
+        v-model:value="flowTargetInstanceId"
+        :loading="flowTargetLoading"
+        :options="flowTargetInstanceOptions"
+        class="mt-3 w-full"
+        placeholder="第二步：选择已有会话或新建会话"
       />
       <Select
         v-model:value="flowTargetAssetIndex"
         :loading="flowTargetLoading"
         :options="flowTargetOptions"
         class="mt-3 w-full"
-        placeholder="选择目标工作流的具体输入位"
+        placeholder="第三步：选择目标会话的具体输入位"
       />
       <p
         v-if="!flowTargetLoading && !flowTargetOptions.length"
         class="flow-hint"
       >
-        该工作流没有与当前结果类型兼容的输入位。
+        该应用没有与当前结果类型兼容的输入位。
       </p>
     </Modal>
   </main>
@@ -1255,6 +1337,9 @@ onBeforeUnmount(() => {
   --studio-ink: #172027;
   --studio-steel: #65737d;
   --studio-line: #d9dfe2;
+  --studio-font-caption: 12px;
+  --studio-font-body: 14px;
+  --studio-font-label: 13px;
 
   min-height: 100%;
   color: var(--studio-ink);
@@ -1336,7 +1421,7 @@ onBeforeUnmount(() => {
 .deck-heading span,
 .stage-eyebrow {
   font-family: 'IBM Plex Mono', SFMono-Regular, monospace;
-  font-size: 9px;
+  font-size: var(--studio-font-caption);
   font-weight: 700;
   color: var(--cap-accent);
   letter-spacing: 0.18em;
@@ -1355,7 +1440,7 @@ onBeforeUnmount(() => {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 11px;
+  font-size: var(--studio-font-body);
   color: var(--studio-steel);
   white-space: nowrap;
 }
@@ -1397,7 +1482,7 @@ onBeforeUnmount(() => {
   max-width: 230px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: var(--studio-font-label);
   font-weight: 700;
   white-space: nowrap;
 }
@@ -1483,14 +1568,14 @@ onBeforeUnmount(() => {
 }
 
 .studio-field > span {
-  font-size: 11px;
+  font-size: var(--studio-font-label);
   font-weight: 720;
 }
 
 .studio-field > span i {
   padding: 2px 6px;
   margin-left: 5px;
-  font-size: 8px;
+  font-size: var(--studio-font-caption);
   font-style: normal;
   color: var(--cap-accent);
   background: color-mix(in srgb, var(--cap-accent) 9%, white);
@@ -1498,7 +1583,7 @@ onBeforeUnmount(() => {
 }
 
 .studio-field > small {
-  font-size: 9px;
+  font-size: var(--studio-font-caption);
   line-height: 1.5;
   color: var(--studio-steel);
 }
@@ -1517,7 +1602,7 @@ onBeforeUnmount(() => {
 
 .studio-field :deep(textarea.json-field) {
   font-family: 'IBM Plex Mono', SFMono-Regular, monospace;
-  font-size: 10px;
+  font-size: var(--studio-font-caption);
 }
 
 .advanced-deck {
@@ -1531,17 +1616,30 @@ onBeforeUnmount(() => {
 .advanced-deck summary {
   display: flex;
   justify-content: space-between;
-  margin-bottom: 14px;
-  font-size: 10px;
+  font-size: var(--studio-font-label);
   font-weight: 750;
   cursor: pointer;
+}
+
+.advanced-deck[open] summary {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #dfe4e6;
 }
 
 .advanced-deck summary small {
   color: var(--studio-steel);
 }
 
-.advanced-deck .studio-field:last-child {
+.advanced-fields {
+  max-height: min(48vh, 520px);
+  padding: 12px 8px 0 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #b8c0c4 transparent;
+  scrollbar-width: thin;
+}
+
+.advanced-fields .studio-field:last-child {
   margin-bottom: 0;
 }
 
@@ -1571,7 +1669,7 @@ onBeforeUnmount(() => {
 .parameter-empty p,
 .no-input-card p {
   margin: 8px 0 0;
-  font-size: 10px;
+  font-size: var(--studio-font-body);
   line-height: 1.7;
 }
 
@@ -1602,7 +1700,7 @@ onBeforeUnmount(() => {
   max-width: 175px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 9px;
+  font-size: var(--studio-font-caption);
   white-space: nowrap;
 }
 
@@ -1620,7 +1718,7 @@ onBeforeUnmount(() => {
 .stage-meta {
   justify-content: space-between;
   padding: 0 2px 11px;
-  font-size: 9px;
+  font-size: var(--studio-font-caption);
   color: var(--studio-steel);
 }
 
@@ -1650,6 +1748,21 @@ onBeforeUnmount(() => {
     repeating-linear-gradient(90deg, #dfe4e6 0 1px, transparent 1px 32px);
   border: 1px solid #d7dde0;
   border-radius: 16px;
+}
+
+.conversation-viewport {
+  display: block;
+  padding: 28px 22px;
+  overflow: auto;
+}
+
+.workflow-conversation {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 18px;
+  width: min(100%, 1180px);
+  margin: 0 auto;
 }
 
 .stage-viewport::before,
@@ -1691,7 +1804,7 @@ onBeforeUnmount(() => {
 
 .stage-state p,
 .output-caption p {
-  font-size: 11px;
+  font-size: var(--studio-font-body);
   line-height: 1.75;
   color: var(--studio-steel);
 }
@@ -1778,16 +1891,17 @@ onBeforeUnmount(() => {
 .error-state code {
   display: block;
   margin: 0 0 18px;
-  font-size: 10px;
+  font-size: var(--studio-font-caption);
   color: #b91c32;
 }
 
 .stage-output {
   display: grid;
-  grid-template-rows: auto minmax(260px, 1fr) auto;
+  grid-template-rows: auto auto auto;
   gap: 18px;
+  place-self: center;
   width: calc(100% - 44px);
-  height: calc(100% - 44px);
+  height: auto;
   margin: 22px;
 }
 
@@ -1803,7 +1917,7 @@ onBeforeUnmount(() => {
   gap: 5px;
   align-items: center;
   padding: 6px 10px;
-  font-size: 9px;
+  font-size: var(--studio-font-caption);
   color: #66737b;
   white-space: nowrap;
   background: #fff;
@@ -1828,29 +1942,46 @@ onBeforeUnmount(() => {
   border-radius: 14px;
 }
 
-.output-visual:has(img) {
-  cursor: zoom-in;
-}
-
-.output-zoom-hint {
+.output-mask-trigger {
   position: absolute;
   right: 12px;
   bottom: 12px;
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  padding: 6px 9px;
-  font-size: 9px;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
   color: #fff;
+  cursor: pointer;
   background: rgb(13 20 24 / 75%);
+  border: 1px solid rgb(255 255 255 / 18%);
   border-radius: 999px;
+  backdrop-filter: blur(8px);
+  transition:
+    background 0.18s ease,
+    transform 0.18s ease;
+}
+
+.output-mask-trigger:hover {
+  background: rgb(13 20 24 / 94%);
+  transform: scale(1.08);
 }
 
 .output-visual img {
-  width: 100%;
-  height: 100%;
-  max-height: 520px;
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: min(68vh, 720px);
   object-fit: contain;
+}
+
+.output-visual.output-image {
+  width: fit-content;
+  max-width: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  background: transparent;
+  box-shadow: 0 10px 34px rgb(24 34 40 / 14%);
 }
 
 .output-visual pre {
@@ -1878,7 +2009,7 @@ onBeforeUnmount(() => {
 
 .output-icon span {
   margin-top: 12px;
-  font-size: 10px;
+  font-size: var(--studio-font-caption);
   letter-spacing: 0.12em;
 }
 
@@ -1905,7 +2036,7 @@ onBeforeUnmount(() => {
 
 .flow-hint {
   margin: 10px 0 0;
-  font-size: 11px;
+  font-size: var(--studio-font-label);
   color: #b45309;
 }
 
@@ -1913,7 +2044,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 11px 13px;
   margin-top: 12px;
-  font-size: 9px;
+  font-size: var(--studio-font-caption);
   color: var(--studio-steel);
   background: #fff;
   border: 1px solid #dce2e5;
@@ -1945,7 +2076,7 @@ onBeforeUnmount(() => {
 
 .asset-contract > span {
   font-family: 'IBM Plex Mono', monospace;
-  font-size: 8px;
+  font-size: var(--studio-font-caption);
   color: #9ba7ae;
   letter-spacing: 0.16em;
 }
@@ -1961,7 +2092,7 @@ onBeforeUnmount(() => {
 .asset-contract strong,
 .asset-contract p {
   margin: 0;
-  font-size: 10px;
+  font-size: var(--studio-font-label);
 }
 
 .asset-contract p {

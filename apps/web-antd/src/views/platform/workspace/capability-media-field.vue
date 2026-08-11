@@ -8,6 +8,8 @@ import { IconifyIcon } from '@vben/icons';
 import { Button, message, Modal } from 'ant-design-vue';
 
 import { getAssetPreviewApi } from '#/api';
+import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
+import ComfyMaskIcon from '#/components/platform/comfy-mask-icon.vue';
 import ImageLightbox from '#/components/platform/image-lightbox.vue';
 
 import AssetPickerModal from './asset-picker-modal.vue';
@@ -42,6 +44,7 @@ const props = defineProps<{
   field: CapabilityField;
   liveCapture?: (file: File) => Promise<boolean | undefined>;
   refreshRate?: number;
+  saveMask?: (file: File) => Promise<unknown>;
   selectedAssetId?: string;
   stopLiveCapture?: () => Promise<void>;
   value?: unknown;
@@ -59,7 +62,6 @@ const fileInputRef = ref<HTMLInputElement>();
 const previewUrl = ref('');
 const loadingPreview = ref(false);
 const drawing = ref(false);
-const savingMask = ref(false);
 const strokes = ref<Stroke[]>([]);
 const activeStroke = ref<Stroke>();
 const brushColor = ref('255,0,0');
@@ -70,6 +72,7 @@ const drawingTool = ref<'box' | 'erase' | 'free' | 'square'>('free');
 const redoHistory = ref<Stroke[][]>([]);
 const undoHistory = ref<Stroke[][]>([]);
 const editorOpen = ref(false);
+const maskEditorOpen = ref(false);
 const editorZoom = ref(1);
 const pickerOpen = ref(false);
 const lightboxOpen = ref(false);
@@ -90,9 +93,7 @@ let captureStream: MediaStream | undefined;
 const selectedAsset = computed(() =>
   props.assets.find((asset) => asset.id === props.selectedAssetId),
 );
-const isDrawingField = computed(() =>
-  ['mask', 'region'].includes(props.field.type),
-);
+const isDrawingField = computed(() => props.field.type === 'region');
 const capturePreviewStyle = computed(() => {
   const crop = captureCrop.value;
   return crop ? { aspectRatio: `${crop.width} / ${crop.height}` } : undefined;
@@ -351,42 +352,6 @@ function syncRegionValue() {
 
 function handleAssetSelect(assetId: string) {
   emit('select', assetId);
-}
-
-async function saveMask() {
-  const image = imageRef.value;
-  if (!image || strokes.value.length === 0) {
-    message.warning('请先在图像上绘制需要重绘的区域');
-    return;
-  }
-  savingMask.value = true;
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    const context = canvas.getContext('2d');
-    if (!context) throw new Error('浏览器无法创建遮罩画布');
-    context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const overlay = document.createElement('canvas');
-    overlay.width = canvas.width;
-    overlay.height = canvas.height;
-    const overlayContext = overlay.getContext('2d');
-    if (!overlayContext) throw new Error('浏览器无法创建遮罩图层');
-    for (const stroke of strokes.value) drawStroke(overlayContext, stroke);
-    context.globalCompositeOperation = 'destination-out';
-    context.drawImage(overlay, 0, 0);
-    const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, 'image/png'),
-    );
-    if (!blob) throw new Error('遮罩图像导出失败');
-    emit(
-      'upload',
-      new File([blob], `masked-${Date.now()}.png`, { type: 'image/png' }),
-    );
-    editorOpen.value = false;
-  } finally {
-    savingMask.value = false;
-  }
 }
 
 function captureStorageKey() {
@@ -834,15 +799,27 @@ onBeforeUnmount(stopCapture);
       :class="{ interactive: Boolean(previewUrl) }"
       @click="
         previewUrl &&
-        (isDrawingField ? (editorOpen = true) : (lightboxOpen = true))
+        (field.type === 'mask'
+          ? (maskEditorOpen = true)
+          : isDrawingField
+            ? (editorOpen = true)
+            : (lightboxOpen = true))
       "
     >
       <img v-if="previewUrl" alt="" crossorigin="anonymous" :src="previewUrl" />
       <span v-if="previewUrl" class="preview-affordance">
+        <ComfyMaskIcon v-if="field.type === 'mask'" :size="15" />
         <IconifyIcon
+          v-else
           :icon="isDrawingField ? 'lucide:scan-line' : 'lucide:maximize-2'"
         />
-        {{ isDrawingField ? '打开可视化编辑器' : '点击放大' }}
+        {{
+          field.type === 'mask'
+            ? '打开遮罩编辑器'
+            : isDrawingField
+              ? '打开可视化编辑器'
+              : '点击放大'
+        }}
       </span>
       <div v-if="!previewUrl" class="media-placeholder">
         <IconifyIcon
@@ -889,11 +866,19 @@ onBeforeUnmount(stopCapture);
       :title="selectedAsset?.name"
       :url="previewUrl"
     />
+    <ComfyMaskEditor
+      v-if="field.type === 'mask' && saveMask"
+      v-model:open="maskEditorOpen"
+      :on-save="saveMask"
+      :src="previewUrl"
+      :title="selectedAsset?.name ?? field.label"
+    />
 
     <Modal
+      v-if="field.type === 'region'"
       v-model:open="editorOpen"
       :footer="null"
-      :title="field.type === 'mask' ? '遮罩编辑器' : '分区重绘编辑器'"
+      title="分区重绘编辑器"
       width="min(1180px, 96vw)"
       wrap-class-name="workflow-image-editor"
     >
@@ -909,7 +894,6 @@ onBeforeUnmount(stopCapture);
           画笔
         </Button>
         <Button
-          v-if="field.type === 'region'"
           :type="drawingTool === 'box' ? 'primary' : 'default'"
           @click="
             drawingTool = 'box';
@@ -920,7 +904,6 @@ onBeforeUnmount(stopCapture);
           方框
         </Button>
         <Button
-          v-if="field.type === 'region'"
           :type="
             drawingTool === 'square' && !activeMarker ? 'primary' : 'default'
           "
@@ -948,29 +931,27 @@ onBeforeUnmount(stopCapture);
         <Button :disabled="!redoHistory.length" @click="redoDrawing">
           <IconifyIcon icon="lucide:redo-2" />
         </Button>
-        <template v-if="field.type === 'region'">
-          <button
-            v-for="color in [
-              '0,0,0',
-              '255,255,255',
-              '255,0,0',
-              '0,255,0',
-              '0,0,255',
-              '128,128,128',
-            ]"
-            :key="color"
-            :class="{ active: brushColor === color }"
-            :style="{ backgroundColor: `rgb(${color})` }"
-            class="color-swatch"
-            :title="color"
-            type="button"
-            @click="
-              brushColor = color;
-              activeMarker = undefined;
-            "
-          ></button>
-        </template>
-        <div v-if="field.type === 'region'" class="marker-buttons">
+        <button
+          v-for="color in [
+            '0,0,0',
+            '255,255,255',
+            '255,0,0',
+            '0,255,0',
+            '0,0,255',
+            '128,128,128',
+          ]"
+          :key="color"
+          :class="{ active: brushColor === color }"
+          :style="{ backgroundColor: `rgb(${color})` }"
+          class="color-swatch"
+          :title="color"
+          type="button"
+          @click="
+            brushColor = color;
+            activeMarker = undefined;
+          "
+        ></button>
+        <div class="marker-buttons">
           <button
             v-for="marker in ['1', '2', '3', '4', '5', '6']"
             :key="marker"
@@ -989,7 +970,7 @@ onBeforeUnmount(stopCapture);
           <input v-model.number="brushSize" max="160" min="2" type="range" />
           <span>{{ brushSize }}</span>
         </label>
-        <label v-if="field.type === 'region'">
+        <label>
           透明度
           <input
             v-model.number="brushOpacity"
@@ -1029,24 +1010,8 @@ onBeforeUnmount(stopCapture);
         </div>
       </div>
       <div class="editor-footer">
-        <span>
-          {{
-            field.type === 'mask'
-              ? '绘制区域将作为透明遮罩提交。'
-              : '不同颜色表示不同重绘分区，可撤销、重做或擦除。'
-          }}
-        </span>
-        <Button
-          v-if="field.type === 'mask'"
-          :loading="savingMask"
-          type="primary"
-          @click="saveMask"
-        >
-          应用遮罩
-        </Button>
-        <Button v-else type="primary" @click="editorOpen = false">
-          应用分区
-        </Button>
+        <span>不同颜色表示不同重绘分区，可撤销、重做或擦除。</span>
+        <Button type="primary" @click="editorOpen = false">应用分区</Button>
       </div>
     </Modal>
 
@@ -1110,7 +1075,7 @@ onBeforeUnmount(stopCapture);
 
 .media-field header small {
   padding: 2px 6px;
-  font-size: 8px;
+  font-size: 12px;
   color: var(--field-accent);
   background: color-mix(in srgb, var(--field-accent) 10%, white);
   border-radius: 999px;
@@ -1155,7 +1120,7 @@ onBeforeUnmount(stopCapture);
   gap: 5px;
   align-items: center;
   padding: 5px 8px;
-  font-size: 9px;
+  font-size: 12px;
   color: #fff;
   pointer-events: none;
   background: rgb(18 27 33 / 78%);
@@ -1177,7 +1142,7 @@ onBeforeUnmount(stopCapture);
 .media-placeholder p,
 .media-help {
   margin: 0;
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.55;
   color: #74818a;
 }
@@ -1229,7 +1194,7 @@ onBeforeUnmount(stopCapture);
   justify-content: space-between;
   padding-top: 10px;
   margin-top: 11px;
-  font-size: 9px;
+  font-size: 12px;
   color: #697680;
   border-top: 1px solid #e6e9ea;
 }
@@ -1258,7 +1223,7 @@ onBeforeUnmount(stopCapture);
 
 .editor-toolbar label {
   min-width: 180px;
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .editor-toolbar label input {
@@ -1336,7 +1301,7 @@ onBeforeUnmount(stopCapture);
 .editor-footer {
   justify-content: space-between;
   padding-top: 12px;
-  font-size: 11px;
+  font-size: 14px;
   color: #6e7a82;
 }
 
@@ -1408,7 +1373,7 @@ onBeforeUnmount(stopCapture);
 
 .capture-placeholder p {
   margin: 0;
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.55;
 }
 
@@ -1428,7 +1393,7 @@ onBeforeUnmount(stopCapture);
   padding-inline: 7px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: 13px;
   color: #d7e5e9;
   background: #1a272e;
   border-color: #34454e;
@@ -1443,7 +1408,7 @@ onBeforeUnmount(stopCapture);
 .capture-status {
   padding: 7px 8px;
   margin-top: 7px;
-  font-size: 9px;
+  font-size: 12px;
   color: #8eb0bd;
   background: rgb(255 255 255 / 4%);
   border-radius: 7px;

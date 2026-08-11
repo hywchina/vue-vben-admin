@@ -115,18 +115,15 @@ const filteredJobs = computed(() => {
             </div>
             <div class="job-row__actions">
               <Button
-                v-if="job.outputAssetId"
                 type="link"
-                @click="router.push('/assets')"
+                @click="
+                  router.push({
+                    path: `/workspace/${job.appKey}`,
+                    query: { instanceId: job.workspaceInstanceId },
+                  })
+                "
               >
-                查看输出
-              </Button>
-              <Button
-                v-else
-                type="link"
-                @click="router.push(`/workspace/${job.appKey}`)"
-              >
-                打开工作区
+                打开会话
               </Button>
             </div>
           </article>
