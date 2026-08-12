@@ -16,13 +16,14 @@
     "build:analyze": "pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development",
     "preview": "vite preview",
-    "test:unit": "vitest run --dom src/store/platform*.test.ts",
+    "test:unit": "vitest run --dom src/store/platform*.test.ts src/views/platform/design/*.test.ts src/views/platform/workspace/region-annotation.test.ts",
     "typecheck": "vue-tsc --noEmit --skipLibCheck"
   },
   "imports": {
     "#/*": "./src/*"
   },
   "dependencies": {
+    "@iconify-json/lucide": "catalog:",
     "@vben/access": "workspace:*",
     "@vben/common-ui": "workspace:*",
     "@vben/constants": "workspace:*",
@@ -41,10 +42,12 @@
     "ant-design-vue": "catalog:",
     "dayjs": "catalog:",
     "pinia": "catalog:",
+    "three": "catalog:",
     "vue": "catalog:",
     "vue-router": "catalog:"
   },
   "devDependencies": {
+    "@types/three": "catalog:",
     "sass": "catalog:",
     "sass-embedded": "catalog:"
   }

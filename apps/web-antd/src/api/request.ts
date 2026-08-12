@@ -66,6 +66,9 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
 
       config.headers.Authorization = formatToken(accessStore.accessToken);
       config.headers['Accept-Language'] = preferences.app.locale;
+      if (config.data instanceof FormData) {
+        config.headers.delete('Content-Type');
+      }
       return config;
     },
   });

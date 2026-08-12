@@ -1,4 +1,9 @@
 <script lang="ts" setup>
+import type {
+  RegionPoint as Point,
+  RegionStroke as Stroke,
+} from './region-annotation';
+
 import type { CapabilityField, PlatformAsset } from '#/modules/platform/types';
 
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
@@ -13,21 +18,11 @@ import ComfyMaskIcon from '#/components/platform/comfy-mask-icon.vue';
 import ImageLightbox from '#/components/platform/image-lightbox.vue';
 
 import AssetPickerModal from './asset-picker-modal.vue';
-
-interface Point {
-  x: number;
-  y: number;
-}
-
-interface Stroke {
-  color: string;
-  marker?: string;
-  mode: 'brush' | 'erase';
-  opacity: number;
-  points: Point[];
-  size: number;
-  type: 'box' | 'free' | 'square';
-}
+import {
+  drawRegionStroke,
+  parseRegionStrokes,
+  serializeRegionStrokes,
+} from './region-annotation';
 
 interface CaptureCrop {
   height: number;
@@ -114,7 +109,7 @@ async function loadPreview(assetId?: string) {
   previewUrl.value = '';
   strokes.value =
     props.field.type === 'region'
-      ? parseBrushData(String(props.value ?? ''))
+      ? parseRegionStrokes(String(props.value ?? ''))
       : [];
   activeStroke.value = undefined;
   undoHistory.value = [];
@@ -152,95 +147,13 @@ function canvasPoint(event: PointerEvent) {
   };
 }
 
-function parseBrushData(value: string) {
-  if (!value) return [];
-  return value.split('|').flatMap((serialized): Stroke[] => {
-    const parts = serialized.split(':');
-    if (parts.length < 6) return [];
-    const [mode, type, size, opacity, color] = parts;
-    let marker: string | undefined;
-    let pointsIndex = 5;
-    if (/^[1-6]$/.test(parts[5] ?? '') && parts.length >= 7) {
-      marker = parts[5];
-      pointsIndex = 6;
-    }
-    if (
-      !['brush', 'erase'].includes(mode ?? '') ||
-      !['box', 'free', 'square'].includes(type ?? '')
-    ) {
-      return [];
-    }
-    const points = parts
-      .slice(pointsIndex)
-      .join(':')
-      .split(';')
-      .flatMap((point) => {
-        const coordinates = point.split(',');
-        const x = Number(coordinates[0]);
-        const y = Number(coordinates[1]);
-        return Number.isFinite(x) && Number.isFinite(y) ? [{ x, y }] : [];
-      });
-    if (points.length === 0) return [];
-    return [
-      {
-        color: color ?? '255,0,0',
-        marker,
-        mode: mode as Stroke['mode'],
-        opacity: Number(opacity) || 1,
-        points,
-        size: Number(size) || 4,
-        type: type as Stroke['type'],
-      },
-    ];
-  });
-}
-
-function drawStroke(context: CanvasRenderingContext2D, stroke: Stroke) {
-  if (stroke.points.length === 0) return;
-  const first = stroke.points[0] ?? { x: 0, y: 0 };
-  const last = stroke.points.at(-1) ?? first;
-  context.save();
-  context.globalAlpha = stroke.opacity;
-  if (stroke.mode === 'erase') {
-    context.globalCompositeOperation = 'destination-out';
-  }
-  context.beginPath();
-  context.lineCap = 'round';
-  context.lineJoin = 'round';
-  context.lineWidth = stroke.size;
-  context.strokeStyle = `rgb(${stroke.color})`;
-  context.fillStyle = stroke.marker ? '#ffe34d' : `rgb(${stroke.color})`;
-  if (stroke.type === 'free') {
-    context.moveTo(first.x, first.y);
-    for (const point of stroke.points.slice(1))
-      context.lineTo(point.x, point.y);
-    context.stroke();
-  } else {
-    const x = Math.min(first.x, last.x);
-    const y = Math.min(first.y, last.y);
-    const width = Math.abs(last.x - first.x);
-    const height = Math.abs(last.y - first.y);
-    if (stroke.type === 'box') context.strokeRect(x, y, width, height);
-    else context.fillRect(x, y, width, height);
-    if (stroke.marker) {
-      context.globalAlpha = 1;
-      context.fillStyle = '#111';
-      context.font = `700 ${Math.max(14, Math.min(width, height) * 0.55)}px sans-serif`;
-      context.textAlign = 'center';
-      context.textBaseline = 'middle';
-      context.fillText(stroke.marker, x + width / 2, y + height / 2);
-    }
-  }
-  context.restore();
-}
-
 function redraw() {
   const canvas = canvasRef.value;
   const context = canvas?.getContext('2d');
   if (!canvas || !context) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
-  for (const stroke of strokes.value) drawStroke(context, stroke);
-  if (activeStroke.value) drawStroke(context, activeStroke.value);
+  for (const stroke of strokes.value) drawRegionStroke(context, stroke);
+  if (activeStroke.value) drawRegionStroke(context, activeStroke.value);
 }
 
 function startDrawing(event: PointerEvent) {
@@ -272,17 +185,7 @@ function continueDrawing(event: PointerEvent) {
 }
 
 function serializeStrokes() {
-  return strokes.value
-    .filter((stroke) => stroke.points.length > 0)
-    .map(
-      (stroke) =>
-        `${stroke.mode}:${stroke.type}:${stroke.size}:${stroke.opacity}:${stroke.color}${
-          stroke.marker ? `:${stroke.marker}` : ''
-        }:${stroke.points
-          .map((point) => `${point.x.toFixed(2)},${point.y.toFixed(2)}`)
-          .join(';')}`,
-    )
-    .join('|');
+  return serializeRegionStrokes(strokes.value);
 }
 
 function finishDrawing() {
@@ -675,7 +578,7 @@ watch(
     ) {
       return;
     }
-    strokes.value = parseBrushData(String(value ?? ''));
+    strokes.value = parseRegionStrokes(String(value ?? ''));
     await nextTick();
     redraw();
   },
@@ -823,7 +726,7 @@ onBeforeUnmount(stopCapture);
       </span>
       <div v-if="!previewUrl" class="media-placeholder">
         <IconifyIcon
-          :icon="loadingPreview ? 'lucide:loader-circle' : 'lucide:scan-image'"
+          :icon="loadingPreview ? 'lucide:loader-circle' : 'lucide:scan'"
         />
         <p>{{ loadingPreview ? '正在读取预览' : '选择项目资产或导入图像' }}</p>
       </div>
@@ -1263,9 +1166,10 @@ onBeforeUnmount(stopCapture);
 
 .marker-buttons button.active {
   color: #fff;
-  background: var(--field-accent);
-  border-color: var(--field-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--field-accent) 28%, transparent);
+  background: var(--field-accent, #c51f3a);
+  border-color: var(--field-accent, #c51f3a);
+  box-shadow: 0 0 0 2px
+    color-mix(in srgb, var(--field-accent, #c51f3a) 28%, transparent);
 }
 
 .editor-viewport {

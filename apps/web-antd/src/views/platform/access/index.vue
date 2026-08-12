@@ -37,7 +37,7 @@ const filteredUsers = computed(() => {
   const normalized = keyword.value.trim().toLowerCase();
   if (!normalized) return platformStore.users;
   return platformStore.users.filter((user) =>
-    `${user.name}${user.username}${user.email}${user.department}${user.roles.join('')}`
+    `${user.name}${user.publicId}${user.username}${user.email}${user.department}${user.roles.join('')}`
       .toLowerCase()
       .includes(normalized),
   );
@@ -119,7 +119,7 @@ async function toggleStatus(user: PlatformUser) {
                 v-model:value="keyword"
                 allow-clear
                 class="user-search"
-                placeholder="搜索用户、部门或角色"
+                placeholder="搜索用户 ID、姓名、部门或角色"
               >
                 <template #prefix>
                   <IconifyIcon icon="lucide:search" />
@@ -144,9 +144,22 @@ async function toggleStatus(user: PlatformUser) {
                 <div class="user-identity">
                   <span class="user-avatar">{{ user.name.slice(0, 1) }}</span>
                   <div>
-                    <strong>{{ user.name }}</strong>
-                    <small>@{{ user.username }}</small>
-                    <small>{{ user.email || '未登记邮箱' }}</small>
+                    <strong>
+                      <b>姓名</b>
+                      {{ user.name }}
+                    </strong>
+                    <small>
+                      <b>用户 ID</b>
+                      {{ user.publicId }}
+                    </small>
+                    <small>
+                      <b>用户名</b>
+                      {{ user.username }}
+                    </small>
+                    <small>
+                      <b>邮箱</b>
+                      {{ user.email || '未登记' }}
+                    </small>
                   </div>
                 </div>
                 <span>{{ user.department }}</span>
@@ -262,7 +275,7 @@ async function toggleStatus(user: PlatformUser) {
 .user-row {
   display: grid;
   grid-template-columns:
-    minmax(160px, 1.1fr) minmax(130px, 0.8fr) minmax(170px, 1fr)
+    minmax(240px, 1.35fr) minmax(110px, 0.65fr) minmax(120px, 0.7fr)
     70px 100px 70px 110px;
   gap: 14px;
   align-items: center;
@@ -279,8 +292,8 @@ async function toggleStatus(user: PlatformUser) {
 }
 
 .user-row {
-  min-height: 68px;
-  font-size: 10px;
+  min-height: 96px;
+  font-size: 12px;
   border-top: 1px solid var(--rail-line);
 }
 
@@ -306,15 +319,30 @@ async function toggleStatus(user: PlatformUser) {
 .user-identity > div {
   display: flex;
   flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
 
 .user-identity strong {
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .user-identity small {
-  font-size: 9px;
+  display: flex;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
   color: var(--rail-steel);
+  white-space: nowrap;
+}
+
+.user-identity b {
+  flex: 0 0 48px;
+  font-size: 10px;
+  font-weight: 650;
+  color: #7c858d;
 }
 
 .user-roles {
@@ -346,15 +374,19 @@ async function toggleStatus(user: PlatformUser) {
 }
 
 .role-card {
+  min-width: 0;
   padding: 18px;
+  overflow: hidden;
   border: 1px solid var(--rail-line);
   border-radius: 12px;
 }
 
 .role-card__head {
   display: flex;
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
 }
 
 .role-card__head > span {
@@ -369,9 +401,14 @@ async function toggleStatus(user: PlatformUser) {
 }
 
 .role-card__head :deep(.ant-tag) {
+  flex: 0 0 auto;
+  max-width: calc(100% - 50px);
   margin: 0;
-  font-size: 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 10px;
   color: var(--rail-steel);
+  white-space: nowrap;
 }
 
 .role-editor {
@@ -471,11 +508,18 @@ async function toggleStatus(user: PlatformUser) {
 
 .role-card__scope {
   display: flex;
+  gap: 8px;
   justify-content: space-between;
   padding-top: 12px;
   margin-top: 14px;
   font-size: 9px;
   border-top: 1px solid var(--rail-line);
+}
+
+.role-card__scope strong {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .role-card__scope span {

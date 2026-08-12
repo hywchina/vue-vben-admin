@@ -1,4 +1,5 @@
 import {
+  CopyObjectCommand,
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -168,5 +169,20 @@ export async function deleteObject(objectKey: string) {
   const config = getConfig();
   await useInternalClient().send(
     new DeleteObjectCommand({ Bucket: config.s3Bucket, Key: objectKey }),
+  );
+}
+
+export async function copyObject(
+  sourceObjectKey: string,
+  targetObjectKey: string,
+) {
+  const config = getConfig();
+  await ensureStorageBucket();
+  return await useInternalClient().send(
+    new CopyObjectCommand({
+      Bucket: config.s3Bucket,
+      CopySource: `${config.s3Bucket}/${encodeURIComponent(sourceObjectKey).replaceAll('%2F', '/')}`,
+      Key: targetObjectKey,
+    }),
   );
 }

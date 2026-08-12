@@ -8,12 +8,27 @@ import { parseQuery } from '~/utils/validation';
 
 const querySchema = z.object({
   designConversationId: z.string().uuid().optional(),
+  ownerId: z.string().uuid().optional(),
   projectId: z.string().uuid(),
+  search: z.string().trim().max(200).optional(),
+  sortBy: z.enum(['createdAt', 'name', 'owner', 'status']).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  status: z
+    .enum(['active', 'cancelled', 'failed', 'queued', 'running', 'succeeded'])
+    .optional(),
 });
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const { designConversationId, projectId } = parseQuery(event, querySchema);
+  const {
+    designConversationId,
+    ownerId,
+    projectId,
+    search,
+    sortBy,
+    sortOrder,
+    status,
+  } = parseQuery(event, querySchema);
   await requireProjectAccess(identity, projectId);
   if (designConversationId) {
     await requireDesignConversation({
@@ -37,6 +52,9 @@ export default apiHandler(async (event) => {
       id: string;
       inputAssetIds: null | string[];
       inputs: Array<{
+        annotationAssetId?: string;
+        annotationMimeType?: string;
+        annotationName?: string;
         assetId: string;
         derivedFromAssetId?: string;
         kind: string;
@@ -56,9 +74,11 @@ export default apiHandler(async (event) => {
       }>;
       ownedByCurrentUser: boolean;
       owner: string;
+      ownerPublicId: string;
       parameters: Record<string, unknown>;
       progress: number;
       projectId: string;
+      publicId: string;
       stage: string;
       startedAt: Date | null;
       status: string;
@@ -69,6 +89,7 @@ export default apiHandler(async (event) => {
   >`
     SELECT
       j.id,
+      j.public_id AS "publicId",
       j.project_id AS "projectId",
       j.app_key AS "appKey",
       j.design_conversation_id AS "designConversationId",
@@ -90,6 +111,7 @@ export default apiHandler(async (event) => {
       j.error ->> 'message' AS "errorMessage",
       wv.version AS "workflowVersion",
       u.real_name AS owner,
+      u.public_id AS "ownerPublicId",
       COALESCE((
         SELECT array_agg(input_link.asset_id::text ORDER BY input_link.position)
         FROM job_inputs input_link
@@ -99,6 +121,9 @@ export default apiHandler(async (event) => {
         SELECT jsonb_agg(
           jsonb_build_object(
             'assetId', input_asset.id,
+            'annotationAssetId', annotation_asset.id,
+            'annotationMimeType', annotation_version.mime_type,
+            'annotationName', annotation_asset.name,
             'derivedFromAssetId', input_version.metadata ->> 'derivedFromAssetId',
             'kind', input_asset.kind,
             'mimeType', input_version.mime_type,
@@ -112,6 +137,12 @@ export default apiHandler(async (event) => {
         JOIN asset_versions input_version
           ON input_version.asset_id = input_asset.id
           AND input_version.version = input_asset.current_version
+        LEFT JOIN assets annotation_asset
+          ON annotation_asset.id = input_link.annotation_asset_id
+          AND annotation_asset.deleted_at IS NULL
+        LEFT JOIN asset_versions annotation_version
+          ON annotation_version.asset_id = annotation_asset.id
+          AND annotation_version.version = annotation_asset.current_version
         WHERE input_link.job_id = j.id
       ), '[]'::jsonb) AS inputs,
       (
@@ -150,11 +181,33 @@ export default apiHandler(async (event) => {
       ON design_conversation.id = j.design_conversation_id
     LEFT JOIN workflow_versions wv ON wv.id = j.workflow_version_id
     WHERE j.project_id = ${projectId}
+      AND j.archived_at IS NULL
       AND (
         ${designConversationId ?? null}::uuid IS NULL
         OR j.design_conversation_id = ${designConversationId ?? null}
       )
-    ORDER BY j.created_at DESC
+      AND (${ownerId ?? null}::uuid IS NULL OR j.created_by = ${ownerId ?? null})
+      AND (
+        ${search ?? null}::text IS NULL
+        OR j.name ILIKE ('%' || ${search ?? null} || '%')
+        OR j.public_id ILIKE ('%' || ${search ?? null} || '%')
+        OR u.real_name ILIKE ('%' || ${search ?? null} || '%')
+      )
+      AND (
+        ${status ?? null}::text IS NULL
+        OR (${status ?? null} = 'active' AND j.status IN ('queued', 'running', 'cancelling'))
+        OR (${status ?? null} <> 'active' AND j.status = ${status ?? null})
+      )
+    ORDER BY
+      CASE WHEN ${sortBy} = 'name' AND ${sortOrder} = 'asc' THEN lower(j.name) END ASC,
+      CASE WHEN ${sortBy} = 'name' AND ${sortOrder} = 'desc' THEN lower(j.name) END DESC,
+      CASE WHEN ${sortBy} = 'owner' AND ${sortOrder} = 'asc' THEN lower(u.real_name) END ASC,
+      CASE WHEN ${sortBy} = 'owner' AND ${sortOrder} = 'desc' THEN lower(u.real_name) END DESC,
+      CASE WHEN ${sortBy} = 'status' AND ${sortOrder} = 'asc' THEN j.status END ASC,
+      CASE WHEN ${sortBy} = 'status' AND ${sortOrder} = 'desc' THEN j.status END DESC,
+      CASE WHEN ${sortBy} = 'createdAt' AND ${sortOrder} = 'asc' THEN j.created_at END ASC,
+      CASE WHEN ${sortBy} = 'createdAt' AND ${sortOrder} = 'desc' THEN j.created_at END DESC,
+      j.id ASC
   `;
 
   return jobs.map(({ completedAt, startedAt, ...job }) => ({

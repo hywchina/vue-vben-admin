@@ -38,6 +38,15 @@ const formSchema = computed((): VbenFormSchema[] => {
       componentProps: {
         disabled: true,
       },
+      fieldName: 'publicId',
+      help: '该用户 ID 全平台唯一，项目创建者或平台管理员可通过它邀请你加入项目。',
+      label: '用户 ID',
+    },
+    {
+      component: 'Input',
+      componentProps: {
+        disabled: true,
+      },
       fieldName: 'username',
       label: '登录用户名',
     },
@@ -99,6 +108,7 @@ function toFormValues(data: Awaited<ReturnType<typeof getUserInfoApi>>) {
     email: data.email ?? '',
     introduction: data.introduction ?? '',
     realName: data.realName,
+    publicId: data.publicId,
     rolesDisplay: data.roles.map((role) => roleLabels[role] ?? role).join('、'),
     username: data.username,
   };

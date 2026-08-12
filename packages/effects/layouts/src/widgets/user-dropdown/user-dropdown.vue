@@ -124,7 +124,7 @@ const refGlobalSearch = useTemplateRef('refGlobalSearch');
 const refTimezone = useTemplateRef('refTimezone');
 const refNotification = useTemplateRef('refNotification');
 
-const TimezoneIcon = createIconifyIcon('fluent-mdl2:world-clock');
+const TimezoneIcon = createIconifyIcon('lucide:globe-2');
 const [openPopover, hoverWatcher] = useHoverToggle(
   [refTrigger, refContent],
   () => props.hoverDelay,

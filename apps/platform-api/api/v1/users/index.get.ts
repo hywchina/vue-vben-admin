@@ -14,6 +14,7 @@ export default apiHandler(async (event) => {
       lastActive: Date;
       name: string;
       projectCount: number;
+      publicId: string;
       roleCodes: null | string[];
       roles: null | string[];
       status: 'disabled' | 'enabled';
@@ -22,13 +23,14 @@ export default apiHandler(async (event) => {
   >`
     SELECT
       u.id,
+      u.public_id AS "publicId",
       u.username,
       u.real_name AS name,
       u.department,
       COALESCE(u.email, '') AS email,
       u.status,
       COALESCE(u.last_login_at, u.created_at) AS "lastActive",
-      count(DISTINCT pm.project_id)::integer AS "projectCount",
+      count(DISTINCT p.id)::integer AS "projectCount",
       COALESCE(array_agg(DISTINCT r.name)
         FILTER (WHERE r.name IS NOT NULL), '{}') AS roles,
       COALESCE(array_agg(DISTINCT r.code)
@@ -37,6 +39,9 @@ export default apiHandler(async (event) => {
     LEFT JOIN user_roles ur ON ur.user_id = u.id
     LEFT JOIN roles r ON r.id = ur.role_id
     LEFT JOIN project_members pm ON pm.user_id = u.id
+    LEFT JOIN projects p
+      ON p.id = pm.project_id
+      AND p.archived_at IS NULL
     GROUP BY u.id
     ORDER BY u.created_at DESC
   `;

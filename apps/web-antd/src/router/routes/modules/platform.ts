@@ -2,6 +2,17 @@ import type { RouteRecordRaw } from 'vue-router';
 
 const routes: RouteRecordRaw[] = [
   {
+    component: () => import('#/views/platform/dashboard/index.vue'),
+    meta: {
+      affixTab: true,
+      icon: 'lucide:layout-dashboard',
+      order: -120,
+      title: '设计工作台',
+    },
+    name: 'PlatformDashboard',
+    path: '/home',
+  },
+  {
     component: () => import('#/views/platform/design/index.vue'),
     meta: {
       hideInTab: true,
@@ -14,48 +25,37 @@ const routes: RouteRecordRaw[] = [
     path: '/design',
   },
   {
+    component: () => import('#/views/platform/overview/index.vue'),
     meta: {
-      icon: 'lucide:gauge',
-      order: -100,
-      title: '平台概览',
-    },
-    name: 'PlatformWorkspace',
-    path: '/workspace',
-    redirect: '/workspace/overview',
-    children: [
-      {
-        component: () => import('#/views/platform/overview/index.vue'),
-        meta: {
-          affixTab: true,
-          icon: 'lucide:gauge',
-          title: '平台概览',
-        },
-        name: 'PlatformOverview',
-        path: 'overview',
-      },
-      {
-        component: () => import('#/views/platform/workspace/index.vue'),
-        meta: {
-          authority: ['admin'],
-          fullPathKey: true,
-          hideInMenu: true,
-          icon: 'lucide:workflow',
-          title: '应用工作区',
-        },
-        name: 'ApplicationWorkspace',
-        path: ':appKey',
-      },
-    ],
-  },
-  {
-    component: () => import('#/views/platform/projects/index.vue'),
-    meta: {
+      affixTab: true,
       icon: 'lucide:folder-kanban',
-      order: -90,
+      order: -100,
       title: '项目空间',
     },
     name: 'PlatformProjects',
     path: '/projects',
+  },
+  {
+    meta: {
+      hideInMenu: true,
+      hideInTab: true,
+      title: '项目空间',
+    },
+    name: 'LegacyPlatformOverview',
+    path: '/workspace/overview',
+    redirect: '/projects',
+  },
+  {
+    component: () => import('#/views/platform/workspace/index.vue'),
+    meta: {
+      authority: ['admin'],
+      fullPathKey: true,
+      hideInMenu: true,
+      icon: 'lucide:workflow',
+      title: '应用工作区',
+    },
+    name: 'ApplicationWorkspace',
+    path: '/workspace/:appKey',
   },
   {
     component: () => import('#/views/platform/assets/index.vue'),
@@ -66,17 +66,6 @@ const routes: RouteRecordRaw[] = [
     },
     name: 'PlatformAssets',
     path: '/assets',
-  },
-  {
-    component: () => import('#/views/platform/applications/index.vue'),
-    meta: {
-      authority: ['admin'],
-      icon: 'lucide:blocks',
-      order: -70,
-      title: '应用调试中心',
-    },
-    name: 'PlatformApplications',
-    path: '/applications',
   },
   {
     component: () => import('#/views/platform/jobs/index.vue'),

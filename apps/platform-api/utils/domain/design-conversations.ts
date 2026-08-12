@@ -6,6 +6,7 @@ export interface DesignConversationRecord {
   id: string;
   projectId: string;
   title: string;
+  titleManuallyEdited: boolean;
   userId: string;
 }
 
@@ -22,6 +23,7 @@ export async function requireDesignConversation(input: {
       user_id AS "userId",
       project_id AS "projectId",
       title,
+      title_manually_edited AS "titleManuallyEdited",
       archived_at AS "archivedAt"
     FROM design_conversations
     WHERE id = ${input.conversationId}

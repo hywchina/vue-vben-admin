@@ -2,11 +2,13 @@ import { createApp, watchEffect } from 'vue';
 
 import { registerAccessDirective } from '@vben/access';
 import { registerLoadingDirective } from '@vben/common-ui/es/loading';
+import { addCollection, addIcon } from '@vben/icons';
 import { preferences } from '@vben/preferences';
 import { initStores } from '@vben/stores';
 import '@vben/styles';
 import '@vben/styles/antd';
 
+import { icons as lucideIcons } from '@iconify-json/lucide';
 import { useTitle } from '@vueuse/core';
 
 import { $t, setupI18n } from '#/locales';
@@ -19,6 +21,17 @@ import { router } from './router';
 import './styles/platform.css';
 
 async function bootstrap(namespace: string) {
+  // 平台图标必须随 Web 产物本地发布，不能依赖浏览器访问 Iconify 公网 API。
+  addCollection(lucideIcons);
+  for (const [legacyName, localName] of Object.entries({
+    'badge-sparkles': 'sparkles',
+    'box-off': 'package-x',
+    'scan-image': 'scan',
+  })) {
+    const icon = lucideIcons.icons[localName];
+    if (icon) addIcon(`lucide:${legacyName}`, icon);
+  }
+
   // 初始化组件适配器
   await initComponentAdapter();
 

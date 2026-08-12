@@ -13,6 +13,7 @@ export interface PlatformUserInfo extends UserInfo {
   email: string;
   id: string;
   introduction: string;
+  publicId: string;
   roles: string[];
 }
 
@@ -21,6 +22,16 @@ export interface PlatformUserInfo extends UserInfo {
  */
 export async function getUserInfoApi() {
   return requestClient.get<PlatformUserInfo>('/user/info');
+}
+
+export function uploadUserAvatarApi(file: File) {
+  const formData = new FormData();
+  formData.append('file', file, file.name);
+  return requestClient.post<{
+    avatar: string;
+    mimeType: string;
+    sizeBytes: number;
+  }>('/user/avatar', formData);
 }
 
 export function updateUserProfileApi(input: {

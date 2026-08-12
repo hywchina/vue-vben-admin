@@ -3,6 +3,10 @@ import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
 import { CAPABILITY_ADAPTER_NOT_CONFIGURED } from '~/utils/domain/capabilities/adapter';
+import {
+  DEFAULT_DESIGN_CONVERSATION_TITLE,
+  deriveDesignConversationTitle,
+} from '~/utils/domain/design-conversation-titles';
 import { requireDesignConversation } from '~/utils/domain/design-conversations';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
@@ -26,6 +30,15 @@ const createJobSchema = z
   .object({
     appKey: z.string().trim().min(1).max(100),
     designConversationId: z.string().uuid().optional(),
+    inputAnnotations: z
+      .array(
+        z.object({
+          assetId: z.string().uuid(),
+          position: z.number().int().min(0).max(99),
+        }),
+      )
+      .max(100)
+      .default([]),
     inputAssetIds: z.array(z.string().uuid()).max(100).default([]),
     inputTransferIds: z.array(z.string().uuid()).max(100).default([]),
     name: z.string().trim().min(1).max(200),
@@ -98,6 +111,12 @@ export default apiHandler(async (event) => {
   const adapterConfigured = capability
     ? Boolean(getConfig().comfyuiApiUrl)
     : application.adapterConfigured;
+  const automaticConversationTitle = capability
+    ? deriveDesignConversationTitle(
+        input.parameters,
+        capability.parameterSchema,
+      )
+    : undefined;
   let initialStage = '外部能力适配器尚未配置';
   let notificationMessage = '任务记录已保存，但该应用尚未配置外部能力适配器。';
   if (adapterConfigured) {
@@ -155,6 +174,59 @@ export default apiHandler(async (event) => {
     }
   }
 
+  const annotationsByPosition = new Map(
+    input.inputAnnotations.map((annotation) => [
+      annotation.position,
+      annotation.assetId,
+    ]),
+  );
+  if (annotationsByPosition.size !== input.inputAnnotations.length) {
+    throw new ApiError(
+      400,
+      'INVALID_JOB_ANNOTATIONS',
+      '同一输入位置不能关联多张标记图',
+    );
+  }
+  if (input.inputAnnotations.length > 0) {
+    const annotationRows = await sql<
+      { derivedFromAssetId: null | string; id: string; kind: string }[]
+    >`
+      SELECT
+        annotation.id,
+        annotation.kind,
+        annotation_version.metadata ->> 'derivedFromAssetId'
+          AS "derivedFromAssetId"
+      FROM assets annotation
+      JOIN asset_versions annotation_version
+        ON annotation_version.asset_id = annotation.id
+        AND annotation_version.version = annotation.current_version
+      WHERE annotation.id IN ${sql(input.inputAnnotations.map((item) => item.assetId))}
+        AND annotation.project_id = ${input.projectId}
+        AND annotation.status = 'available'
+        AND annotation.saved_at IS NOT NULL
+        AND annotation.deleted_at IS NULL
+    `;
+    const annotationById = new Map(
+      annotationRows.map((annotation) => [annotation.id, annotation]),
+    );
+    for (const annotation of input.inputAnnotations) {
+      const originalAssetId = input.inputAssetIds[annotation.position];
+      const annotationAsset = annotationById.get(annotation.assetId);
+      if (
+        !originalAssetId ||
+        !annotationAsset ||
+        annotationAsset.kind !== 'image' ||
+        annotationAsset.derivedFromAssetId !== originalAssetId
+      ) {
+        throw new ApiError(
+          400,
+          'INVALID_JOB_ANNOTATIONS',
+          '标记图不存在、不是图片或与对应原始输入不匹配',
+        );
+      }
+    }
+  }
+
   const job = await sql.begin(async (transaction) => {
     const executionContextId =
       input.designConversationId ?? input.workspaceInstanceId;
@@ -188,6 +260,19 @@ export default apiHandler(async (event) => {
           ? '当前设计会话已有进行中的任务，请等待完成或取消后再运行'
           : '当前调试实例已有进行中的任务，请等待完成或取消后再运行',
       );
+    }
+    let designConversationTitle = designConversation?.title;
+    if (input.designConversationId && automaticConversationTitle) {
+      const [updatedConversation] = await transaction<{ title: string }[]>`
+        UPDATE design_conversations
+        SET title = ${automaticConversationTitle}, updated_at = now()
+        WHERE id = ${input.designConversationId}
+          AND title = ${DEFAULT_DESIGN_CONVERSATION_TITLE}
+          AND title_manually_edited = false
+        RETURNING title
+      `;
+      designConversationTitle =
+        updatedConversation?.title ?? designConversationTitle;
     }
     if (
       new Set(input.inputTransferIds).size !== input.inputTransferIds.length
@@ -246,6 +331,7 @@ export default apiHandler(async (event) => {
         createdAt: Date;
         id: string;
         progress: number;
+        publicId: string;
         stage: string;
         status: string;
       }[]
@@ -275,14 +361,18 @@ export default apiHandler(async (event) => {
         ${input.workspaceInstanceId ?? null},
         ${input.designConversationId ?? null}
       )
-      RETURNING id, status, stage, progress, created_at AS "createdAt"
+      RETURNING id, public_id AS "publicId", status, stage, progress, created_at AS "createdAt"
     `;
     if (!created) throw new Error('创建任务失败');
 
     for (const [position, assetId] of input.inputAssetIds.entries()) {
       await transaction`
-        INSERT INTO job_inputs (job_id, asset_id, position)
-        VALUES (${created.id}, ${assetId}, ${position})
+        INSERT INTO job_inputs (
+          job_id, asset_id, position, annotation_asset_id
+        ) VALUES (
+          ${created.id}, ${assetId}, ${position},
+          ${annotationsByPosition.get(position) ?? null}
+        )
       `;
     }
     if (adapterConfigured && capability) {
@@ -312,7 +402,7 @@ export default apiHandler(async (event) => {
         WHERE id = ${input.designConversationId}
       `;
     }
-    return created;
+    return { ...created, designConversationTitle };
   });
 
   await writeAudit(event, {
@@ -321,6 +411,7 @@ export default apiHandler(async (event) => {
     details: {
       appKey: input.appKey,
       capabilityCode: capability?.code,
+      inputAnnotationCount: input.inputAnnotations.length,
       inputTransferCount: input.inputTransferIds.length,
       designConversationId: input.designConversationId,
       workspaceInstanceId: input.workspaceInstanceId,
@@ -350,6 +441,7 @@ export default apiHandler(async (event) => {
         },
     inputAssetIds: input.inputAssetIds,
     inputs: orderedInputAssets.map((asset, position) => ({
+      annotationAssetId: annotationsByPosition.get(position),
       assetId: asset.id,
       kind: asset.kind,
       mimeType: '',
@@ -365,7 +457,7 @@ export default apiHandler(async (event) => {
     projectId: input.projectId,
     createdBy: identity.id,
     designConversationId: designConversation?.id,
-    designConversationTitle: designConversation?.title,
+    designConversationTitle: job.designConversationTitle,
     workspaceInstanceId: workspaceInstance?.id,
     workspaceInstanceTitle: workspaceInstance?.title,
   };

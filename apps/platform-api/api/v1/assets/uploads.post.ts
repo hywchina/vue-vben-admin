@@ -17,6 +17,7 @@ const uploadSchema = z.object({
   description: z.string().trim().max(2000).optional().default(''),
   derivedFromAssetId: z.string().uuid().optional(),
   filename: z.string().trim().min(1).max(255),
+  folderId: z.string().uuid().optional(),
   kind: z.enum(ASSET_KINDS),
   mimeType: z.string().trim().min(1).max(255),
   name: z.string().trim().min(1).max(200),
@@ -52,6 +53,25 @@ export default apiHandler(async (event) => {
   const uploadUrl = await createUploadUrl(objectKey, input.mimeType);
   const sql = useDatabase();
 
+  if (input.folderId) {
+    const [folder] = await sql<{ id: string; kind: string }[]>`
+      SELECT id, kind FROM asset_folders
+      WHERE id = ${input.folderId}
+        AND project_id = ${input.projectId}
+        AND deleted_at IS NULL
+    `;
+    if (!folder) {
+      throw new ApiError(400, 'ASSET_FOLDER_NOT_FOUND', '目标文件夹不存在');
+    }
+    if (folder.kind === 'favorites') {
+      throw new ApiError(
+        400,
+        'ASSET_FAVORITES_FOLDER_READ_ONLY',
+        '不能直接把资产登记到收藏文件夹',
+      );
+    }
+  }
+
   if (input.derivedFromAssetId) {
     if (input.kind !== 'image') {
       throw new ApiError(
@@ -82,9 +102,10 @@ export default apiHandler(async (event) => {
   await sql.begin(async (transaction) => {
     await transaction`
       INSERT INTO assets (
-        id, project_id, name, description, kind, owner_id
+        id, project_id, folder_id, name, description, kind, owner_id
       ) VALUES (
-        ${assetId}, ${input.projectId}, ${input.name}, ${input.description},
+        ${assetId}, ${input.projectId}, ${input.folderId ?? null},
+        ${input.name}, ${input.description},
         ${input.kind}, ${identity.id}
       )
     `;

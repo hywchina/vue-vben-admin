@@ -5,6 +5,7 @@ export interface PlatformUser {
   lastActive: string;
   name: string;
   projectCount: number;
+  publicId: string;
   roleCodes: string[];
   roles: string[];
   status: 'disabled' | 'enabled';

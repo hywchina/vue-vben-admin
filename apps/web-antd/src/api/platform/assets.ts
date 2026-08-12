@@ -1,4 +1,8 @@
-import type { AssetType, PlatformAsset } from '#/modules/platform/types';
+import type {
+  AssetFolder,
+  AssetType,
+  PlatformAsset,
+} from '#/modules/platform/types';
 
 import { requestClient } from '#/api/request';
 
@@ -8,6 +12,7 @@ export interface PrepareAssetUploadInput {
   description: string;
   derivedFromAssetId?: string;
   file: File;
+  folderId?: string;
   kind: AssetType;
   name: string;
   projectId: string;
@@ -25,9 +30,28 @@ interface PreparedAssetUpload {
   };
 }
 
-export function getAssetsApi(projectId: string) {
+export interface AssetSortOptions {
+  sortBy: 'createdAt' | 'name' | 'owner' | 'type';
+  sortOrder: 'asc' | 'desc';
+}
+
+export function getAssetsApi(
+  projectId: string,
+  options?: Partial<AssetSortOptions> & { folderId?: string; ownerId?: string },
+) {
   return requestClient.get<PlatformAsset[]>('/assets', {
-    params: { projectId },
+    params: { projectId, ...options },
+  });
+}
+
+export function getAssetApi(assetId: string) {
+  return requestClient.get<PlatformAsset>(`/assets/${assetId}`);
+}
+
+export function renameAssetApi(assetId: string, name: string) {
+  return requestClient.request<PlatformAsset>(`/assets/${assetId}`, {
+    data: { name },
+    method: 'PATCH',
   });
 }
 
@@ -38,6 +62,7 @@ export async function uploadAssetApi(input: PrepareAssetUploadInput) {
       description: input.description,
       derivedFromAssetId: input.derivedFromAssetId,
       filename: input.file.name,
+      folderId: input.folderId,
       kind: input.kind,
       mimeType: input.file.type || 'application/octet-stream',
       name: input.name,
@@ -55,12 +80,56 @@ export async function uploadAssetApi(input: PrepareAssetUploadInput) {
 export function createTextAssetApi(input: {
   content: string;
   description: string;
+  folderId?: string;
   mimeType?: 'application/json' | 'text/markdown' | 'text/plain';
   name: string;
   projectId: string;
   tags?: string[];
 }) {
   return requestClient.post<PlatformAsset>('/assets/text', input);
+}
+
+export function getAssetFoldersApi(projectId: string) {
+  return requestClient.get<AssetFolder[]>('/asset-folders', {
+    params: { projectId },
+  });
+}
+
+export function createAssetFolderApi(input: {
+  name: string;
+  parentId?: null | string;
+  projectId: string;
+}) {
+  return requestClient.post<AssetFolder>('/asset-folders', input);
+}
+
+export function renameAssetFolderApi(folderId: string, name: string) {
+  return requestClient.request<{ id: string; name: string }>(
+    `/asset-folders/${folderId}`,
+    { data: { name }, method: 'PATCH' },
+  );
+}
+
+export function deleteAssetFolderApi(folderId: string) {
+  return requestClient.delete<{
+    assetCount: number;
+    deleted: true;
+    folderCount: number;
+    id: string;
+  }>(`/asset-folders/${folderId}`);
+}
+
+export function batchAssetsApi(input: {
+  assetIds: string[];
+  operation: 'copy' | 'delete' | 'move';
+  projectId: string;
+  targetFolderId?: null | string;
+}) {
+  return requestClient.post<{
+    copiedAssetIds?: string[];
+    deletedCount?: number;
+    movedCount?: number;
+  }>('/assets/batch', input);
 }
 
 export function setAssetFavoriteApi(assetId: string, favorite: boolean) {

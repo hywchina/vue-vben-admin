@@ -2,6 +2,7 @@
 import type {
   CapabilityField,
   PlatformJob,
+  PlatformJobInput,
   PlatformJobOutput,
 } from '#/modules/platform/types';
 
@@ -9,13 +10,15 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { message, Modal, Progress, Tag, Tooltip } from 'ant-design-vue';
+import { Button, message, Modal, Tag, Textarea, Tooltip } from 'ant-design-vue';
 
 import { getAssetDownloadApi, getAssetPreviewApi } from '#/api';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
 
 import ComfyMaskIcon from './comfy-mask-icon.vue';
 import ImageComparisonSlider from './image-comparison-slider.vue';
+import ImageLightbox from './image-lightbox.vue';
+import Model3dViewer from './model3d-viewer.vue';
 import PlatformMarkdown from './platform-markdown.vue';
 import StatusPill from './status-pill.vue';
 
@@ -30,6 +33,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   download: [output: PlatformJobOutput];
+  editInput: [input: PlatformJobInput, previewUrl: string];
+  editRerun: [job: PlatformJob, parameterKey: string, value: string];
   flow: [output: PlatformJobOutput];
   mask: [output: PlatformJobOutput, previewUrl: string];
   rerun: [job: PlatformJob];
@@ -39,7 +44,13 @@ const emit = defineEmits<{
 const activeOutputAssetId = ref('');
 const comparisonMode = ref(true);
 const inputDetailsOpen = ref(false);
+const editingPrompt = ref(false);
+const editedPrompt = ref('');
+const annotationLightboxOpen = ref(false);
+const annotationLightboxTitle = ref('');
+const annotationLightboxUrl = ref('');
 const previewUrls = reactive<Record<string, string>>({});
+const modelUrls = reactive<Record<string, string>>({});
 const textContents = reactive<Record<string, string>>({});
 
 const activeOutput = computed(
@@ -57,24 +68,35 @@ const firstImageInputField = computed(() =>
   ),
 );
 const comparesMaskedInput = computed(
-  () => firstImageInputField.value?.type === 'mask',
+  () =>
+    firstImageInputField.value?.type === 'mask' ||
+    (!firstImageInputField.value &&
+      Boolean(firstImageInput.value?.derivedFromAssetId)),
+);
+const comparesRegionInput = computed(
+  () =>
+    firstImageInputField.value?.type === 'region' ||
+    Boolean(firstImageInput.value?.annotationAssetId),
+);
+const requestsImageComparison = computed(
+  () => props.supportsImageComparison || comparesRegionInput.value,
 );
 const comparisonSourceAssetId = computed(() => {
   const input = firstImageInput.value;
   if (!input) return undefined;
   if (comparesMaskedInput.value) return input.derivedFromAssetId;
-  return input.derivedFromAssetId ?? input.assetId;
+  return input.assetId;
 });
 const missingMaskComparisonSource = computed(
   () =>
-    props.supportsImageComparison &&
+    requestsImageComparison.value &&
     activeOutput.value?.kind === 'image' &&
     comparesMaskedInput.value &&
     !firstImageInput.value?.derivedFromAssetId,
 );
 const comparisonAvailable = computed(
   () =>
-    props.supportsImageComparison &&
+    requestsImageComparison.value &&
     activeOutput.value?.kind === 'image' &&
     Boolean(
       comparisonSourceAssetId.value &&
@@ -90,6 +112,7 @@ const promptEntry = computed(() => {
   );
   if (!preferred) return undefined;
   return {
+    key: preferred.key,
     label: preferred.label,
     value: String(props.job.parameters[preferred.key]),
   };
@@ -123,11 +146,38 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function modelFormat(output: PlatformJobOutput) {
+  const extension = output.name.toLowerCase().match(/\.([a-z\d]+)$/)?.[1];
+  if (extension) return extension;
+  const mimeFormats: Record<string, string> = {
+    'application/sla': 'stl',
+    'model/gltf+json': 'gltf',
+    'model/gltf-binary': 'glb',
+    'model/obj': 'obj',
+    'model/stl': 'stl',
+  };
+  return mimeFormats[output.mimeType.toLowerCase()] ?? '';
+}
+
 function inputFieldLabel(position: number) {
   return (
     props.fields.find((field) => field.assetIndex === position)?.label ??
     `输入 ${position + 1}`
   );
+}
+
+function startEditingPrompt() {
+  if (!promptEntry.value) return;
+  editedPrompt.value = promptEntry.value.value;
+  editingPrompt.value = true;
+}
+
+function submitEditedPrompt() {
+  const value = editedPrompt.value.trim();
+  const parameterKey = promptEntry.value?.key;
+  if (!parameterKey || !value) return;
+  editingPrompt.value = false;
+  emit('editRerun', props.job, parameterKey, value);
 }
 
 async function copyText(content: string, successMessage: string) {
@@ -180,6 +230,11 @@ async function loadAssetContent(assetId: string, kind: string) {
       }
       const response = await fetch(result.url);
       textContents[assetId] = await response.text();
+      return;
+    }
+    if (kind === 'model3d') {
+      const preview = await getAssetPreviewApi(assetId);
+      if (preview.mode === 'url') modelUrls[assetId] = preview.url;
     }
   } catch {
     // 资产可能已被软删除；仍保留任务快照名称与血缘信息。
@@ -191,10 +246,26 @@ async function loadPreviews() {
     ? [{ assetId: comparisonSourceAssetId.value, kind: 'image' }]
     : [];
   await Promise.all(
-    [...props.job.inputs, ...props.job.outputs, ...comparisonSource].map(
-      (asset) => loadAssetContent(asset.assetId, asset.kind),
-    ),
+    [
+      ...props.job.inputs,
+      ...props.job.inputs.flatMap((input) =>
+        input.annotationAssetId
+          ? [{ assetId: input.annotationAssetId, kind: 'image' }]
+          : [],
+      ),
+      ...props.job.outputs,
+      ...comparisonSource,
+    ].map((asset) => loadAssetContent(asset.assetId, asset.kind)),
   );
+}
+
+function openAnnotation(input: PlatformJobInput) {
+  if (!input.annotationAssetId) return;
+  const url = previewUrls[input.annotationAssetId];
+  if (!url) return;
+  annotationLightboxTitle.value = input.annotationName || '分区标记图';
+  annotationLightboxUrl.value = url;
+  annotationLightboxOpen.value = true;
 }
 
 watch(
@@ -238,41 +309,105 @@ onMounted(() => void loadPreviews());
             class="round-input__visible-assets"
             data-testid="round-visible-input-assets"
           >
-            <article
-              v-for="input in job.inputs"
-              :key="input.assetId"
-              :class="{
-                'is-image':
-                  input.kind === 'image' && previewUrls[input.assetId],
-              }"
-              :title="`${inputFieldLabel(input.position)}：${input.name || input.assetId}`"
-            >
-              <img
-                v-if="previewUrls[input.assetId]"
-                :alt="input.name"
-                :src="previewUrls[input.assetId]"
-              />
-              <template v-else>
-                <span>
-                  <IconifyIcon icon="lucide:file-input" />
-                  {{ assetTypeLabels[input.kind] }}
-                </span>
-                <small>{{ inputFieldLabel(input.position) }}</small>
-                <strong>{{ input.name || input.assetId }}</strong>
-              </template>
-            </article>
+            <template v-for="input in job.inputs" :key="input.assetId">
+              <article
+                :class="{
+                  'is-image':
+                    input.kind === 'image' && previewUrls[input.assetId],
+                }"
+                :title="`${inputFieldLabel(input.position)}：${input.name || input.assetId}`"
+              >
+                <button
+                  v-if="previewUrls[input.assetId]"
+                  :aria-label="`查看并编辑输入图片：${input.name || inputFieldLabel(input.position)}`"
+                  class="round-input-image"
+                  type="button"
+                  @click="emit('editInput', input, previewUrls[input.assetId]!)"
+                >
+                  <img :alt="input.name" :src="previewUrls[input.assetId]" />
+                  <span
+                    v-if="input.annotationAssetId"
+                    class="input-image-label"
+                  >
+                    标记前原图
+                  </span>
+                  <ComfyMaskIcon :size="16" />
+                </button>
+                <template v-else>
+                  <span>
+                    <IconifyIcon icon="lucide:file-input" />
+                    {{ assetTypeLabels[input.kind] }}
+                  </span>
+                  <small>{{ inputFieldLabel(input.position) }}</small>
+                  <strong>{{ input.name || input.assetId }}</strong>
+                </template>
+              </article>
+              <article
+                v-if="
+                  input.annotationAssetId &&
+                  previewUrls[input.annotationAssetId]
+                "
+                :key="`${input.assetId}:annotation`"
+                class="is-image"
+                :title="input.annotationName || '分区标记图'"
+              >
+                <button
+                  :aria-label="`查看分区标记图：${input.annotationName || input.name}`"
+                  class="round-input-image"
+                  type="button"
+                  @click="openAnnotation(input)"
+                >
+                  <img
+                    :alt="input.annotationName || '分区标记图'"
+                    :src="previewUrls[input.annotationAssetId]"
+                  />
+                  <span class="input-image-label">分区标记图</span>
+                  <IconifyIcon icon="lucide:maximize-2" />
+                </button>
+              </article>
+            </template>
           </div>
-          <div class="round-input__bubble">
+          <div v-if="!editingPrompt" class="round-input__bubble">
             <strong>{{ promptEntry?.label ?? '本轮输入' }}</strong>
             <p>
               {{ promptEntry?.value ?? '使用当前参数和输入素材执行工作流。' }}
             </p>
+          </div>
+          <div v-else class="round-input__editor">
+            <Textarea
+              v-model:value="editedPrompt"
+              :auto-size="{ minRows: 3, maxRows: 8 }"
+              :maxlength="6000"
+              @press-enter="
+                !$event.shiftKey &&
+                (submitEditedPrompt(), $event.preventDefault())
+              "
+            />
+            <div>
+              <Button @click="editingPrompt = false">取消</Button>
+              <Button
+                :disabled="!editedPrompt.trim()"
+                type="primary"
+                @click="submitEditedPrompt"
+              >
+                发送
+              </Button>
+            </div>
           </div>
         </div>
         <div class="round-input-actions" data-testid="round-input-actions">
           <Tooltip title="复制本轮输入">
             <button aria-label="复制本轮输入" type="button" @click="copyInput">
               <IconifyIcon icon="lucide:copy" />
+            </button>
+          </Tooltip>
+          <Tooltip v-if="promptEntry" title="修改并重新发送本轮输入">
+            <button
+              aria-label="修改并重新发送本轮输入"
+              type="button"
+              @click="startEditingPrompt"
+            >
+              <IconifyIcon icon="lucide:pencil" />
             </button>
           </Tooltip>
           <Tooltip title="查看本轮参数">
@@ -294,16 +429,39 @@ onMounted(() => void loadPreviews());
       >
         <div class="round-input-details__body">
           <div v-if="job.inputs.length" class="round-input-assets">
-            <div v-for="input in job.inputs" :key="input.assetId">
-              <img
-                v-if="previewUrls[input.assetId]"
-                :alt="input.name"
-                :src="previewUrls[input.assetId]"
-              />
-              <IconifyIcon v-else icon="lucide:file-input" />
-              <span>输入 {{ input.position + 1 }}</span>
-              <strong>{{ input.name || input.assetId }}</strong>
-            </div>
+            <template v-for="input in job.inputs" :key="input.assetId">
+              <div>
+                <img
+                  v-if="previewUrls[input.assetId]"
+                  :alt="input.name"
+                  :src="previewUrls[input.assetId]"
+                />
+                <IconifyIcon v-else icon="lucide:file-input" />
+                <span>
+                  {{
+                    input.annotationAssetId
+                      ? '标记前原图'
+                      : `输入 ${input.position + 1}`
+                  }}
+                </span>
+                <strong>{{ input.name || input.assetId }}</strong>
+              </div>
+              <div
+                v-if="input.annotationAssetId"
+                :key="`${input.assetId}:annotation`"
+              >
+                <img
+                  v-if="previewUrls[input.annotationAssetId]"
+                  :alt="input.annotationName || '分区标记图'"
+                  :src="previewUrls[input.annotationAssetId]"
+                />
+                <IconifyIcon v-else icon="lucide:file-input" />
+                <span>分区标记图</span>
+                <strong>
+                  {{ input.annotationName || input.annotationAssetId }}
+                </strong>
+              </div>
+            </template>
           </div>
           <dl v-if="parameterEntries.length" class="round-parameters">
             <div v-for="entry in parameterEntries" :key="entry.key">
@@ -316,24 +474,18 @@ onMounted(() => void loadPreviews());
     </section>
 
     <section class="round-response">
-      <div v-if="isActive" class="round-running">
-        <div class="round-running__icon">
-          <i></i>
+      <div
+        v-if="isActive"
+        :aria-label="job.status === 'cancelling' ? '正在停止' : '正在生成'"
+        class="round-running"
+        role="status"
+      >
+        <div aria-hidden="true" class="round-running__icon">
           <i></i>
           <i></i>
           <i></i>
         </div>
-        <div>
-          <strong>{{ job.stage }}</strong>
-          <Progress
-            :percent="job.progress"
-            :show-info="false"
-            :stroke-color="accent"
-          />
-          <small v-if="job.externalReference">
-            Prompt ID · {{ job.externalReference }}
-          </small>
-        </div>
+        <span v-if="job.status === 'cancelling'">正在停止</span>
       </div>
 
       <div v-else-if="job.status === 'failed'" class="round-error">
@@ -404,30 +556,39 @@ onMounted(() => void loadPreviews());
           class="round-comparison-shell"
         >
           <ImageComparisonSlider
-            :after-label="comparesMaskedInput ? '遮罩生成结果' : '生成结果'"
+            :after-label="
+              comparesMaskedInput
+                ? '遮罩生成结果'
+                : comparesRegionInput
+                  ? '分区生成结果'
+                  : '生成结果'
+            "
             :after-src="previewUrls[activeOutput.assetId]!"
-            :before-label="comparesMaskedInput ? '遮罩前原图' : '原始输入'"
+            :before-label="
+              comparesMaskedInput
+                ? '遮罩前原图'
+                : comparesRegionInput
+                  ? '标记前原图'
+                  : '原始输入'
+            "
             :before-src="previewUrls[comparisonSourceAssetId]!"
           />
-          <button
-            aria-label="打开遮罩编辑器"
-            class="round-mask-trigger"
-            title="打开遮罩编辑器"
-            type="button"
-            @click.stop="
-              emit('mask', activeOutput, previewUrls[activeOutput.assetId]!)
-            "
-          >
-            <ComfyMaskIcon :size="17" />
-          </button>
         </div>
         <div
           v-else
           class="round-output-visual"
           :class="`output-${activeOutput.kind}`"
         >
+          <Model3dViewer
+            v-if="
+              activeOutput.kind === 'model3d' && modelUrls[activeOutput.assetId]
+            "
+            :format="modelFormat(activeOutput)"
+            :name="activeOutput.name"
+            :url="modelUrls[activeOutput.assetId]!"
+          />
           <img
-            v-if="previewUrls[activeOutput.assetId]"
+            v-else-if="previewUrls[activeOutput.assetId]"
             :alt="activeOutput.name"
             :src="previewUrls[activeOutput.assetId]"
           />
@@ -444,7 +605,9 @@ onMounted(() => void loadPreviews());
             <span>{{ assetTypeLabels[activeOutput.kind] }}</span>
           </div>
           <button
-            v-if="previewUrls[activeOutput.assetId]"
+            v-if="
+              activeOutput.kind === 'image' && previewUrls[activeOutput.assetId]
+            "
             aria-label="打开遮罩编辑器"
             class="round-mask-trigger"
             title="打开遮罩编辑器"
@@ -532,6 +695,11 @@ onMounted(() => void loadPreviews());
         </span>
       </div>
     </section>
+    <ImageLightbox
+      v-model:open="annotationLightboxOpen"
+      :title="annotationLightboxTitle"
+      :url="annotationLightboxUrl"
+    />
   </article>
 </template>
 
@@ -635,11 +803,56 @@ onMounted(() => void loadPreviews());
   border-radius: 9px;
 }
 
+.round-input-image {
+  position: relative;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 16px;
+}
+
+.input-image-label {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  padding: 3px 7px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: #fff;
+  pointer-events: none;
+  background: rgb(13 20 24 / 76%);
+  border-radius: 999px;
+}
+
 .round-input__visible-assets article.is-image img {
+  display: block;
   width: 176px;
   height: 176px;
   border: 1px solid #eadde0;
   border-radius: 16px;
+}
+
+.round-input-image > svg {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  color: #fff;
+  background: rgb(13 20 24 / 78%);
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.round-input-image:hover > svg,
+.round-input-image:focus-visible > svg {
+  opacity: 1;
 }
 
 .round-input__visible-assets article > span {
@@ -684,6 +897,22 @@ onMounted(() => void loadPreviews());
   font-size: 14px;
   line-height: 1.65;
   white-space: pre-wrap;
+}
+
+.round-input__editor {
+  display: grid;
+  gap: 10px;
+  width: min(680px, 72vw);
+  padding: 12px;
+  background: #f0f2f3;
+  border: 1px solid color-mix(in srgb, var(--round-accent) 32%, #d9e0e3);
+  border-radius: 15px 15px 4px;
+}
+
+.round-input__editor > div {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 .round-input-actions {
@@ -844,19 +1073,28 @@ onMounted(() => void loadPreviews());
   border-radius: 12px;
 }
 
+.round-running {
+  justify-content: center;
+  min-height: 54px;
+  padding: 10px;
+  color: #707980;
+  background: transparent;
+  border: 0;
+}
+
 .round-running__icon {
   display: flex;
-  gap: 4px;
+  gap: 5px;
   align-items: center;
-  height: 34px;
+  height: 18px;
 }
 
 .round-running__icon i {
-  width: 5px;
-  height: 28px;
+  width: 6px;
+  height: 6px;
   background: var(--round-accent);
-  border-radius: 9px;
-  animation: round-pulse 0.9s ease-in-out infinite alternate;
+  border-radius: 50%;
+  animation: round-pulse 1s ease-in-out infinite;
 }
 
 .round-running__icon i:nth-child(2) {
@@ -867,26 +1105,21 @@ onMounted(() => void loadPreviews());
   animation-delay: 0.24s;
 }
 
-.round-running__icon i:nth-child(4) {
-  animation-delay: 0.36s;
-}
-
-.round-running > div:last-child {
-  flex: 1;
-}
-
-.round-running strong,
+.round-running span,
 .round-error strong {
   font-size: 14px;
 }
 
-.round-running small,
 .round-error p,
 .round-error code {
   display: block;
+  max-height: 8em;
   margin: 4px 0 0;
+  overflow: auto;
   font-size: 12px;
   color: #727f86;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .round-error > svg {
@@ -896,6 +1129,7 @@ onMounted(() => void loadPreviews());
 
 .round-error > div {
   flex: 1;
+  min-width: 0;
 }
 
 .round-error code {
@@ -965,7 +1199,7 @@ onMounted(() => void loadPreviews());
   display: block;
   width: 100%;
   min-height: 0;
-  padding: 10px 18px;
+  padding: 0;
   color: #20282d;
   background: transparent;
   border: 0;
@@ -982,6 +1216,15 @@ onMounted(() => void loadPreviews());
 
 .round-output-visual.output-image {
   min-height: 0;
+  background: transparent;
+}
+
+.round-output-visual.output-model3d {
+  display: block;
+  width: 100%;
+  min-height: 520px;
+  padding: 0;
+  overflow: visible;
   background: transparent;
 }
 
@@ -1051,9 +1294,9 @@ onMounted(() => void loadPreviews());
 }
 
 @keyframes round-pulse {
-  to {
-    height: 10px;
+  50% {
     opacity: 0.4;
+    transform: translateY(-3px);
   }
 }
 

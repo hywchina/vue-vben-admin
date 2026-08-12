@@ -34,7 +34,10 @@ export default apiHandler(async (event) => {
   const sql = useDatabase();
   const [updated] = await sql<{ title: string; updatedAt: Date }[]>`
     UPDATE design_conversations
-    SET title = ${input.title}, updated_at = now()
+    SET
+      title = ${input.title},
+      title_manually_edited = true,
+      updated_at = now()
     WHERE id = ${conversationId}
     RETURNING title, updated_at AS "updatedAt"
   `;

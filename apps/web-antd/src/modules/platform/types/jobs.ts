@@ -27,9 +27,11 @@ export interface PlatformJob {
   outputAssetId?: string;
   outputs: PlatformJobOutput[];
   owner: string;
+  ownerPublicId: string;
   parameters: Record<string, unknown>;
   progress: number;
   projectId: string;
+  publicId: string;
   stage: string;
   status: JobStatus;
   workflowVersion?: number;
@@ -38,6 +40,9 @@ export interface PlatformJob {
 }
 
 export interface PlatformJobInput {
+  annotationAssetId?: string;
+  annotationMimeType?: string;
+  annotationName?: string;
   assetId: string;
   derivedFromAssetId?: string;
   kind: import('./assets').AssetType;

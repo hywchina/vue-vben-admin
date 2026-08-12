@@ -45,6 +45,7 @@ catalog:
   '@ctrl/tinycolor': ^4.2.0
   '@eslint-community/eslint-plugin-eslint-comments': ^4.7.2
   '@eslint/js': ^10.0.1
+  '@iconify-json/lucide': ^1.2.123
   '@iconify/json': ^2.2.504
   '@iconify/tailwind4': ^1.2.3
   '@iconify/vue': ^5.0.1
@@ -71,6 +72,7 @@ catalog:
   '@types/qrcode': ^1.5.6
   '@types/qs': ^6.15.1
   '@types/sortablejs': ^1.15.9
+  '@types/three': 0.180.0
   '@typescript-eslint/parser': ^8.65.0
   '@vitejs/plugin-vue': ^6.0.8
   '@vitejs/plugin-vue-jsx': ^5.1.6
@@ -157,6 +159,7 @@ catalog:
   tailwind-merge: ^3.6.0
   tailwindcss: ^4.3.3
   theme-colors: ^0.1.0
+  three: 0.180.0
   tippy.js: ^6.3.7
   tsdown: ^0.22.13
   tsx: ^4.23.5

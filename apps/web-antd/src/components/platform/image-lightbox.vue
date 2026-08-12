@@ -1,9 +1,9 @@
 <script lang="ts" setup>
-import { ref, watch } from 'vue';
+import { nextTick, reactive, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, Modal } from 'ant-design-vue';
+import { Button, Modal, Tooltip } from 'ant-design-vue';
 
 const props = defineProps<{
   open: boolean;
@@ -12,10 +12,44 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ 'update:open': [open: boolean] }>();
+const viewportRef = ref<HTMLElement>();
+const imageRef = ref<HTMLImageElement>();
 const zoom = ref(1);
+const pan = reactive({ x: 0, y: 0 });
+const dragging = ref(false);
+let dragStart = { panX: 0, panY: 0, pointerX: 0, pointerY: 0 };
+
+function clampPan() {
+  const viewport = viewportRef.value;
+  const image = imageRef.value;
+  if (!viewport || !image) return;
+  const maxX = Math.max(
+    0,
+    (image.clientWidth * zoom.value - viewport.clientWidth) / 2,
+  );
+  const maxY = Math.max(
+    0,
+    (image.clientHeight * zoom.value - viewport.clientHeight) / 2,
+  );
+  pan.x = Math.min(maxX, Math.max(-maxX, pan.x));
+  pan.y = Math.min(maxY, Math.max(-maxY, pan.y));
+}
+
+function resetView() {
+  zoom.value = 1;
+  pan.x = 0;
+  pan.y = 0;
+  dragging.value = false;
+}
 
 function setZoom(value: number) {
   zoom.value = Math.min(8, Math.max(0.1, value));
+  if (zoom.value <= 1) {
+    pan.x = 0;
+    pan.y = 0;
+  } else {
+    void nextTick(clampPan);
+  }
 }
 
 function handleWheel(event: WheelEvent) {
@@ -23,12 +57,42 @@ function handleWheel(event: WheelEvent) {
   setZoom(zoom.value * (event.deltaY < 0 ? 1.15 : 1 / 1.15));
 }
 
+function handlePointerDown(event: PointerEvent) {
+  if (event.button !== 0 || zoom.value <= 1) return;
+  event.preventDefault();
+  dragging.value = true;
+  dragStart = {
+    panX: pan.x,
+    panY: pan.y,
+    pointerX: event.clientX,
+    pointerY: event.clientY,
+  };
+  viewportRef.value?.setPointerCapture(event.pointerId);
+}
+
+function handlePointerMove(event: PointerEvent) {
+  if (!dragging.value) return;
+  pan.x = dragStart.panX + event.clientX - dragStart.pointerX;
+  pan.y = dragStart.panY + event.clientY - dragStart.pointerY;
+  clampPan();
+}
+
+function handlePointerUp(event: PointerEvent) {
+  if (!dragging.value) return;
+  dragging.value = false;
+  if (viewportRef.value?.hasPointerCapture(event.pointerId)) {
+    viewportRef.value.releasePointerCapture(event.pointerId);
+  }
+}
+
 watch(
   () => props.open,
   (open) => {
-    if (open) zoom.value = 1;
+    if (open) resetView();
   },
 );
+
+watch(() => props.url, resetView);
 </script>
 
 <template>
@@ -42,21 +106,45 @@ watch(
     @cancel="emit('update:open', false)"
   >
     <div class="lightbox-toolbar">
-      <Button size="small" @click="setZoom(zoom / 1.2)">
+      <Button aria-label="缩小图片" size="small" @click="setZoom(zoom / 1.2)">
         <IconifyIcon icon="lucide:zoom-out" />
       </Button>
       <span>{{ Math.round(zoom * 100) }}%</span>
-      <Button size="small" @click="setZoom(zoom * 1.2)">
+      <Button aria-label="放大图片" size="small" @click="setZoom(zoom * 1.2)">
         <IconifyIcon icon="lucide:zoom-in" />
       </Button>
-      <Button size="small" @click="setZoom(1)">原始比例</Button>
+      <Button size="small" @click="resetView">原始比例</Button>
+      <Tooltip title="放大后按住图片拖拽查看细节">
+        <span
+          aria-label="拖拽查看图片"
+          :class="{ active: zoom > 1 }"
+          class="lightbox-pan-tool"
+          role="img"
+        >
+          <IconifyIcon icon="lucide:hand" />
+        </span>
+      </Tooltip>
     </div>
-    <div class="lightbox-viewport" @wheel="handleWheel">
+    <div
+      ref="viewportRef"
+      :class="{ 'is-dragging': dragging, 'is-pannable': zoom > 1 }"
+      class="lightbox-viewport"
+      @pointercancel="handlePointerUp"
+      @pointerdown="handlePointerDown"
+      @pointermove="handlePointerMove"
+      @pointerup="handlePointerUp"
+      @wheel="handleWheel"
+    >
       <img
         v-if="url"
+        ref="imageRef"
         :alt="title || '图片预览'"
+        :draggable="false"
         :src="url"
-        :style="{ transform: `scale(${zoom})` }"
+        :style="{
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+        }"
+        @load="clampPan"
       />
     </div>
   </Modal>
@@ -76,11 +164,33 @@ watch(
   text-align: center;
 }
 
+.lightbox-pan-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  margin-left: 2px;
+  color: #8a949c;
+  cursor: help;
+  background: #f3f4f5;
+  border: 1px solid #d9dfe3;
+  border-radius: 6px;
+}
+
+.lightbox-pan-tool.active {
+  color: #fff;
+  background: var(--rail-red, #c71f3a);
+  border-color: var(--rail-red, #c71f3a);
+}
+
 .lightbox-viewport {
   display: grid;
   place-items: center;
   height: min(72vh, 780px);
-  overflow: auto;
+  overflow: hidden;
+  touch-action: none;
+  cursor: default;
+  user-select: none;
   background:
     linear-gradient(45deg, #20262b 25%, transparent 25%) 0 0 / 20px 20px,
     linear-gradient(45deg, transparent 75%, #20262b 75%) 0 0 / 20px 20px,
@@ -89,11 +199,25 @@ watch(
   border-radius: 12px;
 }
 
+.lightbox-viewport.is-pannable {
+  cursor: grab;
+}
+
+.lightbox-viewport.is-dragging {
+  cursor: grabbing;
+}
+
 .lightbox-viewport img {
   max-width: 100%;
   max-height: 100%;
+  pointer-events: none;
+  user-select: none;
   object-fit: contain;
   transform-origin: center;
   transition: transform 120ms ease;
+}
+
+.lightbox-viewport.is-dragging img {
+  transition: none;
 }
 </style>

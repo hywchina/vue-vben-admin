@@ -15,6 +15,7 @@ export default apiHandler(async (event) => {
   const sql = useDatabase();
   const [asset] = await sql<
     {
+      kind: string;
       mimeType: string;
       objectKey: null | string;
       projectId: string;
@@ -25,6 +26,7 @@ export default apiHandler(async (event) => {
   >`
     SELECT
       a.project_id AS "projectId",
+      a.kind,
       a.status,
       av.storage_kind AS "storageKind",
       av.object_key AS "objectKey",
@@ -54,7 +56,8 @@ export default apiHandler(async (event) => {
     asset.mimeType.startsWith('audio/') ||
     asset.mimeType.startsWith('text/') ||
     asset.mimeType === 'application/json' ||
-    asset.mimeType === 'application/pdf';
+    asset.mimeType === 'application/pdf' ||
+    asset.kind === 'model3d';
   if (!asset.objectKey || !previewableObject) {
     throw new ApiError(
       415,

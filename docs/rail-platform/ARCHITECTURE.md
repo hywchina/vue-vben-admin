@@ -115,7 +115,7 @@ flowchart LR
 | Monorepo | pnpm 11、Turborepo 2 | 工作区依赖、统一脚本、并行构建 |
 | Web 框架 | Vue 3、TypeScript、Vite | 单页应用、组件化页面和开发构建 |
 | 管理端基础 | Vue Vben Admin 5.7 | 登录守卫、布局、标签页、权限指令、偏好和通用组件 |
-| UI | Ant Design Vue、Iconify、项目 SCSS/CSS | 表单、弹窗、表格、状态与轨道交通品牌视觉 |
+| UI | Ant Design Vue、本地 Iconify Lucide 图标集、项目 SCSS/CSS | 表单、弹窗、表格、状态与轨道交通品牌视觉；运行时不依赖公网图标接口 |
 | 路由与状态 | Vue Router、Pinia | 页面路由、当前项目和 API 数据状态 |
 | HTTP 客户端 | Vben Request/Axios 封装 | Bearer 注入、刷新令牌、统一响应解包和错误提示 |
 | 平台 API | Nitro 2、H3、TypeScript | 文件式 REST 路由、中间件和生产服务构建 |
@@ -137,7 +137,7 @@ flowchart LR
 flowchart TB
   Layout["BasicLayout 固定外壳"]
   Layout --> Nav["左侧导航"]
-  Layout --> Header["顶栏：面包屑 / 当前项目 / 通知 / 用户"]
+  Layout --> Header["顶栏：面包屑 / 当前项目（首页与项目空间隐藏）/ 通知 / 用户"]
   Layout --> RouteArea["路由内容区"]
   Layout --> Tabs["多页签区域"]
   Layout --> Assistant["全局 AI 助手<br/>设计页隐藏 / 其他页面保留"]
@@ -158,16 +158,15 @@ flowchart TB
 | 模块 | 页面/入口 | 实现技术 | 当前功能 | 主要数据来源 |
 | --- | --- | --- | --- | --- |
 | 账号认证 | `/auth/login`、`register`、`forget-password`、`reset-password` | Vben Auth、Vue 表单、Zod、Pinia | 用户名密码登录、企业邮箱注册与找回密码、协议校验、登录态恢复 | 认证 API |
-| 固定平台外壳 | `layouts/basic.vue` | Vben BasicLayout、Pinia、Ant Design Vue | 导航、当前项目切换、通知、用户菜单、退出登录 | 项目、通知、当前用户 API |
-| 平台概览 | `/workspace/overview` | Vue 计算状态、平台组件 | 当前项目、资产/任务/成员统计、应用快捷入口、最近数据 | Platform Store |
-| 项目空间 | `/projects` | Vue、Pinia、Modal/Form | 查询可见项目、创建项目、切换项目上下文 | `/projects`、当前项目偏好 API |
-| 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、图片放大、详情、下载、收藏和软删除；未确认的工作流结果不进入列表 | 资产 API + MinIO/S3 |
-| 开始设计 | `/design?conversationId=:id` | 独立沉浸式 Vue 页面、Pinia、Canvas、MediaDevices | 单一左侧历史栏；无选择时默认文生文并展示应用快捷入口；选中后收起其他应用，主参数通过底部弹层原位编辑，完整参数只由“更多”打开；输入素材在发送前和轮次时间线中直接可见，历史输入的复制与参数入口悬浮出现；文本结果按 Markdown 阅读和复制，结果操作使用图标与 Tooltip；运行中可直接停止；同一时间线组合多个应用；会话内继续设计；遮罩、对比和特殊输入 | 设计会话、应用、资产、草稿、任务 API |
-| 应用调试中心 | `/applications` | 管理员权限路由、Vue 动态列表 | 管理员筛选能力、控制普通用户可见性并打开单功能调试 | `applications` 表与可见性 API |
-| 单能力调试 | `/workspace/:appKey?instanceId=:id` | 管理员权限路由、Canvas、MediaDevices | 保留应用实例、参数和旧精确流转链路，用于逐项能力联调，不作为普通用户入口 | 应用、调试实例、资产、任务 API |
-| 任务中心 | `/jobs` | Vue、Pinia、状态组件 | 统一显示不同应用的任务状态、进度、来源和输出入口 | `jobs`、`job_inputs`、`job_outputs` |
-| 个人中心 | `/profile` | Vben Profile、Vue 表单 | 资料与企业邮箱更新、邮箱安全状态、真实密码修改、消息提醒偏好；角色只读 | 用户与偏好 API |
-| 用户与权限 | `/administration/access` | 路由角色守卫、管理员表格和弹窗 | 用户状态、其他用户角色管理、角色统计 | 用户、角色 API |
+| 固定平台外壳 | `layouts/basic.vue` | Vben BasicLayout、Pinia、Ant Design Vue | 导航、当前项目切换、通知、用户 ID/菜单、退出登录 | 项目、通知、当前用户 API |
+| 设计工作台 | `/home`（登录默认入口） | Vue、SVG/CSS 动效与图表、Pinia | 以可点击的固定放大圆环展示项目资产、开始设计、AI 应用、任务执行、设计成果和持续复盘的核心闭环；圆环本体不旋转，双层点阵轨道与三个等距、无拖尾的离散光点持续传递以表达循环数据流；资产、成果和本人任务在所有可访问项目范围聚合，最近项目返回项目级资产类型拆分，最近成果通过 `assetId` 深链切换项目并打开详情；所有可增长内容限制在卡片内部滚动 | `/dashboard` 跨项目聚合 API + `GET /assets/:id` + 项目、任务、会话、资产、应用和通知表 |
+| 项目空间 | `/projects`；旧 `/workspace/overview` 只重定向 | Vue、Pinia、Modal/Form、Tooltip | 单层浅色卡片展示全部可访问项目及统计，支持搜索、更新时间/创建时间/名称服务端排序、创建、负责人/管理员修改名称与说明、个人置顶；创建者可软删除自有项目、管理员可软删除任意项目；卡片主体可点击并支持键盘进入，三级文字色、强化统计、运行任务强调、整卡悬浮、操作提示、空状态和禁用态共用一套视觉规范；只保留一个开始设计入口，四项统计进入项目资产、全部任务、运行任务和成员面板；创建者或管理员按用户 ID 邀请或移除非创建者成员 | 项目、成员、个人置顶、软归档和当前项目偏好 API |
+| 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、业务 ID、成员筛选/排序、持久化多级文件夹、网格/列表、多选批量移动/独立复制/软删除、图片放大、详情、下载和收藏；“收藏”是按当前用户收藏关系展示的系统软链接目录，不改变原资产目录，未确认的工作流结果不进入列表 | 资产/成员/文件夹 API + PostgreSQL + MinIO/S3 |
+| 开始设计 | `/design?conversationId=:id` | 独立沉浸式 Vue 页面、Pinia、Canvas、MediaDevices | 单一左侧历史栏；无选择时默认文生文并展示应用快捷入口；选中后收起其他应用，主参数通过底部快捷弹层原位编辑且快捷区可滚动，完整参数只由固定可见的“更多”打开；图片和 Markdown 文本资产在发送前及轮次时间线中直接可见，历史图片可进入统一遮罩编辑器；分区任务并列恢复标记前原图与标记图，输出使用原图和生成图滑动对比；文本结果按 Markdown 阅读和复制，结果操作使用图标与 Tooltip；成功发送后清空本轮输入，运行中使用轻量状态并可直接停止；同一时间线组合多个应用；会话内继续设计；遮罩、对比和特殊输入 | 设计会话、应用、资产、草稿、任务 API |
+| 单能力调试兼容 | `/workspace/:appKey?instanceId=:id` | 隐藏管理员路由、Canvas、MediaDevices | 保留历史实例和旧精确流转链路用于兼容回溯，不在产品菜单展示 | 应用、调试实例、资产、任务 API |
+| 任务中心 | `/jobs` | Vue、Pinia、状态组件 | 显示任务业务 ID、创建成员、状态和进度；失败错误使用限长摘要并可展开完整详情；支持状态/成员/关键词筛选、排序、多选、取消选择与批量软删除，运行中任务不可删除 | `jobs`、`project_members`、`job_inputs`、`job_outputs` |
+| 个人中心 | `/profile` | Vben Profile、Vue 表单、Canvas 裁剪 | 展示唯一用户 ID；资料与企业邮箱更新、邮箱安全状态、真实密码修改、消息提醒偏好；角色只读；头像悬浮上传，非方图经 1:1 拖动、缩放、旋转裁剪后写入私有对象存储并刷新全局用户态 | 用户、偏好与头像对象 API |
+| 用户与权限 | `/administration/access` | 路由角色守卫、管理员表格和弹窗 | 按字段标明姓名、用户 ID、用户名与邮箱；用户状态、其他用户角色管理、角色统计；窄卡片文字不越界 | 用户、角色 API |
 | 操作日志 | `/audit` | Vue、Pinia、服务端分页与筛选 | 管理员查看全部账号，普通用户只查看自身；区分姓名、用户名和角色快照 | `audit_events` |
 | AI 设计助手 | 除 `/design` 外的右下角弹窗 | Vue Teleport、Iconify、预签名上传 | 个人历史对话、文本、附件、预览、下载、清空与服务状态；设计页避免重复入口 | AI 助手 API + PostgreSQL + MinIO/S3 |
 
@@ -192,12 +191,12 @@ Nitro 使用文件路径生成 `/api/v1` 路由。每个业务接口一般按以
 | 公共接口层 | 全部 `/api/v1/**`、`/health` | Nitro、H3 | CORS、Request ID、错误归一化、统一响应包 |
 | 认证与会话 | `/auth/login`、`register`、`refresh`、`logout`、`password-reset/**`、`codes` | JOSE、scrypt、SHA-256、Nodemailer、HttpOnly Cookie | 登录锁定、JWT、刷新会话轮换、企业邮箱注册、一次性密码重置和权限码 |
 | 当前用户 | `/user/info`、`profile`、`password`、`notification-preferences` | Zod、postgres.js | 资料、密码和提醒偏好；不允许自助修改角色 |
-| 项目 | `/projects`、`/users/me/current-project` | PostgreSQL 事务、项目范围校验 | 创建项目、可见项目查询、当前项目偏好 |
-| 资产 | `/assets`、`uploads`、`text`、`complete`、`favorite`、`download`、`preview`、`versions` | AWS SDK v3、预签名 URL、PostgreSQL | 多模态资产、文本资产、版本、标签、收藏、下载和预览 |
+| 项目 | `/projects`、`/projects/:id`、`/projects/:id/pin`、`/users/me/current-project` | PostgreSQL 事务、项目范围校验 | 创建与可见项目聚合查询、负责人/管理员改名、按用户独立置顶；删除时锁定项目并拒绝仍有活动任务的项目，写入 `archived_at/archived_by`，清理置顶和失效当前项目偏好但保留领域台账 |
+| 资产 | `/assets`、`/asset-folders`、`/assets/batch`、`assets/:id`、`uploads`、`text`、`complete`、`favorite`、`download`、`preview`、`versions` | AWS SDK v3、预签名 URL/对象复制、PostgreSQL | 多模态资产、持久化普通目录、批量移动/独立复制/递归软删除、版本、标签、基于 `asset_favorites` 的个人收藏软链接目录、下载、预览、项目范围重命名及创建时间/名称/类型白名单排序；3D 对象通过短时地址交给共享 Three.js 查看器 |
 | 应用目录 | `/applications`、`/applications/:key/visibility` | PostgreSQL JSONB、RBAC | 读取应用分类、状态和资产契约；管理员持久化控制普通用户可见性，隐藏能力的详情和任务创建由后端阻断 |
-| 设计会话 | `/design-conversations` | PostgreSQL、Zod、项目与用户范围校验 | 项目内创建、列表、重命名和软删除会话；返回轮次数及活动任务状态 |
+| 设计会话 | `/design-conversations` | PostgreSQL、Zod、项目与用户范围校验 | 项目内创建、列表、重命名和软删除会话；返回轮次数及活动任务状态；首次有效任务在事务内从业务文本生成限长标题，手工改名通过 `title_manually_edited` 永久阻止自动覆盖 |
 | 设计草稿 | `/design-conversations/:id/drafts/:appKey` | PostgreSQL、Zod、能力契约校验 | 按设计会话和应用保存参数与精确输入位置；恢复时过滤失效、未登记或越界资产 |
-| 管理员调试实例 | `/workflow-instances`、`/workflow-drafts` | PostgreSQL、Zod、项目范围校验 | 保留旧应用实例草稿和精确流转，供应用调试中心逐项联调 |
+| 历史单能力实例 | `/workflow-instances`、`/workflow-drafts` | PostgreSQL、Zod、项目范围校验 | 保留已有实例草稿和精确流转数据，供历史任务回溯，不对应用调试中心提供入口 |
 | 任务 | `/jobs`、`/jobs/:id/cancel` | PostgreSQL、事务级 advisory lock、通知、审计 | 任务台账、参数与有序输入/输出快照、同实例活跃任务互斥、状态、取消和 ComfyUI Worker 调度 |
 | 站内通知 | `/notifications/**` | PostgreSQL | 查询、已读、全部已读、单条删除和清空 |
 | 用户与角色 | `/users`、`/users/:id/status`、`/users/:id/roles`、`/roles` | RBAC、事务和末位管理员保护 | 管理其他用户状态与角色、角色统计；每个账号只能分配一个角色 |
@@ -270,11 +269,11 @@ erDiagram
 
 | 数据域 | PostgreSQL 表 | 说明 |
 | --- | --- | --- |
-| 身份权限 | `users`、`roles`、`permissions`、`user_roles`、`role_permissions`、`password_reset_tokens` | 账号、企业邮箱、密码散列、角色、权限码和一次性重置令牌摘要 |
+| 身份权限 | `users`、`roles`、`permissions`、`user_roles`、`role_permissions`、`password_reset_tokens` | 账号、`USR-*` 业务 ID、企业邮箱、密码散列、角色、权限码和一次性重置令牌摘要 |
 | 会话偏好 | `refresh_sessions`、`user_preferences` | 刷新令牌哈希、当前项目、提醒偏好 |
-| 项目 | `projects`、`project_members` | 项目元数据和 owner/editor/viewer 成员关系 |
-| 资产 | `assets`、`asset_versions`、`asset_tags`、`asset_favorites` | 统一资产、版本、来源、标签和个人收藏 |
-| 项目设计与应用任务 | `design_conversations`、`design_conversation_drafts`、`applications`、`jobs`、`job_inputs`、`job_outputs` | 用户项目设计会话、会话内多应用草稿、任务参数、状态、输入输出与资产血缘 |
+| 项目 | `projects`、`project_members`、`project_user_pins` | `CR-*` 项目元数据、owner/editor/viewer 成员关系、用户级置顶，以及 `archived_at/archived_by` 项目软删除记录 |
+| 资产 | `assets`、`asset_versions`、`asset_tags`、`asset_favorites`、`asset_folders` | `AST-*` 统一资产、成员归属、版本、来源、标签、个人收藏软链接和多级普通目录；收藏系统目录不写入 `assets.folder_id` |
+| 项目设计与应用任务 | `design_conversations`、`design_conversation_drafts`、`applications`、`jobs`、`job_inputs`、`job_outputs` | 用户项目设计会话、会话内多应用草稿、`TSK-*` 任务参数、成员归属、软归档、状态、输入输出与资产血缘；`job_inputs.asset_id` 始终是适配器消费的原始输入，可选 `annotation_asset_id` 只登记用户可见的分区标记快照 |
 | 管理员调试兼容 | `workflow_workspace_instances`、`workflow_workspace_drafts`、`workflow_asset_transfers` | 单能力调试实例及旧精确流转；不再作为普通用户主交互模型 |
 | 运营记录 | `notifications`、`audit_events` | 站内消息；操作人快照、请求路径、状态、耗时、IP 和可追踪业务事件 |
 | AI 助手 | `ai_conversations`、`ai_messages`、`ai_attachments` | 用户私有会话、消息、上游错误/消息编号和附件对象元数据 |
@@ -583,7 +582,7 @@ flowchart LR
 - 创建、查看和切换项目；项目级数据范围检查。
 - 图片、视频、音频、文本、文档、3D 模型、模型文件和压缩包 8 类统一文件资产与真实对象存储。
 - 文件直传、文本入库、版本 API、收藏、下载和图片预览。
-- 项目“开始设计”、多应用会话时间线、管理员应用调试中心、任务台账、通知和审计。
+- 项目“开始设计”、多应用会话时间线、按成员管理的任务台账、通知和审计。
 - 全局 AI 设计助手：按用户隔离的会话历史、文本、图片/音视频/文档附件、预览下载、清空、外部 API 转发与失败留痕。
 - PostgreSQL/MinIO 数据持久化、SMTP 邮件投递、迁移、种子、测试和生产构建。
 
@@ -592,9 +591,9 @@ flowchart LR
 - AI 助手的具体内网模型服务需部署时配置；平台端转发适配器已完成。
 - 报告等尚未实现的其他任务型能力适配器。
 - ComfyUI 目标服务的真实 GPU、模型、自定义节点和效果验收。
-- 项目成员邀请、移除和 owner/editor/viewer 管理接口与页面。
-- 管理员创建用户、项目编辑/归档、应用配置/发布管理页面。
-- 资产版本 API 已存在，但前端尚未提供版本历史和上传新版本界面；任务取消 API 已存在，但任务中心尚未接按钮。
+- 项目成员移除和角色调整；成员查看及创建者/管理员按用户 ID 邀请已经完成，项目归档已经支持软删除。
+- 管理员创建用户、应用配置/发布管理页面。
+- 资产版本 API 已存在，但前端尚未提供版本历史和上传新版本界面；任务取消 API 已存在，但任务中心尚未接取消按钮。
 - 大数据量列表的服务端分页、缩略图派生、病毒扫描、对象生命周期和配额管理。
 - Web/API 的正式容器镜像、反向代理、TLS、集中日志、指标、告警、备份和恢复演练。
 

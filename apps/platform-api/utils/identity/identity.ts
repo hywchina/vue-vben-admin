@@ -57,7 +57,7 @@ export async function loadIdentity(userId: string) {
   return {
     department: row.department,
     email: row.email ?? '',
-    homePath: '/workspace/overview',
+    homePath: '/home',
     id: row.id,
     introduction: row.introduction,
     permissions: row.permissions ?? [],

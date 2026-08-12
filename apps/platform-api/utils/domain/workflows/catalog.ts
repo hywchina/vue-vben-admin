@@ -265,7 +265,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       category: 'generation',
       color: '#a55231',
       description: '使用客室内饰 LoRA 生成风格更稳定的空间效果图。',
-      icon: 'lucide:badge-sparkles',
+      icon: 'lucide:sparkles',
       key: 'text-to-image-lora',
       name: 'LoRA 客室生成',
       outputAssetTypes: ['image'],

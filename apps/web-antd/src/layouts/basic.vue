@@ -43,6 +43,12 @@ const showDot = computed(() =>
   notifications.value.some((item) => !item.isRead),
 );
 const showGlobalAssistant = computed(() => route.name !== 'PlatformDesign');
+const showProjectSwitcher = computed(
+  () =>
+    route.name !== 'PlatformProjects' &&
+    route.name !== 'LegacyPlatformOverview' &&
+    route.name !== 'PlatformDashboard',
+);
 
 const menus = computed(() => [
   {
@@ -64,6 +70,9 @@ const projectOptions = computed(() =>
 const avatar = computed(() => {
   return userStore.userInfo?.avatar ?? preferences.app.defaultAvatar;
 });
+const userPublicId = computed(
+  () => (userStore.userInfo as null | { publicId?: string })?.publicId ?? '',
+);
 
 onMounted(async () => {
   await Promise.all([platformStore.initialize(), loadNotifications()]);
@@ -184,7 +193,7 @@ watch(
     @logout="handleLogout"
   >
     <template #header-left-600>
-      <div class="rail-project-switcher">
+      <div v-if="showProjectSwitcher" class="rail-project-switcher">
         <span class="rail-project-switcher__label">当前项目</span>
         <Select
           :options="projectOptions"
@@ -200,7 +209,7 @@ watch(
         :avatar
         :menus
         :text="userStore.userInfo?.realName"
-        :description="platformStore.currentProject?.name"
+        :description="`${userPublicId}${platformStore.currentProject?.name ? ` · ${platformStore.currentProject.name}` : ''}`"
         tag-text="设计平台"
         @clear-preferences-and-logout="handleLogout"
         @logout="handleLogout"

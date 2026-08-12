@@ -28,6 +28,7 @@ export default apiHandler(async (event) => {
     const [created] = await transaction<
       {
         code: string;
+        createdAt: Date;
         description: string;
         id: string;
         name: string;
@@ -38,7 +39,8 @@ export default apiHandler(async (event) => {
       INSERT INTO projects (code, name, description, stage, owner_id)
       VALUES (${code}, ${input.name}, ${input.description}, ${input.stage}, ${identity.id})
       RETURNING
-        id, code, name, description, stage, updated_at AS "updatedAt"
+        id, code, name, description, stage,
+        created_at AS "createdAt", updated_at AS "updatedAt"
     `;
     if (!created) throw new Error('创建项目失败');
 
@@ -67,8 +69,15 @@ export default apiHandler(async (event) => {
 
   return {
     ...project,
+    activeJobCount: 0,
     assetCount: 0,
+    canDelete: true,
+    createdAt: project.createdAt.toISOString(),
+    isPinned: false,
+    isOwner: true,
+    jobCount: 0,
     members: 1,
+    ownerId: identity.id,
     updatedAt: project.updatedAt.toISOString(),
   };
 });

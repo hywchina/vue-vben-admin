@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 defineProps<{
-  description: string;
+  description?: string;
   eyebrow?: string;
   title: string;
 }>();
@@ -13,7 +13,7 @@ defineProps<{
         {{ eyebrow }}
       </div>
       <h1>{{ title }}</h1>
-      <p>{{ description }}</p>
+      <p v-if="description">{{ description }}</p>
     </div>
     <div v-if="$slots.extra" class="platform-page-heading__extra">
       <slot name="extra"></slot>

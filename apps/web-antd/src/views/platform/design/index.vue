@@ -4,11 +4,13 @@ import type {
   DesignConversation,
   PlatformCapability,
   PlatformJob,
+  PlatformJobInput,
   PlatformJobOutput,
 } from '#/modules/platform/types';
 
 import {
   computed,
+  nextTick,
   onBeforeUnmount,
   onMounted,
   reactive,
@@ -50,8 +52,11 @@ import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { usePlatformStore } from '#/store';
 import { selectDesignConversationJobs } from '#/store/platform/helpers';
 
+import AssetPickerModal from '../workspace/asset-picker-modal.vue';
 import CameraAngleControl from '../workspace/camera-angle-control.vue';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
+import { createRegionInputAnnotations } from '../workspace/region-annotation';
+import { appendTextInput, markdownTextContent } from './design-input-utils';
 import DesignQuickField from './design-quick-field.vue';
 
 const DEFAULT_APP_KEY = 'text-chat';
@@ -66,6 +71,7 @@ const conversations = ref<DesignConversation[]>([]);
 const conversationSearch = ref('');
 const activeConversationId = ref('');
 const selectedAppKey = ref('');
+const threadScrollRef = ref<HTMLElement>();
 const capability = ref<null | PlatformCapability>(null);
 const capabilityLoading = ref(false);
 const capabilityCache = reactive<Record<string, PlatformCapability>>({});
@@ -73,6 +79,7 @@ const selectedAssets = reactive<Record<number, string>>({});
 const parameterValues = reactive<Record<string, unknown>>({});
 const parameterDrawerOpen = ref(false);
 const mediaPickerOpen = ref(false);
+const markdownPickerOpen = ref(false);
 const composerPreviewUrls = reactive<Record<string, string>>({});
 const submitting = ref(false);
 const renameOpen = ref(false);
@@ -81,6 +88,8 @@ const appSearch = ref('');
 const outputMaskEditorOpen = ref(false);
 const outputMaskSource = ref('');
 const outputMaskTitle = ref('');
+const maskEditDerivedFromAssetId = ref('');
+const maskEditSourceAssetId = ref('');
 const actionOutput = ref<PlatformJobOutput>();
 const continueOpen = ref(false);
 const continueAppKey = ref('');
@@ -98,9 +107,6 @@ const activeConversation = computed(() =>
 );
 const regularConversations = computed(() =>
   conversations.value.filter((item) => !item.legacy),
-);
-const legacyConversationCount = computed(
-  () => conversations.value.filter((item) => item.legacy).length,
 );
 const visibleConversations = computed(() => {
   const query = conversationSearch.value.trim().toLowerCase();
@@ -208,14 +214,21 @@ const promptField = computed(() =>
   ),
 );
 const compactFields = computed(() =>
-  scalarFields.value
-    .filter(
-      (field) =>
-        field.key !== promptField.value?.key &&
-        !field.advanced &&
-        ['boolean', 'number', 'select', 'text'].includes(field.type),
-    )
-    .slice(0, 4),
+  scalarFields.value.filter(
+    (field) =>
+      field.key !== promptField.value?.key &&
+      !field.advanced &&
+      ['boolean', 'number', 'select', 'text'].includes(field.type),
+  ),
+);
+const markdownAssets = computed(() =>
+  platformStore.currentAssets.filter(
+    (asset) =>
+      asset.type === 'text' &&
+      (asset.mimeType?.toLowerCase() === 'text/markdown' ||
+        /(?:^|[./])md$/i.test(asset.format) ||
+        /\.md$/i.test(asset.name)),
+  ),
 );
 const selectedAssetIds = computed(() =>
   mediaFields.value.flatMap((field) => {
@@ -338,11 +351,49 @@ async function loadComposerPreview(assetId: string) {
 }
 
 function openMediaPicker() {
-  if (mediaFields.value.length === 0) {
+  if (mediaFields.value.length === 0 && !promptField.value) {
     message.info('当前应用不需要输入素材');
     return;
   }
   mediaPickerOpen.value = true;
+}
+
+async function loadMarkdownAsset(assetId: string) {
+  const field = promptField.value;
+  const asset = markdownAssets.value.find((item) => item.id === assetId);
+  if (!field || !asset) return;
+  try {
+    const result = await getAssetDownloadApi(assetId);
+    let rawContent: string;
+    if (result.mode === 'inline') {
+      rawContent = result.content;
+    } else {
+      const response = await fetch(result.url);
+      rawContent = await response.text();
+    }
+    const imported = markdownTextContent(rawContent);
+    if (!imported) {
+      message.warning('该 Markdown 资产没有可读取的文本内容');
+      return;
+    }
+    const next = appendTextInput(
+      parameterValues[field.key],
+      imported,
+      field.maxLength,
+    );
+    setFieldValue(field, next.value);
+    markdownPickerOpen.value = false;
+    mediaPickerOpen.value = false;
+    message.success(
+      next.truncated
+        ? 'Markdown 文本已加载，超出输入长度的内容已截断'
+        : 'Markdown 文本已加载到输入框',
+    );
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '读取 Markdown 资产失败',
+    );
+  }
 }
 
 async function removeSelectedAsset(field: CapabilityField) {
@@ -479,6 +530,22 @@ async function refreshConversations() {
     : [];
 }
 
+async function scrollToLatestRound() {
+  const conversationId = activeConversationId.value;
+  await nextTick();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+  const container = threadScrollRef.value;
+  if (container) container.scrollTop = container.scrollHeight;
+  window.setTimeout(() => {
+    if (activeConversationId.value !== conversationId) return;
+    const currentContainer = threadScrollRef.value;
+    if (currentContainer) {
+      currentContainer.scrollTop = currentContainer.scrollHeight;
+    }
+  }, 240);
+}
+
 async function ensureConversation() {
   const projectId = platformStore.currentProjectId;
   if (!projectId) return;
@@ -522,7 +589,10 @@ async function selectConversation(
   preferredAppKey?: string,
 ) {
   if (!conversationId || activeConversationId.value === conversationId) {
-    if (conversationId) await loadCapability();
+    if (conversationId) {
+      await loadCapability();
+      await scrollToLatestRound();
+    }
     return;
   }
   await saveDraftNow();
@@ -538,6 +608,7 @@ async function selectConversation(
   await router.replace({ query: { conversationId } });
   await loadCapability();
   void hydrateTimelineCapabilities();
+  await scrollToLatestRound();
 }
 
 async function chooseApplication(appKey: string) {
@@ -605,6 +676,45 @@ function taskParameters() {
   );
 }
 
+async function prepareRegionAnnotations() {
+  return createRegionInputAnnotations({
+    fields: mediaFields.value,
+    parameterValues,
+    async resolvePreviewUrl(assetId) {
+      const preview = await getAssetPreviewApi(assetId);
+      if (preview.mode !== 'url') throw new Error('分区底图没有可用预览');
+      return preview.url;
+    },
+    async saveAnnotation({ file, originalAssetId }) {
+      return platformStore.uploadAsset({
+        description: `${capability.value?.name ?? application.value?.name} 分区标记输入快照`,
+        derivedFromAssetId: originalAssetId,
+        file,
+        name: file.name.replace(/\.[^.]+$/, ''),
+        tags: ['设计会话输入', '分区标记'],
+        type: 'image',
+      });
+    },
+    selectedAssets,
+  });
+}
+
+async function clearSubmittedComposer() {
+  hydratingDraft = true;
+  try {
+    if (promptField.value) parameterValues[promptField.value.key] = '';
+    for (const key of Object.keys(selectedAssets)) {
+      Reflect.deleteProperty(selectedAssets, key);
+    }
+    for (const field of mediaFields.value) {
+      if (field.type === 'region') parameterValues[field.key] = '';
+    }
+  } finally {
+    hydratingDraft = false;
+  }
+  await saveDraftNow();
+}
+
 async function runCapability() {
   if (!application.value || !capability.value || !activeConversationId.value) {
     return;
@@ -634,15 +744,20 @@ async function runCapability() {
   }
   submitting.value = true;
   try {
+    const inputAnnotations = await prepareRegionAnnotations();
     const job = await platformStore.runApplication(
       application.value.key,
       { designConversationId: activeConversationId.value },
       selectedAssetIds.value,
       taskParameters(),
+      [],
+      inputAnnotations,
     );
     if (job?.status === 'failed') {
       message.warning(job.error?.message ?? '能力服务执行失败');
     } else if (job) {
+      await clearSubmittedComposer();
+      await scrollToLatestRound();
       message.success('任务已提交，可以切换到其他设计会话继续工作');
     }
     await refreshConversations();
@@ -666,7 +781,24 @@ async function cancelActiveJob() {
   }
 }
 
-async function rerunJob(job: PlatformJob) {
+async function runJobSnapshot(
+  job: PlatformJob,
+  override?: { parameterKey: string; value: string },
+) {
+  if (activeJob.value) {
+    message.warning('当前设计会话已有任务在运行，请等待完成或停止后再提交');
+    return;
+  }
+  const unavailableInput = job.inputs.find(
+    (input) =>
+      !platformStore.currentAssets.some((asset) => asset.id === input.assetId),
+  );
+  if (unavailableInput) {
+    message.error(
+      `历史输入“${unavailableInput.name || unavailableInput.assetId}”已不可用，无法重新发送`,
+    );
+    return;
+  }
   await chooseApplication(job.appKey);
   hydratingDraft = true;
   try {
@@ -674,6 +806,7 @@ async function rerunJob(job: PlatformJob) {
     for (const [key, value] of Object.entries(job.parameters)) {
       parameterValues[key] = value;
     }
+    if (override) parameterValues[override.parameterKey] = override.value;
     for (const input of job.inputs)
       selectedAssets[input.position] = input.assetId;
   } finally {
@@ -681,6 +814,18 @@ async function rerunJob(job: PlatformJob) {
   }
   await saveDraftNow();
   await runCapability();
+}
+
+async function rerunJob(job: PlatformJob) {
+  await runJobSnapshot(job);
+}
+
+async function editAndRerunJob(
+  job: PlatformJob,
+  parameterKey: string,
+  value: string,
+) {
+  await runJobSnapshot(job, { parameterKey, value });
 }
 
 async function selectAsset(field: CapabilityField, assetId: string) {
@@ -790,19 +935,29 @@ async function downloadOutput(output: PlatformJobOutput) {
 
 function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
   actionOutput.value = output;
+  maskEditSourceAssetId.value = output.assetId;
+  maskEditDerivedFromAssetId.value = output.saved ? output.assetId : '';
   outputMaskSource.value = previewUrl;
   outputMaskTitle.value = output.name;
   outputMaskEditorOpen.value = true;
 }
 
+function openInputMask(input: PlatformJobInput, previewUrl: string) {
+  maskEditSourceAssetId.value = input.assetId;
+  maskEditDerivedFromAssetId.value = input.assetId;
+  outputMaskSource.value = previewUrl;
+  outputMaskTitle.value = input.name || '本轮输入图片';
+  outputMaskEditorOpen.value = true;
+}
+
 async function saveOutputMask(file: File) {
-  const output = actionOutput.value;
-  if (!output) throw new Error('当前没有可编辑的图片结果');
+  if (!maskEditSourceAssetId.value) throw new Error('当前没有可编辑的图片');
   await platformStore.uploadAsset({
-    description: '设计会话工作流结果遮罩编辑',
+    derivedFromAssetId: maskEditDerivedFromAssetId.value || undefined,
+    description: '设计会话图片遮罩编辑',
     file,
     name: file.name.replace(/\.[^.]+$/, ''),
-    tags: ['工作流结果编辑', '遮罩'],
+    tags: ['设计会话图片编辑', '遮罩'],
     type: 'image',
   });
   message.success('遮罩编辑结果已保存到当前项目资产中心');
@@ -1002,27 +1157,29 @@ onBeforeUnmount(() => {
               {{ formatConversationTime(item.updatedAt) }}
             </small>
           </span>
-          <i v-if="item.activeJobCount" title="任务运行中"></i>
-          <span
-            v-if="item.id === activeConversationId"
-            class="conversation-actions"
-          >
-            <button
-              aria-label="重命名当前会话"
-              title="重命名"
-              type="button"
-              @click.stop="openRename"
+          <span class="conversation-item__tail">
+            <i v-if="item.activeJobCount" title="任务运行中"></i>
+            <span
+              v-if="item.id === activeConversationId"
+              class="conversation-actions"
             >
-              <IconifyIcon icon="lucide:pencil" />
-            </button>
-            <button
-              aria-label="删除当前会话"
-              title="删除"
-              type="button"
-              @click.stop="archiveConversation(item)"
-            >
-              <IconifyIcon icon="lucide:trash-2" />
-            </button>
+              <button
+                aria-label="重命名当前会话"
+                title="重命名"
+                type="button"
+                @click.stop="openRename"
+              >
+                <IconifyIcon icon="lucide:pencil" />
+              </button>
+              <button
+                aria-label="删除当前会话"
+                title="删除"
+                type="button"
+                @click.stop="archiveConversation(item)"
+              >
+                <IconifyIcon icon="lucide:trash-2" />
+              </button>
+            </span>
           </span>
         </div>
         <div
@@ -1033,26 +1190,27 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="conversation-sidebar__footer">
-        <button
-          v-if="legacyConversationCount"
-          class="legacy-history-link"
-          type="button"
-          @click="router.push('/jobs')"
-        >
-          <IconifyIcon icon="lucide:archive" />
-          {{ legacyConversationCount }} 条旧版应用记录已移至任务中心
-        </button>
         <div class="sidebar-user">
-          <span>{{ userStore.userInfo?.realName?.slice(0, 1) ?? '用' }}</span>
+          <span class="sidebar-user__avatar">
+            <img
+              v-if="userStore.userInfo?.avatar"
+              :alt="`${userStore.userInfo.realName ?? '当前用户'}头像`"
+              :src="userStore.userInfo.avatar"
+              data-testid="design-user-avatar"
+            />
+            <b v-else>
+              {{ userStore.userInfo?.realName?.slice(0, 1) ?? '用' }}
+            </b>
+          </span>
           <div>
             <strong>{{ userStore.userInfo?.realName ?? '当前用户' }}</strong>
             <small>@{{ userStore.userInfo?.username }}</small>
           </div>
           <button
-            aria-label="返回平台概览"
-            title="返回平台概览"
+            aria-label="返回项目空间"
+            title="返回项目空间"
             type="button"
-            @click="router.push('/workspace/overview')"
+            @click="router.push('/projects')"
           >
             <IconifyIcon icon="lucide:panel-left-close" />
           </button>
@@ -1082,7 +1240,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div class="thread-scroll">
+      <div ref="threadScrollRef" class="thread-scroll">
         <Spin :spinning="loading">
           <div v-if="conversationJobs.length" class="thread-timeline">
             <WorkflowRunCard
@@ -1097,6 +1255,8 @@ onBeforeUnmount(() => {
                 jobCapability(job)?.supportsImageComparison ?? false
               "
               @download="downloadOutput"
+              @edit-rerun="editAndRerunJob"
+              @edit-input="openInputMask"
               @flow="openContinue"
               @mask="openOutputMask"
               @rerun="rerunJob"
@@ -1172,11 +1332,11 @@ onBeforeUnmount(() => {
           </div>
           <Textarea
             v-if="promptField"
+            :auto-size="{ minRows: 2, maxRows: 8 }"
             :value="fieldTextValue(promptField)"
             :maxlength="promptField.maxLength"
             :placeholder="promptField.placeholder ?? '描述你的设计需求…'"
-            :rows="3"
-            auto-size
+            data-testid="design-prompt-input"
             @update:value="setFieldValue(promptField, $event)"
             @press-enter="
               !$event.shiftKey && (runCapability(), $event.preventDefault())
@@ -1220,26 +1380,29 @@ onBeforeUnmount(() => {
                   </button>
                 </span>
                 <div class="parameter-chips">
-                  <DesignQuickField
-                    v-for="field in compactFields"
-                    :key="field.key"
-                    :field="field"
-                    :value="parameterValues[field.key]"
-                    @change="setQuickFieldValue(field, $event)"
-                  />
+                  <div class="parameter-chips__scroll">
+                    <DesignQuickField
+                      v-for="field in compactFields"
+                      :key="field.key"
+                      :field="field"
+                      :value="parameterValues[field.key]"
+                      @change="setQuickFieldValue(field, $event)"
+                    />
+                    <button
+                      v-if="mediaFields.length"
+                      class="composer-media-summary"
+                      type="button"
+                      @click="openMediaPicker"
+                    >
+                      <IconifyIcon icon="lucide:paperclip" />
+                      素材
+                      <strong>
+                        {{ selectedAssetIds.length }}/{{ mediaFields.length }}
+                      </strong>
+                    </button>
+                  </div>
                   <button
-                    v-if="mediaFields.length"
-                    class="composer-media-summary"
-                    type="button"
-                    @click="openMediaPicker"
-                  >
-                    <IconifyIcon icon="lucide:paperclip" />
-                    素材
-                    <strong>
-                      {{ selectedAssetIds.length }}/{{ mediaFields.length }}
-                    </strong>
-                  </button>
-                  <button
+                    class="composer-more-button"
                     data-testid="open-design-parameters"
                     type="button"
                     @click="parameterDrawerOpen = true"
@@ -1327,8 +1490,23 @@ onBeforeUnmount(() => {
       width="min(780px, 94vw)"
     >
       <p class="media-picker-description">
-        上传新素材或从当前项目资产中选择；所选内容会立即显示在发送框中。
+        上传新素材、从当前项目资产中选择，或加载 Markdown
+        文本；所选内容会立即显示在发送框中。
       </p>
+      <button
+        v-if="promptField"
+        class="markdown-asset-entry"
+        data-testid="open-markdown-asset-picker"
+        type="button"
+        @click="markdownPickerOpen = true"
+      >
+        <IconifyIcon icon="lucide:file-text" />
+        <span>
+          <strong>从资产加载 Markdown 文本</strong>
+          <small>只提取 .md 文件中的文字，不加载文档内图片</small>
+        </span>
+        <em>{{ markdownAssets.length }} 个可用</em>
+      </button>
       <div class="media-picker-fields">
         <CapabilityMediaField
           v-for="field in mediaFields"
@@ -1355,6 +1533,14 @@ onBeforeUnmount(() => {
         <Button type="primary" @click="mediaPickerOpen = false">完成</Button>
       </div>
     </Modal>
+
+    <AssetPickerModal
+      :accepted-kinds="['text']"
+      :assets="markdownAssets"
+      :open="markdownPickerOpen"
+      @select="loadMarkdownAsset"
+      @update:open="markdownPickerOpen = $event"
+    />
 
     <Drawer
       v-model:open="parameterDrawerOpen"
@@ -1500,7 +1686,7 @@ onBeforeUnmount(() => {
     </Modal>
 
     <ComfyMaskEditor
-      v-if="actionOutput?.kind === 'image'"
+      v-if="maskEditSourceAssetId"
       v-model:open="outputMaskEditorOpen"
       :on-save="saveOutputMask"
       :src="outputMaskSource"
@@ -1512,6 +1698,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .design-page {
   --design-border: #e3e6e8;
+  --design-content-width: 1120px;
   --design-muted: #68747d;
 
   display: grid;
@@ -1621,7 +1808,17 @@ onBeforeUnmount(() => {
   color: var(--design-muted);
 }
 
-.conversation-item > i {
+.conversation-item__tail {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-end;
+  width: 64px;
+  min-width: 64px;
+}
+
+.conversation-item__tail > i {
+  flex: 0 0 auto;
   width: 7px;
   height: 7px;
   background: #2f9e62;
@@ -1631,6 +1828,7 @@ onBeforeUnmount(() => {
 
 .conversation-actions {
   display: none;
+  flex: 0 0 auto;
   gap: 2px;
 }
 
@@ -1709,7 +1907,7 @@ onBeforeUnmount(() => {
 .thread-timeline {
   display: grid;
   gap: 18px;
-  max-width: 1180px;
+  max-width: var(--design-content-width);
   margin: 0 auto;
 }
 
@@ -1784,7 +1982,8 @@ onBeforeUnmount(() => {
   justify-content: center;
   min-height: 30px;
   padding: 4px 8px;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   color: #17191c;
   cursor: pointer;
   background: transparent;
@@ -1793,7 +1992,8 @@ onBeforeUnmount(() => {
 }
 
 .composer-box {
-  max-width: 980px;
+  width: 100%;
+  max-width: var(--design-content-width);
   padding: 12px 14px;
   margin: 0 auto;
   background: #fff;
@@ -2036,25 +2236,6 @@ main.design-page {
   border-top: 1px solid #e6e6e8;
 }
 
-.legacy-history-link {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  padding: 7px 9px;
-  font-size: 11px;
-  color: var(--design-muted);
-  text-align: left;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-}
-
-.legacy-history-link:hover {
-  color: #253038;
-  background: #fff;
-}
-
 .sidebar-user {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr) 30px;
@@ -2065,16 +2246,28 @@ main.design-page {
   border-radius: 11px;
 }
 
-.sidebar-user > span {
+.sidebar-user__avatar {
   display: grid;
   place-items: center;
   width: 34px;
   height: 34px;
+  overflow: hidden;
   font-size: 13px;
   font-weight: 700;
   color: #fff;
   background: var(--rail-red);
   border-radius: 50%;
+}
+
+.sidebar-user__avatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sidebar-user__avatar b {
+  font: inherit;
 }
 
 .sidebar-user > div {
@@ -2163,7 +2356,7 @@ main.design-page {
 }
 
 .design-page .thread-timeline {
-  max-width: 1120px;
+  max-width: var(--design-content-width);
 }
 
 .design-page .thread-welcome {
@@ -2210,7 +2403,7 @@ main.design-page {
 }
 
 .design-page .composer-box {
-  max-width: 980px;
+  max-width: var(--design-content-width);
   padding: 10px 12px 9px;
   border-color: #df8e9d;
   border-radius: 22px;
@@ -2226,8 +2419,22 @@ main.design-page {
 
 .design-page .composer-box :deep(textarea.ant-input) {
   min-height: 50px;
+  max-height: 220px !important;
   padding: 5px 2px 8px;
-  font-size: 16px;
+  overflow-y: auto !important;
+  font-size: 17px;
+  font-weight: 500;
+  scrollbar-color: #c8cdd1 transparent;
+  scrollbar-width: thin;
+}
+
+.design-page .composer-box :deep(textarea.ant-input::-webkit-scrollbar) {
+  width: 6px;
+}
+
+.design-page .composer-box :deep(textarea.ant-input::-webkit-scrollbar-thumb) {
+  background: #c8cdd1;
+  border-radius: 999px;
 }
 
 .design-page .composer-no-prompt {
@@ -2253,7 +2460,8 @@ main.design-page {
   width: 34px;
   height: 30px;
   padding: 0;
-  font-size: 19px;
+  font-size: 21px;
+  font-weight: 650;
   color: #16191d;
   cursor: pointer;
   background: transparent;
@@ -2295,7 +2503,8 @@ main.design-page {
   align-items: center;
   min-height: 28px;
   padding: 4px 3px 4px 8px;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
   color: inherit;
 }
 
@@ -2306,7 +2515,28 @@ main.design-page {
 
 .design-page .parameter-chips {
   flex: 1;
+  gap: 4px;
   padding: 0;
+  overflow: hidden;
+}
+
+.parameter-chips__scroll {
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.parameter-chips__scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.composer-more-button {
+  flex: 0 0 auto;
+  color: #bd1934 !important;
+  background: #fff1f3 !important;
 }
 
 .design-page .parameter-chips button {
@@ -2327,6 +2557,12 @@ main.design-page {
   background: #c51f3a;
   border-color: #c51f3a;
   box-shadow: none;
+}
+
+.composer-submit.ant-btn :deep(svg) {
+  width: 22px;
+  height: 22px;
+  stroke-width: 3;
 }
 
 .composer-submit.ant-btn:not(:disabled):hover {
@@ -2442,6 +2678,50 @@ main.design-page {
   margin: 0 0 16px;
   font-size: 14px;
   color: #66727a;
+}
+
+.markdown-asset-entry {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 11px 12px;
+  margin-bottom: 16px;
+  text-align: left;
+  cursor: pointer;
+  background: #fff7f8;
+  border: 1px solid #efd2d7;
+  border-radius: 12px;
+}
+
+.markdown-asset-entry > svg {
+  width: 38px;
+  height: 38px;
+  padding: 9px;
+  color: #bd1934;
+  background: #fff;
+  border-radius: 10px;
+}
+
+.markdown-asset-entry span {
+  display: grid;
+  gap: 2px;
+}
+
+.markdown-asset-entry strong {
+  font-size: 14px;
+}
+
+.markdown-asset-entry small,
+.markdown-asset-entry em {
+  font-size: 12px;
+  font-style: normal;
+  color: var(--design-muted);
+}
+
+.markdown-asset-entry:hover {
+  border-color: #d98291;
 }
 
 .media-picker-fields {

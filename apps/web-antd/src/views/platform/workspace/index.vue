@@ -3,6 +3,7 @@ import type {
   CapabilityField,
   PlatformCapability,
   PlatformJob,
+  PlatformJobInput,
   PlatformJobOutput,
   WorkflowWorkspaceInstance,
 } from '#/modules/platform/types';
@@ -31,6 +32,7 @@ import {
   createWorkflowWorkspaceInstanceApi,
   dismissWorkflowInputTransferApi,
   getAssetDownloadApi,
+  getAssetPreviewApi,
   getCapabilityApi,
   getPendingWorkflowInputTransfersApi,
   getWorkflowWorkspaceDraftApi,
@@ -46,6 +48,7 @@ import { selectWorkspaceJobs } from '#/store/platform/helpers';
 
 import CameraAngleControl from './camera-angle-control.vue';
 import CapabilityMediaField from './capability-media-field.vue';
+import { createRegionInputAnnotations } from './region-annotation';
 
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
@@ -67,6 +70,8 @@ const genericPrompt = ref(
 const outputMaskEditorOpen = ref(false);
 const outputMaskSource = ref('');
 const outputMaskTitle = ref('');
+const maskEditDerivedFromAssetId = ref('');
+const maskEditSourceAssetId = ref('');
 const flowModalOpen = ref(false);
 const flowDestination = ref('');
 const flowSubmitting = ref(false);
@@ -494,6 +499,29 @@ function taskParameters() {
   );
 }
 
+async function prepareRegionAnnotations() {
+  return createRegionInputAnnotations({
+    fields: mediaFields.value,
+    parameterValues,
+    async resolvePreviewUrl(assetId) {
+      const preview = await getAssetPreviewApi(assetId);
+      if (preview.mode !== 'url') throw new Error('分区底图没有可用预览');
+      return preview.url;
+    },
+    async saveAnnotation({ file, originalAssetId }) {
+      return platformStore.uploadAsset({
+        description: `${capability.value?.name ?? application.value?.name} 分区标记输入快照`,
+        derivedFromAssetId: originalAssetId,
+        file,
+        name: file.name.replace(/\.[^.]+$/, ''),
+        tags: ['工作流输入', '分区标记'],
+        type: 'image',
+      });
+    },
+    selectedAssets,
+  });
+}
+
 async function submitCapability(options: { silent?: boolean } = {}) {
   if (
     !application.value ||
@@ -523,12 +551,14 @@ async function submitCapability(options: { silent?: boolean } = {}) {
   }
   submitting.value = true;
   try {
+    const inputAnnotations = await prepareRegionAnnotations();
     const job = await platformStore.runApplication(
       application.value.key,
       { workspaceInstanceId: workspaceInstanceId.value },
       selectedAssetIds.value,
       capability.value ? taskParameters() : { prompt: genericPrompt.value },
       Object.values(selectedTransfers),
+      inputAnnotations,
     );
     if (job) {
       for (const key of Object.keys(selectedTransfers)) {
@@ -631,10 +661,10 @@ async function saveOutput(output: PlatformJobOutput) {
 }
 
 async function saveOutputMask(file: File) {
-  const output = actionOutput.value;
-  if (!output) throw new Error('当前没有可编辑的图片结果');
+  if (!maskEditSourceAssetId.value) throw new Error('当前没有可编辑的图片');
   await platformStore.uploadAsset({
-    description: `${application.value?.name ?? '工作流'}结果遮罩编辑`,
+    derivedFromAssetId: maskEditDerivedFromAssetId.value || undefined,
+    description: `${application.value?.name ?? '工作流'}图片遮罩编辑`,
     file,
     name: file.name.replace(/\.[^.]+$/, ''),
     tags: ['工作流结果编辑', '遮罩'],
@@ -782,8 +812,18 @@ async function downloadOutput(output: PlatformJobOutput) {
 
 function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
   actionOutput.value = output;
+  maskEditSourceAssetId.value = output.assetId;
+  maskEditDerivedFromAssetId.value = output.saved ? output.assetId : '';
   outputMaskSource.value = previewUrl;
   outputMaskTitle.value = output.name;
+  outputMaskEditorOpen.value = true;
+}
+
+function openInputMask(input: PlatformJobInput, previewUrl: string) {
+  maskEditSourceAssetId.value = input.assetId;
+  maskEditDerivedFromAssetId.value = input.assetId;
+  outputMaskSource.value = previewUrl;
+  outputMaskTitle.value = input.name || '本轮输入图片';
   outputMaskEditorOpen.value = true;
 }
 
@@ -875,7 +915,7 @@ onBeforeUnmount(() => {
         <Button
           class="back-button"
           shape="circle"
-          @click="router.push('/applications')"
+          @click="router.push('/design')"
         >
           <IconifyIcon icon="lucide:arrow-left" />
         </Button>
@@ -1164,6 +1204,7 @@ onBeforeUnmount(() => {
                 capability?.supportsImageComparison ?? false
               "
               @download="downloadOutput"
+              @edit-input="openInputMask"
               @flow="openFlowModal"
               @mask="openOutputMask"
               @rerun="rerunJob"
@@ -1264,7 +1305,7 @@ onBeforeUnmount(() => {
     </div>
 
     <ComfyMaskEditor
-      v-if="actionOutput?.kind === 'image'"
+      v-if="maskEditSourceAssetId"
       v-model:open="outputMaskEditorOpen"
       :on-save="saveOutputMask"
       :src="outputMaskSource"
@@ -1294,6 +1335,7 @@ onBeforeUnmount(() => {
       <Select
         v-model:value="flowDestination"
         :options="compatibleDestinations"
+        :virtual="false"
         class="w-full"
         placeholder="第一步：选择目标应用"
       />
@@ -1324,8 +1366,8 @@ onBeforeUnmount(() => {
     <div class="rail-empty">
       <div>
         <h2>应用不存在或已下线</h2>
-        <Button type="primary" @click="router.push('/applications')">
-          返回应用中心
+        <Button type="primary" @click="router.push('/design')">
+          返回开始设计
         </Button>
       </div>
     </div>

@@ -1,25 +1,58 @@
 <script lang="ts" setup>
-import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import type { PlatformJob, ProjectMember } from '#/modules/platform/types';
+
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, Input, Progress, Segmented } from 'ant-design-vue';
+import {
+  Button,
+  Checkbox,
+  Input,
+  message,
+  Modal,
+  Progress,
+  Segmented,
+  Select,
+  Tooltip,
+} from 'ant-design-vue';
 
+import { getProjectMembersApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
+const route = useRoute();
 const platformStore = usePlatformStore();
 const keyword = ref('');
 const statusFilter = ref('all');
+const ownerFilter = ref('all');
+const sortValue = ref('createdAt-desc');
+const selectedJobIds = ref<string[]>([]);
+const projectMembers = ref<ProjectMember[]>([]);
 const statusOptions = [
   { label: '全部', value: 'all' },
   { label: '进行中', value: 'active' },
   { label: '已完成', value: 'succeeded' },
   { label: '异常', value: 'failed' },
 ];
+const sortOptions = [
+  { label: '创建时间：最新优先', value: 'createdAt-desc' },
+  { label: '创建时间：最早优先', value: 'createdAt-asc' },
+  { label: '名称：A–Z', value: 'name-asc' },
+  { label: '名称：Z–A', value: 'name-desc' },
+  { label: '创建人：A–Z', value: 'owner-asc' },
+  { label: '状态：正序', value: 'status-asc' },
+];
+const memberOptions = computed(() => [
+  { label: '全部成员', value: 'all' },
+  ...projectMembers.value.map((member) => ({
+    label: `${member.name} · ${member.publicId}`,
+    value: member.userId,
+  })),
+]);
 
 const applicationMap = computed(() =>
   Object.fromEntries(
@@ -29,18 +62,147 @@ const applicationMap = computed(() =>
 
 const filteredJobs = computed(() => {
   const normalized = keyword.value.trim().toLowerCase();
-  return platformStore.currentJobs.filter((job) => {
-    const matchesStatus =
-      statusFilter.value === 'all' ||
-      (statusFilter.value === 'active'
-        ? ['queued', 'running'].includes(job.status)
-        : job.status === statusFilter.value);
-    const matchesKeyword =
-      !normalized ||
-      `${job.name}${job.owner}${job.id}`.toLowerCase().includes(normalized);
-    return matchesStatus && matchesKeyword;
-  });
+  const [sortBy, sortOrder] = sortValue.value.split('-') as [
+    'createdAt' | 'name' | 'owner' | 'status',
+    'asc' | 'desc',
+  ];
+  return platformStore.currentJobs
+    .filter((job) => {
+      const matchesStatus =
+        statusFilter.value === 'all' ||
+        (statusFilter.value === 'active'
+          ? ['cancelling', 'queued', 'running'].includes(job.status)
+          : job.status === statusFilter.value);
+      const matchesOwner =
+        ownerFilter.value === 'all' || job.createdBy === ownerFilter.value;
+      const matchesKeyword =
+        !normalized ||
+        `${job.name}${job.owner}${job.ownerPublicId}${job.publicId}`
+          .toLowerCase()
+          .includes(normalized);
+      return matchesStatus && matchesOwner && matchesKeyword;
+    })
+    .toSorted((left, right) => {
+      const leftValue =
+        sortBy === 'createdAt'
+          ? new Date(left.createdAt).getTime()
+          : String(left[sortBy]).toLowerCase();
+      const rightValue =
+        sortBy === 'createdAt'
+          ? new Date(right.createdAt).getTime()
+          : String(right[sortBy]).toLowerCase();
+      let comparison = 0;
+      if (leftValue < rightValue) comparison = -1;
+      if (leftValue > rightValue) comparison = 1;
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
 });
+
+watch(
+  () => route.query.status,
+  (status) => {
+    statusFilter.value = ['active', 'failed', 'succeeded'].includes(
+      String(status),
+    )
+      ? String(status)
+      : 'all';
+  },
+  { immediate: true },
+);
+
+onMounted(async () => {
+  try {
+    await platformStore.refreshCurrentProjectJobs();
+  } catch {
+    message.error('任务列表刷新失败，请稍后重试');
+  }
+});
+
+watch(
+  () => platformStore.currentProjectId,
+  async (projectId) => {
+    selectedJobIds.value = [];
+    ownerFilter.value = 'all';
+    if (!projectId) {
+      projectMembers.value = [];
+      return;
+    }
+    const result = await getProjectMembersApi(projectId);
+    projectMembers.value = result.items;
+  },
+  { immediate: true },
+);
+
+function toggleSelection(jobId: string, checked: boolean) {
+  selectedJobIds.value = checked
+    ? [...new Set([...selectedJobIds.value, jobId])]
+    : selectedJobIds.value.filter((id) => id !== jobId);
+}
+
+function toggleSelectAll() {
+  selectedJobIds.value =
+    selectedJobIds.value.length === filteredJobs.value.length
+      ? []
+      : filteredJobs.value.map((job) => job.id);
+}
+
+function clearJobSelection() {
+  selectedJobIds.value = [];
+}
+
+function jobErrorMessage(job: PlatformJob) {
+  return job.error?.message || job.stage || '任务执行失败';
+}
+
+function jobErrorSummary(job: PlatformJob) {
+  const message = jobErrorMessage(job).trim();
+  if (/invalid_(?:union|value)|ZodError|"errors"/.test(message)) {
+    return '工作流参数与当前服务版本不一致';
+  }
+  return message.length > 90 ? `${message.slice(0, 90)}…` : message;
+}
+
+function showJobError(job: PlatformJob) {
+  Modal.info({
+    content: jobErrorMessage(job),
+    okText: '关闭',
+    title: `任务错误详情 · ${job.publicId}`,
+    width: 720,
+  });
+}
+
+function confirmArchive(jobs: PlatformJob[]) {
+  const activeJobs = jobs.filter((job) =>
+    ['cancelling', 'queued', 'running'].includes(job.status),
+  );
+  if (activeJobs.length > 0) {
+    message.warning('运行中的任务不能删除，请先取消任务');
+    return;
+  }
+  Modal.confirm({
+    cancelText: '取消',
+    content: `确定从任务中心移除 ${jobs.length} 个任务吗？任务台账、资产和审计记录仍会保留。`,
+    okButtonProps: { danger: true },
+    okText: '删除任务',
+    async onOk() {
+      await platformStore.archiveJobs(jobs.map((job) => job.id));
+      selectedJobIds.value = [];
+      message.success('任务已从列表移除');
+    },
+    title: jobs.length > 1 ? '批量删除任务' : '删除任务',
+  });
+}
+
+async function openConversation(job: PlatformJob) {
+  if (!job.designConversationId) {
+    message.info('该历史任务未关联设计会话');
+    return;
+  }
+  await router.push({
+    path: '/design',
+    query: { conversationId: job.designConversationId },
+  });
+}
 </script>
 
 <template>
@@ -54,18 +216,58 @@ const filteredJobs = computed(() => {
     <div class="platform-content">
       <section class="platform-panel">
         <div class="rail-toolbar job-toolbar">
-          <Segmented v-model:value="statusFilter" :options="statusOptions" />
-          <Input
-            v-model:value="keyword"
-            allow-clear
-            class="job-search"
-            placeholder="搜索任务名称或编号"
+          <div class="job-toolbar__filters">
+            <Segmented v-model:value="statusFilter" :options="statusOptions" />
+            <Input
+              v-model:value="keyword"
+              allow-clear
+              class="job-search"
+              placeholder="搜索任务名称、编号或创建人"
+            >
+              <template #prefix><IconifyIcon icon="lucide:search" /></template>
+            </Input>
+            <Select
+              v-model:value="ownerFilter"
+              :options="memberOptions"
+              class="job-member-filter"
+            />
+            <Select
+              v-model:value="sortValue"
+              :options="sortOptions"
+              class="job-sort-filter"
+            />
+          </div>
+          <Button @click="toggleSelectAll">
+            {{
+              selectedJobIds.length === filteredJobs.length &&
+              filteredJobs.length
+                ? '取消全选'
+                : '全选'
+            }}
+          </Button>
+        </div>
+
+        <div v-if="selectedJobIds.length" class="job-batch-bar">
+          <strong>已选择 {{ selectedJobIds.length }} 项</strong>
+          <Button @click="clearJobSelection">
+            <IconifyIcon icon="lucide:x" />
+            取消选择
+          </Button>
+          <Button
+            danger
+            @click="
+              confirmArchive(
+                filteredJobs.filter((job) => selectedJobIds.includes(job.id)),
+              )
+            "
           >
-            <template #prefix><IconifyIcon icon="lucide:search" /></template>
-          </Input>
+            <IconifyIcon icon="lucide:trash-2" />
+            批量删除
+          </Button>
         </div>
 
         <div class="job-table-head">
+          <span></span>
           <span>任务</span>
           <span>应用</span>
           <span>状态与进度</span>
@@ -74,6 +276,10 @@ const filteredJobs = computed(() => {
         </div>
         <div class="job-list">
           <article v-for="job in filteredJobs" :key="job.id" class="job-row">
+            <Checkbox
+              :checked="selectedJobIds.includes(job.id)"
+              @change="toggleSelection(job.id, Boolean($event.target.checked))"
+            />
             <div class="job-row__name">
               <div class="job-row__icon">
                 <IconifyIcon
@@ -82,7 +288,7 @@ const filteredJobs = computed(() => {
               </div>
               <div>
                 <strong>{{ job.name }}</strong>
-                <small>{{ job.id }}</small>
+                <small>{{ job.publicId }}</small>
               </div>
             </div>
             <div class="job-row__app">
@@ -104,27 +310,40 @@ const filteredJobs = computed(() => {
                 "
                 size="small"
               />
-              <small>{{ job.stage }}</small>
+              <Tooltip v-if="job.status === 'failed'" title="点击查看完整错误">
+                <button
+                  class="job-row__error"
+                  type="button"
+                  @click="showJobError(job)"
+                >
+                  {{ jobErrorSummary(job) }}
+                </button>
+              </Tooltip>
+              <small v-else>{{ job.stage }}</small>
             </div>
             <div class="job-row__meta">
               <strong>{{ job.owner }}</strong>
               <small>
-                {{ job.createdAt }}
+                {{ job.ownerPublicId }} ·
+                {{ new Date(job.createdAt).toLocaleString('zh-CN') }}
                 <template v-if="job.duration">· {{ job.duration }}</template>
               </small>
             </div>
             <div class="job-row__actions">
-              <Button
-                type="link"
-                @click="
-                  router.push({
-                    path: `/workspace/${job.appKey}`,
-                    query: { instanceId: job.workspaceInstanceId },
-                  })
-                "
-              >
-                打开会话
-              </Button>
+              <Tooltip title="打开设计会话">
+                <Button
+                  :disabled="!job.designConversationId"
+                  shape="circle"
+                  @click="openConversation(job)"
+                >
+                  <IconifyIcon icon="lucide:message-square-more" />
+                </Button>
+              </Tooltip>
+              <Tooltip title="删除任务">
+                <Button danger shape="circle" @click="confirmArchive([job])">
+                  <IconifyIcon icon="lucide:trash-2" />
+                </Button>
+              </Tooltip>
             </div>
           </article>
         </div>
@@ -135,22 +354,49 @@ const filteredJobs = computed(() => {
 
 <style scoped>
 .job-search {
-  width: 300px;
+  width: 280px;
+}
+
+.job-toolbar__filters,
+.job-batch-bar,
+.job-row__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.job-member-filter {
+  width: 190px;
+}
+
+.job-sort-filter {
+  width: 190px;
+}
+
+.job-batch-bar {
+  padding: 10px 18px;
+  color: var(--rail-red);
+  background: var(--rail-red-soft);
+  border-bottom: 1px solid #efc7ce;
 }
 
 .job-table-head,
 .job-row {
   display: grid;
   grid-template-columns:
-    minmax(220px, 1.3fr) minmax(150px, 0.8fr) minmax(230px, 1.1fr)
-    minmax(130px, 0.65fr) 90px;
+    24px minmax(220px, 1.3fr) minmax(150px, 0.8fr) minmax(230px, 1.1fr)
+    minmax(170px, 0.75fr) 90px;
   gap: 18px;
   align-items: center;
 }
 
+.job-row > * {
+  min-width: 0;
+}
+
 .job-table-head {
   padding: 11px 18px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--rail-steel);
   text-transform: uppercase;
@@ -204,12 +450,12 @@ const filteredJobs = computed(() => {
 }
 
 .job-row strong {
-  font-size: 11px;
+  font-size: 14px;
 }
 
 .job-row small {
   margin-top: 4px;
-  font-size: 9px;
+  font-size: 12px;
   color: var(--rail-steel);
 }
 
@@ -226,8 +472,32 @@ const filteredJobs = computed(() => {
   color: var(--rail-steel);
 }
 
+.job-row__error {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: #b91c32;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+:global(.ant-modal-confirm-content) {
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 .job-row__actions {
-  text-align: right;
+  justify-content: flex-end;
 }
 
 @media (max-width: 1050px) {

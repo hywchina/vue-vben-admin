@@ -11,7 +11,7 @@ export const overridesPreferences = defineOverridesPreferences({
     authPageLayout: 'panel-right',
     contentCompact: 'wide',
     defaultAvatar: '/rail-logo.svg',
-    defaultHomePath: '/workspace/overview',
+    defaultHomePath: '/home',
     enableCheckUpdates: false,
     enablePreferences: true,
     locale: 'zh-CN',

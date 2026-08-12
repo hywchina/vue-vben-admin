@@ -143,8 +143,8 @@ function parseMarkdown(content: string): MarkdownBlock[] {
 
 <style scoped>
 .platform-markdown {
-  width: min(100%, 980px);
-  padding: 8px 4px;
+  width: 100%;
+  padding: 8px 0;
   font-size: 15px;
   line-height: 1.85;
   color: #20282d;
