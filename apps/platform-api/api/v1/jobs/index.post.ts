@@ -439,6 +439,7 @@ export default apiHandler(async (event) => {
           code: CAPABILITY_ADAPTER_NOT_CONFIGURED,
           message: '该应用尚未配置外部能力适配器',
         },
+    externalExecution: Boolean(adapterConfigured && capability),
     inputAssetIds: input.inputAssetIds,
     inputs: orderedInputAssets.map((asset, position) => ({
       annotationAssetId: annotationsByPosition.get(position),

@@ -14,6 +14,7 @@ export interface PlatformJob {
   designConversationId?: string;
   designConversationTitle?: string;
   duration?: string;
+  externalExecution: boolean;
   error?: {
     code: string;
     message: string;

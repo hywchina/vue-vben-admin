@@ -1091,17 +1091,9 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           type: 'asset',
         }),
         ...[
-          [
-            'horizontal_angle',
-            'horizontalAngle',
-            '水平角度',
-            180,
-            -180,
-            360,
-            5,
-          ],
-          ['vertical_angle', 'verticalAngle', '俯仰角度', 30, -90, 90, 5],
-          ['zoom', 'zoom', '镜头距离', 1, 0.1, 10, 0.1],
+          ['horizontal_angle', 'horizontalAngle', '水平角度', 180, 0, 360, 1],
+          ['vertical_angle', 'verticalAngle', '俯仰角度', 30, -30, 60, 1],
+          ['zoom', 'zoom', '镜头距离', 1, 0, 10, 0.1],
         ].map(([inputName, key, label, defaultValue, min, max, step]) =>
           scalar({
             defaultValue,

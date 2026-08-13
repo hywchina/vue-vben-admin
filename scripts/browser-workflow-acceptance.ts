@@ -30,6 +30,7 @@ const password = 'RailBrowserAcceptance!2026';
 const email = `${username}@rail.local`;
 const primaryProjectName = `浏览器验收 ${runId.slice(-6)}`;
 const secondaryProjectName = `浏览器验收备用项目 ${runId.slice(-6)}`;
+const acceptanceMarker = 'browser-workflow-acceptance';
 const screenshotPath =
   process.env.RAIL_BROWSER_SCREENSHOT ??
   '/tmp/rail-workflow-browser-acceptance.png';
@@ -97,6 +98,50 @@ let secondaryProjectId = '';
 let userId = '';
 let invitedMemberId = '';
 let multiImageVisibility: boolean | undefined;
+
+async function cleanupStaleAcceptanceData() {
+  const sql = useDatabase();
+  const staleProjects = await sql<{ id: string }[]>`
+    SELECT project.id
+    FROM projects project
+    JOIN users creator ON creator.id = project.owner_id
+    WHERE project.description LIKE 'browser-acceptance-%'
+      AND creator.username LIKE 'rail_ui_%'
+      AND project.created_at < now() - interval '30 minutes'
+  `;
+  for (const project of staleProjects) {
+    const objects = await sql<{ objectKey: string }[]>`
+      SELECT DISTINCT version.object_key AS "objectKey"
+      FROM asset_versions version
+      JOIN assets asset ON asset.id = version.asset_id
+      WHERE asset.project_id = ${project.id}
+        AND version.object_key IS NOT NULL
+    `;
+    for (const object of objects) {
+      await deleteObject(object.objectKey).catch(() => undefined);
+    }
+    await sql`DELETE FROM projects WHERE id = ${project.id}`;
+  }
+  const staleUsers = await sql<{ id: string; objectKey: null | string }[]>`
+    SELECT id, avatar_object_key AS "objectKey"
+    FROM users
+    WHERE username LIKE 'rail_ui_%' OR username LIKE 'rail_member_%'
+  `;
+  for (const user of staleUsers) {
+    const [referenced] = await sql<{ exists: boolean }[]>`
+      SELECT EXISTS(
+        SELECT 1 FROM projects WHERE owner_id = ${user.id}
+        UNION ALL
+        SELECT 1 FROM project_members WHERE user_id = ${user.id}
+      ) AS exists
+    `;
+    if (referenced?.exists) continue;
+    if (user.objectKey)
+      await deleteObject(user.objectKey).catch(() => undefined);
+    await sql`DELETE FROM audit_events WHERE actor_id = ${user.id}`;
+    await sql`DELETE FROM users WHERE id = ${user.id}`;
+  }
+}
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -194,6 +239,7 @@ async function apiRequest<T>(
 }
 
 async function setupAcceptanceData() {
+  await cleanupStaleAcceptanceData();
   const registered = await apiRequest<{ id: string }>('/auth/register', {
     body: {
       department: '自动化验收',
@@ -288,6 +334,13 @@ async function setupAcceptanceData() {
     method: 'PUT',
     token,
   });
+  const inputFolder = await apiRequest<{ id: string }>('/asset-folders', {
+    body: {
+      name: '设计输入素材',
+      projectId,
+    },
+    token,
+  });
   await apiRequest('/assets/text', {
     body: {
       content: '这是用于验收资产中心阅读能力的真实文本。',
@@ -304,6 +357,7 @@ async function setupAcceptanceData() {
       content:
         '# 浏览器 Markdown 输入\n\n用于验证项目资产可以作为设计会话文本来源。\n\n![不应加载的图片](https://example.test/ignored.png)',
       description: 'browser acceptance Markdown input',
+      folderId: inputFolder.id,
       mimeType: 'text/markdown',
       name: '浏览器验收输入.md',
       projectId,
@@ -520,7 +574,10 @@ async function setupAcceptanceData() {
         design_conversation_id
       ) VALUES (
         ${jobId}, ${projectId}, 'text-to-image', '浏览器活跃任务',
-        ${transaction.json({ prompt: '第二轮：夜景氛围的轨道客室设计' })},
+        ${transaction.json({
+          acceptanceMarker,
+          prompt: '第二轮：夜景氛围的轨道客室设计',
+        })},
         ${userId}, 'running', 32, '真实页面验收中', now(),
         ${textWorkspaceInstanceId}, ${designConversationId}
       )
@@ -778,6 +835,7 @@ async function cleanupAcceptanceData() {
 }
 
 async function runBrowserAcceptance() {
+  const acceptanceSql = useDatabase();
   const {
     comparisonJobId,
     comparisonMaskAssetId,
@@ -1506,9 +1564,31 @@ async function runBrowserAcceptance() {
     const activeJobRow = page.locator('.job-row', {
       hasText: '浏览器活跃任务',
     });
+    await activeJobRow.getByText('无外部执行，可取消后删除').waitFor();
+    await activeJobRow.getByRole('button', { name: '取消任务' }).waitFor();
     await activeJobRow.locator('input[type="checkbox"]').click();
     await page.getByRole('button', { name: '取消选择' }).click();
     await page.locator('.job-batch-bar').waitFor({ state: 'detached' });
+    await activeJobRow.getByRole('button', { name: '取消任务' }).click();
+    await page.getByText('任务已取消，现在可以删除').waitFor();
+    await activeJobRow.getByRole('button', { name: '删除任务' }).waitFor();
+    const [cancelledAcceptanceJob] = await acceptanceSql<
+      Array<{ status: string }>
+    >`
+      SELECT status FROM jobs WHERE id = ${jobId}
+    `;
+    assert(
+      cancelledAcceptanceJob?.status === 'cancelled',
+      '没有 Worker 执行记录的遗留活动任务不能通过任务中心取消',
+    );
+    // 后续会话页面仍复用这条验收夹具验证“停止生成”，因此恢复夹具状态；
+    // finally 会连同验收项目统一清理，不会留下活动任务。
+    await acceptanceSql`
+      UPDATE jobs
+      SET status = 'running', progress = 32, stage = '真实页面验收中',
+          completed_at = null, updated_at = now()
+      WHERE id = ${jobId}
+    `;
     await page.goto(`${webUrl}/jobs`);
     const failedJobRow = page.locator('.job-row', {
       hasText: '浏览器失败日志越界验收',
@@ -1841,7 +1921,6 @@ async function runBrowserAcceptance() {
     await stopButton.click();
     await page.getByText('本轮生成已停止').waitFor();
     await page.getByRole('button', { exact: true, name: '发送' }).waitFor();
-    const acceptanceSql = useDatabase();
     await page.reload();
     await page.locator(`[data-job-id="${comparisonJobId}"]`).waitFor();
     await page.getByRole('button', { exact: true, name: '发送' }).waitFor();
@@ -2132,6 +2211,13 @@ async function runBrowserAcceptance() {
     const markdownPicker = page.getByRole('dialog', {
       name: '从当前项目资产选择',
     });
+    assert(
+      (await markdownPicker.getByLabel('资产文件夹路径').count()) === 1 &&
+        (await markdownPicker.locator('.asset-picker-sort').count()) === 1 &&
+        (await markdownPicker.locator('.asset-picker-filter').count()) === 1,
+      '应用资产选择器没有提供文件夹导航、类型筛选和排序',
+    );
+    await markdownPicker.getByText('设计输入素材').click();
     await markdownPicker.getByText('浏览器验收输入.md').click();
     await markdownPicker.getByRole('button', { name: '使用所选资产' }).click();
     await page.getByText('Markdown 文本已加载到输入框').waitFor();
@@ -2792,11 +2878,69 @@ async function runBrowserAcceptance() {
       .getByRole('button', { name: '使用所选资产' })
       .click();
     await cameraField.getByText('浏览器验收图片').waitFor();
-    const horizontalSlider = page
-      .locator('.camera-slider')
-      .filter({ hasText: '水平角度' })
-      .locator('input[type="range"]');
-    await horizontalSlider.fill('225');
+    const cameraControl = page.locator('.camera-control');
+    const cameraSubjectPreview = cameraControl
+      .locator('.camera-subject-preview')
+      .first();
+    await cameraSubjectPreview.waitFor();
+    assert(
+      await cameraSubjectPreview.evaluate(
+        (image) =>
+          (image as HTMLImageElement).complete &&
+          (image as HTMLImageElement).naturalWidth > 0,
+      ),
+      '镜头控制器没有显示已选输入图片',
+    );
+    const cameraOrbit = cameraControl.locator('.camera-visual svg').first();
+    const cameraHorizontalValue = cameraControl
+      .locator('.camera-presets .azimuth strong')
+      .first();
+    const initialHorizontalText = await cameraHorizontalValue.textContent();
+    const initialHorizontalAngle = Number(
+      initialHorizontalText?.replace('°', ''),
+    );
+    const cameraOrbitBox = await cameraOrbit.boundingBox();
+    assert(cameraOrbitBox, '镜头控制器没有可交互的轨道画布');
+    // 前序图片平移验收可能让 Playwright 鼠标保持按下状态，先归一化。
+    await page.mouse.up();
+    const orbitStart = {
+      x: cameraOrbitBox.x + cameraOrbitBox.width * 0.5,
+      y: cameraOrbitBox.y + cameraOrbitBox.height * 0.5,
+    };
+    await cameraControl
+      .locator('.camera-visual')
+      .first()
+      .dispatchEvent('mousedown', {
+        button: 0,
+        buttons: 1,
+        clientX: orbitStart.x,
+        clientY: orbitStart.y,
+      });
+    await page.mouse.move(
+      cameraOrbitBox.x + cameraOrbitBox.width * 0.68,
+      cameraOrbitBox.y + cameraOrbitBox.height * 0.42,
+      { steps: 6 },
+    );
+    await page.mouse.up();
+    await page.waitForTimeout(150);
+    const draggedHorizontalText = await cameraHorizontalValue.textContent();
+    assert(
+      Number(draggedHorizontalText?.replace('°', '')) !==
+        initialHorizontalAngle,
+      '拖拽镜头轨道后水平角度没有变化',
+    );
+    await cameraControl
+      .locator('.camera-presets .azimuth select')
+      .first()
+      .selectOption('225');
+    await cameraControl
+      .locator('.camera-presets .elevation select')
+      .first()
+      .selectOption('30');
+    await cameraControl
+      .locator('.camera-presets .distance select')
+      .first()
+      .selectOption('4');
     await page.waitForTimeout(700);
     await page.reload();
     await page.locator('.camera-control').waitFor();
@@ -2812,8 +2956,28 @@ async function runBrowserAcceptance() {
       '重新进入角度工作流后图片预览没有恢复',
     );
     assert(
-      Number(await horizontalSlider.inputValue()) === 225,
+      Number(
+        await page
+          .locator('.camera-presets .azimuth select')
+          .first()
+          .inputValue(),
+      ) === 225,
       '重新进入角度工作流后没有恢复镜头参数',
+    );
+    assert(
+      Number(
+        await page
+          .locator('.camera-presets .elevation select')
+          .first()
+          .inputValue(),
+      ) === 30 &&
+        Number(
+          await page
+            .locator('.camera-presets .distance select')
+            .first()
+            .inputValue(),
+        ) === 4,
+      '镜头垂直角度或距离预设没有恢复',
     );
     await page.screenshot({ fullPage: true, path: cameraScreenshotPath });
 

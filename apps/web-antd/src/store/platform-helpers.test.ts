@@ -14,6 +14,7 @@ function createJob(overrides: Partial<PlatformJob> = {}): PlatformJob {
     appKey: 'render',
     createdAt: '2026-08-08T00:00:00.000Z',
     createdBy: 'user-1',
+    externalExecution: false,
     id: 'job-1',
     inputAssetIds: [],
     inputs: [],

@@ -39,6 +39,7 @@ import {
 import {
   archiveDesignConversationApi,
   createDesignConversationApi,
+  getAssetApi,
   getAssetDownloadApi,
   getAssetPreviewApi,
   getCapabilityApi,
@@ -247,6 +248,12 @@ const composerInputs = computed(() =>
     return asset ? [{ asset, field }] : [];
   }),
 );
+const cameraPreviewUrl = computed(() => {
+  const source = composerInputs.value.find(
+    ({ asset }) => asset.type === 'image',
+  );
+  return source ? (composerPreviewUrls[source.asset.id] ?? '') : '';
+});
 const continueDestinations = computed(() => {
   const kind = actionOutput.value?.kind;
   if (!kind) return [];
@@ -360,9 +367,19 @@ function openMediaPicker() {
 
 async function loadMarkdownAsset(assetId: string) {
   const field = promptField.value;
-  const asset = markdownAssets.value.find((item) => item.id === assetId);
-  if (!field || !asset) return;
+  if (!field) return;
   try {
+    const asset =
+      markdownAssets.value.find((item) => item.id === assetId) ??
+      (await getAssetApi(assetId));
+    if (
+      asset.projectId !== platformStore.currentProjectId ||
+      asset.type !== 'text' ||
+      asset.mimeType !== 'text/markdown'
+    ) {
+      message.warning('请选择当前项目中的 Markdown 文本资产');
+      return;
+    }
     const result = await getAssetDownloadApi(assetId);
     let rawContent: string;
     if (result.mode === 'inline') {
@@ -1515,6 +1532,7 @@ onBeforeUnmount(() => {
           :assets="platformStore.currentAssets"
           :field="field"
           :live-capture="(file) => runLiveCapture(field, file)"
+          :project-id="platformStore.currentProjectId"
           :refresh-rate="captureRefreshRate()"
           :save-mask="(file) => saveInputMask(field, file)"
           :selected-asset-id="
@@ -1538,6 +1556,7 @@ onBeforeUnmount(() => {
       :accepted-kinds="['text']"
       :assets="markdownAssets"
       :open="markdownPickerOpen"
+      :project-id="platformStore.currentProjectId"
       @select="loadMarkdownAsset"
       @update:open="markdownPickerOpen = $event"
     />
@@ -1559,6 +1578,7 @@ onBeforeUnmount(() => {
             :assets="platformStore.currentAssets"
             :field="field"
             :live-capture="(file) => runLiveCapture(field, file)"
+            :project-id="platformStore.currentProjectId"
             :refresh-rate="captureRefreshRate()"
             :save-mask="(file) => saveInputMask(field, file)"
             :selected-asset-id="
@@ -1578,6 +1598,7 @@ onBeforeUnmount(() => {
           <CameraAngleControl
             :accent="application?.color ?? '#b91c32'"
             :fields="cameraFields"
+            :preview-url="cameraPreviewUrl"
             :values="parameterValues"
             @update="setFieldNumberValue"
           />

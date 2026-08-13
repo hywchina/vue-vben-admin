@@ -48,6 +48,7 @@ export default apiHandler(async (event) => {
       designConversationTitle: null | string;
       errorCode: null | string;
       errorMessage: null | string;
+      externalExecution: boolean;
       externalReference: null | string;
       id: string;
       inputAssetIds: null | string[];
@@ -107,6 +108,9 @@ export default apiHandler(async (event) => {
       j.created_by AS "createdBy",
       (j.created_by = ${identity.id}) AS "ownedByCurrentUser",
       j.external_reference AS "externalReference",
+      EXISTS(
+        SELECT 1 FROM job_executions execution WHERE execution.job_id = j.id
+      ) AS "externalExecution",
       j.error ->> 'code' AS "errorCode",
       j.error ->> 'message' AS "errorMessage",
       wv.version AS "workflowVersion",

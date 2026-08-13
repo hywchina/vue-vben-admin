@@ -12,7 +12,7 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Button, message, Modal } from 'ant-design-vue';
 
-import { getAssetPreviewApi } from '#/api';
+import { getAssetApi, getAssetPreviewApi } from '#/api';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import ComfyMaskIcon from '#/components/platform/comfy-mask-icon.vue';
 import ImageLightbox from '#/components/platform/image-lightbox.vue';
@@ -38,6 +38,7 @@ const props = defineProps<{
   assets: PlatformAsset[];
   field: CapabilityField;
   liveCapture?: (file: File) => Promise<boolean | undefined>;
+  projectId?: string;
   refreshRate?: number;
   saveMask?: (file: File) => Promise<unknown>;
   selectedAssetId?: string;
@@ -71,6 +72,7 @@ const maskEditorOpen = ref(false);
 const editorZoom = ref(1);
 const pickerOpen = ref(false);
 const lightboxOpen = ref(false);
+const selectedAssetDetail = ref<PlatformAsset>();
 const captureVideoRef = ref<HTMLVideoElement>();
 const captureMode = ref<'camera' | 'screen'>('screen');
 const captureCrop = ref<CaptureCrop>();
@@ -85,8 +87,12 @@ let liveGeneration = 0;
 let previousFrame: Uint8ClampedArray | undefined;
 let captureStream: MediaStream | undefined;
 
-const selectedAsset = computed(() =>
-  props.assets.find((asset) => asset.id === props.selectedAssetId),
+const selectedAsset = computed(
+  () =>
+    props.assets.find((asset) => asset.id === props.selectedAssetId) ??
+    (selectedAssetDetail.value?.id === props.selectedAssetId
+      ? selectedAssetDetail.value
+      : undefined),
 );
 const isDrawingField = computed(() => props.field.type === 'region');
 const capturePreviewStyle = computed(() => {
@@ -125,6 +131,16 @@ async function loadPreview(assetId?: string) {
     previewUrl.value = '';
   } finally {
     loadingPreview.value = false;
+  }
+}
+
+async function loadSelectedAssetDetail(assetId?: string) {
+  selectedAssetDetail.value = undefined;
+  if (!assetId || props.assets.some((asset) => asset.id === assetId)) return;
+  try {
+    selectedAssetDetail.value = await getAssetApi(assetId);
+  } catch {
+    // 资产可能已经失效，预览加载会保持为空并允许用户重新选择。
   }
 }
 
@@ -567,7 +583,14 @@ function handleFile(event: Event) {
   input.value = '';
 }
 
-watch(() => props.selectedAssetId, loadPreview, { immediate: true });
+watch(
+  () => props.selectedAssetId,
+  (assetId) => {
+    void loadPreview(assetId);
+    void loadSelectedAssetDetail(assetId);
+  },
+  { immediate: true },
+);
 watch(
   () => props.value,
   async (value) => {
@@ -761,6 +784,7 @@ onBeforeUnmount(stopCapture);
       v-model:open="pickerOpen"
       :accepted-kinds="field.acceptedKinds"
       :assets="assets"
+      :project-id="projectId"
       :selected-asset-id="selectedAssetId"
       @select="handleAssetSelect"
     />

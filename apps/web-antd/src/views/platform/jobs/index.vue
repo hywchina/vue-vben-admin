@@ -31,6 +31,7 @@ const statusFilter = ref('all');
 const ownerFilter = ref('all');
 const sortValue = ref('createdAt-desc');
 const selectedJobIds = ref<string[]>([]);
+const cancellingJobIds = ref(new Set<string>());
 const projectMembers = ref<ProjectMember[]>([]);
 const statusOptions = [
   { label: '全部', value: 'all' },
@@ -193,6 +194,29 @@ function confirmArchive(jobs: PlatformJob[]) {
   });
 }
 
+function isActiveJob(job: PlatformJob) {
+  return ['cancelling', 'queued', 'running'].includes(job.status);
+}
+
+async function cancelJob(job: PlatformJob) {
+  if (job.status === 'cancelling' || cancellingJobIds.value.has(job.id)) return;
+  cancellingJobIds.value.add(job.id);
+  try {
+    const result = await platformStore.cancelJob(job.id);
+    if (result.status === 'cancelled') {
+      statusFilter.value = 'all';
+      message.success('任务已取消，现在可以删除');
+    } else {
+      message.success('已提交取消请求，Worker 确认后可删除');
+    }
+    await platformStore.refreshCurrentProjectJobs();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '取消任务失败');
+  } finally {
+    cancellingJobIds.value.delete(job.id);
+  }
+}
+
 async function openConversation(job: PlatformJob) {
   if (!job.designConversationId) {
     message.info('该历史任务未关联设计会话');
@@ -319,6 +343,12 @@ async function openConversation(job: PlatformJob) {
                   {{ jobErrorSummary(job) }}
                 </button>
               </Tooltip>
+              <small
+                v-else-if="isActiveJob(job) && !job.externalExecution"
+                class="job-row__ledger-warning"
+              >
+                无外部执行，可取消后删除
+              </small>
               <small v-else>{{ job.stage }}</small>
             </div>
             <div class="job-row__meta">
@@ -339,8 +369,32 @@ async function openConversation(job: PlatformJob) {
                   <IconifyIcon icon="lucide:message-square-more" />
                 </Button>
               </Tooltip>
-              <Tooltip title="删除任务">
-                <Button danger shape="circle" @click="confirmArchive([job])">
+              <Tooltip
+                v-if="isActiveJob(job)"
+                :title="
+                  job.status === 'cancelling'
+                    ? '正在等待 Worker 确认取消'
+                    : '取消任务后才能删除'
+                "
+              >
+                <Button
+                  aria-label="取消任务"
+                  danger
+                  :disabled="job.status === 'cancelling'"
+                  :loading="cancellingJobIds.has(job.id)"
+                  shape="circle"
+                  @click="cancelJob(job)"
+                >
+                  <IconifyIcon icon="lucide:square" />
+                </Button>
+              </Tooltip>
+              <Tooltip v-else title="删除任务">
+                <Button
+                  aria-label="删除任务"
+                  danger
+                  shape="circle"
+                  @click="confirmArchive([job])"
+                >
                   <IconifyIcon icon="lucide:trash-2" />
                 </Button>
               </Tooltip>
@@ -486,6 +540,10 @@ async function openConversation(job: PlatformJob) {
   cursor: pointer;
   background: transparent;
   border: 0;
+}
+
+.job-row__ledger-warning {
+  color: #9a6700 !important;
 }
 
 :global(.ant-modal-confirm-content) {

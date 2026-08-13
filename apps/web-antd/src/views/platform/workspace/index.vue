@@ -64,6 +64,7 @@ const capabilityLoading = ref(false);
 const capability = ref<null | PlatformCapability>(null);
 const workspaceInstance = ref<null | WorkflowWorkspaceInstance>(null);
 const parameterValues = reactive<Record<string, unknown>>({});
+const cameraPreviewUrl = ref('');
 const genericPrompt = ref(
   '以现代、克制的设计语言优化客室空间，保持结构关系清晰。',
 );
@@ -147,6 +148,15 @@ const selectedAssetIds = computed(() =>
     return id ? [id] : [];
   }),
 );
+const cameraSourceAssetId = computed(() => {
+  const sourceField = mediaFields.value.find(
+    (field) =>
+      field.assetIndex !== undefined && field.acceptedKinds.includes('image'),
+  );
+  return sourceField?.assetIndex === undefined
+    ? ''
+    : (selectedAssets[sourceField.assetIndex] ?? '');
+});
 const resultKind = computed(
   () =>
     actionOutput.value?.kind ??
@@ -198,6 +208,25 @@ function setFieldValue(field: CapabilityField, value: unknown) {
   parameterValues[field.key] = value;
   scheduleWorkspaceDraftSave();
 }
+
+let cameraPreviewGeneration = 0;
+async function loadCameraPreview(assetId: string) {
+  const generation = ++cameraPreviewGeneration;
+  cameraPreviewUrl.value = '';
+  if (!assetId) return;
+  try {
+    const preview = await getAssetPreviewApi(assetId);
+    if (generation === cameraPreviewGeneration && preview.mode === 'url') {
+      cameraPreviewUrl.value = preview.url;
+    }
+  } catch {
+    // 镜头参数仍可使用；预览失败时保留被摄平面占位提示。
+  }
+}
+
+watch(cameraSourceAssetId, (assetId) => void loadCameraPreview(assetId), {
+  immediate: true,
+});
 
 function setFieldNumberValue(
   field: CapabilityField,
@@ -1008,6 +1037,7 @@ onBeforeUnmount(() => {
               v-if="cameraFields.length"
               :accent="application.color"
               :fields="cameraFields"
+              :preview-url="cameraPreviewUrl"
               :values="parameterValues"
               @update="setFieldNumberValue"
             />
@@ -1255,6 +1285,7 @@ onBeforeUnmount(() => {
             :accent="application.color"
             :assets="platformStore.currentAssets"
             :field="field"
+            :project-id="platformStore.currentProjectId"
             :live-capture="(file) => runLiveCapture(field, file)"
             :refresh-rate="captureRefreshRate()"
             :save-mask="(file) => saveInputMask(field, file)"

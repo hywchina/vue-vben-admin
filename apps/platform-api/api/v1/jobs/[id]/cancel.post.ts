@@ -62,6 +62,10 @@ export default apiHandler(async (event) => {
   await writeAudit(event, {
     action: 'job.cancel',
     actor: identity,
+    details: {
+      cancellationMode: execution ? 'worker' : 'ledger-only',
+      previousStatus: job.status,
+    },
     module: 'job',
     targetId: jobId,
     targetType: 'job',
