@@ -2891,6 +2891,37 @@ async function runBrowserAcceptance() {
       ),
       '镜头控制器没有显示已选输入图片',
     );
+    const presetSelectBoxes = await Promise.all(
+      ['azimuth', 'elevation', 'distance'].map((className) =>
+        cameraControl
+          .locator(`.camera-presets .${className} select`)
+          .first()
+          .boundingBox(),
+      ),
+    );
+    const presetValueBoxes = await Promise.all(
+      ['azimuth', 'elevation', 'distance'].map((className) =>
+        cameraControl
+          .locator(`.camera-presets .${className} strong`)
+          .first()
+          .boundingBox(),
+      ),
+    );
+    assert(
+      presetSelectBoxes.every(
+        (box) =>
+          box &&
+          presetSelectBoxes[0] &&
+          Math.abs(box.y - presetSelectBoxes[0].y) <= 1,
+      ) &&
+        presetValueBoxes.every(
+          (box) =>
+            box &&
+            presetValueBoxes[0] &&
+            Math.abs(box.y - presetValueBoxes[0].y) <= 1,
+        ),
+      '镜头水平、垂直和距离预设没有保持在同一水平线',
+    );
     const cameraOrbit = cameraControl.locator('.camera-visual svg').first();
     const cameraHorizontalValue = cameraControl
       .locator('.camera-presets .azimuth strong')

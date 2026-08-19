@@ -662,30 +662,43 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
 
 .camera-presets {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 0.85fr auto;
-  gap: 6px;
-  align-items: end;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 5px;
+  align-items: stretch;
   padding: 0 9px 9px;
 }
 
 .camera-presets label {
   display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 3px 5px;
+  grid-template-rows: 25px 18px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 4px;
+  align-items: center;
   min-width: 0;
 }
 
 .camera-presets label span {
+  display: block;
   font-size: 9px;
+  line-height: 25px;
+  white-space: nowrap;
 }
 
 .camera-presets label strong {
+  display: flex;
   grid-column: 1 / -1;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 18px;
   font-size: 12px;
+  line-height: 18px;
   text-align: center;
 }
 
 .camera-presets select {
+  display: block;
+  width: 100%;
   min-width: 0;
   height: 25px;
   padding: 0 3px;
@@ -719,8 +732,10 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
 }
 
 .camera-reset {
+  align-self: end;
   width: 27px;
   min-width: 27px;
+  height: 25px;
   padding: 0;
   color: #f35c8c;
   background: #0a1118;
@@ -779,11 +794,11 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
 
 @media (max-width: 420px) {
   .camera-presets {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   }
 
   .camera-reset {
-    justify-self: end;
+    justify-self: stretch;
   }
 }
 </style>
