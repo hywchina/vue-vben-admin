@@ -1351,7 +1351,7 @@ onBeforeUnmount(() => {
         </button>
         <div class="thread-header__center">
           <strong>{{ activeConversation?.title ?? '新设计会话' }}</strong>
-          <span>{{ application?.name ?? '默认文生文' }}</span>
+          <span>{{ application?.name ?? '默认文生图' }}</span>
         </div>
         <div class="thread-header__actions">
           <div class="thread-status">
