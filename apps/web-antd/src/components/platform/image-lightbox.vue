@@ -1,17 +1,30 @@
 <script lang="ts" setup>
-import { nextTick, reactive, ref, watch } from 'vue';
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
 import { Button, Modal, Tooltip } from 'ant-design-vue';
 
 const props = defineProps<{
+  nextEnabled?: boolean;
   open: boolean;
+  previousEnabled?: boolean;
   title?: string;
   url?: string;
 }>();
 
-const emit = defineEmits<{ 'update:open': [open: boolean] }>();
+const emit = defineEmits<{
+  next: [];
+  previous: [];
+  'update:open': [open: boolean];
+}>();
 const viewportRef = ref<HTMLElement>();
 const imageRef = ref<HTMLImageElement>();
 const zoom = ref(1);
@@ -85,6 +98,18 @@ function handlePointerUp(event: PointerEvent) {
   }
 }
 
+function handleKeydown(event: KeyboardEvent) {
+  if (!props.open) return;
+  if (event.key === 'ArrowLeft' && props.previousEnabled) {
+    event.preventDefault();
+    emit('previous');
+  }
+  if (event.key === 'ArrowRight' && props.nextEnabled) {
+    event.preventDefault();
+    emit('next');
+  }
+}
+
 watch(
   () => props.open,
   (open) => {
@@ -93,6 +118,8 @@ watch(
 );
 
 watch(() => props.url, resetView);
+onMounted(() => window.addEventListener('keydown', handleKeydown));
+onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
 </script>
 
 <template>
@@ -124,6 +151,9 @@ watch(() => props.url, resetView);
           <IconifyIcon icon="lucide:hand" />
         </span>
       </Tooltip>
+      <span v-if="previousEnabled !== undefined" class="lightbox-page-hint">
+        使用左右方向键切换图片
+      </span>
     </div>
     <div
       ref="viewportRef"
@@ -146,6 +176,26 @@ watch(() => props.url, resetView);
         }"
         @load="clampPan"
       />
+      <Button
+        v-if="previousEnabled !== undefined"
+        aria-label="查看上一张图片"
+        class="lightbox-navigation lightbox-navigation--previous"
+        :disabled="!previousEnabled"
+        shape="circle"
+        @click="emit('previous')"
+      >
+        <IconifyIcon icon="lucide:chevron-left" />
+      </Button>
+      <Button
+        v-if="nextEnabled !== undefined"
+        aria-label="查看下一张图片"
+        class="lightbox-navigation lightbox-navigation--next"
+        :disabled="!nextEnabled"
+        shape="circle"
+        @click="emit('next')"
+      >
+        <IconifyIcon icon="lucide:chevron-right" />
+      </Button>
     </div>
   </Modal>
 </template>
@@ -162,6 +212,12 @@ watch(() => props.url, resetView);
   min-width: 54px;
   font-size: 12px;
   text-align: center;
+}
+
+.lightbox-page-hint {
+  width: auto !important;
+  margin-left: auto;
+  color: #7f8990;
 }
 
 .lightbox-pan-tool {
@@ -184,6 +240,7 @@ watch(() => props.url, resetView);
 }
 
 .lightbox-viewport {
+  position: relative;
   display: grid;
   place-items: center;
   height: min(72vh, 780px);
@@ -197,6 +254,24 @@ watch(() => props.url, resetView);
     linear-gradient(45deg, transparent 75%, #20262b 75%) 10px -10px / 20px 20px,
     linear-gradient(45deg, #20262b 25%, #171c20 25%) 10px 10px / 20px 20px;
   border-radius: 12px;
+}
+
+.lightbox-navigation {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  color: #fff;
+  background: rgb(15 21 25 / 72%);
+  border-color: rgb(255 255 255 / 28%);
+  transform: translateY(-50%);
+}
+
+.lightbox-navigation--previous {
+  left: 16px;
+}
+
+.lightbox-navigation--next {
+  right: 16px;
 }
 
 .lightbox-viewport.is-pannable {

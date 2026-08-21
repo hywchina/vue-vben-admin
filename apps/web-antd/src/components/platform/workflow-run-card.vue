@@ -49,6 +49,7 @@ const editedPrompt = ref('');
 const annotationLightboxOpen = ref(false);
 const annotationLightboxTitle = ref('');
 const annotationLightboxUrl = ref('');
+const outputLightboxOpen = ref(false);
 const previewUrls = reactive<Record<string, string>>({});
 const modelUrls = reactive<Record<string, string>>({});
 const textContents = reactive<Record<string, string>>({});
@@ -58,6 +59,15 @@ const activeOutput = computed(
     props.job.outputs.find(
       (output) => output.assetId === activeOutputAssetId.value,
     ) ?? props.job.outputs[0],
+);
+const imageOutputs = computed(() =>
+  props.job.outputs.filter((output) => output.kind === 'image'),
+);
+const visibleImageOutputs = computed(() => imageOutputs.value.slice(0, 3));
+const activeImageIndex = computed(() =>
+  imageOutputs.value.findIndex(
+    (output) => output.assetId === activeOutput.value?.assetId,
+  ),
 );
 const firstImageInput = computed(() =>
   props.job.inputs.find((input) => input.kind === 'image'),
@@ -268,6 +278,16 @@ function openAnnotation(input: PlatformJobInput) {
   annotationLightboxOpen.value = true;
 }
 
+function openOutputLightbox(output: PlatformJobOutput) {
+  activeOutputAssetId.value = output.assetId;
+  outputLightboxOpen.value = true;
+}
+
+function showAdjacentImage(direction: -1 | 1) {
+  const next = imageOutputs.value[activeImageIndex.value + direction];
+  if (next) activeOutputAssetId.value = next.assetId;
+}
+
 watch(
   () => props.job.outputs.map((output) => output.assetId).join('|'),
   () => {
@@ -296,9 +316,6 @@ onMounted(() => void loadPreviews());
       <span>第 {{ round }} 轮</span>
       <time :datetime="job.createdAt">{{ formatDate(job.createdAt) }}</time>
       <StatusPill :status="job.status" />
-      <small v-if="job.workflowVersion">
-        工作流 V{{ job.workflowVersion }}
-      </small>
     </header>
 
     <section class="round-input">
@@ -587,11 +604,43 @@ onMounted(() => void loadPreviews());
             :name="activeOutput.name"
             :url="modelUrls[activeOutput.assetId]!"
           />
-          <img
+          <div
+            v-else-if="activeOutput.kind === 'image' && imageOutputs.length > 1"
+            :class="`round-output-grid--${Math.min(imageOutputs.length, 4)}`"
+            class="round-output-grid"
+          >
+            <button
+              v-for="(output, index) in visibleImageOutputs"
+              :key="output.assetId"
+              :aria-label="`全屏查看${output.name}`"
+              type="button"
+              @click="openOutputLightbox(output)"
+            >
+              <img
+                v-if="previewUrls[output.assetId]"
+                :alt="output.name"
+                :src="previewUrls[output.assetId]"
+              />
+              <span
+                v-if="index === 2 && imageOutputs.length > 3"
+                class="round-output-grid__more"
+              >
+                +{{ imageOutputs.length - 3 }}
+              </span>
+            </button>
+          </div>
+          <button
             v-else-if="previewUrls[activeOutput.assetId]"
-            :alt="activeOutput.name"
-            :src="previewUrls[activeOutput.assetId]"
-          />
+            :aria-label="`全屏查看${activeOutput.name}`"
+            class="round-output-image"
+            type="button"
+            @click="openOutputLightbox(activeOutput)"
+          >
+            <img
+              :alt="activeOutput.name"
+              :src="previewUrls[activeOutput.assetId]"
+            />
+          </button>
           <PlatformMarkdown
             v-else-if="textContents[activeOutput.assetId]"
             :content="textContents[activeOutput.assetId]!"
@@ -699,6 +748,16 @@ onMounted(() => void loadPreviews());
       v-model:open="annotationLightboxOpen"
       :title="annotationLightboxTitle"
       :url="annotationLightboxUrl"
+    />
+    <ImageLightbox
+      v-if="activeOutput?.kind === 'image'"
+      v-model:open="outputLightboxOpen"
+      :next-enabled="activeImageIndex < imageOutputs.length - 1"
+      :previous-enabled="activeImageIndex > 0"
+      :title="activeOutput.name"
+      :url="previewUrls[activeOutput.assetId]"
+      @next="showAdjacentImage(1)"
+      @previous="showAdjacentImage(-1)"
     />
   </article>
 </template>
@@ -1215,6 +1274,7 @@ onMounted(() => void loadPreviews());
 }
 
 .round-output-visual.output-image {
+  width: 100%;
   min-height: 0;
   background: transparent;
 }
@@ -1235,6 +1295,75 @@ onMounted(() => void loadPreviews());
   height: auto;
   max-height: min(68vh, 720px);
   object-fit: contain;
+}
+
+.round-output-image {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: transparent;
+  border: 0;
+  border-radius: 14px;
+}
+
+.round-output-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  width: min(100%, 960px);
+  height: min(58vh, 590px);
+  min-height: 320px;
+  padding: 7px;
+  background: #eef1f2;
+  border-radius: 14px;
+}
+
+.round-output-grid > button {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: #dfe4e6;
+  border: 0;
+  border-radius: 10px;
+}
+
+.round-output-grid > button img {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: cover;
+  transition: transform 180ms ease;
+}
+
+.round-output-grid > button:hover img {
+  transform: scale(1.025);
+}
+
+.round-output-grid--3,
+.round-output-grid--4 {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
+}
+
+.round-output-grid--3 > button:first-child,
+.round-output-grid--4 > button:first-child {
+  grid-row: 1 / 3;
+}
+
+.round-output-grid__more {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: clamp(24px, 4vw, 46px);
+  font-weight: 750;
+  color: #fff;
+  background: rgb(16 22 26 / 58%);
+  backdrop-filter: blur(2px);
 }
 
 .round-output-icon {
@@ -1315,6 +1444,16 @@ onMounted(() => void loadPreviews());
 
   .round-parameters {
     grid-template-columns: 1fr;
+  }
+
+  .round-output-grid {
+    height: 420px;
+    min-height: 260px;
+  }
+
+  .round-output-grid--3,
+  .round-output-grid--4 {
+    grid-template-columns: minmax(0, 3fr) minmax(96px, 1fr);
   }
 }
 </style>
