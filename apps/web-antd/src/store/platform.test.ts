@@ -223,7 +223,10 @@ describe('platform store with real API contract', () => {
 
     await store.saveWorkflowOutput(generated.id);
 
-    expect(api.saveWorkflowOutputApi).toHaveBeenCalledWith(generated.id);
+    expect(api.saveWorkflowOutputApi).toHaveBeenCalledWith(
+      generated.id,
+      undefined,
+    );
     expect(store.currentAssets[0]).toEqual(generated);
   });
 

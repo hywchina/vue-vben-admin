@@ -1,16 +1,25 @@
 import { getRouterParam } from 'h3';
+import { z } from 'zod';
 import { getAssetView } from '~/utils/asset-repository';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
+import { parseBody } from '~/utils/validation';
+
+const saveWorkflowOutputSchema = z
+  .object({
+    folderId: z.string().uuid().optional(),
+  })
+  .default({});
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:asset:write');
   const assetId = getRouterParam(event, 'id');
   if (!assetId) throw new ApiError(400, 'ASSET_ID_REQUIRED', '缺少资产编号');
+  const input = await parseBody(event, saveWorkflowOutputSchema);
 
   const sql = useDatabase();
   const [asset] = await sql<
@@ -39,11 +48,32 @@ export default apiHandler(async (event) => {
     );
   }
 
+  if (input.folderId) {
+    const [folder] = await sql<{ id: string; kind: string }[]>`
+      SELECT id, kind
+      FROM asset_folders
+      WHERE id = ${input.folderId}
+        AND project_id = ${asset.projectId}
+        AND deleted_at IS NULL
+    `;
+    if (!folder) {
+      throw new ApiError(400, 'ASSET_FOLDER_NOT_FOUND', '目标文件夹不存在');
+    }
+    if (folder.kind === 'favorites') {
+      throw new ApiError(
+        400,
+        'ASSET_FAVORITES_FOLDER_READ_ONLY',
+        '不能直接把资产登记到收藏文件夹',
+      );
+    }
+  }
+
   if (!asset.savedAt) {
     await sql`
       UPDATE assets
       SET
         saved_at = now(),
+        folder_id = ${input.folderId ?? null},
         description = regexp_replace(
           description,
           '，等待用户确认是否保存到资产中心。$',
@@ -55,7 +85,7 @@ export default apiHandler(async (event) => {
     await writeAudit(event, {
       action: 'asset.workflow-output.save',
       actor: identity,
-      details: { source: asset.source },
+      details: { folderId: input.folderId ?? null, source: asset.source },
       module: 'asset',
       targetId: assetId,
       targetType: 'asset',

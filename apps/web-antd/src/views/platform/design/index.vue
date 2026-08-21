@@ -106,6 +106,10 @@ const continueOpen = ref(false);
 const continueAppKey = ref('');
 const continueAssetIndex = ref<number>();
 const continueSubmitting = ref(false);
+const saveOutputOpen = ref(false);
+const saveOutputTarget = ref<PlatformJobOutput>();
+const saveOutputFolderId = ref<string>();
+const saveOutputSubmitting = ref(false);
 const draftReadyKey = ref('');
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -131,6 +135,15 @@ const projectOptions = computed(() =>
     value: project.id,
   })),
 );
+const saveOutputFolderOptions = computed(() => [
+  { label: '项目资产根目录', value: '' },
+  ...platformStore.assetFolders
+    .filter((folder) => folder.kind === 'normal')
+    .map((folder) => ({
+      label: assetFolderPath(folder.id),
+      value: folder.id,
+    })),
+]);
 const availableApplications = computed(() => {
   const query = appSearch.value.trim().toLowerCase();
   return platformStore.applications
@@ -318,6 +331,20 @@ function formatConversationTime(value: string) {
     });
   }
   return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
+}
+
+function assetFolderPath(folderId: string) {
+  const names: string[] = [];
+  const visited = new Set<string>();
+  let current = platformStore.assetFolders.find((item) => item.id === folderId);
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    names.unshift(current.name);
+    current = current.parentId
+      ? platformStore.assetFolders.find((item) => item.id === current?.parentId)
+      : undefined;
+  }
+  return names.join(' / ');
 }
 
 function fieldTextValue(field: CapabilityField) {
@@ -975,8 +1002,26 @@ async function stopLiveCapture() {
 }
 
 async function saveOutput(output: PlatformJobOutput) {
-  if (!output.saved) await platformStore.saveWorkflowOutput(output.assetId);
-  message.success('生成结果已保存到当前项目资产中心');
+  if (output.saved) return;
+  saveOutputTarget.value = output;
+  saveOutputFolderId.value = undefined;
+  saveOutputOpen.value = true;
+}
+
+async function confirmSaveOutput() {
+  const output = saveOutputTarget.value;
+  if (!output) return;
+  saveOutputSubmitting.value = true;
+  try {
+    await platformStore.saveWorkflowOutput(
+      output.assetId,
+      saveOutputFolderId.value || undefined,
+    );
+    saveOutputOpen.value = false;
+    message.success('生成结果已保存到所选资产目录');
+  } finally {
+    saveOutputSubmitting.value = false;
+  }
 }
 
 async function downloadOutput(output: PlatformJobOutput) {
@@ -1797,6 +1842,24 @@ onBeforeUnmount(() => {
         v-model:value="renameTitle"
         :maxlength="120"
         @press-enter="renameConversation"
+      />
+    </Modal>
+
+    <Modal
+      v-model:open="saveOutputOpen"
+      :confirm-loading="saveOutputSubmitting"
+      ok-text="保存到此目录"
+      title="加入资产中心"
+      @ok="confirmSaveOutput"
+    >
+      <p class="continue-description">
+        请选择当前项目中的资产目录。保存后，结果才能作为同一项目内其他设计能力的输入继续使用。
+      </p>
+      <Select
+        v-model:value="saveOutputFolderId"
+        :options="saveOutputFolderOptions"
+        class="w-full"
+        placeholder="项目资产根目录"
       />
     </Modal>
 

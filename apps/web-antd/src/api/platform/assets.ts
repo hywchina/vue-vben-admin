@@ -158,8 +158,10 @@ export function getAssetPreviewApi(assetId: string) {
   >(`/assets/${assetId}/preview`);
 }
 
-export function saveWorkflowOutputApi(assetId: string) {
-  return requestClient.post<PlatformAsset>(`/assets/${assetId}/save`);
+export function saveWorkflowOutputApi(assetId: string, folderId?: string) {
+  return requestClient.post<PlatformAsset>(`/assets/${assetId}/save`, {
+    folderId,
+  });
 }
 
 export function deleteAssetApi(assetId: string) {

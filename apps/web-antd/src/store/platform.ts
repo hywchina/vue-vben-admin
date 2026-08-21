@@ -286,8 +286,8 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     return updated;
   }
 
-  async function saveWorkflowOutput(assetId: string) {
-    const asset = await saveWorkflowOutputApi(assetId);
+  async function saveWorkflowOutput(assetId: string, folderId?: string) {
+    const asset = await saveWorkflowOutputApi(assetId, folderId);
     if (!assets.value.some((item) => item.id === asset.id)) {
       assets.value.unshift(asset);
       const project = currentProject.value;

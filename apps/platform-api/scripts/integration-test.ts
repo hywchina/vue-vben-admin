@@ -1507,10 +1507,32 @@ async function run() {
     rejectedJobInput.envelope.code === 'INVALID_JOB_ASSETS',
     '未加入资产的工作流结果被任务接口当作正式输入使用',
   );
+  const stagedOutputFolder = await apiRequest<{ id: string }>(
+    '/asset-folders',
+    {
+      body: { name: `工作流成果-${runId.slice(-6)}`, projectId },
+      session: user1,
+    },
+  );
   await apiRequest(`/assets/${stagedAssetId}/save`, {
+    body: { folderId: favoriteFolderId },
+    expectedStatus: 400,
     method: 'POST',
     session: user1,
   });
+  const savedStagedOutput = await apiRequest<{ folderId?: string }>(
+    `/assets/${stagedAssetId}/save`,
+    {
+      body: { folderId: stagedOutputFolder.envelope.data.id },
+      method: 'POST',
+      session: user1,
+    },
+  );
+  assert(
+    savedStagedOutput.envelope.data.folderId ===
+      stagedOutputFolder.envelope.data.id,
+    '工作流结果没有保存到用户选择的资产文件夹',
+  );
   const assetsAfterSave = await apiRequest<Array<{ id: string }>>(
     `/assets?projectId=${projectId}`,
     { session: user1 },
