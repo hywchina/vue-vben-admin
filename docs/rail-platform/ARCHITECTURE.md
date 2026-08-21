@@ -64,7 +64,7 @@ flowchart TB
   subgraph Capability["外部能力层"]
     ChatAdapter["AI 助手适配器<br/>GeekAI / OpenAI 兼容协议"]
     JobAdapter["ComfyUI 独立 Worker<br/>已实现"]
-    External["LLM / ComfyUI / LoRA / 2D→3D / 报告服务"]
+    External["LLM / ComfyUI / LoRA / 报告服务"]
     ChatAdapter --> External
     JobAdapter --> External
   end
@@ -140,7 +140,7 @@ flowchart TB
   Layout --> Header["顶栏：面包屑 / 当前项目（首页与项目空间隐藏）/ 通知 / 用户"]
   Layout --> RouteArea["路由内容区"]
   Layout --> Tabs["多页签区域"]
-  Layout --> Assistant["全局 AI 助手<br/>设计页隐藏 / 其他页面保留"]
+  Layout --> Assistant["全局 AI 助手<br/>全部登录后页面共用"]
 
   RouteArea --> Normal["普通平台页面"]
   RouteArea --> DesignArea["/design 项目设计会话"]
@@ -149,6 +149,7 @@ flowchart TB
   DesignArea --> History["左：项目历史会话"]
   DesignArea --> Stage["中：多应用轮次与结果"]
   DesignArea --> Composer["下：能力选择、提示与紧凑参数"]
+  DesignArea --> Context["业务上下文：零部件 / CMF / 客室效果<br/>报告生成待接入"]
 ```
 
 进入不同应用时，只替换路由内容区的应用定义和参数；平台导航、当前项目、资产权限、任务台账、通知和用户身份不变。这正是“平台框架与第三方 API 模块相对独立”的实现位置。
@@ -159,16 +160,16 @@ flowchart TB
 | --- | --- | --- | --- | --- |
 | 账号认证 | `/auth/login`、`register`、`forget-password`、`reset-password` | Vben Auth、Vue 表单、Zod、Pinia | 用户名密码登录、企业邮箱注册与找回密码、协议校验、登录态恢复 | 认证 API |
 | 固定平台外壳 | `layouts/basic.vue` | Vben BasicLayout、Pinia、Ant Design Vue | 导航、当前项目切换、通知、用户 ID/菜单、退出登录 | 项目、通知、当前用户 API |
-| 设计工作台 | `/home`（登录默认入口） | Vue、SVG/CSS 动效与图表、Pinia | 以可点击的固定放大圆环展示项目资产、开始设计、AI 应用、任务执行、设计成果和持续复盘的核心闭环；圆环本体不旋转，双层点阵轨道与三个等距、无拖尾的离散光点持续传递以表达循环数据流；资产、成果和本人任务在所有可访问项目范围聚合，最近项目返回项目级资产类型拆分，最近成果通过 `assetId` 深链切换项目并打开详情；所有可增长内容限制在卡片内部滚动 | `/dashboard` 跨项目聚合 API + `GET /assets/:id` + 项目、任务、会话、资产、应用和通知表 |
+| 设计工作台 | `/home`（登录默认入口） | Vue、SVG/CSS 动效与图表、Pinia | 六项快捷入口提供真实项目创建、跨项目个人会话检索、资产和项目入口，训练与报告在协议未确定时禁用；以可点击的固定放大圆环展示项目资产、开始设计、AI 应用、任务执行、设计成果和持续复盘的核心闭环；资产、成果和本人任务在所有可访问项目范围聚合，最近成果通过 `assetId` 深链切换项目并打开详情 | `/dashboard` 跨项目聚合 API + 项目、会话、资产和任务 API |
 | 项目空间 | `/projects`；旧 `/workspace/overview` 只重定向 | Vue、Pinia、Modal/Form、Tooltip | 单层浅色卡片展示全部可访问项目及统计，支持搜索、更新时间/创建时间/名称服务端排序、创建、负责人/管理员修改名称与说明、个人置顶；创建者可软删除自有项目、管理员可软删除任意项目；卡片主体可点击并支持键盘进入，三级文字色、强化统计、运行任务强调、整卡悬浮、操作提示、空状态和禁用态共用一套视觉规范；只保留一个开始设计入口，四项统计进入项目资产、全部任务、运行任务和成员面板；创建者或管理员按用户 ID 邀请或移除非创建者成员 | 项目、成员、个人置顶、软归档和当前项目偏好 API |
 | 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、业务 ID、成员筛选/排序、持久化多级文件夹、网格/列表、多选批量移动/独立复制/软删除、图片放大、详情、下载和收藏；“收藏”是按当前用户收藏关系展示的系统软链接目录，不改变原资产目录，未确认的工作流结果不进入列表 | 资产/成员/文件夹 API + PostgreSQL + MinIO/S3 |
-| 开始设计 | `/design?conversationId=:id` | 独立沉浸式 Vue 页面、Pinia、Canvas、MediaDevices | 单一左侧历史栏；无选择时默认文生文并展示应用快捷入口；选中后收起其他应用，主参数通过底部快捷弹层原位编辑且快捷区可滚动，完整参数只由固定可见的“更多”打开；统一资产选择器可逐级浏览项目文件夹并按名称/编号/标签搜索、兼容类型筛选和创建时间/名称/类型排序；图片和 Markdown 文本资产在发送前及轮次时间线中直接可见，历史图片可进入统一遮罩编辑器；分区任务并列恢复标记前原图与标记图，输出使用原图和生成图滑动对比；文本结果按 Markdown 阅读和复制，结果操作使用图标与 Tooltip；成功发送后清空本轮输入，运行中使用轻量状态并可直接停止；同一时间线组合多个应用；会话内继续设计；遮罩、对比和特殊输入 | 设计会话、应用、资产、草稿、任务 API |
+| 开始设计 | `/design?conversationId=:id` | BasicLayout 内 Vue 页面、Pinia、Canvas、MediaDevices | 保留统一导航、项目上下文与全局助手；历史会话栏可折叠；零部件、CMF、客室效果三个可用业务上下文共享真实应用目录，报告入口禁用待接入；无选择时默认文生图，提示模板只追加可见文本；多图网格与全屏连续浏览；结果可选择项目普通资产目录入库并在本会话深化设计；其余参数、Markdown、遮罩、分区、对比、三维和特殊输入遵循能力契约 | 设计会话、应用、资产目录、草稿、任务 API |
 | 单能力调试兼容 | `/workspace/:appKey?instanceId=:id` | 隐藏管理员路由、Canvas、MediaDevices | 保留历史实例和旧精确流转链路用于兼容回溯，不在产品菜单展示 | 应用、调试实例、资产、任务 API |
 | 任务中心 | `/jobs` | Vue、Pinia、状态组件 | 显示任务业务 ID、创建成员、状态和进度；失败错误使用限长摘要并可展开完整详情；支持状态/成员/关键词筛选、排序、多选和取消选择；活动任务显示取消操作，没有执行记录的孤立任务立即转为取消，真实 Worker 任务进入取消中，终态任务才可批量软删除 | `jobs`、`job_executions`、`project_members`、`job_inputs`、`job_outputs` |
 | 个人中心 | `/profile` | Vben Profile、Vue 表单、Canvas 裁剪 | 展示唯一用户 ID；资料与企业邮箱更新、邮箱安全状态、真实密码修改、消息提醒偏好；角色只读；头像悬浮上传，非方图经 1:1 拖动、缩放、旋转裁剪后写入私有对象存储并刷新全局用户态 | 用户、偏好与头像对象 API |
 | 用户与权限 | `/administration/access` | 路由角色守卫、管理员表格和弹窗 | 按字段标明姓名、用户 ID、用户名与邮箱；用户状态、其他用户角色管理、角色统计；窄卡片文字不越界 | 用户、角色 API |
 | 操作日志 | `/audit` | Vue、Pinia、服务端分页与筛选 | 管理员查看全部账号，普通用户只查看自身；区分姓名、用户名和角色快照 | `audit_events` |
-| AI 设计助手 | 除 `/design` 外的右下角弹窗 | Vue Teleport、Iconify、预签名上传 | 个人历史对话、文本、附件、预览、下载、清空与服务状态；设计页避免重复入口 | AI 助手 API + PostgreSQL + MinIO/S3 |
+| AI 设计助手 | 全部登录后页面的右下角弹窗 | Vue Teleport、Iconify、预签名上传 | 个人历史对话、文本、附件、预览、下载、清空与服务状态；与项目设计会话分层但共享平台外壳 | AI 助手 API + PostgreSQL + MinIO/S3 |
 
 前端 `usePlatformStore` 只缓存当前会话页面所需的 API 返回值，不把项目、资产或任务的业务真值写入本地静态数据。早期 `modules/platform/data.ts` 样例常量已在核心模块重构中删除，平台领域目录不再保留可被误用的运行时假数据。
 
@@ -418,7 +419,7 @@ flowchart LR
   External --> Output["更新任务 + 暂存输出 + job_outputs"]
   Output --> Choice{"用户选择"}
   Choice -->|"加入资产"| Asset["进入资产中心"]
-  Choice -->|"加入资产并继续设计"| Asset
+  Choice -->|"选择目录加入资产并深化设计"| Asset
   Choice -->|"仅查看"| Notice
   Asset --> Transfer["当前会话选择目标应用与语义输入位"]
   Asset --> Notice
