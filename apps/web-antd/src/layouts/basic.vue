@@ -42,7 +42,6 @@ const { isDark } = usePreferences();
 const showDot = computed(() =>
   notifications.value.some((item) => !item.isRead),
 );
-const showGlobalAssistant = computed(() => route.name !== 'PlatformDesign');
 const showProjectSwitcher = computed(
   () =>
     route.name !== 'PlatformProjects' &&
@@ -239,5 +238,5 @@ watch(
       <LockScreen :avatar @to-login="handleLogout" />
     </template>
   </BasicLayout>
-  <AiAssistant v-if="showGlobalAssistant" />
+  <AiAssistant />
 </template>

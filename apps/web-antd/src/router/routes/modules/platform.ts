@@ -17,7 +17,6 @@ const routes: RouteRecordRaw[] = [
     meta: {
       hideInTab: true,
       icon: 'lucide:message-square-more',
-      noBasicLayout: true,
       order: -110,
       title: '开始设计',
     },

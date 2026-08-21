@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { DesignModuleKey } from './design-modules';
+
 import type {
   CapabilityField,
   DesignConversation,
@@ -58,9 +60,15 @@ import CameraAngleControl from '../workspace/camera-angle-control.vue';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
 import { createRegionInputAnnotations } from '../workspace/region-annotation';
 import { appendTextInput, markdownTextContent } from './design-input-utils';
+import {
+  applicationsForDesignModule,
+  DEFAULT_DESIGN_MODULE,
+  DESIGN_MODULES,
+  promptTemplateText,
+} from './design-modules';
 import DesignQuickField from './design-quick-field.vue';
 
-const DEFAULT_APP_KEY = 'text-chat';
+const DEFAULT_APP_KEY = 'text-to-image';
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
 const router = useRouter();
@@ -72,6 +80,8 @@ const conversations = ref<DesignConversation[]>([]);
 const conversationSearch = ref('');
 const activeConversationId = ref('');
 const selectedAppKey = ref('');
+const activeDesignModuleKey = ref<DesignModuleKey>('component');
+const conversationSidebarCollapsed = ref(false);
 const threadScrollRef = ref<HTMLElement>();
 const capability = ref<null | PlatformCapability>(null);
 const capabilityLoading = ref(false);
@@ -151,30 +161,29 @@ const application = computed(() =>
     (item) => item.key === effectiveApplicationKey.value,
   ),
 );
-const primaryApplicationKeys = [
-  'text-chat',
-  'text-to-image',
-  'image-understanding',
-  'inpaint-single',
-  'outpaint',
-  'multi-image-edit',
-  'image-upscale',
-];
+const activeDesignModule = computed(
+  () =>
+    DESIGN_MODULES.find((item) => item.key === activeDesignModuleKey.value) ??
+    DEFAULT_DESIGN_MODULE,
+);
 const orderedApplicationShortcuts = computed(() =>
-  availableApplications.value.toSorted((a, b) => {
-    const aIndex = primaryApplicationKeys.indexOf(a.key);
-    const bIndex = primaryApplicationKeys.indexOf(b.key);
-    if (aIndex === -1 && bIndex === -1) return 0;
-    if (aIndex === -1) return 1;
-    if (bIndex === -1) return -1;
-    return aIndex - bIndex;
-  }),
+  applicationsForDesignModule(
+    availableApplications.value,
+    activeDesignModule.value,
+  ),
 );
 const applicationShortcuts = computed(() =>
-  orderedApplicationShortcuts.value.slice(0, 7),
+  orderedApplicationShortcuts.value
+    .filter((item) =>
+      activeDesignModule.value.recommendedAppKeys.includes(item.key),
+    )
+    .slice(0, 8),
 );
 const overflowApplications = computed(() =>
-  orderedApplicationShortcuts.value.slice(7),
+  orderedApplicationShortcuts.value.filter(
+    (item) =>
+      !applicationShortcuts.value.some((shortcut) => shortcut.key === item.key),
+  ),
 );
 const conversationJobs = computed(() =>
   selectDesignConversationJobs(
@@ -214,6 +223,16 @@ const promptField = computed(() =>
       (field.type === 'text' && field.required),
   ),
 );
+const composerPromptPlaceholder = computed(() => {
+  if (
+    ['text-to-image', 'text-to-image-lora'].includes(
+      application.value?.key ?? '',
+    )
+  ) {
+    return activeDesignModule.value.placeholder;
+  }
+  return promptField.value?.placeholder ?? '描述你的设计需求…';
+});
 const compactFields = computed(() =>
   scalarFields.value.filter(
     (field) =>
@@ -640,6 +659,30 @@ async function clearApplicationSelection() {
   await saveDraftNow();
   selectedAppKey.value = '';
   await loadCapability();
+}
+
+async function chooseDesignModule(moduleKey: DesignModuleKey) {
+  const module = DESIGN_MODULES.find((item) => item.key === moduleKey);
+  if (!module || module.status === 'planned') return;
+  activeDesignModuleKey.value = moduleKey;
+  if (
+    selectedAppKey.value &&
+    !module.recommendedAppKeys.includes(selectedAppKey.value)
+  ) {
+    await clearApplicationSelection();
+  }
+}
+
+function applyPromptTemplate(group: string, option: string) {
+  const field = promptField.value;
+  if (!field) return;
+  const next = appendTextInput(
+    parameterValues[field.key],
+    promptTemplateText(group, option),
+    field.maxLength,
+  );
+  setFieldValue(field, next.value);
+  if (next.truncated) message.warning('提示词已达到当前应用长度上限');
 }
 
 function openRename() {
@@ -1112,14 +1155,28 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="design-page">
+  <main
+    :class="{ 'is-conversation-collapsed': conversationSidebarCollapsed }"
+    class="design-page"
+  >
     <aside class="conversation-sidebar">
       <div class="conversation-brand">
-        <img alt="轨道客室智能设计平台" src="/rail-logo.svg" />
+        <img alt="客运装备内装模块化分区快速设计平台" src="/rail-logo.svg" />
         <div>
-          <strong>轨道客室智能设计</strong>
-          <span>RAIL DESIGN</span>
+          <strong title="客运装备内装模块化分区快速设计平台">
+            客运装备内装模块化分区快速设计平台
+          </strong>
+          <span>MODULAR RAIL DESIGN</span>
         </div>
+        <button
+          aria-label="收起设计会话栏"
+          class="conversation-collapse-button"
+          title="收起设计会话栏"
+          type="button"
+          @click="conversationSidebarCollapsed = true"
+        >
+          <IconifyIcon icon="lucide:panel-left-close" />
+        </button>
       </div>
       <Select
         :options="projectOptions"
@@ -1237,6 +1294,16 @@ onBeforeUnmount(() => {
 
     <section class="design-thread">
       <header class="thread-header">
+        <button
+          v-if="conversationSidebarCollapsed"
+          aria-label="展开设计会话栏"
+          class="conversation-expand-button"
+          title="展开设计会话栏"
+          type="button"
+          @click="conversationSidebarCollapsed = false"
+        >
+          <IconifyIcon icon="lucide:panel-left-open" />
+        </button>
         <div class="thread-header__center">
           <strong>{{ activeConversation?.title ?? '新设计会话' }}</strong>
           <span>{{ application?.name ?? '默认文生文' }}</span>
@@ -1287,7 +1354,7 @@ onBeforeUnmount(() => {
             <span>RAIL DESIGN COPILOT</span>
             <h2>从一个设计问题开始</h2>
             <p>
-              你好，我是你的轨道客室设计助手。默认使用“文生文”工作流，你也可以在下方随时切换其他设计能力。
+              你好，我是你的客运装备内装设计助手。默认使用“文生图”工作流，你可以先选择业务模块，再切换重绘、融合、放大、理解等真实设计能力。
             </p>
             <div class="welcome-suggestions">
               <button
@@ -1352,7 +1419,7 @@ onBeforeUnmount(() => {
             :auto-size="{ minRows: 2, maxRows: 8 }"
             :value="fieldTextValue(promptField)"
             :maxlength="promptField.maxLength"
-            :placeholder="promptField.placeholder ?? '描述你的设计需求…'"
+            :placeholder="composerPromptPlaceholder"
             data-testid="design-prompt-input"
             @update:value="setFieldValue(promptField, $event)"
             @press-enter="
@@ -1365,6 +1432,7 @@ onBeforeUnmount(() => {
           <div class="composer-bottom">
             <div class="composer-toolbar">
               <button
+                v-if="mediaFields.length"
                 aria-label="添加输入素材"
                 class="composer-add-button"
                 data-testid="composer-add-material"
@@ -1373,6 +1441,42 @@ onBeforeUnmount(() => {
               >
                 <IconifyIcon icon="lucide:plus" />
               </button>
+
+              <Popover
+                v-if="promptField && activeDesignModule.templates.length"
+                placement="topLeft"
+                trigger="click"
+              >
+                <template #content>
+                  <div class="prompt-template-menu">
+                    <section
+                      v-for="group in activeDesignModule.templates"
+                      :key="group.label"
+                    >
+                      <strong>{{ group.label }}</strong>
+                      <div>
+                        <button
+                          v-for="option in group.options"
+                          :key="option"
+                          type="button"
+                          @click="applyPromptTemplate(group.label, option)"
+                        >
+                          {{ option }}
+                        </button>
+                      </div>
+                    </section>
+                  </div>
+                </template>
+                <button
+                  class="composer-template-button"
+                  data-testid="design-prompt-templates"
+                  title="提示词模板"
+                  type="button"
+                >
+                  <IconifyIcon icon="lucide:notebook-tabs" />
+                  模板
+                </button>
+              </Popover>
 
               <template v-if="selectedAppKey">
                 <span
@@ -1497,6 +1601,21 @@ onBeforeUnmount(() => {
             </Button>
           </div>
         </div>
+        <nav aria-label="设计生成模块" class="design-module-switcher">
+          <button
+            v-for="module in DESIGN_MODULES"
+            :key="module.key"
+            :class="{ active: module.key === activeDesignModuleKey }"
+            :disabled="module.status === 'planned'"
+            :title="module.description"
+            type="button"
+            @click="chooseDesignModule(module.key)"
+          >
+            <IconifyIcon :icon="module.icon" />
+            <span>{{ module.label }}</span>
+            <em v-if="module.status === 'planned'">待接入</em>
+          </button>
+        </nav>
       </footer>
     </section>
 
@@ -1686,7 +1805,7 @@ onBeforeUnmount(() => {
       :confirm-loading="continueSubmitting"
       :ok-button-props="{ disabled: continueAssetIndex === undefined }"
       ok-text="加入资产并继续"
-      title="在本会话中继续设计"
+      title="在本会话中深化设计"
       @ok="continueDesign"
     >
       <p class="continue-description">
@@ -2126,26 +2245,42 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 沉浸式设计会话：覆盖后台壳层尺寸，保持单一会话侧栏与固定输入区。 */
+/* 设计会话在平台固定外壳内运行，左侧会话栏可按画布需要折叠。 */
 main.design-page {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
+  position: relative;
   grid-template-columns: 276px minmax(0, 1fr);
-  width: 100vw;
-  height: 100dvh;
-  min-height: 0;
+  width: 100%;
+  height: calc(100dvh - 106px);
+  min-height: 640px;
   background: #fff;
+  transition: grid-template-columns 180ms ease;
+}
+
+main.design-page.is-conversation-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.design-page.is-conversation-collapsed .conversation-sidebar {
+  visibility: hidden;
+  padding-right: 0;
+  padding-left: 0;
+  pointer-events: none;
+  opacity: 0;
 }
 
 .design-page .conversation-sidebar {
   padding: 14px 12px 12px;
+  overflow: hidden;
   background: #f7f7f8;
   border-color: #e6e6e8;
+  transition:
+    padding 180ms ease,
+    opacity 140ms ease;
 }
 
 .design-page .conversation-brand {
-  display: flex;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 28px;
   gap: 10px;
   align-items: center;
   padding: 2px 4px 14px;
@@ -2168,6 +2303,26 @@ main.design-page {
   text-overflow: ellipsis;
   font-size: 14px;
   white-space: nowrap;
+}
+
+.conversation-collapse-button,
+.conversation-expand-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--design-muted);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+}
+
+.conversation-collapse-button:hover,
+.conversation-expand-button:hover {
+  color: var(--rail-red);
+  background: #fff1f3;
 }
 
 .design-page .conversation-brand span {
@@ -2332,7 +2487,7 @@ main.design-page {
 }
 
 .design-page .design-thread {
-  height: 100dvh;
+  height: 100%;
   background: #fff;
 }
 
@@ -2363,6 +2518,11 @@ main.design-page {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+.conversation-expand-button {
+  position: absolute;
+  left: 18px;
 }
 
 .design-page .thread-scroll {
@@ -2421,6 +2581,59 @@ main.design-page {
   z-index: 4;
   padding: 10px clamp(20px, 6vw, 88px) 18px;
   background: linear-gradient(rgb(255 255 255 / 10%), #fff 20%);
+}
+
+.design-module-switcher {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+  width: 100%;
+  max-width: var(--design-content-width);
+  margin: 8px auto 0;
+}
+
+.design-module-switcher > button {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 38px;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  color: #56636b;
+  cursor: pointer;
+  background: #f5f6f7;
+  border: 1px solid #e0e4e7;
+  border-radius: 10px;
+}
+
+.design-module-switcher > button:hover:not(:disabled),
+.design-module-switcher > button.active {
+  color: var(--rail-red);
+  background: #fff4f6;
+  border-color: #dda0aa;
+}
+
+.design-module-switcher > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.design-module-switcher span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.design-module-switcher em {
+  padding: 2px 5px;
+  font-size: 9px;
+  font-style: normal;
+  color: #8a6b35;
+  background: #fff0c5;
+  border-radius: 999px;
 }
 
 .design-page .composer-box {
@@ -2488,6 +2701,66 @@ main.design-page {
   background: transparent;
   border: 0;
   border-right: 1px solid #d9dde2;
+}
+
+.composer-template-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 5px;
+  align-items: center;
+  min-height: 30px;
+  padding: 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #17191c;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid #d9dde2;
+  border-radius: 6px 0 0 6px;
+}
+
+.composer-template-button:hover {
+  color: #bd1934;
+  background: #fff1f3;
+}
+
+.prompt-template-menu {
+  display: grid;
+  gap: 12px;
+  width: min(420px, 76vw);
+  padding: 4px;
+}
+
+.prompt-template-menu section {
+  display: grid;
+  gap: 7px;
+}
+
+.prompt-template-menu section > strong {
+  font-size: 12px;
+  color: #536069;
+}
+
+.prompt-template-menu section > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.prompt-template-menu button {
+  padding: 5px 9px;
+  font-size: 12px;
+  color: #29343a;
+  cursor: pointer;
+  background: #f5f6f7;
+  border: 1px solid #e0e4e7;
+  border-radius: 7px;
+}
+
+.prompt-template-menu button:hover {
+  color: var(--rail-red);
+  border-color: #dda0aa;
 }
 
 .composer-add-button:hover,
@@ -2817,6 +3090,23 @@ main.design-page {
 }
 
 @media (max-width: 900px) {
+  main.design-page,
+  main.design-page.is-conversation-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .design-page .conversation-sidebar {
+    display: none;
+  }
+
+  .conversation-expand-button {
+    display: none;
+  }
+
+  .design-module-switcher {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   main.design-page {
     grid-template-columns: 224px minmax(0, 1fr);
   }
