@@ -1,7 +1,7 @@
 {
   "name": "@rail/web",
   "version": "0.1.0",
-  "description": "轨道客室智能设计平台 Web",
+  "description": "客运装备内装模块化分区快速设计平台 Web",
   "homepage": "https://github.com/hywchina/vue-vben-admin",
   "bugs": "https://github.com/hywchina/vue-vben-admin/issues",
   "repository": {

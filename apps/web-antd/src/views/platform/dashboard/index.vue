@@ -1,14 +1,28 @@
 <script lang="ts" setup>
-import type { PlatformDashboard } from '#/modules/platform/types';
+import type {
+  DesignConversation,
+  PlatformDashboard,
+} from '#/modules/platform/types';
 
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, Tooltip } from 'ant-design-vue';
+import {
+  Button,
+  Input,
+  message,
+  Modal,
+  Textarea,
+  Tooltip,
+} from 'ant-design-vue';
 
-import { getAssetPreviewApi, getDashboardApi } from '#/api';
+import {
+  getAssetPreviewApi,
+  getDashboardApi,
+  getDesignConversationsApi,
+} from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import {
   assetTypeIcons,
@@ -20,6 +34,22 @@ const router = useRouter();
 const platformStore = usePlatformStore();
 const dashboard = ref<null | PlatformDashboard>(null);
 const loading = ref(true);
+const quickStartOpen = ref(false);
+const quickStartSubmitting = ref(false);
+const myDesignsOpen = ref(false);
+const myDesignsLoading = ref(false);
+const projectName = ref('');
+const projectDescription = ref('');
+const conversationKeyword = ref('');
+const myDesigns = ref<
+  Array<
+    DesignConversation & {
+      projectCode: string;
+      projectId: string;
+      projectName: string;
+    }
+  >
+>([]);
 const previewUrls = reactive(new Map<string, string>());
 const previewFailures = reactive(new Set<string>());
 
@@ -73,6 +103,15 @@ const maxAssetCount = computed(() =>
     ...(dashboard.value?.assetTypes.map((item) => item.count) ?? [1]),
   ),
 );
+const filteredMyDesigns = computed(() => {
+  const query = conversationKeyword.value.trim().toLowerCase();
+  if (!query) return myDesigns.value;
+  return myDesigns.value.filter((conversation) =>
+    `${conversation.title}${conversation.projectName}${conversation.projectCode}`
+      .toLowerCase()
+      .includes(query),
+  );
+});
 const flowNodes = computed(() => [
   {
     count: dashboard.value?.flow.assetCount ?? 0,
@@ -169,6 +208,65 @@ async function continueConversation(
   });
 }
 
+async function createQuickDesign() {
+  const name = projectName.value.trim();
+  if (!name) {
+    message.warning('请输入项目名称');
+    return;
+  }
+  quickStartSubmitting.value = true;
+  try {
+    await platformStore.addProject(
+      name,
+      projectDescription.value.trim() || '新建客运装备内装设计项目。',
+    );
+    quickStartOpen.value = false;
+    projectName.value = '';
+    projectDescription.value = '';
+    await router.push('/design');
+    message.success('项目已创建，可以开始设计');
+  } finally {
+    quickStartSubmitting.value = false;
+  }
+}
+
+async function openMyDesigns() {
+  myDesignsOpen.value = true;
+  myDesignsLoading.value = true;
+  try {
+    const results = await Promise.all(
+      platformStore.projects.map(async (project) => {
+        const conversations = await getDesignConversationsApi(project.id);
+        return conversations
+          .filter((conversation) => !conversation.legacy)
+          .map((conversation) => ({
+            ...conversation,
+            projectCode: project.code,
+            projectId: project.id,
+            projectName: project.name,
+          }));
+      }),
+    );
+    myDesigns.value = results
+      .flat()
+      .toSorted(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+  } finally {
+    myDesignsLoading.value = false;
+  }
+}
+
+async function continueMyDesign(
+  conversation: (typeof myDesigns.value)[number],
+) {
+  myDesignsOpen.value = false;
+  await navigateTo('/design', conversation.projectId, {
+    conversationId: conversation.id,
+  });
+}
+
 async function openRecentAsset(
   asset: PlatformDashboard['recentAssets'][number],
 ) {
@@ -227,7 +325,11 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="platform-page design-dashboard-page">
-    <PageHeading eyebrow="Rail design workspace" title="设计工作台" />
+    <PageHeading
+      description="从项目、设计会话和资产出发，继续可追溯的智能设计流程。"
+      eyebrow="Rail design workspace"
+      title="欢迎使用客运装备内装模块化分区快速设计平台"
+    />
 
     <div v-if="loading" class="platform-content dashboard-loading">
       <IconifyIcon icon="lucide:loader-circle" />
@@ -235,6 +337,95 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-else-if="dashboard" class="platform-content dashboard-content">
+      <section class="dashboard-panel quick-entry-panel">
+        <header class="dashboard-panel__heading compact">
+          <div>
+            <small>QUICK START</small>
+            <h2>快速开始</h2>
+          </div>
+          <span>常用功能与当前接入状态</span>
+        </header>
+        <div class="quick-entry-grid">
+          <button
+            class="quick-entry-card quick-entry-card--primary"
+            data-testid="quick-start-design"
+            type="button"
+            @click="quickStartOpen = true"
+          >
+            <IconifyIcon icon="lucide:square-pen" />
+            <span>
+              <strong>开始新设计</strong>
+              <small>新建项目并进入设计会话</small>
+            </span>
+            <IconifyIcon icon="lucide:arrow-up-right" />
+          </button>
+          <button
+            class="quick-entry-card"
+            data-testid="quick-open-designs"
+            type="button"
+            @click="openMyDesigns"
+          >
+            <IconifyIcon icon="lucide:history" />
+            <span>
+              <strong>查看我的设计</strong>
+              <small>搜索并续接历史设计会话</small>
+            </span>
+            <IconifyIcon icon="lucide:arrow-up-right" />
+          </button>
+          <button
+            class="quick-entry-card"
+            :disabled="!dashboard.currentProject"
+            type="button"
+            @click="navigateTo('/assets', currentProjectId)"
+          >
+            <IconifyIcon icon="lucide:library-big" />
+            <span>
+              <strong>资产中心</strong>
+              <small>管理当前项目设计成果</small>
+            </span>
+            <IconifyIcon icon="lucide:arrow-up-right" />
+          </button>
+          <button
+            class="quick-entry-card is-planned"
+            disabled
+            title="训练服务协议尚未确定"
+            type="button"
+          >
+            <IconifyIcon icon="lucide:brain-circuit" />
+            <span>
+              <strong>开始模型训练</strong>
+              <small>外部训练服务待接入</small>
+            </span>
+            <em>待接入</em>
+          </button>
+          <button
+            class="quick-entry-card is-planned"
+            disabled
+            title="Word/PPT 生成技术路线尚未确定"
+            type="button"
+          >
+            <IconifyIcon icon="lucide:file-chart-column" />
+            <span>
+              <strong>开始报告生成</strong>
+              <small>模板与生成服务待确定</small>
+            </span>
+            <em>待接入</em>
+          </button>
+          <button
+            class="quick-entry-card"
+            type="button"
+            @click="navigateTo('/projects')"
+          >
+            <IconifyIcon icon="lucide:layout-dashboard" />
+            <span>
+              <strong>设计工作台</strong>
+              <small>进入项目空间与协作管理</small>
+            </span>
+            <IconifyIcon icon="lucide:arrow-up-right" />
+          </button>
+        </div>
+      </section>
+
       <section v-if="!dashboard.currentProject" class="dashboard-empty">
         <IconifyIcon icon="lucide:folder-plus" />
         <h2>从第一个项目开始</h2>
@@ -677,6 +868,77 @@ onBeforeUnmount(() => {
         </section>
       </template>
     </div>
+
+    <Modal
+      v-model:open="quickStartOpen"
+      :confirm-loading="quickStartSubmitting"
+      ok-text="创建并开始设计"
+      title="开始新设计"
+      @ok="createQuickDesign"
+    >
+      <div class="quick-start-form">
+        <label>
+          <span>项目名称</span>
+          <Input
+            v-model:value="projectName"
+            :maxlength="120"
+            placeholder="例如：城际列车客室内装概念方案"
+          />
+        </label>
+        <label>
+          <span>设计任务说明</span>
+          <Textarea
+            v-model:value="projectDescription"
+            :maxlength="2000"
+            :rows="4"
+            placeholder="说明车辆类型、设计目标、范围与重点约束"
+          />
+        </label>
+      </div>
+    </Modal>
+
+    <Modal
+      v-model:open="myDesignsOpen"
+      :footer="null"
+      title="我的设计"
+      width="min(760px, 94vw)"
+    >
+      <Input
+        v-model:value="conversationKeyword"
+        allow-clear
+        class="my-design-search"
+        placeholder="搜索会话名称、项目名称或项目编号"
+      >
+        <template #prefix><IconifyIcon icon="lucide:search" /></template>
+      </Input>
+      <div v-if="myDesignsLoading" class="my-design-empty">
+        <IconifyIcon class="is-spinning" icon="lucide:loader-circle" />
+        正在读取设计会话
+      </div>
+      <div v-else-if="filteredMyDesigns.length" class="my-design-list">
+        <button
+          v-for="conversation in filteredMyDesigns"
+          :key="conversation.id"
+          type="button"
+          @click="continueMyDesign(conversation)"
+        >
+          <IconifyIcon icon="lucide:message-square-more" />
+          <span>
+            <strong>{{ conversation.title }}</strong>
+            <small>
+              {{ conversation.projectName }} · {{ conversation.projectCode }} ·
+              {{ conversation.roundCount }} 轮
+            </small>
+          </span>
+          <em>{{ formatTime(conversation.updatedAt) }}</em>
+          <IconifyIcon icon="lucide:chevron-right" />
+        </button>
+      </div>
+      <div v-else class="my-design-empty">
+        <IconifyIcon icon="lucide:message-square-dashed" />
+        {{ conversationKeyword ? '没有匹配的设计会话' : '还没有设计会话' }}
+      </div>
+    </Modal>
   </main>
 </template>
 
@@ -735,6 +997,187 @@ onBeforeUnmount(() => {
   background: #fff;
   border: 1px solid var(--dashboard-line);
   border-radius: 13px;
+}
+
+.quick-entry-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.quick-entry-card {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 92px;
+  padding: 15px;
+  color: var(--dashboard-ink);
+  text-align: left;
+  cursor: pointer;
+  background: #f7f9fa;
+  border: 1px solid #e0e5e8;
+  border-radius: 11px;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.quick-entry-card:hover:not(:disabled),
+.quick-entry-card:focus-visible {
+  border-color: rgb(197 31 58 / 44%);
+  box-shadow: 0 10px 22px rgb(30 40 48 / 8%);
+  transform: translateY(-2px);
+}
+
+.quick-entry-card > svg:first-child {
+  box-sizing: content-box;
+  width: 22px;
+  height: 22px;
+  padding: 10px;
+  color: var(--dashboard-red);
+  background: #fff;
+  border: 1px solid #e3e8ea;
+  border-radius: 10px;
+}
+
+.quick-entry-card > span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.quick-entry-card strong,
+.quick-entry-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quick-entry-card strong {
+  font-size: 14px;
+}
+
+.quick-entry-card small {
+  font-size: 12px;
+  color: var(--dashboard-muted);
+}
+
+.quick-entry-card > svg:last-child {
+  color: #99a3aa;
+}
+
+.quick-entry-card--primary {
+  color: #fff;
+  background: linear-gradient(135deg, #b71933, #d33b53);
+  border-color: transparent;
+}
+
+.quick-entry-card--primary small,
+.quick-entry-card--primary > svg:last-child {
+  color: rgb(255 255 255 / 78%);
+}
+
+.quick-entry-card--primary > svg:first-child {
+  color: #fff;
+  background: rgb(255 255 255 / 13%);
+  border-color: rgb(255 255 255 / 20%);
+}
+
+.quick-entry-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.quick-entry-card em {
+  padding: 4px 7px;
+  font-size: 10px;
+  font-style: normal;
+  color: #8a6b35;
+  background: #fff5d9;
+  border-radius: 999px;
+}
+
+.quick-start-form,
+.quick-start-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.quick-start-form {
+  gap: 18px;
+}
+
+.quick-start-form label > span {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--dashboard-ink);
+}
+
+.my-design-search {
+  margin-bottom: 14px;
+}
+
+.my-design-list {
+  display: grid;
+  gap: 7px;
+  max-height: 58vh;
+  overflow: auto;
+}
+
+.my-design-list > button {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto 16px;
+  gap: 10px;
+  align-items: center;
+  padding: 11px 12px;
+  color: var(--dashboard-ink);
+  text-align: left;
+  background: #f7f9fa;
+  border: 1px solid #e3e7e9;
+  border-radius: 9px;
+}
+
+.my-design-list > button:hover {
+  border-color: rgb(197 31 58 / 36%);
+}
+
+.my-design-list > button > svg:first-child {
+  color: var(--dashboard-red);
+}
+
+.my-design-list span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.my-design-list strong,
+.my-design-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-design-list small,
+.my-design-list em {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--dashboard-muted);
+}
+
+.my-design-empty {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 180px;
+  color: var(--dashboard-muted);
+}
+
+.is-spinning {
+  animation: dashboard-spin 1s linear infinite;
 }
 
 .dashboard-panel__heading {
@@ -1601,9 +2044,17 @@ onBeforeUnmount(() => {
   .dashboard-grid--activity {
     grid-template-columns: 1fr;
   }
+
+  .quick-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
+  .quick-entry-grid {
+    grid-template-columns: 1fr;
+  }
+
   .status-chart {
     grid-template-columns: 130px 1fr;
   }

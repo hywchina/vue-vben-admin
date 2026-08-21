@@ -15,13 +15,13 @@ export const overridesPreferences = defineOverridesPreferences({
     enableCheckUpdates: false,
     enablePreferences: true,
     locale: 'zh-CN',
-    name: import.meta.env.VITE_APP_TITLE,
+    name: '客运装备内装模块化分区快速设计平台',
   },
   breadcrumb: {
     showHome: true,
   },
   copyright: {
-    companyName: '轨道客室智能设计平台',
+    companyName: '客运装备内装模块化分区快速设计平台',
     companySiteLink: '',
     date: '2026',
     enable: false,
