@@ -741,7 +741,10 @@ async function setupAcceptanceData() {
     `;
     await transaction`
       INSERT INTO job_outputs (job_id, asset_id, position)
-      VALUES (${historyJobId}, ${historyOutputAssetId}, 0)
+      VALUES
+        (${historyJobId}, ${historyOutputAssetId}, 0),
+        (${historyJobId}, ${dashboardOutputAssetId}, 1),
+        (${historyJobId}, ${prepared.asset.id}, 2)
     `;
     await transaction`
       INSERT INTO job_inputs (job_id, asset_id, position)
@@ -780,7 +783,9 @@ async function setupAcceptanceData() {
     dashboardOutputAssetId,
     designConversationId,
     historyJobId,
+    historyOutputAssetId,
     imageAssetId: prepared.asset.id,
+    inputFolderId: inputFolder.id,
     jobId,
     markdownJobId,
     modelAssetId: preparedModel.asset.id,
@@ -844,6 +849,8 @@ async function runBrowserAcceptance() {
     dashboardOutputAssetId,
     designConversationId,
     historyJobId,
+    historyOutputAssetId,
+    inputFolderId,
     invitedMemberPublicId,
     invitedMemberToken,
     jobId,
@@ -900,7 +907,29 @@ async function runBrowserAcceptance() {
     await loginInputs.nth(1).fill(password);
     await page.locator('button').filter({ hasText: '登录' }).last().click();
     await page.waitForURL((url) => url.pathname === '/home');
-    await page.getByRole('heading', { name: '设计工作台' }).waitFor();
+    await page
+      .getByRole('heading', {
+        name: '欢迎使用客运装备内装模块化分区快速设计平台',
+      })
+      .waitFor();
+    await page.getByTestId('quick-start-design').waitFor();
+    const quickEntryCards = page.locator('.quick-entry-card');
+    assert(
+      (await quickEntryCards.count()) === 6 &&
+        (await page.locator('.quick-entry-card:disabled').count()) === 2,
+      '首页没有按接入状态显示六个快捷入口，或待接入能力未禁用',
+    );
+    await page.getByTestId('quick-start-design').click();
+    const quickStartDialog = page.getByRole('dialog', { name: '开始新设计' });
+    await quickStartDialog.getByText('项目名称', { exact: true }).waitFor();
+    await quickStartDialog.getByText('设计任务说明', { exact: true }).waitFor();
+    await quickStartDialog.locator('.ant-modal-close').click();
+    await page.getByTestId('quick-open-designs').click();
+    const myDesignsDialog = page.getByRole('dialog', { name: '我的设计' });
+    await myDesignsDialog
+      .getByText('浏览器验收 · 多应用设计会话', { exact: true })
+      .waitFor();
+    await myDesignsDialog.locator('.ant-modal-close').click();
     await page.getByLabel('平台核心功能关系图').waitFor();
     const flowLabels = await page
       .locator('.design-cycle__node > i > b')
@@ -1691,6 +1720,23 @@ async function runBrowserAcceptance() {
       (await page.locator('.thread-timeline .workflow-round').count()) === 7,
       '统一设计会话没有按时间线恢复多个应用的历史轮次',
     );
+    assert(
+      (await page.locator('.rail-project-switcher').count()) === 1 &&
+        (await page.locator('.rail-ai-float-button').count()) === 1,
+      '开始设计页面没有保留平台项目上下文或全局 AI 助手',
+    );
+    await page.getByRole('button', { name: '收起设计会话栏' }).click();
+    await page.getByRole('button', { name: '展开设计会话栏' }).waitFor();
+    assert(
+      await page
+        .locator('.design-page')
+        .evaluate((element) =>
+          element.classList.contains('is-conversation-collapsed'),
+        ),
+      '设计会话栏没有进入折叠状态',
+    );
+    await page.getByRole('button', { name: '展开设计会话栏' }).click();
+    await page.getByRole('button', { name: '收起设计会话栏' }).waitFor();
     await page.waitForTimeout(350);
     const initialThreadScroll = await page
       .locator('.thread-scroll')
@@ -1745,6 +1791,25 @@ async function runBrowserAcceptance() {
       .evaluate((button) => (button as HTMLButtonElement).click());
     await modelViewer.getByText(/1 个网格 · 3 个顶点/).waitFor();
     await modelRound.screenshot({ path: model3dScreenshotPath });
+    const historyImageRound = page.locator(`[data-job-id="${historyJobId}"]`);
+    const historyImageGrid = historyImageRound.locator('.round-output-grid');
+    await historyImageGrid.waitFor();
+    assert(
+      (await historyImageGrid.locator('button').count()) === 3,
+      '同一轮次的三张生成图片没有以网格展示',
+    );
+    await historyImageGrid.locator('button').first().click();
+    const resultLightbox = page.locator('.platform-image-lightbox:visible');
+    await resultLightbox.waitFor();
+    await resultLightbox
+      .getByRole('button', { name: '查看下一张图片' })
+      .click();
+    await resultLightbox.getByText('首页最近成果深链验收').waitFor();
+    await resultLightbox
+      .getByRole('button', { name: '查看上一张图片' })
+      .click();
+    await resultLightbox.getByText('浏览器第一轮结果').waitFor();
+    await resultLightbox.locator('.ant-modal-close').click();
     await page.getByText('第一轮：阳光下的现代轨道客室设计').first().waitFor();
     await page.getByText('保持结构，调整材质和照明').first().waitFor();
     const markdownRound = page.locator(`[data-job-id="${markdownJobId}"]`);
@@ -1780,7 +1845,9 @@ async function runBrowserAcceptance() {
       '悬浮用户输入后没有显示轻量操作图标',
     );
     await markdownRound.screenshot({ path: designInputHoverScreenshotPath });
-    await markdownRound.getByRole('button', { name: '查看本轮参数' }).click();
+    await markdownRound
+      .getByRole('button', { name: '查看本轮参数' })
+      .evaluate((button) => (button as HTMLButtonElement).click());
     const inputDetailsDialog = page.getByRole('dialog', {
       name: '本轮完整输入',
     });
@@ -2019,24 +2086,20 @@ async function runBrowserAcceptance() {
     assert(applicationCount >= 18, '统一设计会话没有接入全部应用能力');
     assert(
       (await page.locator('.composer-application-shortcuts button').count()) <=
-        8,
+        9,
       '未选择应用时没有按快捷应用加“更多”的形式收起能力列表',
     );
     await page.getByTestId('more-design-applications').waitFor();
-    assert(
-      (await page.locator('.rail-ai-float-button').count()) === 0,
-      '开始设计页面仍重复显示全局 AI 助手',
-    );
     const designPageBox = await page.locator('.design-page').boundingBox();
     assert(
       Boolean(
         designPageBox &&
-        designPageBox.x === 0 &&
-        designPageBox.y === 0 &&
-        designPageBox.width === 1600 &&
-        designPageBox.height === 1000,
+        designPageBox.x > 0 &&
+        designPageBox.y > 0 &&
+        designPageBox.width < 1600 &&
+        designPageBox.height <= 1000,
       ),
-      '开始设计没有脱离后台壳层形成全屏沉浸式工作台',
+      '开始设计没有嵌入统一平台壳层，或内容超出当前视口',
     );
     const composerBox = await page.getByTestId('design-composer').boundingBox();
     assert(
@@ -2093,6 +2156,9 @@ async function runBrowserAcceptance() {
         previousId,
       designConversationId,
     );
+    await page.waitForFunction(
+      () => document.querySelectorAll('.composer-box').length === 1,
+    );
     assert(
       (await page.getByTestId('active-design-application').count()) === 0,
       '新会话不应在用户未选择时显示已选应用标签',
@@ -2100,9 +2166,45 @@ async function runBrowserAcceptance() {
     assert(
       (await page
         .locator('.composer-box')
-        .getAttribute('data-effective-app-key')) === 'text-chat',
-      '未选择应用时没有在后台默认使用文生文能力',
+        .getAttribute('data-effective-app-key')) === 'text-to-image',
+      '未选择应用时没有在后台默认使用文生图能力',
     );
+    const designModuleSwitcher = page.getByRole('navigation', {
+      name: '设计生成模块',
+    });
+    assert(
+      (await designModuleSwitcher.locator('button').count()) === 4 &&
+        (await designModuleSwitcher
+          .getByRole('button', { name: /报告生成/ })
+          .isDisabled()),
+      '设计生成模块没有显示三类已接入上下文和一个待接入报告入口',
+    );
+    await designModuleSwitcher
+      .getByRole('button', { name: 'CMF 生成' })
+      .click();
+    const modulePromptInput = page.getByTestId('design-prompt-input');
+    const modulePromptPlaceholder =
+      await modulePromptInput.getAttribute('placeholder');
+    assert(
+      modulePromptPlaceholder?.includes('二方连续/四方连续'),
+      'CMF 模块没有切换到对应的设计提示',
+    );
+    await page.getByTestId('design-prompt-templates').click();
+    await page
+      .locator('.prompt-template-menu:visible')
+      .getByRole('button', {
+        name: '红色',
+      })
+      .click();
+    const templatePromptValue = await modulePromptInput.inputValue();
+    assert(
+      templatePromptValue.includes('颜色：红色'),
+      'CMF 提示词模板没有写入结构化提示',
+    );
+    await modulePromptInput.fill('');
+    await designModuleSwitcher
+      .getByRole('button', { name: '客室零部件生成' })
+      .click();
     await page.locator('.composer-application-shortcuts').waitFor();
     await page.waitForFunction(
       () =>
@@ -2190,7 +2292,7 @@ async function runBrowserAcceptance() {
         longInputLayout.textareaHeight <= 221 &&
         longInputLayout.scrollHeight > longInputLayout.textareaHeight &&
         ['auto', 'scroll'].includes(longInputLayout.overflowY) &&
-        longInputLayout.composerHeight < 330 &&
+        longInputLayout.composerHeight < 380 &&
         longInputLayout.toolbarTop > 0 &&
         longInputLayout.toolbarBottom <= longInputLayout.viewportHeight,
       ),
@@ -2206,6 +2308,7 @@ async function runBrowserAcceptance() {
       path: designDefaultScreenshotPath,
     });
 
+    await page.locator('[data-app-key="image-understanding"]').click();
     await page.getByTestId('composer-add-material').click();
     await page.getByTestId('open-markdown-asset-picker').click();
     const markdownPicker = page.getByRole('dialog', {
@@ -2229,6 +2332,16 @@ async function runBrowserAcceptance() {
         !importedMarkdownText.includes('https://example.test'),
       `Markdown 资产没有只提取文字加载到输入框：${JSON.stringify(importedMarkdownText)}`,
     );
+    await page.getByRole('button', { name: '取消选择当前应用' }).click();
+    await page.getByTestId('more-design-applications').click();
+    await page
+      .locator('.more-applications-grid:visible [data-app-key="text-chat"]')
+      .click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector<HTMLElement>('.composer-box')?.dataset
+          .effectiveAppKey === 'text-chat',
+    );
     const firstPrompt =
       '设计现代轨道客室空间并优化照明与耐用材质并提升乘客体验';
     await designTextarea.fill(firstPrompt);
@@ -2240,10 +2353,23 @@ async function runBrowserAcceptance() {
       (await designTextarea.inputValue()) === '',
       '任务成功提交后输入框仍保留上一次文本',
     );
-    await page
-      .getByText('设计现代轨道客室空间并优化照明与耐用材…', { exact: true })
-      .first()
-      .waitFor();
+    const submittedConversationId = new URL(page.url()).searchParams.get(
+      'conversationId',
+    );
+    const [submittedDesignRound] = await acceptanceSql<
+      Array<{ appKey: string; prompt: string }>
+    >`
+      SELECT app_key AS "appKey", parameters ->> 'prompt' AS prompt
+      FROM jobs
+      WHERE design_conversation_id = ${submittedConversationId}
+      ORDER BY created_at DESC
+      LIMIT 1
+    `;
+    assert(
+      submittedDesignRound?.appKey === 'text-chat' &&
+        submittedDesignRound.prompt === firstPrompt,
+      `新会话没有按用户显式选择的文本生成应用和提示词创建任务：${JSON.stringify(submittedDesignRound)}`,
+    );
 
     const activeConversationItem = page.locator('.conversation-item.active');
     await activeConversationItem.hover();
@@ -2262,7 +2388,6 @@ async function runBrowserAcceptance() {
       .first()
       .waitFor();
 
-    await page.locator('[data-app-key="text-chat"]').click();
     const parameterDrawer = page.locator('.design-parameter-drawer');
     await page.getByTestId('open-design-parameters').click();
     await parameterDrawer.waitFor();
@@ -2325,10 +2450,16 @@ async function runBrowserAcceptance() {
         conversationId,
       designConversationId,
     );
-    const temporaryConversationItem = page.locator('.conversation-item.active');
+    await page.waitForFunction(
+      () => document.querySelectorAll('.conversation-item.active').length === 1,
+    );
+    const temporaryConversationItem = page.locator(
+      '.conversation-item.active:visible',
+    );
     await temporaryConversationItem.hover();
     await temporaryConversationItem
       .locator('button[aria-label="删除当前会话"]')
+      .first()
       .evaluate((button) => (button as HTMLButtonElement).click());
     const archiveDialog = page.getByRole('dialog');
     await archiveDialog.getByText(/项目资产、任务台账和审计记录/).waitFor();
@@ -2337,6 +2468,12 @@ async function runBrowserAcceptance() {
       .getByText('浏览器验收 · 重命名会话', { exact: true })
       .first()
       .waitFor();
+    await page.waitForFunction(
+      (conversationId) =>
+        document.querySelectorAll(`[data-conversation-id="${conversationId}"]`)
+          .length === 1,
+      designConversationId,
+    );
     await page
       .locator(`[data-conversation-id="${designConversationId}"]`)
       .click();
@@ -2346,11 +2483,40 @@ async function runBrowserAcceptance() {
         conversationId,
       designConversationId,
     );
+    await page.waitForFunction(
+      () => document.querySelectorAll('.design-page').length === 1,
+    );
 
-    const firstCompletedRound = page.locator(`[data-job-id="${historyJobId}"]`);
-    await firstCompletedRound.getByRole('button', { name: '继续设计' }).click();
+    const firstCompletedRound = page.locator(
+      `[data-job-id="${historyJobId}"]:visible`,
+    );
+    await firstCompletedRound
+      .getByRole('button', { exact: true, name: '加入资产' })
+      .click();
+    const saveOutputDialog = page.getByRole('dialog', { name: '加入资产中心' });
+    await saveOutputDialog.locator('.ant-select').click();
+    await page
+      .locator('.ant-select-dropdown:visible .ant-select-item-option')
+      .filter({ hasText: '设计输入素材' })
+      .click();
+    await saveOutputDialog
+      .getByRole('button', { name: '保存到此目录' })
+      .click();
+    await page.getByText('生成结果已保存到所选资产目录').waitFor();
+    const [savedWorkflowOutput] = await acceptanceSql<
+      Array<{ folderId: null | string }>
+    >`
+      SELECT folder_id AS "folderId"
+      FROM assets
+      WHERE id = ${historyOutputAssetId}
+    `;
+    assert(
+      savedWorkflowOutput?.folderId === inputFolderId,
+      '设计结果没有保存到用户选择的项目资产目录',
+    );
+    await firstCompletedRound.getByRole('button', { name: '深化设计' }).click();
     const continueDialog = page.getByRole('dialog', {
-      name: '在本会话中继续设计',
+      name: '在本会话中深化设计',
     });
     await continueDialog
       .getByText(/不需要选择其他应用会话，也不需要重复上传/)
@@ -3449,7 +3615,9 @@ async function runBrowserAcceptance() {
         .count()) === 1,
       '切回结果模式后没有恢复原有遮罩编辑入口',
     );
-    await comparisonRound.getByRole('button', { name: '对比' }).click();
+    await comparisonRound
+      .getByRole('button', { exact: true, name: '对比' })
+      .click();
     await comparisonRound.locator('[data-image-comparison]').waitFor();
     await comparisonRound.locator('.round-input__cluster').hover();
     await comparisonRound.getByRole('button', { name: '查看本轮参数' }).click();
