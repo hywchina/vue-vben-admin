@@ -594,7 +594,13 @@ onMounted(() => void loadPreviews());
         <div
           v-else
           class="round-output-visual"
-          :class="`output-${activeOutput.kind}`"
+          :class="[
+            `output-${activeOutput.kind}`,
+            {
+              'output-image-grid':
+                activeOutput.kind === 'image' && imageOutputs.length > 1,
+            },
+          ]"
         >
           <Model3dViewer
             v-if="
@@ -1274,9 +1280,12 @@ onMounted(() => void loadPreviews());
 }
 
 .round-output-visual.output-image {
-  width: 100%;
   min-height: 0;
   background: transparent;
+}
+
+.round-output-visual.output-image-grid {
+  width: 100%;
 }
 
 .round-output-visual.output-model3d {
