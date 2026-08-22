@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { DesignModeKey } from '#/modules/platform/design-modes';
 import type {
   CapabilityField,
   DesignConversation,
@@ -50,6 +51,12 @@ import {
 } from '#/api';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
+import {
+  applicationsForDesignMode,
+  designModeForApplication,
+  designModes,
+  getDesignMode,
+} from '#/modules/platform/design-modes';
 import { usePlatformStore } from '#/store';
 import { selectDesignConversationJobs } from '#/store/platform/helpers';
 
@@ -72,6 +79,7 @@ const conversations = ref<DesignConversation[]>([]);
 const conversationSearch = ref('');
 const activeConversationId = ref('');
 const selectedAppKey = ref('');
+const selectedModeKey = ref<DesignModeKey>('cabin');
 const threadScrollRef = ref<HTMLElement>();
 const capability = ref<null | PlatformCapability>(null);
 const capabilityLoading = ref(false);
@@ -121,22 +129,28 @@ const projectOptions = computed(() =>
     value: project.id,
   })),
 );
+const activeDesignMode = computed(() => getDesignMode(selectedModeKey.value));
+const modeAvailability = computed(
+  () =>
+    Object.fromEntries(
+      designModes.map((mode) => [
+        mode.key,
+        applicationsForDesignMode(platformStore.applications, mode).length > 0,
+      ]),
+    ) as Record<DesignModeKey, boolean>,
+);
 const availableApplications = computed(() => {
   const query = appSearch.value.trim().toLowerCase();
-  return platformStore.applications
-    .filter((item) => item.visible && item.capabilityCode)
-    .filter(
-      (item) =>
-        !query ||
-        `${item.name}${item.shortName}${item.description}`
-          .toLowerCase()
-          .includes(query),
-    )
-    .toSorted((a, b) => {
-      if (a.key === DEFAULT_APP_KEY) return -1;
-      if (b.key === DEFAULT_APP_KEY) return 1;
-      return a.name.localeCompare(b.name, 'zh-CN');
-    });
+  return applicationsForDesignMode(
+    platformStore.applications,
+    activeDesignMode.value,
+  ).filter(
+    (item) =>
+      !query ||
+      `${item.name}${item.shortName}${item.description}`
+        .toLowerCase()
+        .includes(query),
+  );
 });
 const defaultApplicationKey = computed(
   () =>
@@ -151,25 +165,7 @@ const application = computed(() =>
     (item) => item.key === effectiveApplicationKey.value,
   ),
 );
-const primaryApplicationKeys = [
-  'text-chat',
-  'text-to-image',
-  'image-understanding',
-  'inpaint-single',
-  'outpaint',
-  'multi-image-edit',
-  'image-upscale',
-];
-const orderedApplicationShortcuts = computed(() =>
-  availableApplications.value.toSorted((a, b) => {
-    const aIndex = primaryApplicationKeys.indexOf(a.key);
-    const bIndex = primaryApplicationKeys.indexOf(b.key);
-    if (aIndex === -1 && bIndex === -1) return 0;
-    if (aIndex === -1) return 1;
-    if (bIndex === -1) return -1;
-    return aIndex - bIndex;
-  }),
-);
+const orderedApplicationShortcuts = computed(() => availableApplications.value);
 const applicationShortcuts = computed(() =>
   orderedApplicationShortcuts.value.slice(0, 7),
 );
@@ -621,6 +617,12 @@ async function selectConversation(
     )
       ? preferredAppKey
       : undefined;
+  if (availablePreferredApp) {
+    selectedModeKey.value = designModeForApplication(
+      availablePreferredApp,
+      selectedModeKey.value,
+    ).key;
+  }
   selectedAppKey.value = availablePreferredApp ?? '';
   await router.replace({ query: { conversationId } });
   await loadCapability();
@@ -631,8 +633,34 @@ async function selectConversation(
 async function chooseApplication(appKey: string) {
   if (appKey === selectedAppKey.value && capability.value) return;
   await saveDraftNow();
+  selectedModeKey.value = designModeForApplication(
+    appKey,
+    selectedModeKey.value,
+  ).key;
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
+}
+
+async function chooseDesignMode(modeKey: DesignModeKey) {
+  if (modeKey === selectedModeKey.value) return;
+  const mode = getDesignMode(modeKey);
+  const applications = applicationsForDesignMode(
+    platformStore.applications,
+    mode,
+  );
+  if (applications.length === 0) {
+    message.info(`${mode.label}的执行服务与能力契约尚未接入`);
+    return;
+  }
+  await saveDraftNow();
+  selectedModeKey.value = modeKey;
+  const currentKey = effectiveApplicationKey.value;
+  const nextKey = applications.some((item) => item.key === currentKey)
+    ? currentKey
+    : applications[0]?.key;
+  if (!nextKey) return;
+  selectedAppKey.value = nextKey;
+  await loadCapability(nextKey);
 }
 
 async function clearApplicationSelection() {
@@ -1032,7 +1060,7 @@ async function useWelcomeSuggestion(value: string) {
     (item) => item.key === DEFAULT_APP_KEY,
   );
   if (textApp && effectiveApplicationKey.value !== textApp.key) {
-    await clearApplicationSelection();
+    await chooseApplication(textApp.key);
   }
   const field = promptField.value;
   if (!field) return;
@@ -1115,9 +1143,9 @@ onBeforeUnmount(() => {
   <main class="design-page">
     <aside class="conversation-sidebar">
       <div class="conversation-brand">
-        <img alt="轨道客室智能设计平台" src="/rail-logo.svg" />
+        <img alt="客运装备内装模块化分区快速设计平台" src="/rail-logo.svg" />
         <div>
-          <strong>轨道客室智能设计</strong>
+          <strong>客运装备内装模块化分区快速设计平台</strong>
           <span>RAIL DESIGN</span>
         </div>
       </div>
@@ -1239,7 +1267,9 @@ onBeforeUnmount(() => {
       <header class="thread-header">
         <div class="thread-header__center">
           <strong>{{ activeConversation?.title ?? '新设计会话' }}</strong>
-          <span>{{ application?.name ?? '默认文生文' }}</span>
+          <span>
+            {{ activeDesignMode.label }} · {{ application?.name ?? '选择能力' }}
+          </span>
         </div>
         <div class="thread-header__actions">
           <div class="thread-status">
@@ -1287,7 +1317,8 @@ onBeforeUnmount(() => {
             <span>RAIL DESIGN COPILOT</span>
             <h2>从一个设计问题开始</h2>
             <p>
-              你好，我是你的轨道客室设计助手。默认使用“文生文”工作流，你也可以在下方随时切换其他设计能力。
+              {{ activeDesignMode.description }}
+              选择下方真实可用的设计能力后，结果会登记到当前项目并保留完整任务血缘。
             </p>
             <div class="welcome-suggestions">
               <button
@@ -1352,7 +1383,7 @@ onBeforeUnmount(() => {
             :auto-size="{ minRows: 2, maxRows: 8 }"
             :value="fieldTextValue(promptField)"
             :maxlength="promptField.maxLength"
-            :placeholder="promptField.placeholder ?? '描述你的设计需求…'"
+            :placeholder="activeDesignMode.placeholder"
             data-testid="design-prompt-input"
             @update:value="setFieldValue(promptField, $event)"
             @press-enter="
@@ -1497,6 +1528,28 @@ onBeforeUnmount(() => {
             </Button>
           </div>
         </div>
+        <nav aria-label="设计业务模式" class="design-mode-switcher">
+          <button
+            v-for="mode in designModes"
+            :key="mode.key"
+            :aria-disabled="!modeAvailability[mode.key]"
+            :class="{
+              active: mode.key === selectedModeKey,
+              unavailable: !modeAvailability[mode.key],
+            }"
+            :title="
+              modeAvailability[mode.key]
+                ? mode.description
+                : `${mode.label}执行服务待接入`
+            "
+            type="button"
+            @click="chooseDesignMode(mode.key)"
+          >
+            <IconifyIcon :icon="mode.icon" />
+            <span>{{ mode.label }}</span>
+            <small v-if="!modeAvailability[mode.key]">待接入</small>
+          </button>
+        </nav>
       </footer>
     </section>
 
@@ -2421,6 +2474,56 @@ main.design-page {
   z-index: 4;
   padding: 10px clamp(20px, 6vw, 88px) 18px;
   background: linear-gradient(rgb(255 255 255 / 10%), #fff 20%);
+}
+
+.design-mode-switcher {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  max-width: var(--design-content-width);
+  padding: 8px 2px 0;
+  margin: 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.design-mode-switcher::-webkit-scrollbar {
+  display: none;
+}
+
+.design-mode-switcher button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: #56616a;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.design-mode-switcher button:hover,
+.design-mode-switcher button.active {
+  color: #b91c32;
+  background: #fff1f3;
+  border-color: #e8b5be;
+}
+
+.design-mode-switcher button.unavailable {
+  color: #92999f;
+  background: #f5f6f7;
+  border-color: #e6e8ea;
+}
+
+.design-mode-switcher small {
+  padding-left: 5px;
+  font-size: 10px;
+  color: #8a6b3a;
+  border-left: 1px solid #d8dcdf;
 }
 
 .design-page .composer-box {

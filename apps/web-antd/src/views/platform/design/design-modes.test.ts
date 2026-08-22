@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applicationsForDesignMode,
+  designModeForApplication,
   designModes,
   getDesignMode,
 } from '#/modules/platform/design-modes';
@@ -36,9 +37,9 @@ function application(
 describe('design mode catalog', () => {
   it('keeps the four customer-facing modes in a stable order', () => {
     expect(designModes.map((mode) => mode.key)).toEqual([
-      'cabin',
-      'cmf',
       'component',
+      'cmf',
+      'cabin',
       'report',
     ]);
   });
@@ -58,5 +59,12 @@ describe('design mode catalog', () => {
       'text-to-image',
       'image-upscale',
     ]);
+  });
+
+  it('keeps shared applications in the selected mode', () => {
+    expect(designModeForApplication('text-to-image', 'cmf').key).toBe('cmf');
+    expect(designModeForApplication('multiview-to-3d', 'cabin').key).toBe(
+      'component',
+    );
   });
 });

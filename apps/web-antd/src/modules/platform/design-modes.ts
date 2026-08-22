@@ -37,27 +37,6 @@ const defaultDesignMode: DesignModeDefinition = {
 };
 
 export const designModes: readonly DesignModeDefinition[] = [
-  defaultDesignMode,
-  {
-    applicationKeys: [
-      'text-to-image',
-      'text-to-image-lora',
-      'single-image-edit',
-      'multi-image-edit',
-      'inpaint-single',
-      'inpaint-reference',
-      'image-edit-base',
-      'image-edit-kv',
-      'image-upscale',
-      'image-understanding',
-    ],
-    description: '生成连续纹样、颜色、面料材质与表面图案方案。',
-    icon: 'lucide:swatch-book',
-    key: 'cmf',
-    label: 'CMF 生成',
-    placeholder:
-      '描述二方连续或四方连续、颜色、面料材质、图案形式、风格和图像尺寸……',
-  },
   {
     applicationKeys: [
       'text-to-image',
@@ -80,6 +59,27 @@ export const designModes: readonly DesignModeDefinition[] = [
     placeholder: '描述零部件类型、观察角度、颜色、材质、结构尺寸及设计要求……',
   },
   {
+    applicationKeys: [
+      'text-to-image',
+      'text-to-image-lora',
+      'single-image-edit',
+      'multi-image-edit',
+      'inpaint-single',
+      'inpaint-reference',
+      'image-edit-base',
+      'image-edit-kv',
+      'image-upscale',
+      'image-understanding',
+    ],
+    description: '生成连续纹样、颜色、面料材质与表面图案方案。',
+    icon: 'lucide:swatch-book',
+    key: 'cmf',
+    label: 'CMF 生成',
+    placeholder:
+      '描述二方连续或四方连续、颜色、面料材质、图案形式、风格和图像尺寸……',
+  },
+  defaultDesignMode,
+  {
     applicationKeys: ['report-generator'],
     description: '组合项目资产与说明，生成结构化 Word 或 PPT 报告。',
     icon: 'lucide:file-chart-column',
@@ -91,6 +91,18 @@ export const designModes: readonly DesignModeDefinition[] = [
 
 export function getDesignMode(key: DesignModeKey) {
   return designModes.find((mode) => mode.key === key) ?? defaultDesignMode;
+}
+
+export function designModeForApplication(
+  applicationKey: string,
+  currentModeKey: DesignModeKey = 'cabin',
+) {
+  const currentMode = getDesignMode(currentModeKey);
+  if (currentMode.applicationKeys.includes(applicationKey)) return currentMode;
+  return (
+    designModes.find((mode) => mode.applicationKeys.includes(applicationKey)) ??
+    currentMode
+  );
 }
 
 export function applicationsForDesignMode(
