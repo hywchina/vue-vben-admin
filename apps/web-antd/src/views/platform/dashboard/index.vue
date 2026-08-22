@@ -363,8 +363,8 @@ onBeforeUnmount(() => {
           <button
             v-for="entry in quickEntries"
             :key="entry.action"
-            :aria-disabled="entry.unavailable"
             :class="{ unavailable: entry.unavailable }"
+            :data-unavailable="entry.unavailable || undefined"
             type="button"
             @click="activateQuickEntry(entry.action)"
           >

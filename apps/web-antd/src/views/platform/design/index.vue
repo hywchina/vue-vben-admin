@@ -1532,11 +1532,11 @@ onBeforeUnmount(() => {
           <button
             v-for="mode in designModes"
             :key="mode.key"
-            :aria-disabled="!modeAvailability[mode.key]"
             :class="{
               active: mode.key === selectedModeKey,
               unavailable: !modeAvailability[mode.key],
             }"
+            :data-unavailable="!modeAvailability[mode.key] || undefined"
             :title="
               modeAvailability[mode.key]
                 ? mode.description
