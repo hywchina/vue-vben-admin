@@ -1,17 +1,30 @@
 <script lang="ts" setup>
-import { nextTick, reactive, ref, watch } from 'vue';
+import {
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
 import { Button, Modal, Tooltip } from 'ant-design-vue';
 
 const props = defineProps<{
+  hasNext?: boolean;
+  hasPrevious?: boolean;
   open: boolean;
   title?: string;
   url?: string;
 }>();
 
-const emit = defineEmits<{ 'update:open': [open: boolean] }>();
+const emit = defineEmits<{
+  next: [];
+  previous: [];
+  'update:open': [open: boolean];
+}>();
 const viewportRef = ref<HTMLElement>();
 const imageRef = ref<HTMLImageElement>();
 const zoom = ref(1);
@@ -85,6 +98,18 @@ function handlePointerUp(event: PointerEvent) {
   }
 }
 
+function handleKeydown(event: KeyboardEvent) {
+  if (!props.open || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.key === 'ArrowLeft' && props.hasPrevious) {
+    event.preventDefault();
+    emit('previous');
+  }
+  if (event.key === 'ArrowRight' && props.hasNext) {
+    event.preventDefault();
+    emit('next');
+  }
+}
+
 watch(
   () => props.open,
   (open) => {
@@ -93,6 +118,8 @@ watch(
 );
 
 watch(() => props.url, resetView);
+onMounted(() => window.addEventListener('keydown', handleKeydown));
+onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
 </script>
 
 <template>
@@ -135,6 +162,15 @@ watch(() => props.url, resetView);
       @pointerup="handlePointerUp"
       @wheel="handleWheel"
     >
+      <Button
+        v-if="hasPrevious"
+        aria-label="查看上一张图片"
+        class="lightbox-navigation lightbox-navigation--previous"
+        shape="circle"
+        @click.stop="emit('previous')"
+      >
+        <IconifyIcon icon="lucide:chevron-left" />
+      </Button>
       <img
         v-if="url"
         ref="imageRef"
@@ -146,6 +182,15 @@ watch(() => props.url, resetView);
         }"
         @load="clampPan"
       />
+      <Button
+        v-if="hasNext"
+        aria-label="查看下一张图片"
+        class="lightbox-navigation lightbox-navigation--next"
+        shape="circle"
+        @click.stop="emit('next')"
+      >
+        <IconifyIcon icon="lucide:chevron-right" />
+      </Button>
     </div>
   </Modal>
 </template>
@@ -184,6 +229,7 @@ watch(() => props.url, resetView);
 }
 
 .lightbox-viewport {
+  position: relative;
   display: grid;
   place-items: center;
   height: min(72vh, 780px);
@@ -197,6 +243,35 @@ watch(() => props.url, resetView);
     linear-gradient(45deg, transparent 75%, #20262b 75%) 10px -10px / 20px 20px,
     linear-gradient(45deg, #20262b 25%, #171c20 25%) 10px 10px / 20px 20px;
   border-radius: 12px;
+}
+
+.lightbox-navigation.ant-btn {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  color: #fff;
+  background: rgb(16 21 25 / 72%);
+  border-color: rgb(255 255 255 / 30%);
+  transform: translateY(-50%);
+}
+
+.lightbox-navigation.ant-btn:hover {
+  color: #fff;
+  background: var(--rail-red, #c71f3a);
+  border-color: var(--rail-red, #c71f3a);
+}
+
+.lightbox-navigation--previous {
+  left: 16px;
+}
+
+.lightbox-navigation--next {
+  right: 16px;
 }
 
 .lightbox-viewport.is-pannable {

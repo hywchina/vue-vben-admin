@@ -49,6 +49,7 @@ const editedPrompt = ref('');
 const annotationLightboxOpen = ref(false);
 const annotationLightboxTitle = ref('');
 const annotationLightboxUrl = ref('');
+const outputLightboxOpen = ref(false);
 const previewUrls = reactive<Record<string, string>>({});
 const modelUrls = reactive<Record<string, string>>({});
 const textContents = reactive<Record<string, string>>({});
@@ -58,6 +59,17 @@ const activeOutput = computed(
     props.job.outputs.find(
       (output) => output.assetId === activeOutputAssetId.value,
     ) ?? props.job.outputs[0],
+);
+const imageOutputs = computed(() =>
+  props.job.outputs.filter(
+    (output) => output.kind === 'image' && previewUrls[output.assetId],
+  ),
+);
+const visibleImageOutputs = computed(() => imageOutputs.value.slice(0, 4));
+const activeImageOutputIndex = computed(() =>
+  imageOutputs.value.findIndex(
+    (output) => output.assetId === activeOutput.value?.assetId,
+  ),
 );
 const firstImageInput = computed(() =>
   props.job.inputs.find((input) => input.kind === 'image'),
@@ -268,6 +280,17 @@ function openAnnotation(input: PlatformJobInput) {
   annotationLightboxOpen.value = true;
 }
 
+function openOutputImage(output: PlatformJobOutput) {
+  activeOutputAssetId.value = output.assetId;
+  outputLightboxOpen.value = true;
+}
+
+function moveOutputImage(offset: number) {
+  const nextIndex = activeImageOutputIndex.value + offset;
+  const nextOutput = imageOutputs.value[nextIndex];
+  if (nextOutput) activeOutputAssetId.value = nextOutput.assetId;
+}
+
 watch(
   () => props.job.outputs.map((output) => output.assetId).join('|'),
   () => {
@@ -297,7 +320,7 @@ onMounted(() => void loadPreviews());
       <time :datetime="job.createdAt">{{ formatDate(job.createdAt) }}</time>
       <StatusPill :status="job.status" />
       <small v-if="job.workflowVersion">
-        工作流 V{{ job.workflowVersion }}
+        能力版本 V{{ job.workflowVersion }}
       </small>
     </header>
 
@@ -509,7 +532,10 @@ onMounted(() => void loadPreviews());
 
       <div v-else-if="activeOutput" class="round-output">
         <div class="round-output__toolbar">
-          <div v-if="job.outputs.length > 1" class="round-output-selector">
+          <div
+            v-if="job.outputs.length > 1 && imageOutputs.length <= 1"
+            class="round-output-selector"
+          >
             <button
               v-for="(output, index) in job.outputs"
               :key="output.assetId"
@@ -575,6 +601,29 @@ onMounted(() => void loadPreviews());
           />
         </div>
         <div
+          v-else-if="imageOutputs.length > 1"
+          :data-count="Math.min(imageOutputs.length, 4)"
+          class="round-output-gallery"
+        >
+          <button
+            v-for="(output, index) in visibleImageOutputs"
+            :key="output.assetId"
+            :aria-label="`全屏查看${output.name || `结果 ${index + 1}`}`"
+            :class="{ active: output.assetId === activeOutput.assetId }"
+            type="button"
+            @click="openOutputImage(output)"
+          >
+            <img :alt="output.name" :src="previewUrls[output.assetId]" />
+            <span
+              v-if="index === 3 && imageOutputs.length > 4"
+              class="round-output-gallery__more"
+            >
+              +{{ imageOutputs.length - 4 }}
+            </span>
+            <span class="round-output-gallery__index">{{ index + 1 }}</span>
+          </button>
+        </div>
+        <div
           v-else
           class="round-output-visual"
           :class="`output-${activeOutput.kind}`"
@@ -587,11 +636,18 @@ onMounted(() => void loadPreviews());
             :name="activeOutput.name"
             :url="modelUrls[activeOutput.assetId]!"
           />
-          <img
+          <button
             v-else-if="previewUrls[activeOutput.assetId]"
-            :alt="activeOutput.name"
-            :src="previewUrls[activeOutput.assetId]"
-          />
+            :aria-label="`全屏查看${activeOutput.name}`"
+            class="round-output-image-open"
+            type="button"
+            @click="openOutputImage(activeOutput)"
+          >
+            <img
+              :alt="activeOutput.name"
+              :src="previewUrls[activeOutput.assetId]"
+            />
+          </button>
           <PlatformMarkdown
             v-else-if="textContents[activeOutput.assetId]"
             :content="textContents[activeOutput.assetId]!"
@@ -628,6 +684,24 @@ onMounted(() => void loadPreviews());
             <strong>{{ activeOutput.name }}</strong>
           </div>
           <div class="round-output-actions">
+            <Tooltip
+              v-if="
+                activeOutput.kind === 'image' &&
+                previewUrls[activeOutput.assetId]
+              "
+              title="局部重绘"
+            >
+              <button
+                aria-label="局部重绘"
+                class="round-action-button"
+                type="button"
+                @click="
+                  emit('mask', activeOutput, previewUrls[activeOutput.assetId]!)
+                "
+              >
+                <ComfyMaskIcon :size="16" />
+              </button>
+            </Tooltip>
             <Tooltip v-if="activeOutput.kind === 'text'" title="复制 Markdown">
               <button
                 aria-label="复制 Markdown"
@@ -699,6 +773,19 @@ onMounted(() => void loadPreviews());
       v-model:open="annotationLightboxOpen"
       :title="annotationLightboxTitle"
       :url="annotationLightboxUrl"
+    />
+    <ImageLightbox
+      v-model:open="outputLightboxOpen"
+      :has-next="activeImageOutputIndex < imageOutputs.length - 1"
+      :has-previous="activeImageOutputIndex > 0"
+      :title="activeOutput?.name ?? '生成结果'"
+      :url="
+        activeOutput?.kind === 'image'
+          ? previewUrls[activeOutput.assetId]
+          : undefined
+      "
+      @next="moveOutputImage(1)"
+      @previous="moveOutputImage(-1)"
     />
   </article>
 </template>
@@ -1180,6 +1267,80 @@ onMounted(() => void loadPreviews());
   color: #8a7478;
 }
 
+.round-output-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 920px);
+  min-height: 300px;
+  margin: 0 auto;
+}
+
+.round-output-gallery[data-count='2'] {
+  min-height: 360px;
+}
+
+.round-output-gallery[data-count='3'] button:first-child {
+  grid-row: span 2;
+}
+
+.round-output-gallery button,
+.round-output-image-open {
+  position: relative;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: #1d272d;
+  border: 2px solid transparent;
+  border-radius: 12px;
+}
+
+.round-output-gallery button {
+  min-height: 180px;
+}
+
+.round-output-gallery button:hover,
+.round-output-gallery button.active {
+  border-color: var(--round-accent);
+}
+
+.round-output-gallery img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 180ms ease;
+}
+
+.round-output-gallery button:hover img {
+  transform: scale(1.02);
+}
+
+.round-output-gallery__index,
+.round-output-gallery__more {
+  position: absolute;
+  color: #fff;
+  background: rgb(18 25 29 / 72%);
+  backdrop-filter: blur(6px);
+}
+
+.round-output-gallery__index {
+  right: 8px;
+  bottom: 8px;
+  padding: 3px 7px;
+  font-size: 11px;
+  border-radius: 999px;
+}
+
+.round-output-gallery__more {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  font-weight: 750;
+}
+
 .round-output-visual {
   position: relative;
   display: grid;
@@ -1235,6 +1396,16 @@ onMounted(() => void loadPreviews());
   height: auto;
   max-height: min(68vh, 720px);
   object-fit: contain;
+}
+
+.round-output-image-open {
+  display: block;
+  border: 0;
+}
+
+.round-output-image-open:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--round-accent) 48%, transparent);
+  outline-offset: -3px;
 }
 
 .round-output-icon {
@@ -1301,6 +1472,14 @@ onMounted(() => void loadPreviews());
 }
 
 @media (max-width: 900px) {
+  .round-output-gallery {
+    min-height: 240px;
+  }
+
+  .round-output-gallery button {
+    min-height: 130px;
+  }
+
   .round-input__bubble,
   .round-input__cluster {
     width: 100%;
