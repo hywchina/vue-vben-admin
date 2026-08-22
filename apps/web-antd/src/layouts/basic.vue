@@ -210,7 +210,7 @@ watch(
         :menus
         :text="userStore.userInfo?.realName"
         :description="`${userPublicId}${platformStore.currentProject?.name ? ` · ${platformStore.currentProject.name}` : ''}`"
-        tag-text="设计平台"
+        tag-text="快速设计平台"
         @clear-preferences-and-logout="handleLogout"
         @logout="handleLogout"
       />

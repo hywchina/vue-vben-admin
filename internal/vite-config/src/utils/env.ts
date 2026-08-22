@@ -92,7 +92,7 @@ async function loadAndConvertEnv(
     .filter((item) => item === 'brotli' || item === 'gzip');
 
   return {
-    appTitle: getString(VITE_APP_TITLE, '轨道客室智能设计平台'),
+    appTitle: getString(VITE_APP_TITLE, '客运装备内装模块化分区快速设计平台'),
     archiver: getBoolean(VITE_ARCHIVER),
     base: getString(VITE_BASE, '/'),
     compress: compressTypes.length > 0,

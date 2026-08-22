@@ -21,7 +21,7 @@ export const overridesPreferences = defineOverridesPreferences({
     showHome: true,
   },
   copyright: {
-    companyName: '轨道客室智能设计平台',
+    companyName: '客运装备内装模块化分区快速设计平台',
     companySiteLink: '',
     date: '2026',
     enable: false,

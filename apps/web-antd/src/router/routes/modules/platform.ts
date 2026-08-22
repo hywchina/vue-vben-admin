@@ -19,7 +19,7 @@ const routes: RouteRecordRaw[] = [
       icon: 'lucide:message-square-more',
       noBasicLayout: true,
       order: -110,
-      title: '开始设计',
+      title: '设计生成',
     },
     name: 'PlatformDesign',
     path: '/design',

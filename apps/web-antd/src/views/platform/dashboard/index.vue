@@ -6,7 +6,14 @@ import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, Tooltip } from 'ant-design-vue';
+import {
+  Button,
+  Input,
+  message,
+  Modal,
+  Textarea,
+  Tooltip,
+} from 'ant-design-vue';
 
 import { getAssetPreviewApi, getDashboardApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
@@ -20,6 +27,11 @@ const router = useRouter();
 const platformStore = usePlatformStore();
 const dashboard = ref<null | PlatformDashboard>(null);
 const loading = ref(true);
+const createProjectOpen = ref(false);
+const historyOpen = ref(false);
+const projectName = ref('');
+const projectDescription = ref('');
+const projectSubmitting = ref(false);
 const previewUrls = reactive(new Map<string, string>());
 const previewFailures = reactive(new Set<string>());
 
@@ -115,6 +127,53 @@ const flowNodes = computed(() => [
     unit: '项入库',
   },
 ]);
+const quickEntries = computed(() => [
+  {
+    action: 'new-design',
+    description: '新建项目并进入设计会话',
+    icon: 'lucide:square-pen',
+    label: '开始新设计',
+  },
+  {
+    action: 'history',
+    description: '从最近会话继续设计',
+    icon: 'lucide:history',
+    label: '查看我的设计',
+  },
+  {
+    action: 'assets',
+    description: '管理当前项目设计资产',
+    icon: 'lucide:library-big',
+    label: '查看资产中心',
+  },
+  {
+    action: 'training',
+    description: '训练服务与能力契约尚未接入',
+    icon: 'lucide:brain-circuit',
+    label: '开始模型训练',
+    unavailable: !applicationAvailable('lora-training'),
+  },
+  {
+    action: 'report',
+    description: '报告服务与能力契约尚未接入',
+    icon: 'lucide:file-chart-column',
+    label: '开始报告生成',
+    unavailable: !applicationAvailable('report-generator'),
+  },
+  {
+    action: 'workspace',
+    description: '查看任务、资产与成果闭环',
+    icon: 'lucide:layout-dashboard',
+    label: '设计工作台',
+  },
+]);
+
+function applicationAvailable(appKey: string) {
+  const application = platformStore.applications.find(
+    (item) => item.key === appKey,
+  );
+  return Boolean(application?.visible && application.capabilityCode);
+}
 
 function formatTime(value: string) {
   const date = new Date(value);
@@ -164,15 +223,72 @@ async function navigateTo(
 async function continueConversation(
   conversation: PlatformDashboard['recentConversations'][number],
 ) {
+  historyOpen.value = false;
   await navigateTo('/design', conversation.projectId, {
     conversationId: conversation.id,
   });
+}
+
+function startNewFromHistory() {
+  historyOpen.value = false;
+  createProjectOpen.value = true;
 }
 
 async function openRecentAsset(
   asset: PlatformDashboard['recentAssets'][number],
 ) {
   await navigateTo('/assets', asset.projectId, { assetId: asset.id });
+}
+
+function activateQuickEntry(action: string) {
+  if (action === 'new-design') {
+    createProjectOpen.value = true;
+    return;
+  }
+  if (action === 'history') {
+    historyOpen.value = true;
+    return;
+  }
+  if (action === 'assets') {
+    void navigateTo('/assets', currentProjectId.value);
+    return;
+  }
+  if (action === 'workspace') {
+    document
+      .querySelector('#design-workbench-overview')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  let appKey = '';
+  if (action === 'training') appKey = 'lora-training';
+  if (action === 'report') appKey = 'report-generator';
+  if (!appKey || !applicationAvailable(appKey)) {
+    message.info('该外部服务与能力契约尚未接入');
+    return;
+  }
+  void navigateTo('/design', currentProjectId.value, { appKey });
+}
+
+async function createProjectAndDesign() {
+  const name = projectName.value.trim();
+  if (!name) {
+    message.warning('请输入项目名称');
+    return;
+  }
+  projectSubmitting.value = true;
+  try {
+    const project = await platformStore.addProject(
+      name,
+      projectDescription.value.trim() || '新建轨道客室设计项目。',
+    );
+    createProjectOpen.value = false;
+    projectName.value = '';
+    projectDescription.value = '';
+    message.success(`项目“${project.name}”已创建`);
+    await navigateTo('/design', project.id);
+  } finally {
+    projectSubmitting.value = false;
+  }
 }
 
 function projectAssetBreakdown(
@@ -235,6 +351,34 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-else-if="dashboard" class="platform-content dashboard-content">
+      <section class="dashboard-entry-panel">
+        <div class="dashboard-entry-copy">
+          <small>WELCOME TO RAIL DESIGN</small>
+          <h2>欢迎使用客运装备内装模块化分区快速设计平台</h2>
+          <p>
+            从项目、历史设计或项目资产快速进入工作，也可继续查看完整设计闭环。
+          </p>
+        </div>
+        <div class="dashboard-quick-entries">
+          <button
+            v-for="entry in quickEntries"
+            :key="entry.action"
+            :aria-disabled="entry.unavailable"
+            :class="{ unavailable: entry.unavailable }"
+            type="button"
+            @click="activateQuickEntry(entry.action)"
+          >
+            <span><IconifyIcon :icon="entry.icon" /></span>
+            <i>
+              <strong>{{ entry.label }}</strong>
+              <small>{{ entry.description }}</small>
+            </i>
+            <em v-if="entry.unavailable">待接入</em>
+            <IconifyIcon v-else icon="lucide:arrow-up-right" />
+          </button>
+        </div>
+      </section>
+
       <section v-if="!dashboard.currentProject" class="dashboard-empty">
         <IconifyIcon icon="lucide:folder-plus" />
         <h2>从第一个项目开始</h2>
@@ -245,7 +389,10 @@ onBeforeUnmount(() => {
       </section>
 
       <template v-else>
-        <section class="dashboard-panel design-flow-panel">
+        <section
+          id="design-workbench-overview"
+          class="dashboard-panel design-flow-panel"
+        >
           <header class="dashboard-panel__heading">
             <div>
               <small>CORE WORKFLOW</small>
@@ -677,6 +824,70 @@ onBeforeUnmount(() => {
         </section>
       </template>
     </div>
+
+    <Modal
+      v-model:open="createProjectOpen"
+      :confirm-loading="projectSubmitting"
+      ok-text="创建并开始设计"
+      title="开始新设计"
+      @ok="createProjectAndDesign"
+    >
+      <div class="dashboard-project-form">
+        <label>
+          <span>项目名称</span>
+          <Input
+            v-model:value="projectName"
+            :maxlength="160"
+            placeholder="例如：出口动车组客室内装方案"
+            @press-enter="createProjectAndDesign"
+          />
+        </label>
+        <label>
+          <span>任务描述</span>
+          <Textarea
+            v-model:value="projectDescription"
+            :maxlength="2000"
+            :rows="4"
+            placeholder="说明车型、设计范围、交付目标和关键约束"
+          />
+        </label>
+      </div>
+    </Modal>
+
+    <Modal
+      v-model:open="historyOpen"
+      :footer="null"
+      title="查看我的设计"
+      width="680px"
+    >
+      <div
+        v-if="dashboard?.recentConversations.length"
+        class="dashboard-history-list"
+      >
+        <button
+          v-for="conversation in dashboard.recentConversations"
+          :key="conversation.id"
+          type="button"
+          @click="continueConversation(conversation)"
+        >
+          <span>
+            <strong>{{ conversation.title }}</strong>
+            <small>
+              {{ conversation.projectName }} · {{ conversation.roundCount }} 轮
+            </small>
+          </span>
+          <time :datetime="conversation.updatedAt">
+            {{ formatTime(conversation.updatedAt) }}
+          </time>
+          <IconifyIcon icon="lucide:chevron-right" />
+        </button>
+      </div>
+      <div v-else class="dashboard-history-empty">
+        <IconifyIcon icon="lucide:message-square-plus" />
+        <span>还没有可继续的设计会话</span>
+        <Button type="primary" @click="startNewFromHistory">开始新设计</Button>
+      </div>
+    </Modal>
   </main>
 </template>
 
@@ -699,6 +910,199 @@ onBeforeUnmount(() => {
 .dashboard-content {
   display: grid;
   gap: 18px;
+}
+
+.dashboard-entry-panel {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.8fr) minmax(560px, 1.7fr);
+  gap: 28px;
+  align-items: center;
+  padding: 26px;
+  background:
+    radial-gradient(circle at 10% 20%, rgb(197 31 58 / 8%), transparent 42%),
+    #fff;
+  border: 1px solid var(--dashboard-line);
+  border-radius: 13px;
+}
+
+.dashboard-entry-copy small {
+  font-size: 10px;
+  font-weight: 750;
+  color: var(--dashboard-red);
+  letter-spacing: 0.15em;
+}
+
+.dashboard-entry-copy h2 {
+  max-width: 480px;
+  margin: 8px 0;
+  font-size: clamp(22px, 2vw, 31px);
+  line-height: 1.3;
+  color: var(--dashboard-ink);
+}
+
+.dashboard-entry-copy p {
+  max-width: 520px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--dashboard-muted);
+}
+
+.dashboard-quick-entries {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.dashboard-quick-entries button {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  min-height: 72px;
+  padding: 10px;
+  color: var(--dashboard-ink);
+  text-align: left;
+  cursor: pointer;
+  background: #fafbfb;
+  border: 1px solid #e3e7e9;
+  border-radius: 11px;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.dashboard-quick-entries button:hover,
+.dashboard-quick-entries button:focus-visible {
+  outline: 0;
+  border-color: #dfa1ac;
+  box-shadow: 0 8px 20px rgb(37 47 54 / 8%);
+  transform: translateY(-1px);
+}
+
+.dashboard-quick-entries button > span {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: var(--dashboard-red);
+  background: #fff0f2;
+  border-radius: 10px;
+}
+
+.dashboard-quick-entries button > i {
+  display: grid;
+  min-width: 0;
+  font-style: normal;
+}
+
+.dashboard-quick-entries strong,
+.dashboard-quick-entries small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-quick-entries strong {
+  font-size: 13px;
+}
+
+.dashboard-quick-entries small {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--dashboard-muted);
+}
+
+.dashboard-quick-entries button > svg {
+  color: #a0a8ae;
+}
+
+.dashboard-quick-entries button > em {
+  padding: 3px 6px;
+  font-size: 9px;
+  font-style: normal;
+  color: #89662d;
+  background: #fff8e8;
+  border-radius: 999px;
+}
+
+.dashboard-quick-entries button.unavailable {
+  color: #7e878d;
+  background: #f6f7f8;
+}
+
+.dashboard-project-form,
+.dashboard-project-form label {
+  display: grid;
+  gap: 8px;
+}
+
+.dashboard-project-form {
+  gap: 16px;
+}
+
+.dashboard-project-form label > span {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-history-list {
+  display: grid;
+  gap: 7px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+
+.dashboard-history-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  color: var(--dashboard-ink);
+  text-align: left;
+  cursor: pointer;
+  background: #fafbfb;
+  border: 1px solid #e5e8ea;
+  border-radius: 10px;
+}
+
+.dashboard-history-list button:hover {
+  border-color: #dfa1ac;
+}
+
+.dashboard-history-list button > span {
+  display: grid;
+  min-width: 0;
+}
+
+.dashboard-history-list strong,
+.dashboard-history-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-history-list small,
+.dashboard-history-list time {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--dashboard-muted);
+}
+
+.dashboard-history-empty {
+  display: grid;
+  gap: 12px;
+  place-items: center;
+  min-height: 220px;
+  color: var(--dashboard-muted);
+}
+
+.dashboard-history-empty > svg {
+  width: 38px;
+  height: 38px;
+  color: var(--dashboard-red);
 }
 
 .dashboard-loading,
@@ -1596,6 +2000,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 1180px) {
+  .dashboard-entry-panel {
+    grid-template-columns: 1fr;
+  }
+
   .dashboard-grid--charts,
   .dashboard-grid--work,
   .dashboard-grid--activity {
@@ -1604,6 +2012,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 760px) {
+  .dashboard-quick-entries {
+    grid-template-columns: 1fr;
+  }
+
   .status-chart {
     grid-template-columns: 130px 1fr;
   }
