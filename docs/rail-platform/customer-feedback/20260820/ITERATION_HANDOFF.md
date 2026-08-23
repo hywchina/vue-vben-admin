@@ -19,6 +19,8 @@
 
 ## 2. 原始需求整理
 
+原始 DOCX 已进一步拆分为 129 条可追溯需求，并按“明确、参考、待定义”区分需求成熟度；22 张原文配图均附有截图说明，另集中整理 42 项 P0/P1/P2 确认问题和 10 项不合理或高风险表述。面向甲方沟通的完整材料见 `CUSTOMER_REQUIREMENTS_ANALYSIS.md` 和 `CUSTOMER_REQUIREMENTS_ANALYSIS.pdf`。
+
 ### 2.1 首页
 
 - 登录后页面统一称为“首页”，不再称“设计工作台”。
@@ -189,6 +191,7 @@
 ## 8. 后续开发入口
 
 - 原始需求：`original/轨道交通客室智能快速设计工具模块说明20260820(1).docx`
+- 甲方需求逐条确认材料：`CUSTOMER_REQUIREMENTS_ANALYSIS.md`、`CUSTOMER_REQUIREMENTS_ANALYSIS.pdf`
 - 中文提交说明：`COMMITLOG.md`
 - 设计模式目录：`apps/web-antd/src/modules/platform/design-modes.ts`
 - 首页：`apps/web-antd/src/views/platform/dashboard/index.vue`

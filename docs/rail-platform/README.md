@@ -2,7 +2,7 @@
 
 本目录是二次开发项目的交接入口。当前交付不是前端 Demo：登录、用户、权限、项目、资产、任务、通知、审计和 AI 助手的本地会话层均使用真实平台 API 与持久化存储。ComfyUI、大模型、LoRA 训练、2D 生 3D、报告生成等执行能力仍通过外部服务适配器接入。
 
-2026-08-20 甲方前端意见的原始需求、提交映射、验证证据、已知问题和后续检查清单见 [`customer-feedback/20260820/ITERATION_HANDOFF.md`](customer-feedback/20260820/ITERATION_HANDOFF.md)。
+2026-08-20 甲方前端意见的原始需求、提交映射、验证证据、已知问题和后续检查清单见 [`customer-feedback/20260820/ITERATION_HANDOFF.md`](customer-feedback/20260820/ITERATION_HANDOFF.md)。面向甲方确认的逐条需求、22 张配图说明、疑问与不合理项见 [`customer-feedback/20260820/CUSTOMER_REQUIREMENTS_ANALYSIS.md`](customer-feedback/20260820/CUSTOMER_REQUIREMENTS_ANALYSIS.md)，同目录提供已完成全页渲染检查的 PDF 版本。
 
 ## 1. 当前系统组成
 
