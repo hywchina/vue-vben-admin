@@ -841,7 +841,6 @@ async function runBrowserAcceptance() {
     comparisonMaskAssetId,
     comparisonOriginalAssetId,
     comparisonWorkspaceInstanceId,
-    dashboardOutputAssetId,
     designConversationId,
     historyJobId,
     invitedMemberPublicId,
@@ -900,221 +899,112 @@ async function runBrowserAcceptance() {
     await loginInputs.nth(1).fill(password);
     await page.locator('button').filter({ hasText: '登录' }).last().click();
     await page.waitForURL((url) => url.pathname === '/home');
-    await page.getByRole('heading', { name: '设计工作台' }).waitFor();
-    await page.getByLabel('平台核心功能关系图').waitFor();
-    const flowLabels = await page
-      .locator('.design-cycle__node > i > b')
+    await page
+      .getByRole('heading', {
+        name: '欢迎来到客运装备内装模块化分区快速设计平台',
+      })
+      .waitFor();
+    assert(
+      (await page.getByRole('menuitem', { name: '首页' }).count()) === 1,
+      '登录默认入口没有统一命名为“首页”',
+    );
+    const homeEntryLabels = await page
+      .locator('.home-entry-grid > button')
       .allTextContents();
     assert(
-      JSON.stringify(flowLabels) ===
+      JSON.stringify(homeEntryLabels.map((item) => item.trim())) ===
         JSON.stringify([
-          '项目资产',
-          '开始设计',
-          'AI 应用',
-          '任务执行',
-          '设计成果',
+          '开始新设计',
+          '查看我的设计',
+          '查看资产中心',
+          '开始模型训练',
+          '开始报告生成',
+          '设计工作台',
         ]),
-      `首页没有准确表达平台核心闭环：${JSON.stringify(flowLabels)}`,
+      `首页六个入口的名称或顺序不符合需求：${JSON.stringify(homeEntryLabels)}`,
     );
-    const cycleNodeTypography = await page
-      .locator('.design-cycle__node')
-      .evaluateAll((elements) =>
-        elements.map((element) => {
-          const count = element.querySelector('small');
-          const label = element.querySelector('b');
-          return {
-            countSize: count
-              ? Number.parseFloat(getComputedStyle(count).fontSize)
-              : 0,
-            labelSize: label
-              ? Number.parseFloat(getComputedStyle(label).fontSize)
-              : 0,
-          };
-        }),
+    const homeLayout = await page.locator('.home-stage').evaluate((element) => {
+      const welcome = element.querySelector('.home-welcome');
+      const grid = element.querySelector('.home-entry-grid');
+      const firstButton = grid?.querySelector('button');
+      const stageBox = element.getBoundingClientRect();
+      const welcomeBox = welcome?.getBoundingClientRect();
+      const gridStyle = grid ? getComputedStyle(grid) : undefined;
+      return {
+        buttonBackground: firstButton
+          ? getComputedStyle(firstButton).backgroundColor
+          : '',
+        columnCount:
+          gridStyle?.gridTemplateColumns.split(' ').filter(Boolean).length ?? 0,
+        gridWidth: grid?.getBoundingClientRect().width ?? 0,
+        stageCenterOffset: welcomeBox
+          ? Math.abs(
+              welcomeBox.left +
+                welcomeBox.width / 2 -
+                (stageBox.left + stageBox.width / 2),
+            )
+          : Number.POSITIVE_INFINITY,
+        welcomeBackground: welcome
+          ? getComputedStyle(welcome).backgroundColor
+          : '',
+        welcomeWidth: welcomeBox?.width ?? 0,
+      };
+    });
+    assert(
+      homeLayout.columnCount === 3 &&
+        homeLayout.welcomeWidth >= 600 &&
+        homeLayout.gridWidth >= 560 &&
+        homeLayout.stageCenterOffset <= 2 &&
+        homeLayout.welcomeBackground === 'rgb(244, 246, 248)' &&
+        homeLayout.buttonBackground === 'rgb(255, 240, 242)',
+      `首页欢迎区或 3×2 功能区没有按需求图布局：${JSON.stringify(homeLayout)}`,
+    );
+    assert(
+      (await page
+        .locator(
+          '.design-cycle, .dashboard-grid, .dashboard-panel, .dashboard-entry-panel',
+        )
+        .count()) === 0,
+      '首页仍然包含设计闭环、统计图表或旧版仪表盘卡片',
+    );
+
+    const newDesignEntry = page.locator(
+      '.home-entry-grid [data-action="new-design"]',
+    );
+    await newDesignEntry.click();
+    const newDesignDialog = page
+      .getByRole('dialog')
+      .filter({ has: page.getByText('开始新设计', { exact: true }) });
+    await newDesignDialog.waitFor();
+    await newDesignDialog.locator('.ant-modal-close').click();
+    await newDesignDialog.waitFor({ state: 'hidden' });
+
+    const historyEntry = page.locator(
+      '.home-entry-grid [data-action="history"]',
+    );
+    await historyEntry.click();
+    const historyDialog = page
+      .getByRole('dialog')
+      .filter({ has: page.getByText('查看我的设计', { exact: true }) });
+    await historyDialog.waitFor();
+    await historyDialog.locator('.ant-modal-close').click();
+    await historyDialog.waitFor({ state: 'hidden' });
+
+    for (const action of ['training', 'report']) {
+      await page.locator(`.home-entry-grid [data-action="${action}"]`).click();
+      await page
+        .getByText('该外部服务与能力契约尚未接入', { exact: true })
+        .waitFor();
+      assert(
+        new URL(page.url()).pathname === '/home',
+        `未接入的${action}入口不应离开首页`,
       );
-    assert(
-      cycleNodeTypography.length === 5 &&
-        cycleNodeTypography.every(
-          (item) => item.labelSize >= 18 && item.countSize >= 13,
-        ),
-      `首页闭环节点字号不够醒目：${JSON.stringify(cycleNodeTypography)}`,
-    );
-    const cycleLayout = await page
-      .locator('.design-cycle')
-      .evaluate((element) => {
-        const orbit = element.querySelector('.design-cycle__orbit-wrap');
-        const node = element.querySelector('.design-cycle__node--design');
-        const icon = node?.querySelector(':scope > span');
-        const label = node?.querySelector(':scope > i');
-        const iconBox = icon?.getBoundingClientRect();
-        const labelBox = label?.getBoundingClientRect();
-        return {
-          labelGap:
-            labelBox && iconBox
-              ? Math.max(0, labelBox.left - iconBox.right)
-              : 0,
-          orbitWidth: orbit?.getBoundingClientRect().width ?? 0,
-        };
-      });
-    assert(
-      cycleLayout.orbitWidth >= 400 && cycleLayout.labelGap >= 10,
-      `首页闭环图形或文字间距没有舒展开：${JSON.stringify(cycleLayout)}`,
-    );
-    const assetNodeLayout = await page
-      .locator('.design-cycle__node--assets')
-      .evaluate((element) => {
-        const icon = element.querySelector(':scope > span');
-        const label = element.querySelector(':scope > i');
-        const iconBox = icon?.getBoundingClientRect();
-        const labelBox = label?.getBoundingClientRect();
-        return {
-          iconTop: iconBox?.top ?? 0,
-          labelBottom: labelBox?.bottom ?? Number.POSITIVE_INFINITY,
-        };
-      });
-    assert(
-      assetNodeLayout.labelBottom <= assetNodeLayout.iconTop,
-      `项目资产文字没有移到圆环外侧：${JSON.stringify(assetNodeLayout)}`,
-    );
-    assert(
-      (await page.locator('.dashboard-summary').count()) === 0 &&
-        (await page.getByText('看清设计闭环，继续当前工作。').count()) === 0 &&
-        (await page.getByLabel('工作台当前项目').count()) === 0 &&
-        (await page
-          .locator('.design-flow-panel .dashboard-panel__heading > span')
-          .count()) === 0,
-      '首页顶部冗余说明、项目选择、汇总状态或闭环右上角项目文字仍然存在',
-    );
-    const cycleAnimation = await page
-      .locator('.design-cycle__orbit')
-      .evaluate((element) => {
-        const style = getComputedStyle(element);
-        return {
-          duration: style.animationDuration,
-          name: style.animationName,
-        };
-      });
-    assert(
-      cycleAnimation.name === 'none' || cycleAnimation.duration === '0s',
-      `平台设计闭环外圈不应整体转动：${JSON.stringify(cycleAnimation)}`,
-    );
-    const energyAnimations = await page
-      .locator(
-        '.design-cycle__data-rail, .design-cycle__inner-rail, .design-cycle__data-pulse',
-      )
-      .evaluateAll((elements) =>
-        elements.map((element) => {
-          const style = getComputedStyle(element);
-          return {
-            delay: style.animationDelay,
-            duration: style.animationDuration,
-            name: style.animationName,
-          };
-        }),
-      );
-    assert(
-      (await page.locator('.design-cycle__arrow').count()) === 0 &&
-        (await page.locator('.design-cycle__energy-trail').count()) === 0 &&
-        energyAnimations.length === 5 &&
-        energyAnimations.every(
-          (animation) =>
-            animation.name !== 'none' && animation.duration !== '0s',
-        ),
-      `平台设计闭环没有使用固定轨道的离散数据脉冲：${JSON.stringify(energyAnimations)}`,
-    );
-    assert(
-      (await page.getByLabel('最近七天个人任务趋势图').count()) === 1 &&
-        (await page.getByLabel('按项目查看任务').count()) === 1 &&
-        (await page.locator('.asset-bars').count()) === 1,
-      '首页缺少任务趋势、状态分布或资产构成图表',
-    );
-    assert(
-      (await page.locator('.rail-project-switcher').count()) === 0,
-      '首页重复显示了全局当前项目选择器',
-    );
-    const scrollRegionStyles = await page
-      .locator(
-        '.trend-chart-scroll, .status-chart, .conversation-list, .asset-bars, .job-activity-list, .recent-projects-chart, .result-gallery',
-      )
-      .evaluateAll((elements) =>
-        elements.map((element) => ({
-          className: element.className,
-          overflowX: getComputedStyle(element).overflowX,
-          overflowY: getComputedStyle(element).overflowY,
-        })),
-      );
-    assert(
-      scrollRegionStyles.length >= 6 &&
-        scrollRegionStyles.every(
-          (style) =>
-            ['auto', 'scroll'].includes(style.overflowX) &&
-            ['auto', 'scroll'].includes(style.overflowY),
-        ),
-      `首页内容区域没有统一限制在卡片内滚动：${JSON.stringify(scrollRegionStyles)}`,
-    );
-    const recentProjectRows = await page
-      .locator('.recent-projects-chart > button')
-      .evaluateAll((elements) =>
-        elements.map((element) => {
-          const boxes = [
-            element.querySelector('.recent-projects-chart__title'),
-            element.querySelector('.recent-projects-chart__resources'),
-            element.querySelector('.recent-projects-chart__tasks'),
-            element.querySelector('.recent-projects-chart__status'),
-          ].map((child) => child?.getBoundingClientRect());
-          const row = element.getBoundingClientRect();
-          return {
-            centerOffsets: boxes.map((box) =>
-              box
-                ? Math.abs(
-                    box.top + box.height / 2 - (row.top + row.height / 2),
-                  )
-                : 999,
-            ),
-            resources:
-              element.querySelector('.recent-projects-chart__resources')
-                ?.textContent ?? '',
-            tasks:
-              element.querySelector('.recent-projects-chart__tasks')
-                ?.textContent ?? '',
-          };
-        }),
-      );
-    assert(
-      recentProjectRows.length >= 2 &&
-        recentProjectRows.every(
-          (row) =>
-            row.centerOffsets.every((offset) => offset <= 1) &&
-            row.resources.includes('项资产') &&
-            row.tasks.includes('项任务'),
-        ) &&
-        recentProjectRows.some((row) => row.resources.includes('文本')),
-      `首页最近项目没有保持同行，或缺少项目级资产类型摘要：${JSON.stringify(recentProjectRows)}`,
-    );
+    }
+
     await page.screenshot({
       fullPage: true,
       path: dashboardScreenshotPath,
     });
-    const recentOutput = page.locator(
-      `.result-gallery [data-asset-id="${dashboardOutputAssetId}"]`,
-    );
-    await recentOutput.waitFor();
-    await recentOutput.click();
-    await page.waitForURL(
-      (url) =>
-        url.pathname === '/assets' &&
-        url.searchParams.get('assetId') === dashboardOutputAssetId,
-    );
-    const recentOutputDrawer = page.locator('.ant-drawer:visible');
-    await recentOutputDrawer.waitFor();
-    assert(
-      await recentOutputDrawer
-        .getByText('首页最近成果深链验收', { exact: true })
-        .count(),
-      '首页最近成果没有打开具体资产详情',
-    );
-    await recentOutputDrawer.locator('.ant-drawer-close').click();
-    await recentOutputDrawer.waitFor({ state: 'hidden' });
 
     await page.goto(`${webUrl}/profile`);
     const avatarButton = page.getByRole('button', { name: '修改头像' });

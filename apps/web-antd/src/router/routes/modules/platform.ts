@@ -7,7 +7,7 @@ const routes: RouteRecordRaw[] = [
       affixTab: true,
       icon: 'lucide:layout-dashboard',
       order: -120,
-      title: '设计工作台',
+      title: '首页',
     },
     name: 'PlatformDashboard',
     path: '/home',
