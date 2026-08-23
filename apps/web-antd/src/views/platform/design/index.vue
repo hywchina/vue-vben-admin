@@ -21,7 +21,6 @@ import {
 import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
-import { useUserStore } from '@vben/stores';
 
 import {
   Button,
@@ -72,7 +71,6 @@ const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
 const router = useRouter();
 const platformStore = usePlatformStore();
-const userStore = useUserStore();
 
 const loading = ref(false);
 const sidebarCollapsed = ref(false);
@@ -1148,12 +1146,9 @@ onBeforeUnmount(() => {
 <template>
   <main :class="{ 'sidebar-collapsed': sidebarCollapsed }" class="design-page">
     <aside class="conversation-sidebar">
-      <div class="conversation-brand">
-        <img alt="客运装备内装模块化分区快速设计平台" src="/rail-logo.svg" />
-        <div>
-          <strong>客运装备内装模块化分区快速设计平台</strong>
-          <span>RAIL DESIGN</span>
-        </div>
+      <div class="conversation-sidebar__heading">
+        <span>任务栏</span>
+        <small>{{ activeConversation?.title ?? '新设计会话' }}</small>
       </div>
       <Select
         :options="projectOptions"
@@ -1240,33 +1235,6 @@ onBeforeUnmount(() => {
           {{ conversationSearch ? '没有匹配的会话' : '还没有设计会话' }}
         </div>
       </div>
-      <div class="conversation-sidebar__footer">
-        <div class="sidebar-user">
-          <span class="sidebar-user__avatar">
-            <img
-              v-if="userStore.userInfo?.avatar"
-              :alt="`${userStore.userInfo.realName ?? '当前用户'}头像`"
-              :src="userStore.userInfo.avatar"
-              data-testid="design-user-avatar"
-            />
-            <b v-else>
-              {{ userStore.userInfo?.realName?.slice(0, 1) ?? '用' }}
-            </b>
-          </span>
-          <div>
-            <strong>{{ userStore.userInfo?.realName ?? '当前用户' }}</strong>
-            <small>@{{ userStore.userInfo?.username }}</small>
-          </div>
-          <button
-            aria-label="返回项目空间"
-            title="返回项目空间"
-            type="button"
-            @click="router.push('/projects')"
-          >
-            <IconifyIcon icon="lucide:panel-left-close" />
-          </button>
-        </div>
-      </div>
     </aside>
 
     <button
@@ -1285,29 +1253,6 @@ onBeforeUnmount(() => {
     </button>
 
     <section class="design-thread">
-      <header class="thread-header">
-        <div class="thread-header__center">
-          <strong>{{ activeConversation?.title ?? '新设计会话' }}</strong>
-          <span>
-            {{ activeDesignMode.label }} · {{ application?.name ?? '选择能力' }}
-          </span>
-        </div>
-        <div class="thread-header__actions">
-          <div class="thread-status">
-            <i :class="{ running: activeJob }"></i>
-            {{ activeJob ? '正在生成' : '可以开始' }}
-          </div>
-          <button
-            aria-label="打开项目资产"
-            title="打开项目资产"
-            type="button"
-            @click="router.push('/assets')"
-          >
-            <IconifyIcon icon="lucide:library-big" />
-          </button>
-        </div>
-      </header>
-
       <div ref="threadScrollRef" class="thread-scroll">
         <Spin :spinning="loading">
           <div v-if="conversationJobs.length" class="thread-timeline">
@@ -2255,16 +2200,14 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 沉浸式设计会话：覆盖后台壳层尺寸，保持单一会话侧栏与固定输入区。 */
+/* 0820 工作区骨架：平台壳层提供功能侧栏与顶部栏，页面内部只承载任务栏和设计区。 */
 main.design-page {
   --design-sidebar-width: 276px;
 
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
+  position: relative;
   grid-template-columns: var(--design-sidebar-width) minmax(0, 1fr);
-  width: 100vw;
-  height: 100dvh;
+  width: 100%;
+  height: var(--vben-content-height, calc(100dvh - 106px));
   min-height: 0;
   background: #fff;
   transition: grid-template-columns 180ms ease;
@@ -2292,7 +2235,7 @@ main.design-page {
 }
 
 .conversation-sidebar-toggle {
-  position: fixed;
+  position: absolute;
   top: 50%;
   left: calc(var(--design-sidebar-width) - 13px);
   z-index: 1010;
@@ -2322,36 +2265,24 @@ main.design-page {
   left: 0;
 }
 
-.design-page .conversation-brand {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 2px 4px 14px;
-}
-
-.conversation-brand img {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  box-shadow: 0 6px 16px rgb(185 28 50 / 18%);
-}
-
-.conversation-brand div {
+.conversation-sidebar__heading {
   display: grid;
-  min-width: 0;
+  gap: 3px;
+  padding: 4px 4px 13px;
 }
 
-.conversation-brand strong {
-  font-size: 12px;
-  line-height: 1.35;
-  white-space: normal;
+.conversation-sidebar__heading span {
+  font-size: 15px;
+  font-weight: 750;
+  color: #2c3338;
 }
 
-.design-page .conversation-brand span {
-  margin-top: 2px;
-  font-size: 9px;
-  color: var(--rail-red);
-  letter-spacing: 0.14em;
+.conversation-sidebar__heading small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--design-muted);
+  white-space: nowrap;
 }
 
 .project-select {
@@ -2502,47 +2433,14 @@ main.design-page {
   border-radius: 8px;
 }
 
-.sidebar-user button:hover,
-.thread-header__actions > button:hover {
-  color: var(--rail-red);
-  background: #fff1f3;
-}
-
 .design-page .design-thread {
-  height: 100dvh;
+  grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
   background: #fff;
 }
 
-.design-page .thread-header {
-  position: relative;
-  justify-content: center;
-  min-height: 56px;
-  padding: 7px 20px;
-  background: rgb(255 255 255 / 96%);
-  backdrop-filter: blur(12px);
-}
-
-.thread-header__center {
-  display: grid;
-  text-align: center;
-}
-
-.thread-header__center strong {
-  max-width: min(520px, 48vw);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.thread-header__actions {
-  position: absolute;
-  right: 18px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
 .design-page .thread-scroll {
+  min-width: 0;
   min-height: 0;
   padding: 26px clamp(20px, 6vw, 88px) 18px;
   background: #fff;
@@ -2554,10 +2452,14 @@ main.design-page {
 }
 
 .design-page .thread-timeline {
+  box-sizing: border-box;
+  width: 100%;
   max-width: var(--design-content-width);
 }
 
 .design-page .thread-welcome {
+  box-sizing: border-box;
+  width: 100%;
   max-width: 720px;
   min-height: 100%;
   padding: 48px 20px;
@@ -2596,6 +2498,7 @@ main.design-page {
 .design-page .design-composer {
   position: relative;
   z-index: 4;
+  min-width: 0;
   padding: 10px clamp(20px, 6vw, 88px) 18px;
   background: linear-gradient(rgb(255 255 255 / 10%), #fff 20%);
 }
@@ -2651,6 +2554,7 @@ main.design-page {
 }
 
 .design-page .composer-box {
+  box-sizing: border-box;
   max-width: var(--design-content-width);
   padding: 10px 12px 9px;
   border-color: #df8e9d;

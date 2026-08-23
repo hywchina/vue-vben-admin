@@ -1540,7 +1540,10 @@ async function runBrowserAcceptance() {
       .getByText('浏览器验收 · 多应用设计会话', { exact: true })
       .first()
       .waitFor();
-    const designUserAvatar = page.getByTestId('design-user-avatar');
+    const designUserAvatar = page
+      .getByRole('banner')
+      .locator('button img')
+      .last();
     await designUserAvatar.waitFor();
     const designUserAvatarSource = await designUserAvatar.getAttribute('src');
     const uploadedAvatarPath = updatedAvatar
@@ -1557,15 +1560,11 @@ async function runBrowserAcceptance() {
           (element) => (element as HTMLImageElement).naturalWidth,
         )) > 0,
       ),
-      '个人头像更新后会话侧栏仍显示姓名首字或旧头像',
+      '个人头像更新后平台顶部栏仍显示旧头像',
     );
-    const returnToProjectsButton = page.getByRole('button', {
-      name: '返回项目空间',
-    });
-    await returnToProjectsButton.waitFor();
     assert(
-      (await returnToProjectsButton.getAttribute('title')) === '返回项目空间',
-      '设计会话侧栏仍显示已下线的“返回平台概览”提示',
+      (await page.getByRole('menuitem', { name: '项目空间' }).count()) === 1,
+      '设计工作区没有保留平台功能侧栏中的项目空间入口',
     );
     for (const selector of [
       '[data-testid="design-new-conversation"] svg',
@@ -1945,12 +1944,14 @@ async function runBrowserAcceptance() {
     assert(
       Boolean(
         designPageBox &&
-        designPageBox.x === 0 &&
-        designPageBox.y === 0 &&
-        designPageBox.width === 1600 &&
-        designPageBox.height === 1000,
+        designPageBox.x > 0 &&
+        designPageBox.y > 0 &&
+        designPageBox.width < 1600 &&
+        designPageBox.height <= 1000 &&
+        (await page.getByRole('banner').count()) === 1 &&
+        (await page.getByText('任务栏', { exact: true }).count()) === 1,
       ),
-      '开始设计没有脱离后台壳层形成全屏沉浸式工作台',
+      '设计页没有按 0820 结构同时保留平台侧栏、顶部栏与独立任务栏',
     );
     await page.getByTestId('conversation-sidebar-toggle').click();
     await page.waitForTimeout(250);
@@ -1958,7 +1959,11 @@ async function runBrowserAcceptance() {
       .locator('.design-thread')
       .boundingBox();
     assert(
-      Boolean(collapsedThreadBox && collapsedThreadBox.x === 0),
+      Boolean(
+        collapsedThreadBox &&
+        designPageBox &&
+        Math.abs(collapsedThreadBox.x - designPageBox.x) < 2,
+      ),
       '任务栏收起后没有释放完整工作区宽度',
     );
     await page.getByTestId('conversation-sidebar-toggle').click();
@@ -2025,17 +2030,20 @@ async function runBrowserAcceptance() {
         previousId,
       designConversationId,
     );
+    await page.waitForFunction(
+      () => document.querySelectorAll('.design-page').length === 1,
+    );
     assert(
       (await page.getByTestId('active-design-application').count()) === 0,
       '新会话不应在用户未选择时显示已选应用标签',
     );
     assert(
       (await page
-        .locator('.composer-box')
+        .locator('.composer-box:visible')
         .getAttribute('data-effective-app-key')) === 'text-chat',
       '未选择应用时没有在后台默认使用文生文能力',
     );
-    await page.locator('.composer-application-shortcuts').waitFor();
+    await page.locator('.composer-application-shortcuts:visible').waitFor();
     await page.waitForFunction(
       () =>
         document.querySelectorAll('.ant-spin-spinning, .ant-spin-blur')
@@ -2153,7 +2161,7 @@ async function runBrowserAcceptance() {
     await markdownPicker.getByText('浏览器验收输入.md').click();
     await markdownPicker.getByRole('button', { name: '使用所选资产' }).click();
     await page.getByText('Markdown 文本已加载到输入框').waitFor();
-    const designTextarea = page.locator('.composer-box textarea');
+    const designTextarea = page.locator('.composer-box:visible textarea');
     await designTextarea.waitFor();
     const importedMarkdownText = await designTextarea.inputValue();
     assert(
