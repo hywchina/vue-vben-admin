@@ -1911,7 +1911,10 @@ async function runBrowserAcceptance() {
         .locator('.composer-application-shortcuts')
         .getAttribute('data-application-count'),
     );
-    assert(applicationCount >= 18, '统一设计会话没有接入全部应用能力');
+    assert(
+      applicationCount === 15,
+      `客室效果模式没有完整接入目录中的 15 项能力：${applicationCount}`,
+    );
     assert(
       (await page.locator('.composer-application-shortcuts button').count()) <=
         8,
