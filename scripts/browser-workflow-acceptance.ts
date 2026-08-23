@@ -2122,7 +2122,7 @@ async function runBrowserAcceptance() {
         longInputLayout.textareaHeight <= 221 &&
         longInputLayout.scrollHeight > longInputLayout.textareaHeight &&
         ['auto', 'scroll'].includes(longInputLayout.overflowY) &&
-        longInputLayout.composerHeight < 330 &&
+        longInputLayout.composerHeight < longInputLayout.viewportHeight * 0.4 &&
         longInputLayout.toolbarTop > 0 &&
         longInputLayout.toolbarBottom <= longInputLayout.viewportHeight,
       ),
@@ -2164,10 +2164,42 @@ async function runBrowserAcceptance() {
     const firstPrompt =
       '设计现代轨道客室空间并优化照明与耐用材质并提升乘客体验';
     await designTextarea.fill(firstPrompt);
+    const createDesignJobResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/v1/jobs') &&
+        response.request().method() === 'POST',
+      { timeout: 12_000 },
+    );
     await page.getByRole('button', { exact: true, name: '发送' }).click();
-    await page
+    const createDesignJobResponse = await createDesignJobResponsePromise;
+    assert(
+      createDesignJobResponse.ok(),
+      `设计任务接口返回失败：${createDesignJobResponse.status()} ${await createDesignJobResponse.text()}`,
+    );
+    const submittedNotice = page
       .getByText('任务已提交，可以切换到其他设计会话继续工作')
-      .waitFor();
+      .first();
+    await submittedNotice.waitFor({ timeout: 12_000 }).catch(async () => {
+      const diagnostics = await page.evaluate(() => ({
+        activeConversation: document.querySelector('.conversation-item.active')
+          ?.dataset.conversationId,
+        effectiveAppKey: document.querySelector(
+          '[data-testid="design-composer"] .composer-box',
+        )?.dataset.effectiveAppKey,
+        messages: [...document.querySelectorAll('.ant-message-notice-content')]
+          .map((element) => element.textContent?.trim())
+          .filter(Boolean),
+        prompt: (
+          document.querySelector(
+            '[data-testid="design-prompt-input"]',
+          ) as HTMLTextAreaElement | null
+        )?.value,
+        submitLabel: document
+          .querySelector('.composer-submit')
+          ?.getAttribute('aria-label'),
+      }));
+      throw new Error(`设计任务提交失败：${JSON.stringify(diagnostics)}`);
+    });
     assert(
       (await designTextarea.inputValue()) === '',
       '任务成功提交后输入框仍保留上一次文本',
