@@ -6,7 +6,15 @@ import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, Input, message, Modal, Textarea } from 'ant-design-vue';
+import {
+  Button,
+  Input,
+  InputNumber,
+  message,
+  Modal,
+  Select,
+  Textarea,
+} from 'ant-design-vue';
 
 import { getDashboardApi } from '#/api';
 import { usePlatformStore } from '#/store';
@@ -18,6 +26,7 @@ const dashboard = ref<null | PlatformDashboard>(null);
 const dashboardLoading = ref(true);
 const createProjectOpen = ref(false);
 const historyOpen = ref(false);
+const trainingPreviewOpen = ref(false);
 const projectName = ref('');
 const projectDescription = ref('');
 const projectSubmitting = ref(false);
@@ -112,6 +121,10 @@ function activateQuickEntry(action: string) {
   if (action === 'training') appKey = 'lora-training';
   if (action === 'report') appKey = 'report-generator';
   if (!appKey || !applicationAvailable(appKey)) {
+    if (action === 'training') {
+      trainingPreviewOpen.value = true;
+      return;
+    }
     message.info('该外部服务与能力契约尚未接入');
     return;
   }
@@ -244,6 +257,77 @@ onMounted(loadDashboard);
         <IconifyIcon icon="lucide:message-square-plus" />
         <span>还没有可继续的设计会话</span>
         <Button type="primary" @click="startNewFromHistory">开始新设计</Button>
+      </div>
+    </Modal>
+
+    <Modal
+      v-model:open="trainingPreviewOpen"
+      :footer="null"
+      title="模型训练"
+      width="min(960px, 94vw)"
+    >
+      <div class="training-layout" data-testid="training-layout">
+        <div class="training-layout__notice">
+          <IconifyIcon icon="lucide:circle-alert" />
+          <span>
+            当前仅按 0820 文档呈现训练配置布局；LoRA
+            训练服务和数据协议尚未接入，不能开始训练。
+          </span>
+        </div>
+        <div class="training-layout__body">
+          <section class="training-layout__parameters">
+            <header>
+              <b>1</b>
+              <strong>参数设置</strong>
+            </header>
+            <div class="training-layout__number-grid">
+              <label>
+                <span>单图次数 Repeat</span>
+                <InputNumber disabled :value="20" />
+              </label>
+              <label>
+                <span>循环轮次 Epoch</span>
+                <InputNumber disabled :value="5" />
+              </label>
+            </div>
+            <label>
+              <span>触发词</span>
+              <Input
+                disabled
+                placeholder="总步数 = 上传图片数 × Repeat × Epoch"
+              />
+            </label>
+            <label>
+              <span>模型效果预览提示词</span>
+              <Textarea
+                disabled
+                :rows="5"
+                placeholder="训练服务接入后填写用于验证模型效果的提示词"
+              />
+            </label>
+          </section>
+          <section class="training-layout__dataset">
+            <header>
+              <b>2</b>
+              <strong>图片打标/裁剪</strong>
+            </header>
+            <button disabled type="button">
+              <IconifyIcon icon="lucide:images" />
+              <strong>点击上传图片</strong>
+              <small>支持 JPG / PNG；数量和大小以最终训练协议为准</small>
+            </button>
+          </section>
+        </div>
+        <div class="training-layout__options">
+          <label
+            v-for="label in ['裁剪方式', '裁剪尺寸', '打标模型']"
+            :key="label"
+          >
+            <span>{{ label }}</span>
+            <Select disabled :placeholder="`选择${label}`" :value="undefined" />
+          </label>
+          <Button disabled type="primary">开始训练</Button>
+        </div>
       </div>
     </Modal>
   </main>
@@ -412,6 +496,120 @@ onMounted(loadDashboard);
   animation: home-spin 1s linear infinite;
 }
 
+.training-layout {
+  display: grid;
+  gap: 16px;
+}
+
+.training-layout__notice {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 11px 13px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #7e3b48;
+  background: var(--rail-red-soft);
+  border: 1px solid #e9bdc5;
+  border-radius: 12px;
+}
+
+.training-layout__notice svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.training-layout__body {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.15fr);
+  gap: 14px;
+}
+
+.training-layout__parameters,
+.training-layout__dataset {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: #fff;
+  border: 1px solid var(--rail-line);
+  border-radius: 12px;
+}
+
+.training-layout header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.training-layout header b {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--rail-red);
+  border-radius: 50%;
+}
+
+.training-layout label {
+  display: grid;
+  gap: 7px;
+}
+
+.training-layout label > span {
+  font-size: 12px;
+  font-weight: 650;
+  color: #4f5961;
+}
+
+.training-layout__number-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.training-layout__number-grid :deep(.ant-input-number),
+.training-layout__options :deep(.ant-select) {
+  width: 100%;
+}
+
+.training-layout__dataset button {
+  display: grid;
+  place-items: center;
+  min-height: 235px;
+  padding: 24px;
+  color: #717c84;
+  background: var(--rail-mist);
+  border: 1px dashed #c5ccd1;
+  border-radius: 12px;
+}
+
+.training-layout__dataset button svg {
+  width: 34px;
+  height: 34px;
+  color: var(--rail-red);
+}
+
+.training-layout__dataset button strong {
+  margin-top: -42px;
+}
+
+.training-layout__dataset button small {
+  margin-top: -56px;
+  font-size: 11px;
+}
+
+.training-layout__options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 14px;
+  background: var(--rail-mist);
+  border-radius: 12px;
+}
+
 @keyframes home-spin {
   to {
     transform: rotate(360deg);
@@ -427,6 +625,12 @@ onMounted(loadDashboard);
   .home-entry-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     margin-top: 40px;
+  }
+
+  .training-layout__body,
+  .training-layout__number-grid,
+  .training-layout__options {
+    grid-template-columns: 1fr;
   }
 }
 

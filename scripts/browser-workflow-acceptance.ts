@@ -990,16 +990,21 @@ async function runBrowserAcceptance() {
     await historyDialog.locator('.ant-modal-close').click();
     await historyDialog.waitFor({ state: 'hidden' });
 
-    for (const action of ['training', 'report']) {
-      await page.locator(`.home-entry-grid [data-action="${action}"]`).click();
-      await page
-        .getByText('该外部服务与能力契约尚未接入', { exact: true })
-        .waitFor();
-      assert(
-        new URL(page.url()).pathname === '/home',
-        `未接入的${action}入口不应离开首页`,
-      );
-    }
+    await page.locator('.home-entry-grid [data-action="training"]').click();
+    await page.getByTestId('training-layout').waitFor();
+    assert(
+      (await page.getByText(/不能开始训练/).count()) === 1,
+      '模型训练布局没有明确标识训练服务尚未接入',
+    );
+    await page.getByRole('button', { name: 'Close' }).click();
+    await page.locator('.home-entry-grid [data-action="report"]').click();
+    await page
+      .getByText('该外部服务与能力契约尚未接入', { exact: true })
+      .waitFor();
+    assert(
+      new URL(page.url()).pathname === '/home',
+      '未接入的训练和报告入口不应离开首页',
+    );
 
     await page.screenshot({
       fullPage: true,
@@ -1913,6 +1918,22 @@ async function runBrowserAcceptance() {
       '未选择应用时没有按快捷应用加“更多”的形式收起能力列表',
     );
     await page.getByTestId('more-design-applications').waitFor();
+    const quickToolLabels = await page
+      .locator('.composer-application-shortcuts button[data-app-key]')
+      .allTextContents();
+    assert(
+      JSON.stringify(quickToolLabels.map((item) => item.trim())) ===
+        JSON.stringify([
+          '文本',
+          '文生图',
+          '理解',
+          '重绘',
+          '扩图',
+          '多图',
+          '放大',
+        ]),
+      `设计快捷工具没有按 0820 文档排序：${JSON.stringify(quickToolLabels)}`,
+    );
     assert(
       (await page.locator('.rail-ai-float-button').count()) === 0,
       '开始设计页面仍重复显示全局 AI 助手',
@@ -1928,6 +1949,24 @@ async function runBrowserAcceptance() {
       ),
       '开始设计没有脱离后台壳层形成全屏沉浸式工作台',
     );
+    await page.getByTestId('conversation-sidebar-toggle').click();
+    await page.waitForTimeout(250);
+    const collapsedThreadBox = await page
+      .locator('.design-thread')
+      .boundingBox();
+    assert(
+      Boolean(collapsedThreadBox && collapsedThreadBox.x === 0),
+      '任务栏收起后没有释放完整工作区宽度',
+    );
+    await page.getByTestId('conversation-sidebar-toggle').click();
+    await page.waitForTimeout(250);
+    await page.getByRole('button', { name: /报告生成/ }).click();
+    await page.getByTestId('report-layout').waitFor();
+    assert(
+      (await page.getByText(/不能提交生成/).count()) === 1,
+      '报告布局没有明确标识执行服务尚未接入',
+    );
+    await page.getByRole('button', { name: 'Close' }).click();
     const composerBox = await page.getByTestId('design-composer').boundingBox();
     assert(
       Boolean(

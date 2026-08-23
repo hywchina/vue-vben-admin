@@ -61,6 +61,24 @@ describe('design mode catalog', () => {
     ]);
   });
 
+  it('keeps the 0820 quick-tool order before advanced applications', () => {
+    expect(getDesignMode('cabin').applicationKeys.slice(0, 7)).toEqual([
+      'text-chat',
+      'text-to-image',
+      'image-understanding',
+      'inpaint-single',
+      'outpaint',
+      'multi-image-edit',
+      'image-upscale',
+    ]);
+    expect(getDesignMode('component').applicationKeys.slice(0, 7)).toEqual(
+      getDesignMode('cabin').applicationKeys.slice(0, 7),
+    );
+    expect(getDesignMode('cmf').applicationKeys.slice(0, 7)).toEqual(
+      getDesignMode('cabin').applicationKeys.slice(0, 7),
+    );
+  });
+
   it('keeps shared applications in the selected mode', () => {
     expect(designModeForApplication('text-to-image', 'cmf').key).toBe('cmf');
     expect(designModeForApplication('multiview-to-3d', 'cabin').key).toBe(

@@ -75,6 +75,7 @@ const platformStore = usePlatformStore();
 const userStore = useUserStore();
 
 const loading = ref(false);
+const sidebarCollapsed = ref(false);
 const conversations = ref<DesignConversation[]>([]);
 const conversationSearch = ref('');
 const activeConversationId = ref('');
@@ -87,6 +88,7 @@ const capabilityCache = reactive<Record<string, PlatformCapability>>({});
 const selectedAssets = reactive<Record<number, string>>({});
 const parameterValues = reactive<Record<string, unknown>>({});
 const parameterDrawerOpen = ref(false);
+const reportPreviewOpen = ref(false);
 const mediaPickerOpen = ref(false);
 const markdownPickerOpen = ref(false);
 const composerPreviewUrls = reactive<Record<string, string>>({});
@@ -649,6 +651,10 @@ async function chooseDesignMode(modeKey: DesignModeKey) {
     mode,
   );
   if (applications.length === 0) {
+    if (modeKey === 'report') {
+      reportPreviewOpen.value = true;
+      return;
+    }
     message.info(`${mode.label}的执行服务与能力契约尚未接入`);
     return;
   }
@@ -1140,7 +1146,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main class="design-page">
+  <main :class="{ 'sidebar-collapsed': sidebarCollapsed }" class="design-page">
     <aside class="conversation-sidebar">
       <div class="conversation-brand">
         <img alt="客运装备内装模块化分区快速设计平台" src="/rail-logo.svg" />
@@ -1263,6 +1269,21 @@ onBeforeUnmount(() => {
       </div>
     </aside>
 
+    <button
+      :aria-label="sidebarCollapsed ? '展开任务栏' : '收起任务栏'"
+      class="conversation-sidebar-toggle"
+      data-testid="conversation-sidebar-toggle"
+      :title="sidebarCollapsed ? '展开任务栏' : '收起任务栏'"
+      type="button"
+      @click="sidebarCollapsed = !sidebarCollapsed"
+    >
+      <IconifyIcon
+        :icon="
+          sidebarCollapsed ? 'lucide:chevrons-right' : 'lucide:chevrons-left'
+        "
+      />
+    </button>
+
     <section class="design-thread">
       <header class="thread-header">
         <div class="thread-header__center">
@@ -1295,7 +1316,7 @@ onBeforeUnmount(() => {
               :key="job.id"
               :accent="jobApplication(job)?.color ?? '#b91c32'"
               :fields="jobCapability(job)?.fields ?? []"
-              flow-label="继续设计"
+              flow-label="深化设计"
               :job="job"
               :round="index + 1"
               :supports-image-comparison="
@@ -1552,6 +1573,61 @@ onBeforeUnmount(() => {
         </nav>
       </footer>
     </section>
+
+    <Modal
+      v-model:open="reportPreviewOpen"
+      :footer="null"
+      title="报告生成"
+      width="min(820px, 94vw)"
+    >
+      <div class="report-layout" data-testid="report-layout">
+        <div class="report-layout__notice">
+          <IconifyIcon icon="lucide:circle-alert" />
+          <span>
+            当前仅按 0820
+            文档呈现报告配置布局；执行服务和能力契约尚未接入，不能提交生成。
+          </span>
+        </div>
+        <div class="report-layout__grid">
+          <label>
+            <span>报告类型</span>
+            <Select disabled placeholder="请选择报告类型" :value="undefined" />
+          </label>
+          <label>
+            <span>交付格式</span>
+            <Select disabled placeholder="Word / PPT" :value="undefined" />
+          </label>
+        </div>
+        <label class="report-layout__field">
+          <span>报告标题与说明</span>
+          <Textarea
+            disabled
+            :auto-size="{ minRows: 3, maxRows: 5 }"
+            placeholder="填写报告标题、章节重点和交付说明"
+          />
+        </label>
+        <section class="report-layout__assets" aria-label="报告图片素材">
+          <header>
+            <span>报告图片素材</span>
+            <small>从当前项目资产中选择</small>
+          </header>
+          <div>
+            <button v-for="index in 3" :key="index" disabled type="button">
+              <IconifyIcon icon="lucide:image-plus" />
+              <span>添加图片 {{ index }}</span>
+            </button>
+          </div>
+        </section>
+        <label class="report-layout__field">
+          <span>补充说明</span>
+          <Textarea
+            disabled
+            :auto-size="{ minRows: 2, maxRows: 4 }"
+            placeholder="填写报告结论、备注或其他结构化内容"
+          />
+        </label>
+      </div>
+    </Modal>
 
     <Modal
       v-model:open="mediaPickerOpen"
@@ -2181,20 +2257,69 @@ onBeforeUnmount(() => {
 
 /* 沉浸式设计会话：覆盖后台壳层尺寸，保持单一会话侧栏与固定输入区。 */
 main.design-page {
+  --design-sidebar-width: 276px;
+
   position: fixed;
   inset: 0;
   z-index: 1000;
-  grid-template-columns: 276px minmax(0, 1fr);
+  grid-template-columns: var(--design-sidebar-width) minmax(0, 1fr);
   width: 100vw;
   height: 100dvh;
   min-height: 0;
   background: #fff;
+  transition: grid-template-columns 180ms ease;
 }
 
 .design-page .conversation-sidebar {
+  width: var(--design-sidebar-width);
   padding: 14px 12px 12px;
+  overflow: hidden;
   background: #f7f7f8;
   border-color: #e6e6e8;
+  transition:
+    opacity 140ms ease,
+    transform 180ms ease;
+}
+
+.design-page.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.design-page.sidebar-collapsed .conversation-sidebar {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-100%);
+}
+
+.conversation-sidebar-toggle {
+  position: fixed;
+  top: 50%;
+  left: calc(var(--design-sidebar-width) - 13px);
+  z-index: 1010;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 48px;
+  color: #8a424f;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #e2a8b2;
+  border-radius: 0 10px 10px 0;
+  box-shadow: 0 6px 18px rgb(61 18 27 / 10%);
+  transform: translateY(-50%);
+  transition:
+    left 180ms ease,
+    color 140ms ease,
+    background 140ms ease;
+}
+
+.conversation-sidebar-toggle:hover {
+  color: #fff;
+  background: var(--rail-red);
+}
+
+.design-page.sidebar-collapsed .conversation-sidebar-toggle {
+  left: 0;
 }
 
 .design-page .conversation-brand {
@@ -2217,10 +2342,9 @@ main.design-page {
 }
 
 .conversation-brand strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 .design-page .conversation-brand span {
@@ -2919,9 +3043,91 @@ main.design-page {
   color: #73808a;
 }
 
+.report-layout {
+  display: grid;
+  gap: 18px;
+  padding-top: 4px;
+}
+
+.report-layout__notice {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 11px 13px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #7e3b48;
+  background: var(--rail-red-soft);
+  border: 1px solid #e9bdc5;
+  border-radius: 12px;
+}
+
+.report-layout__notice svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.report-layout__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.report-layout label,
+.report-layout__field,
+.report-layout__assets {
+  display: grid;
+  gap: 8px;
+}
+
+.report-layout label > span,
+.report-layout__assets header > span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #343b40;
+}
+
+.report-layout label :deep(.ant-select) {
+  width: 100%;
+}
+
+.report-layout__assets header {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.report-layout__assets header small {
+  font-size: 11px;
+  color: #7a858d;
+}
+
+.report-layout__assets > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.report-layout__assets button {
+  display: grid;
+  place-items: center;
+  min-height: 112px;
+  color: #7d858b;
+  background: var(--rail-mist);
+  border: 1px dashed #c7cdd1;
+  border-radius: 12px;
+}
+
+.report-layout__assets button svg {
+  width: 24px;
+  height: 24px;
+  margin-bottom: -28px;
+  color: var(--rail-red);
+}
+
 @media (max-width: 900px) {
   main.design-page {
-    grid-template-columns: 224px minmax(0, 1fr);
+    --design-sidebar-width: 224px;
   }
 
   .conversation-brand strong {
@@ -2930,6 +3136,11 @@ main.design-page {
 
   .thread-status {
     display: none;
+  }
+
+  .report-layout__grid,
+  .report-layout__assets > div {
+    grid-template-columns: 1fr;
   }
 }
 </style>
