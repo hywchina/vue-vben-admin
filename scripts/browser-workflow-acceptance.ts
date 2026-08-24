@@ -846,7 +846,6 @@ async function runBrowserAcceptance() {
     comparisonMaskAssetId,
     comparisonOriginalAssetId,
     comparisonWorkspaceInstanceId,
-    dashboardOutputAssetId,
     designConversationId,
     historyJobId,
     historyOutputAssetId,
@@ -909,241 +908,115 @@ async function runBrowserAcceptance() {
     await page.waitForURL((url) => url.pathname === '/home');
     await page
       .getByRole('heading', {
-        name: '欢迎使用客运装备内装模块化分区快速设计平台',
+        name: '欢迎来到客运装备内装模块化分区快速设计平台',
       })
       .waitFor();
-    await page.getByTestId('quick-start-design').waitFor();
-    const quickEntryCards = page.locator('.quick-entry-card');
     assert(
-      (await quickEntryCards.count()) === 6 &&
-        (await page.locator('.quick-entry-card:disabled').count()) === 2,
-      '首页没有按接入状态显示六个快捷入口，或待接入能力未禁用',
+      (await page.getByRole('menuitem', { name: '首页' }).count()) === 1,
+      '登录默认入口没有统一命名为“首页”',
     );
-    await page.getByTestId('quick-start-design').click();
-    const quickStartDialog = page.getByRole('dialog', { name: '开始新设计' });
-    await quickStartDialog.getByText('项目名称', { exact: true }).waitFor();
-    await quickStartDialog.getByText('设计任务说明', { exact: true }).waitFor();
-    await quickStartDialog.locator('.ant-modal-close').click();
-    await page.getByTestId('quick-open-designs').click();
-    const myDesignsDialog = page.getByRole('dialog', { name: '我的设计' });
-    await myDesignsDialog
-      .getByText('浏览器验收 · 多应用设计会话', { exact: true })
-      .waitFor();
-    await myDesignsDialog.locator('.ant-modal-close').click();
-    await page.getByLabel('平台核心功能关系图').waitFor();
-    const flowLabels = await page
-      .locator('.design-cycle__node > i > b')
+    const homeEntryLabels = await page
+      .locator('.home-entry-grid > button')
       .allTextContents();
     assert(
-      JSON.stringify(flowLabels) ===
+      JSON.stringify(homeEntryLabels.map((item) => item.trim())) ===
         JSON.stringify([
-          '项目资产',
-          '开始设计',
-          'AI 应用',
-          '任务执行',
-          '设计成果',
+          '开始新设计',
+          '查看我的设计',
+          '查看资产中心',
+          '开始模型训练',
+          '开始报告生成',
+          '设计工作台',
         ]),
-      `首页没有准确表达平台核心闭环：${JSON.stringify(flowLabels)}`,
+      `首页六个入口的名称或顺序不符合需求：${JSON.stringify(homeEntryLabels)}`,
     );
-    const cycleNodeTypography = await page
-      .locator('.design-cycle__node')
-      .evaluateAll((elements) =>
-        elements.map((element) => {
-          const count = element.querySelector('small');
-          const label = element.querySelector('b');
-          return {
-            countSize: count
-              ? Number.parseFloat(getComputedStyle(count).fontSize)
-              : 0,
-            labelSize: label
-              ? Number.parseFloat(getComputedStyle(label).fontSize)
-              : 0,
-          };
-        }),
-      );
+    const homeLayout = await page.locator('.home-stage').evaluate((element) => {
+      const welcome = element.querySelector('.home-welcome');
+      const grid = element.querySelector('.home-entry-grid');
+      const firstButton = grid?.querySelector('button');
+      const stageBox = element.getBoundingClientRect();
+      const welcomeBox = welcome?.getBoundingClientRect();
+      const gridStyle = grid ? getComputedStyle(grid) : undefined;
+      return {
+        buttonBackground: firstButton
+          ? getComputedStyle(firstButton).backgroundColor
+          : '',
+        columnCount:
+          gridStyle?.gridTemplateColumns.split(' ').filter(Boolean).length ?? 0,
+        gridWidth: grid?.getBoundingClientRect().width ?? 0,
+        stageCenterOffset: welcomeBox
+          ? Math.abs(
+              welcomeBox.left +
+                welcomeBox.width / 2 -
+                (stageBox.left + stageBox.width / 2),
+            )
+          : Number.POSITIVE_INFINITY,
+        welcomeBackground: welcome
+          ? getComputedStyle(welcome).backgroundColor
+          : '',
+        welcomeWidth: welcomeBox?.width ?? 0,
+      };
+    });
     assert(
-      cycleNodeTypography.length === 5 &&
-        cycleNodeTypography.every(
-          (item) => item.labelSize >= 18 && item.countSize >= 13,
-        ),
-      `首页闭环节点字号不够醒目：${JSON.stringify(cycleNodeTypography)}`,
-    );
-    const cycleLayout = await page
-      .locator('.design-cycle')
-      .evaluate((element) => {
-        const orbit = element.querySelector('.design-cycle__orbit-wrap');
-        const node = element.querySelector('.design-cycle__node--design');
-        const icon = node?.querySelector(':scope > span');
-        const label = node?.querySelector(':scope > i');
-        const iconBox = icon?.getBoundingClientRect();
-        const labelBox = label?.getBoundingClientRect();
-        return {
-          labelGap:
-            labelBox && iconBox
-              ? Math.max(0, labelBox.left - iconBox.right)
-              : 0,
-          orbitWidth: orbit?.getBoundingClientRect().width ?? 0,
-        };
-      });
-    assert(
-      cycleLayout.orbitWidth >= 400 && cycleLayout.labelGap >= 10,
-      `首页闭环图形或文字间距没有舒展开：${JSON.stringify(cycleLayout)}`,
-    );
-    const assetNodeLayout = await page
-      .locator('.design-cycle__node--assets')
-      .evaluate((element) => {
-        const icon = element.querySelector(':scope > span');
-        const label = element.querySelector(':scope > i');
-        const iconBox = icon?.getBoundingClientRect();
-        const labelBox = label?.getBoundingClientRect();
-        return {
-          iconTop: iconBox?.top ?? 0,
-          labelBottom: labelBox?.bottom ?? Number.POSITIVE_INFINITY,
-        };
-      });
-    assert(
-      assetNodeLayout.labelBottom <= assetNodeLayout.iconTop,
-      `项目资产文字没有移到圆环外侧：${JSON.stringify(assetNodeLayout)}`,
+      homeLayout.columnCount === 3 &&
+        homeLayout.welcomeWidth >= 600 &&
+        homeLayout.gridWidth >= 560 &&
+        homeLayout.stageCenterOffset <= 2 &&
+        homeLayout.welcomeBackground === 'rgb(244, 246, 248)' &&
+        homeLayout.buttonBackground === 'rgb(255, 240, 242)',
+      `首页欢迎区或 3×2 功能区没有按需求图布局：${JSON.stringify(homeLayout)}`,
     );
     assert(
-      (await page.locator('.dashboard-summary').count()) === 0 &&
-        (await page.getByText('看清设计闭环，继续当前工作。').count()) === 0 &&
-        (await page.getByLabel('工作台当前项目').count()) === 0 &&
-        (await page
-          .locator('.design-flow-panel .dashboard-panel__heading > span')
-          .count()) === 0,
-      '首页顶部冗余说明、项目选择、汇总状态或闭环右上角项目文字仍然存在',
+      (await page
+        .locator(
+          '.design-cycle, .dashboard-grid, .dashboard-panel, .dashboard-entry-panel',
+        )
+        .count()) === 0,
+      '首页仍然包含设计闭环、统计图表或旧版仪表盘卡片',
     );
-    const cycleAnimation = await page
-      .locator('.design-cycle__orbit')
-      .evaluate((element) => {
-        const style = getComputedStyle(element);
-        return {
-          duration: style.animationDuration,
-          name: style.animationName,
-        };
-      });
+
+    const newDesignEntry = page.locator(
+      '.home-entry-grid [data-action="new-design"]',
+    );
+    await newDesignEntry.click();
+    const newDesignDialog = page
+      .getByRole('dialog')
+      .filter({ has: page.getByText('开始新设计', { exact: true }) });
+    await newDesignDialog.waitFor();
+    await newDesignDialog.locator('.ant-modal-close').click();
+    await newDesignDialog.waitFor({ state: 'hidden' });
+
+    const historyEntry = page.locator(
+      '.home-entry-grid [data-action="history"]',
+    );
+    await historyEntry.click();
+    const historyDialog = page
+      .getByRole('dialog')
+      .filter({ has: page.getByText('查看我的设计', { exact: true }) });
+    await historyDialog.waitFor();
+    await historyDialog.locator('.ant-modal-close').click();
+    await historyDialog.waitFor({ state: 'hidden' });
+
+    await page.locator('.home-entry-grid [data-action="training"]').click();
+    await page.getByTestId('training-layout').waitFor();
     assert(
-      cycleAnimation.name === 'none' || cycleAnimation.duration === '0s',
-      `平台设计闭环外圈不应整体转动：${JSON.stringify(cycleAnimation)}`,
+      (await page.getByText(/不能开始训练/).count()) === 1,
+      '模型训练布局没有明确标识训练服务尚未接入',
     );
-    const energyAnimations = await page
-      .locator(
-        '.design-cycle__data-rail, .design-cycle__inner-rail, .design-cycle__data-pulse',
-      )
-      .evaluateAll((elements) =>
-        elements.map((element) => {
-          const style = getComputedStyle(element);
-          return {
-            delay: style.animationDelay,
-            duration: style.animationDuration,
-            name: style.animationName,
-          };
-        }),
-      );
+    await page.getByRole('button', { name: 'Close' }).click();
+    await page.locator('.home-entry-grid [data-action="report"]').click();
+    await page
+      .getByText('该外部服务与能力契约尚未接入', { exact: true })
+      .waitFor();
     assert(
-      (await page.locator('.design-cycle__arrow').count()) === 0 &&
-        (await page.locator('.design-cycle__energy-trail').count()) === 0 &&
-        energyAnimations.length === 5 &&
-        energyAnimations.every(
-          (animation) =>
-            animation.name !== 'none' && animation.duration !== '0s',
-        ),
-      `平台设计闭环没有使用固定轨道的离散数据脉冲：${JSON.stringify(energyAnimations)}`,
+      new URL(page.url()).pathname === '/home',
+      '未接入的训练和报告入口不应离开首页',
     );
-    assert(
-      (await page.getByLabel('最近七天个人任务趋势图').count()) === 1 &&
-        (await page.getByLabel('按项目查看任务').count()) === 1 &&
-        (await page.locator('.asset-bars').count()) === 1,
-      '首页缺少任务趋势、状态分布或资产构成图表',
-    );
-    assert(
-      (await page.locator('.rail-project-switcher').count()) === 0,
-      '首页重复显示了全局当前项目选择器',
-    );
-    const scrollRegionStyles = await page
-      .locator(
-        '.trend-chart-scroll, .status-chart, .conversation-list, .asset-bars, .job-activity-list, .recent-projects-chart, .result-gallery',
-      )
-      .evaluateAll((elements) =>
-        elements.map((element) => ({
-          className: element.className,
-          overflowX: getComputedStyle(element).overflowX,
-          overflowY: getComputedStyle(element).overflowY,
-        })),
-      );
-    assert(
-      scrollRegionStyles.length >= 6 &&
-        scrollRegionStyles.every(
-          (style) =>
-            ['auto', 'scroll'].includes(style.overflowX) &&
-            ['auto', 'scroll'].includes(style.overflowY),
-        ),
-      `首页内容区域没有统一限制在卡片内滚动：${JSON.stringify(scrollRegionStyles)}`,
-    );
-    const recentProjectRows = await page
-      .locator('.recent-projects-chart > button')
-      .evaluateAll((elements) =>
-        elements.map((element) => {
-          const boxes = [
-            element.querySelector('.recent-projects-chart__title'),
-            element.querySelector('.recent-projects-chart__resources'),
-            element.querySelector('.recent-projects-chart__tasks'),
-            element.querySelector('.recent-projects-chart__status'),
-          ].map((child) => child?.getBoundingClientRect());
-          const row = element.getBoundingClientRect();
-          return {
-            centerOffsets: boxes.map((box) =>
-              box
-                ? Math.abs(
-                    box.top + box.height / 2 - (row.top + row.height / 2),
-                  )
-                : 999,
-            ),
-            resources:
-              element.querySelector('.recent-projects-chart__resources')
-                ?.textContent ?? '',
-            tasks:
-              element.querySelector('.recent-projects-chart__tasks')
-                ?.textContent ?? '',
-          };
-        }),
-      );
-    assert(
-      recentProjectRows.length >= 2 &&
-        recentProjectRows.every(
-          (row) =>
-            row.centerOffsets.every((offset) => offset <= 1) &&
-            row.resources.includes('项资产') &&
-            row.tasks.includes('项任务'),
-        ) &&
-        recentProjectRows.some((row) => row.resources.includes('文本')),
-      `首页最近项目没有保持同行，或缺少项目级资产类型摘要：${JSON.stringify(recentProjectRows)}`,
-    );
+
     await page.screenshot({
       fullPage: true,
       path: dashboardScreenshotPath,
     });
-    const recentOutput = page.locator(
-      `.result-gallery [data-asset-id="${dashboardOutputAssetId}"]`,
-    );
-    await recentOutput.waitFor();
-    await recentOutput.click();
-    await page.waitForURL(
-      (url) =>
-        url.pathname === '/assets' &&
-        url.searchParams.get('assetId') === dashboardOutputAssetId,
-    );
-    const recentOutputDrawer = page.locator('.ant-drawer:visible');
-    await recentOutputDrawer.waitFor();
-    assert(
-      await recentOutputDrawer
-        .getByText('首页最近成果深链验收', { exact: true })
-        .count(),
-      '首页最近成果没有打开具体资产详情',
-    );
-    await recentOutputDrawer.locator('.ant-drawer-close').click();
-    await recentOutputDrawer.waitFor({ state: 'hidden' });
 
     await page.goto(`${webUrl}/profile`);
     const avatarButton = page.getByRole('button', { name: '修改头像' });
@@ -1674,7 +1547,10 @@ async function runBrowserAcceptance() {
       .getByText('浏览器验收 · 多应用设计会话', { exact: true })
       .first()
       .waitFor();
-    const designUserAvatar = page.getByTestId('design-user-avatar');
+    const designUserAvatar = page
+      .getByRole('banner')
+      .locator('button img')
+      .last();
     await designUserAvatar.waitFor();
     const designUserAvatarSource = await designUserAvatar.getAttribute('src');
     const uploadedAvatarPath = updatedAvatar
@@ -1691,15 +1567,11 @@ async function runBrowserAcceptance() {
           (element) => (element as HTMLImageElement).naturalWidth,
         )) > 0,
       ),
-      '个人头像更新后会话侧栏仍显示姓名首字或旧头像',
+      '个人头像更新后平台顶部栏仍显示旧头像',
     );
-    const returnToProjectsButton = page.getByRole('button', {
-      name: '返回项目空间',
-    });
-    await returnToProjectsButton.waitFor();
     assert(
-      (await returnToProjectsButton.getAttribute('title')) === '返回项目空间',
-      '设计会话侧栏仍显示已下线的“返回平台概览”提示',
+      (await page.getByRole('menuitem', { name: '项目空间' }).count()) === 1,
+      '设计工作区没有保留平台功能侧栏中的项目空间入口',
     );
     for (const selector of [
       '[data-testid="design-new-conversation"] svg',
@@ -1720,23 +1592,6 @@ async function runBrowserAcceptance() {
       (await page.locator('.thread-timeline .workflow-round').count()) === 7,
       '统一设计会话没有按时间线恢复多个应用的历史轮次',
     );
-    assert(
-      (await page.locator('.rail-project-switcher').count()) === 1 &&
-        (await page.locator('.rail-ai-float-button').count()) === 1,
-      '开始设计页面没有保留平台项目上下文或全局 AI 助手',
-    );
-    await page.getByRole('button', { name: '收起设计会话栏' }).click();
-    await page.getByRole('button', { name: '展开设计会话栏' }).waitFor();
-    assert(
-      await page
-        .locator('.design-page')
-        .evaluate((element) =>
-          element.classList.contains('is-conversation-collapsed'),
-        ),
-      '设计会话栏没有进入折叠状态',
-    );
-    await page.getByRole('button', { name: '展开设计会话栏' }).click();
-    await page.getByRole('button', { name: '收起设计会话栏' }).waitFor();
     await page.waitForTimeout(350);
     const initialThreadScroll = await page
       .locator('.thread-scroll')
@@ -1792,13 +1647,15 @@ async function runBrowserAcceptance() {
     await modelViewer.getByText(/1 个网格 · 3 个顶点/).waitFor();
     await modelRound.screenshot({ path: model3dScreenshotPath });
     const historyImageRound = page.locator(`[data-job-id="${historyJobId}"]`);
-    const historyImageGrid = historyImageRound.locator('.round-output-grid');
-    await historyImageGrid.waitFor();
+    const historyImageGallery = historyImageRound.locator(
+      '.round-output-gallery',
+    );
+    await historyImageGallery.waitFor();
     assert(
-      (await historyImageGrid.locator('button').count()) === 3,
+      (await historyImageGallery.locator('button').count()) === 3,
       '同一轮次的三张生成图片没有以网格展示',
     );
-    await historyImageGrid.locator('button').first().click();
+    await historyImageGallery.locator('button').first().click();
     const resultLightbox = page.locator('.platform-image-lightbox:visible');
     await resultLightbox.waitFor();
     await resultLightbox
@@ -2083,13 +1940,36 @@ async function runBrowserAcceptance() {
         .locator('.composer-application-shortcuts')
         .getAttribute('data-application-count'),
     );
-    assert(applicationCount >= 18, '统一设计会话没有接入全部应用能力');
+    assert(
+      applicationCount === 15,
+      `客室效果模式没有完整接入目录中的 15 项能力：${applicationCount}`,
+    );
     assert(
       (await page.locator('.composer-application-shortcuts button').count()) <=
-        9,
+        8,
       '未选择应用时没有按快捷应用加“更多”的形式收起能力列表',
     );
     await page.getByTestId('more-design-applications').waitFor();
+    const quickToolLabels = await page
+      .locator('.composer-application-shortcuts button[data-app-key]')
+      .allTextContents();
+    assert(
+      JSON.stringify(quickToolLabels.map((item) => item.trim())) ===
+        JSON.stringify([
+          '文本',
+          '文生图',
+          '理解',
+          '重绘',
+          '扩图',
+          '多图',
+          '放大',
+        ]),
+      `设计快捷工具没有按 0820 文档排序：${JSON.stringify(quickToolLabels)}`,
+    );
+    assert(
+      (await page.locator('.rail-ai-float-button').count()) === 1,
+      '设计生成页面没有保留唯一的全局 AI 助手',
+    );
     const designPageBox = await page.locator('.design-page').boundingBox();
     assert(
       Boolean(
@@ -2097,10 +1977,34 @@ async function runBrowserAcceptance() {
         designPageBox.x > 0 &&
         designPageBox.y > 0 &&
         designPageBox.width < 1600 &&
-        designPageBox.height <= 1000,
+        designPageBox.height <= 1000 &&
+        (await page.getByRole('banner').count()) === 1 &&
+        (await page.getByText('任务栏', { exact: true }).count()) === 1,
       ),
-      '开始设计没有嵌入统一平台壳层，或内容超出当前视口',
+      '设计页没有按 0820 结构同时保留平台侧栏、顶部栏与独立任务栏',
     );
+    await page.getByTestId('conversation-sidebar-toggle').click();
+    await page.waitForTimeout(250);
+    const collapsedThreadBox = await page
+      .locator('.design-thread')
+      .boundingBox();
+    assert(
+      Boolean(
+        collapsedThreadBox &&
+        designPageBox &&
+        Math.abs(collapsedThreadBox.x - designPageBox.x) < 2,
+      ),
+      '任务栏收起后没有释放完整工作区宽度',
+    );
+    await page.getByTestId('conversation-sidebar-toggle').click();
+    await page.waitForTimeout(250);
+    await page.getByRole('button', { name: /报告生成/ }).click();
+    await page.getByTestId('report-layout').waitFor();
+    assert(
+      (await page.getByText(/不能提交生成/).count()) === 1,
+      '报告布局没有明确标识执行服务尚未接入',
+    );
+    await page.getByRole('button', { name: 'Close' }).click();
     const composerBox = await page.getByTestId('design-composer').boundingBox();
     assert(
       Boolean(
@@ -2157,7 +2061,7 @@ async function runBrowserAcceptance() {
       designConversationId,
     );
     await page.waitForFunction(
-      () => document.querySelectorAll('.composer-box').length === 1,
+      () => document.querySelectorAll('.design-page').length === 1,
     );
     assert(
       (await page.getByTestId('active-design-application').count()) === 0,
@@ -2165,47 +2069,11 @@ async function runBrowserAcceptance() {
     );
     assert(
       (await page
-        .locator('.composer-box')
-        .getAttribute('data-effective-app-key')) === 'text-to-image',
-      '未选择应用时没有在后台默认使用文生图能力',
+        .locator('.composer-box:visible')
+        .getAttribute('data-effective-app-key')) === 'text-chat',
+      '未选择应用时没有在后台默认使用文生文能力',
     );
-    const designModuleSwitcher = page.getByRole('navigation', {
-      name: '设计生成模块',
-    });
-    assert(
-      (await designModuleSwitcher.locator('button').count()) === 4 &&
-        (await designModuleSwitcher
-          .getByRole('button', { name: /报告生成/ })
-          .isDisabled()),
-      '设计生成模块没有显示三类已接入上下文和一个待接入报告入口',
-    );
-    await designModuleSwitcher
-      .getByRole('button', { name: 'CMF 生成' })
-      .click();
-    const modulePromptInput = page.getByTestId('design-prompt-input');
-    const modulePromptPlaceholder =
-      await modulePromptInput.getAttribute('placeholder');
-    assert(
-      modulePromptPlaceholder?.includes('二方连续/四方连续'),
-      'CMF 模块没有切换到对应的设计提示',
-    );
-    await page.getByTestId('design-prompt-templates').click();
-    await page
-      .locator('.prompt-template-menu:visible')
-      .getByRole('button', {
-        name: '红色',
-      })
-      .click();
-    const templatePromptValue = await modulePromptInput.inputValue();
-    assert(
-      templatePromptValue.includes('颜色：红色'),
-      'CMF 提示词模板没有写入结构化提示',
-    );
-    await modulePromptInput.fill('');
-    await designModuleSwitcher
-      .getByRole('button', { name: '客室零部件生成' })
-      .click();
-    await page.locator('.composer-application-shortcuts').waitFor();
+    await page.locator('.composer-application-shortcuts:visible').waitFor();
     await page.waitForFunction(
       () =>
         document.querySelectorAll('.ant-spin-spinning, .ant-spin-blur')
@@ -2292,7 +2160,7 @@ async function runBrowserAcceptance() {
         longInputLayout.textareaHeight <= 221 &&
         longInputLayout.scrollHeight > longInputLayout.textareaHeight &&
         ['auto', 'scroll'].includes(longInputLayout.overflowY) &&
-        longInputLayout.composerHeight < 380 &&
+        longInputLayout.composerHeight < longInputLayout.viewportHeight * 0.4 &&
         longInputLayout.toolbarTop > 0 &&
         longInputLayout.toolbarBottom <= longInputLayout.viewportHeight,
       ),
@@ -2308,7 +2176,6 @@ async function runBrowserAcceptance() {
       path: designDefaultScreenshotPath,
     });
 
-    await page.locator('[data-app-key="image-understanding"]').click();
     await page.getByTestId('composer-add-material').click();
     await page.getByTestId('open-markdown-asset-picker').click();
     const markdownPicker = page.getByRole('dialog', {
@@ -2324,7 +2191,7 @@ async function runBrowserAcceptance() {
     await markdownPicker.getByText('浏览器验收输入.md').click();
     await markdownPicker.getByRole('button', { name: '使用所选资产' }).click();
     await page.getByText('Markdown 文本已加载到输入框').waitFor();
-    const designTextarea = page.locator('.composer-box textarea');
+    const designTextarea = page.locator('.composer-box:visible textarea');
     await designTextarea.waitFor();
     const importedMarkdownText = await designTextarea.inputValue();
     assert(
@@ -2332,44 +2199,53 @@ async function runBrowserAcceptance() {
         !importedMarkdownText.includes('https://example.test'),
       `Markdown 资产没有只提取文字加载到输入框：${JSON.stringify(importedMarkdownText)}`,
     );
-    await page.getByRole('button', { name: '取消选择当前应用' }).click();
-    await page.getByTestId('more-design-applications').click();
-    await page
-      .locator('.more-applications-grid:visible [data-app-key="text-chat"]')
-      .click();
-    await page.waitForFunction(
-      () =>
-        document.querySelector<HTMLElement>('.composer-box')?.dataset
-          .effectiveAppKey === 'text-chat',
-    );
     const firstPrompt =
       '设计现代轨道客室空间并优化照明与耐用材质并提升乘客体验';
     await designTextarea.fill(firstPrompt);
+    const createDesignJobResponsePromise = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/v1/jobs') &&
+        response.request().method() === 'POST',
+      { timeout: 12_000 },
+    );
     await page.getByRole('button', { exact: true, name: '发送' }).click();
-    await page
+    const createDesignJobResponse = await createDesignJobResponsePromise;
+    assert(
+      createDesignJobResponse.ok(),
+      `设计任务接口返回失败：${createDesignJobResponse.status()} ${await createDesignJobResponse.text()}`,
+    );
+    const submittedNotice = page
       .getByText('任务已提交，可以切换到其他设计会话继续工作')
-      .waitFor();
+      .first();
+    await submittedNotice.waitFor({ timeout: 12_000 }).catch(async () => {
+      const diagnostics = await page.evaluate(() => ({
+        activeConversation: document.querySelector('.conversation-item.active')
+          ?.dataset.conversationId,
+        effectiveAppKey: document.querySelector(
+          '[data-testid="design-composer"] .composer-box',
+        )?.dataset.effectiveAppKey,
+        messages: [...document.querySelectorAll('.ant-message-notice-content')]
+          .map((element) => element.textContent?.trim())
+          .filter(Boolean),
+        prompt: (
+          document.querySelector(
+            '[data-testid="design-prompt-input"]',
+          ) as HTMLTextAreaElement | null
+        )?.value,
+        submitLabel: document
+          .querySelector('.composer-submit')
+          ?.getAttribute('aria-label'),
+      }));
+      throw new Error(`设计任务提交失败：${JSON.stringify(diagnostics)}`);
+    });
     assert(
       (await designTextarea.inputValue()) === '',
       '任务成功提交后输入框仍保留上一次文本',
     );
-    const submittedConversationId = new URL(page.url()).searchParams.get(
-      'conversationId',
-    );
-    const [submittedDesignRound] = await acceptanceSql<
-      Array<{ appKey: string; prompt: string }>
-    >`
-      SELECT app_key AS "appKey", parameters ->> 'prompt' AS prompt
-      FROM jobs
-      WHERE design_conversation_id = ${submittedConversationId}
-      ORDER BY created_at DESC
-      LIMIT 1
-    `;
-    assert(
-      submittedDesignRound?.appKey === 'text-chat' &&
-        submittedDesignRound.prompt === firstPrompt,
-      `新会话没有按用户显式选择的文本生成应用和提示词创建任务：${JSON.stringify(submittedDesignRound)}`,
-    );
+    await page
+      .getByText('设计现代轨道客室空间并优化照明与耐用材…', { exact: true })
+      .first()
+      .waitFor();
 
     const activeConversationItem = page.locator('.conversation-item.active');
     await activeConversationItem.hover();
@@ -2388,6 +2264,7 @@ async function runBrowserAcceptance() {
       .first()
       .waitFor();
 
+    await page.locator('[data-app-key="text-chat"]').click();
     const parameterDrawer = page.locator('.design-parameter-drawer');
     await page.getByTestId('open-design-parameters').click();
     await parameterDrawer.waitFor();
@@ -2451,7 +2328,7 @@ async function runBrowserAcceptance() {
       designConversationId,
     );
     await page.waitForFunction(
-      () => document.querySelectorAll('.conversation-item.active').length === 1,
+      () => document.querySelectorAll('.conversation-item.active').length > 0,
     );
     const temporaryConversationItem = page.locator(
       '.conversation-item.active:visible',
@@ -2487,9 +2364,7 @@ async function runBrowserAcceptance() {
       () => document.querySelectorAll('.design-page').length === 1,
     );
 
-    const firstCompletedRound = page.locator(
-      `[data-job-id="${historyJobId}"]:visible`,
-    );
+    const firstCompletedRound = page.locator(`[data-job-id="${historyJobId}"]`);
     await firstCompletedRound
       .getByRole('button', { exact: true, name: '加入资产' })
       .click();

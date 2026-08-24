@@ -1,0 +1,88 @@
+import type { PlatformApplication } from '#/modules/platform/types';
+
+import { describe, expect, it } from 'vitest';
+
+import {
+  applicationsForDesignMode,
+  designModeForApplication,
+  designModes,
+  getDesignMode,
+} from '#/modules/platform/design-modes';
+
+function application(
+  key: string,
+  options: Partial<PlatformApplication> = {},
+): PlatformApplication {
+  return {
+    acceptedAssetTypes: [],
+    adapterConfigured: true,
+    canManageVisibility: false,
+    capabilityCode: key,
+    category: 'design',
+    color: '#b91c32',
+    description: key,
+    icon: 'lucide:sparkles',
+    key,
+    name: key,
+    outputAssetTypes: [],
+    provider: 'test',
+    shortName: key,
+    status: 'available',
+    updatedAt: '2026-08-23T00:00:00.000Z',
+    visible: true,
+    ...options,
+  };
+}
+
+describe('design mode catalog', () => {
+  it('keeps the four customer-facing modes in a stable order', () => {
+    expect(designModes.map((mode) => mode.key)).toEqual([
+      'component',
+      'cmf',
+      'cabin',
+      'report',
+    ]);
+  });
+
+  it('filters unavailable capabilities and follows mode ordering', () => {
+    const result = applicationsForDesignMode(
+      [
+        application('image-upscale'),
+        application('text-to-image'),
+        application('inpaint-single', { visible: false }),
+        application('report-generator', { capabilityCode: undefined }),
+      ],
+      getDesignMode('cabin'),
+    );
+
+    expect(result.map((item) => item.key)).toEqual([
+      'text-to-image',
+      'image-upscale',
+    ]);
+  });
+
+  it('keeps the 0820 quick-tool order before advanced applications', () => {
+    expect(getDesignMode('cabin').applicationKeys.slice(0, 7)).toEqual([
+      'text-chat',
+      'text-to-image',
+      'image-understanding',
+      'inpaint-single',
+      'outpaint',
+      'multi-image-edit',
+      'image-upscale',
+    ]);
+    expect(getDesignMode('component').applicationKeys.slice(0, 7)).toEqual(
+      getDesignMode('cabin').applicationKeys.slice(0, 7),
+    );
+    expect(getDesignMode('cmf').applicationKeys.slice(0, 7)).toEqual(
+      getDesignMode('cabin').applicationKeys.slice(0, 7),
+    );
+  });
+
+  it('keeps shared applications in the selected mode', () => {
+    expect(designModeForApplication('text-to-image', 'cmf').key).toBe('cmf');
+    expect(designModeForApplication('multiview-to-3d', 'cabin').key).toBe(
+      'component',
+    );
+  });
+});

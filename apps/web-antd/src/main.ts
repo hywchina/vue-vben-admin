@@ -1,4 +1,4 @@
-import { initPreferences } from '@vben/preferences';
+import { initPreferences, updatePreferences } from '@vben/preferences';
 import { unmountGlobalLoading } from '@vben/utils';
 
 import { overridesPreferences } from './preferences';
@@ -17,6 +17,13 @@ async function initApplication() {
   await initPreferences({
     namespace,
     overrides: overridesPreferences,
+  });
+  // 平台名称属于发布身份而非用户偏好；只同步品牌字段，保留主题和布局缓存。
+  updatePreferences({
+    app: { name: import.meta.env.VITE_APP_TITLE },
+    copyright: {
+      companyName: '客运装备内装模块化分区快速设计平台',
+    },
   });
 
   // 启动应用并挂载

@@ -28,7 +28,7 @@
 | 框架保留 | `packages`、`internal`、`views/_core` | 仅保留产品实际调用的布局、表单、权限、请求、状态和工程工具，并记录用途 |
 | 已退出 | Dashboard/Demos、其他 Web 变体、Mock、Playground、文档站与上游发布设施 | 已完成引用检查、删除、类型检查、测试与生产构建 |
 | 待退出 | `apps/web-antd/src/modules/platform/data.ts` | 已知静态样例数据；确认无代码引用后从核心代码删除 |
-| 外部边界 | ComfyUI、LoRA、2D 生 3D、报告执行器 | 只保留稳定适配器契约，未配置时继续返回明确失败，不实现新执行器 |
+| 外部边界 | ComfyUI、LoRA、报告执行器 | 只保留稳定适配器契约，未配置时继续返回明确失败，不实现新执行器 |
 
 ## 4. 当前结构问题
 

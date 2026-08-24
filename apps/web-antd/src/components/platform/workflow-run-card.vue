@@ -61,10 +61,12 @@ const activeOutput = computed(
     ) ?? props.job.outputs[0],
 );
 const imageOutputs = computed(() =>
-  props.job.outputs.filter((output) => output.kind === 'image'),
+  props.job.outputs.filter(
+    (output) => output.kind === 'image' && previewUrls[output.assetId],
+  ),
 );
-const visibleImageOutputs = computed(() => imageOutputs.value.slice(0, 3));
-const activeImageIndex = computed(() =>
+const visibleImageOutputs = computed(() => imageOutputs.value.slice(0, 4));
+const activeImageOutputIndex = computed(() =>
   imageOutputs.value.findIndex(
     (output) => output.assetId === activeOutput.value?.assetId,
   ),
@@ -278,14 +280,15 @@ function openAnnotation(input: PlatformJobInput) {
   annotationLightboxOpen.value = true;
 }
 
-function openOutputLightbox(output: PlatformJobOutput) {
+function openOutputImage(output: PlatformJobOutput) {
   activeOutputAssetId.value = output.assetId;
   outputLightboxOpen.value = true;
 }
 
-function showAdjacentImage(direction: -1 | 1) {
-  const next = imageOutputs.value[activeImageIndex.value + direction];
-  if (next) activeOutputAssetId.value = next.assetId;
+function moveOutputImage(offset: number) {
+  const nextIndex = activeImageOutputIndex.value + offset;
+  const nextOutput = imageOutputs.value[nextIndex];
+  if (nextOutput) activeOutputAssetId.value = nextOutput.assetId;
 }
 
 watch(
@@ -316,6 +319,9 @@ onMounted(() => void loadPreviews());
       <span>第 {{ round }} 轮</span>
       <time :datetime="job.createdAt">{{ formatDate(job.createdAt) }}</time>
       <StatusPill :status="job.status" />
+      <small v-if="job.workflowVersion">
+        能力版本 V{{ job.workflowVersion }}
+      </small>
     </header>
 
     <section class="round-input">
@@ -526,7 +532,10 @@ onMounted(() => void loadPreviews());
 
       <div v-else-if="activeOutput" class="round-output">
         <div class="round-output__toolbar">
-          <div v-if="job.outputs.length > 1" class="round-output-selector">
+          <div
+            v-if="job.outputs.length > 1 && imageOutputs.length <= 1"
+            class="round-output-selector"
+          >
             <button
               v-for="(output, index) in job.outputs"
               :key="output.assetId"
@@ -592,15 +601,32 @@ onMounted(() => void loadPreviews());
           />
         </div>
         <div
+          v-else-if="imageOutputs.length > 1"
+          :data-count="Math.min(imageOutputs.length, 4)"
+          class="round-output-gallery"
+        >
+          <button
+            v-for="(output, index) in visibleImageOutputs"
+            :key="output.assetId"
+            :aria-label="`全屏查看${output.name || `结果 ${index + 1}`}`"
+            :class="{ active: output.assetId === activeOutput.assetId }"
+            type="button"
+            @click="openOutputImage(output)"
+          >
+            <img :alt="output.name" :src="previewUrls[output.assetId]" />
+            <span
+              v-if="index === 3 && imageOutputs.length > 4"
+              class="round-output-gallery__more"
+            >
+              +{{ imageOutputs.length - 4 }}
+            </span>
+            <span class="round-output-gallery__index">{{ index + 1 }}</span>
+          </button>
+        </div>
+        <div
           v-else
           class="round-output-visual"
-          :class="[
-            `output-${activeOutput.kind}`,
-            {
-              'output-image-grid':
-                activeOutput.kind === 'image' && imageOutputs.length > 1,
-            },
-          ]"
+          :class="`output-${activeOutput.kind}`"
         >
           <Model3dViewer
             v-if="
@@ -610,37 +636,12 @@ onMounted(() => void loadPreviews());
             :name="activeOutput.name"
             :url="modelUrls[activeOutput.assetId]!"
           />
-          <div
-            v-else-if="activeOutput.kind === 'image' && imageOutputs.length > 1"
-            :class="`round-output-grid--${Math.min(imageOutputs.length, 4)}`"
-            class="round-output-grid"
-          >
-            <button
-              v-for="(output, index) in visibleImageOutputs"
-              :key="output.assetId"
-              :aria-label="`全屏查看${output.name}`"
-              type="button"
-              @click="openOutputLightbox(output)"
-            >
-              <img
-                v-if="previewUrls[output.assetId]"
-                :alt="output.name"
-                :src="previewUrls[output.assetId]"
-              />
-              <span
-                v-if="index === 2 && imageOutputs.length > 3"
-                class="round-output-grid__more"
-              >
-                +{{ imageOutputs.length - 3 }}
-              </span>
-            </button>
-          </div>
           <button
             v-else-if="previewUrls[activeOutput.assetId]"
             :aria-label="`全屏查看${activeOutput.name}`"
-            class="round-output-image"
+            class="round-output-image-open"
             type="button"
-            @click="openOutputLightbox(activeOutput)"
+            @click="openOutputImage(activeOutput)"
           >
             <img
               :alt="activeOutput.name"
@@ -683,6 +684,24 @@ onMounted(() => void loadPreviews());
             <strong>{{ activeOutput.name }}</strong>
           </div>
           <div class="round-output-actions">
+            <Tooltip
+              v-if="
+                activeOutput.kind === 'image' &&
+                previewUrls[activeOutput.assetId]
+              "
+              title="局部重绘"
+            >
+              <button
+                aria-label="局部重绘"
+                class="round-action-button"
+                type="button"
+                @click="
+                  emit('mask', activeOutput, previewUrls[activeOutput.assetId]!)
+                "
+              >
+                <ComfyMaskIcon :size="16" />
+              </button>
+            </Tooltip>
             <Tooltip v-if="activeOutput.kind === 'text'" title="复制 Markdown">
               <button
                 aria-label="复制 Markdown"
@@ -756,14 +775,17 @@ onMounted(() => void loadPreviews());
       :url="annotationLightboxUrl"
     />
     <ImageLightbox
-      v-if="activeOutput?.kind === 'image'"
       v-model:open="outputLightboxOpen"
-      :next-enabled="activeImageIndex < imageOutputs.length - 1"
-      :previous-enabled="activeImageIndex > 0"
-      :title="activeOutput.name"
-      :url="previewUrls[activeOutput.assetId]"
-      @next="showAdjacentImage(1)"
-      @previous="showAdjacentImage(-1)"
+      :has-next="activeImageOutputIndex < imageOutputs.length - 1"
+      :has-previous="activeImageOutputIndex > 0"
+      :title="activeOutput?.name ?? '生成结果'"
+      :url="
+        activeOutput?.kind === 'image'
+          ? previewUrls[activeOutput.assetId]
+          : undefined
+      "
+      @next="moveOutputImage(1)"
+      @previous="moveOutputImage(-1)"
     />
   </article>
 </template>
@@ -1245,6 +1267,80 @@ onMounted(() => void loadPreviews());
   color: #8a7478;
 }
 
+.round-output-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: min(100%, 920px);
+  min-height: 300px;
+  margin: 0 auto;
+}
+
+.round-output-gallery[data-count='2'] {
+  min-height: 360px;
+}
+
+.round-output-gallery[data-count='3'] button:first-child {
+  grid-row: span 2;
+}
+
+.round-output-gallery button,
+.round-output-image-open {
+  position: relative;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  cursor: zoom-in;
+  background: #1d272d;
+  border: 2px solid transparent;
+  border-radius: 12px;
+}
+
+.round-output-gallery button {
+  min-height: 180px;
+}
+
+.round-output-gallery button:hover,
+.round-output-gallery button.active {
+  border-color: var(--round-accent);
+}
+
+.round-output-gallery img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 180ms ease;
+}
+
+.round-output-gallery button:hover img {
+  transform: scale(1.02);
+}
+
+.round-output-gallery__index,
+.round-output-gallery__more {
+  position: absolute;
+  color: #fff;
+  background: rgb(18 25 29 / 72%);
+  backdrop-filter: blur(6px);
+}
+
+.round-output-gallery__index {
+  right: 8px;
+  bottom: 8px;
+  padding: 3px 7px;
+  font-size: 11px;
+  border-radius: 999px;
+}
+
+.round-output-gallery__more {
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 34px;
+  font-weight: 750;
+}
+
 .round-output-visual {
   position: relative;
   display: grid;
@@ -1284,10 +1380,6 @@ onMounted(() => void loadPreviews());
   background: transparent;
 }
 
-.round-output-visual.output-image-grid {
-  width: 100%;
-}
-
 .round-output-visual.output-model3d {
   display: block;
   width: 100%;
@@ -1306,73 +1398,14 @@ onMounted(() => void loadPreviews());
   object-fit: contain;
 }
 
-.round-output-image {
+.round-output-image-open {
   display: block;
-  padding: 0;
-  overflow: hidden;
-  cursor: zoom-in;
-  background: transparent;
   border: 0;
-  border-radius: 14px;
 }
 
-.round-output-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 7px;
-  width: min(100%, 960px);
-  height: min(58vh, 590px);
-  min-height: 320px;
-  padding: 7px;
-  background: #eef1f2;
-  border-radius: 14px;
-}
-
-.round-output-grid > button {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  padding: 0;
-  overflow: hidden;
-  cursor: zoom-in;
-  background: #dfe4e6;
-  border: 0;
-  border-radius: 10px;
-}
-
-.round-output-grid > button img {
-  width: 100%;
-  height: 100%;
-  max-height: none;
-  object-fit: cover;
-  transition: transform 180ms ease;
-}
-
-.round-output-grid > button:hover img {
-  transform: scale(1.025);
-}
-
-.round-output-grid--3,
-.round-output-grid--4 {
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr);
-}
-
-.round-output-grid--3 > button:first-child,
-.round-output-grid--4 > button:first-child {
-  grid-row: 1 / 3;
-}
-
-.round-output-grid__more {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: clamp(24px, 4vw, 46px);
-  font-weight: 750;
-  color: #fff;
-  background: rgb(16 22 26 / 58%);
-  backdrop-filter: blur(2px);
+.round-output-image-open:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--round-accent) 48%, transparent);
+  outline-offset: -3px;
 }
 
 .round-output-icon {
@@ -1439,6 +1472,14 @@ onMounted(() => void loadPreviews());
 }
 
 @media (max-width: 900px) {
+  .round-output-gallery {
+    min-height: 240px;
+  }
+
+  .round-output-gallery button {
+    min-height: 130px;
+  }
+
   .round-input__bubble,
   .round-input__cluster {
     width: 100%;
@@ -1453,16 +1494,6 @@ onMounted(() => void loadPreviews());
 
   .round-parameters {
     grid-template-columns: 1fr;
-  }
-
-  .round-output-grid {
-    height: 420px;
-    min-height: 260px;
-  }
-
-  .round-output-grid--3,
-  .round-output-grid--4 {
-    grid-template-columns: minmax(0, 3fr) minmax(96px, 1fr);
   }
 }
 </style>

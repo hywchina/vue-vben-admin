@@ -13,9 +13,9 @@ import { IconifyIcon } from '@vben/icons';
 import { Button, Modal, Tooltip } from 'ant-design-vue';
 
 const props = defineProps<{
-  nextEnabled?: boolean;
+  hasNext?: boolean;
+  hasPrevious?: boolean;
   open: boolean;
-  previousEnabled?: boolean;
   title?: string;
   url?: string;
 }>();
@@ -99,12 +99,12 @@ function handlePointerUp(event: PointerEvent) {
 }
 
 function handleKeydown(event: KeyboardEvent) {
-  if (!props.open) return;
-  if (event.key === 'ArrowLeft' && props.previousEnabled) {
+  if (!props.open || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (event.key === 'ArrowLeft' && props.hasPrevious) {
     event.preventDefault();
     emit('previous');
   }
-  if (event.key === 'ArrowRight' && props.nextEnabled) {
+  if (event.key === 'ArrowRight' && props.hasNext) {
     event.preventDefault();
     emit('next');
   }
@@ -151,9 +151,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
           <IconifyIcon icon="lucide:hand" />
         </span>
       </Tooltip>
-      <span v-if="previousEnabled !== undefined" class="lightbox-page-hint">
-        使用左右方向键切换图片
-      </span>
     </div>
     <div
       ref="viewportRef"
@@ -165,6 +162,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
       @pointerup="handlePointerUp"
       @wheel="handleWheel"
     >
+      <Button
+        v-if="hasPrevious"
+        aria-label="查看上一张图片"
+        class="lightbox-navigation lightbox-navigation--previous"
+        shape="circle"
+        @click.stop="emit('previous')"
+      >
+        <IconifyIcon icon="lucide:chevron-left" />
+      </Button>
       <img
         v-if="url"
         ref="imageRef"
@@ -177,22 +183,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
         @load="clampPan"
       />
       <Button
-        v-if="previousEnabled !== undefined"
-        aria-label="查看上一张图片"
-        class="lightbox-navigation lightbox-navigation--previous"
-        :disabled="!previousEnabled"
-        shape="circle"
-        @click="emit('previous')"
-      >
-        <IconifyIcon icon="lucide:chevron-left" />
-      </Button>
-      <Button
-        v-if="nextEnabled !== undefined"
+        v-if="hasNext"
         aria-label="查看下一张图片"
         class="lightbox-navigation lightbox-navigation--next"
-        :disabled="!nextEnabled"
         shape="circle"
-        @click="emit('next')"
+        @click.stop="emit('next')"
       >
         <IconifyIcon icon="lucide:chevron-right" />
       </Button>
@@ -212,12 +207,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
   min-width: 54px;
   font-size: 12px;
   text-align: center;
-}
-
-.lightbox-page-hint {
-  width: auto !important;
-  margin-left: auto;
-  color: #7f8990;
 }
 
 .lightbox-pan-tool {
@@ -256,14 +245,25 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
   border-radius: 12px;
 }
 
-.lightbox-navigation {
+.lightbox-navigation.ant-btn {
   position: absolute;
   top: 50%;
   z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
   color: #fff;
-  background: rgb(15 21 25 / 72%);
-  border-color: rgb(255 255 255 / 28%);
+  background: rgb(16 21 25 / 72%);
+  border-color: rgb(255 255 255 / 30%);
   transform: translateY(-50%);
+}
+
+.lightbox-navigation.ant-btn:hover {
+  color: #fff;
+  background: var(--rail-red, #c71f3a);
+  border-color: var(--rail-red, #c71f3a);
 }
 
 .lightbox-navigation--previous {

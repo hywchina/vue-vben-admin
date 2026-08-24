@@ -1,6 +1,5 @@
 <script lang="ts" setup>
-import type { DesignModuleKey } from './design-modules';
-
+import type { DesignModeKey } from '#/modules/platform/design-modes';
 import type {
   CapabilityField,
   DesignConversation,
@@ -22,7 +21,6 @@ import {
 import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
-import { useUserStore } from '@vben/stores';
 
 import {
   Button,
@@ -52,6 +50,12 @@ import {
 } from '#/api';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
+import {
+  applicationsForDesignMode,
+  designModeForApplication,
+  designModes,
+  getDesignMode,
+} from '#/modules/platform/design-modes';
 import { usePlatformStore } from '#/store';
 import { selectDesignConversationJobs } from '#/store/platform/helpers';
 
@@ -60,28 +64,21 @@ import CameraAngleControl from '../workspace/camera-angle-control.vue';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
 import { createRegionInputAnnotations } from '../workspace/region-annotation';
 import { appendTextInput, markdownTextContent } from './design-input-utils';
-import {
-  applicationsForDesignModule,
-  DEFAULT_DESIGN_MODULE,
-  DESIGN_MODULES,
-  promptTemplateText,
-} from './design-modules';
 import DesignQuickField from './design-quick-field.vue';
 
-const DEFAULT_APP_KEY = 'text-to-image';
+const DEFAULT_APP_KEY = 'text-chat';
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
 const router = useRouter();
 const platformStore = usePlatformStore();
-const userStore = useUserStore();
 
 const loading = ref(false);
+const sidebarCollapsed = ref(false);
 const conversations = ref<DesignConversation[]>([]);
 const conversationSearch = ref('');
 const activeConversationId = ref('');
 const selectedAppKey = ref('');
-const activeDesignModuleKey = ref<DesignModuleKey>('component');
-const conversationSidebarCollapsed = ref(false);
+const selectedModeKey = ref<DesignModeKey>('cabin');
 const threadScrollRef = ref<HTMLElement>();
 const capability = ref<null | PlatformCapability>(null);
 const capabilityLoading = ref(false);
@@ -89,6 +86,7 @@ const capabilityCache = reactive<Record<string, PlatformCapability>>({});
 const selectedAssets = reactive<Record<number, string>>({});
 const parameterValues = reactive<Record<string, unknown>>({});
 const parameterDrawerOpen = ref(false);
+const reportPreviewOpen = ref(false);
 const mediaPickerOpen = ref(false);
 const markdownPickerOpen = ref(false);
 const composerPreviewUrls = reactive<Record<string, string>>({});
@@ -144,22 +142,28 @@ const saveOutputFolderOptions = computed(() => [
       value: folder.id,
     })),
 ]);
+const activeDesignMode = computed(() => getDesignMode(selectedModeKey.value));
+const modeAvailability = computed(
+  () =>
+    Object.fromEntries(
+      designModes.map((mode) => [
+        mode.key,
+        applicationsForDesignMode(platformStore.applications, mode).length > 0,
+      ]),
+    ) as Record<DesignModeKey, boolean>,
+);
 const availableApplications = computed(() => {
   const query = appSearch.value.trim().toLowerCase();
-  return platformStore.applications
-    .filter((item) => item.visible && item.capabilityCode)
-    .filter(
-      (item) =>
-        !query ||
-        `${item.name}${item.shortName}${item.description}`
-          .toLowerCase()
-          .includes(query),
-    )
-    .toSorted((a, b) => {
-      if (a.key === DEFAULT_APP_KEY) return -1;
-      if (b.key === DEFAULT_APP_KEY) return 1;
-      return a.name.localeCompare(b.name, 'zh-CN');
-    });
+  return applicationsForDesignMode(
+    platformStore.applications,
+    activeDesignMode.value,
+  ).filter(
+    (item) =>
+      !query ||
+      `${item.name}${item.shortName}${item.description}`
+        .toLowerCase()
+        .includes(query),
+  );
 });
 const defaultApplicationKey = computed(
   () =>
@@ -174,29 +178,12 @@ const application = computed(() =>
     (item) => item.key === effectiveApplicationKey.value,
   ),
 );
-const activeDesignModule = computed(
-  () =>
-    DESIGN_MODULES.find((item) => item.key === activeDesignModuleKey.value) ??
-    DEFAULT_DESIGN_MODULE,
-);
-const orderedApplicationShortcuts = computed(() =>
-  applicationsForDesignModule(
-    availableApplications.value,
-    activeDesignModule.value,
-  ),
-);
+const orderedApplicationShortcuts = computed(() => availableApplications.value);
 const applicationShortcuts = computed(() =>
-  orderedApplicationShortcuts.value
-    .filter((item) =>
-      activeDesignModule.value.recommendedAppKeys.includes(item.key),
-    )
-    .slice(0, 8),
+  orderedApplicationShortcuts.value.slice(0, 7),
 );
 const overflowApplications = computed(() =>
-  orderedApplicationShortcuts.value.filter(
-    (item) =>
-      !applicationShortcuts.value.some((shortcut) => shortcut.key === item.key),
-  ),
+  orderedApplicationShortcuts.value.slice(7),
 );
 const conversationJobs = computed(() =>
   selectDesignConversationJobs(
@@ -236,16 +223,6 @@ const promptField = computed(() =>
       (field.type === 'text' && field.required),
   ),
 );
-const composerPromptPlaceholder = computed(() => {
-  if (
-    ['text-to-image', 'text-to-image-lora'].includes(
-      application.value?.key ?? '',
-    )
-  ) {
-    return activeDesignModule.value.placeholder;
-  }
-  return promptField.value?.placeholder ?? '描述你的设计需求…';
-});
 const compactFields = computed(() =>
   scalarFields.value.filter(
     (field) =>
@@ -667,6 +644,12 @@ async function selectConversation(
     )
       ? preferredAppKey
       : undefined;
+  if (availablePreferredApp) {
+    selectedModeKey.value = designModeForApplication(
+      availablePreferredApp,
+      selectedModeKey.value,
+    ).key;
+  }
   selectedAppKey.value = availablePreferredApp ?? '';
   await router.replace({ query: { conversationId } });
   await loadCapability();
@@ -677,8 +660,38 @@ async function selectConversation(
 async function chooseApplication(appKey: string) {
   if (appKey === selectedAppKey.value && capability.value) return;
   await saveDraftNow();
+  selectedModeKey.value = designModeForApplication(
+    appKey,
+    selectedModeKey.value,
+  ).key;
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
+}
+
+async function chooseDesignMode(modeKey: DesignModeKey) {
+  if (modeKey === selectedModeKey.value) return;
+  const mode = getDesignMode(modeKey);
+  const applications = applicationsForDesignMode(
+    platformStore.applications,
+    mode,
+  );
+  if (applications.length === 0) {
+    if (modeKey === 'report') {
+      reportPreviewOpen.value = true;
+      return;
+    }
+    message.info(`${mode.label}的执行服务与能力契约尚未接入`);
+    return;
+  }
+  await saveDraftNow();
+  selectedModeKey.value = modeKey;
+  const currentKey = effectiveApplicationKey.value;
+  const nextKey = applications.some((item) => item.key === currentKey)
+    ? currentKey
+    : applications[0]?.key;
+  if (!nextKey) return;
+  selectedAppKey.value = nextKey;
+  await loadCapability(nextKey);
 }
 
 async function clearApplicationSelection() {
@@ -686,30 +699,6 @@ async function clearApplicationSelection() {
   await saveDraftNow();
   selectedAppKey.value = '';
   await loadCapability();
-}
-
-async function chooseDesignModule(moduleKey: DesignModuleKey) {
-  const module = DESIGN_MODULES.find((item) => item.key === moduleKey);
-  if (!module || module.status === 'planned') return;
-  activeDesignModuleKey.value = moduleKey;
-  if (
-    selectedAppKey.value &&
-    !module.recommendedAppKeys.includes(selectedAppKey.value)
-  ) {
-    await clearApplicationSelection();
-  }
-}
-
-function applyPromptTemplate(group: string, option: string) {
-  const field = promptField.value;
-  if (!field) return;
-  const next = appendTextInput(
-    parameterValues[field.key],
-    promptTemplateText(group, option),
-    field.maxLength,
-  );
-  setFieldValue(field, next.value);
-  if (next.truncated) message.warning('提示词已达到当前应用长度上限');
 }
 
 function openRename() {
@@ -1120,7 +1109,7 @@ async function useWelcomeSuggestion(value: string) {
     (item) => item.key === DEFAULT_APP_KEY,
   );
   if (textApp && effectiveApplicationKey.value !== textApp.key) {
-    await clearApplicationSelection();
+    await chooseApplication(textApp.key);
   }
   const field = promptField.value;
   if (!field) return;
@@ -1200,28 +1189,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <main
-    :class="{ 'is-conversation-collapsed': conversationSidebarCollapsed }"
-    class="design-page"
-  >
+  <main :class="{ 'sidebar-collapsed': sidebarCollapsed }" class="design-page">
     <aside class="conversation-sidebar">
-      <div class="conversation-brand">
-        <img alt="客运装备内装模块化分区快速设计平台" src="/rail-logo.svg" />
-        <div>
-          <strong title="客运装备内装模块化分区快速设计平台">
-            客运装备内装模块化分区快速设计平台
-          </strong>
-          <span>MODULAR RAIL DESIGN</span>
-        </div>
-        <button
-          aria-label="收起设计会话栏"
-          class="conversation-collapse-button"
-          title="收起设计会话栏"
-          type="button"
-          @click="conversationSidebarCollapsed = true"
-        >
-          <IconifyIcon icon="lucide:panel-left-close" />
-        </button>
+      <div class="conversation-sidebar__heading">
+        <span>任务栏</span>
+        <small>{{ activeConversation?.title ?? '新设计会话' }}</small>
       </div>
       <Select
         :options="projectOptions"
@@ -1308,67 +1280,24 @@ onBeforeUnmount(() => {
           {{ conversationSearch ? '没有匹配的会话' : '还没有设计会话' }}
         </div>
       </div>
-      <div class="conversation-sidebar__footer">
-        <div class="sidebar-user">
-          <span class="sidebar-user__avatar">
-            <img
-              v-if="userStore.userInfo?.avatar"
-              :alt="`${userStore.userInfo.realName ?? '当前用户'}头像`"
-              :src="userStore.userInfo.avatar"
-              data-testid="design-user-avatar"
-            />
-            <b v-else>
-              {{ userStore.userInfo?.realName?.slice(0, 1) ?? '用' }}
-            </b>
-          </span>
-          <div>
-            <strong>{{ userStore.userInfo?.realName ?? '当前用户' }}</strong>
-            <small>@{{ userStore.userInfo?.username }}</small>
-          </div>
-          <button
-            aria-label="返回项目空间"
-            title="返回项目空间"
-            type="button"
-            @click="router.push('/projects')"
-          >
-            <IconifyIcon icon="lucide:panel-left-close" />
-          </button>
-        </div>
-      </div>
     </aside>
 
-    <section class="design-thread">
-      <header class="thread-header">
-        <button
-          v-if="conversationSidebarCollapsed"
-          aria-label="展开设计会话栏"
-          class="conversation-expand-button"
-          title="展开设计会话栏"
-          type="button"
-          @click="conversationSidebarCollapsed = false"
-        >
-          <IconifyIcon icon="lucide:panel-left-open" />
-        </button>
-        <div class="thread-header__center">
-          <strong>{{ activeConversation?.title ?? '新设计会话' }}</strong>
-          <span>{{ application?.name ?? '默认文生图' }}</span>
-        </div>
-        <div class="thread-header__actions">
-          <div class="thread-status">
-            <i :class="{ running: activeJob }"></i>
-            {{ activeJob ? '正在生成' : '可以开始' }}
-          </div>
-          <button
-            aria-label="打开项目资产"
-            title="打开项目资产"
-            type="button"
-            @click="router.push('/assets')"
-          >
-            <IconifyIcon icon="lucide:library-big" />
-          </button>
-        </div>
-      </header>
+    <button
+      :aria-label="sidebarCollapsed ? '展开任务栏' : '收起任务栏'"
+      class="conversation-sidebar-toggle"
+      data-testid="conversation-sidebar-toggle"
+      :title="sidebarCollapsed ? '展开任务栏' : '收起任务栏'"
+      type="button"
+      @click="sidebarCollapsed = !sidebarCollapsed"
+    >
+      <IconifyIcon
+        :icon="
+          sidebarCollapsed ? 'lucide:chevrons-right' : 'lucide:chevrons-left'
+        "
+      />
+    </button>
 
+    <section class="design-thread">
       <div ref="threadScrollRef" class="thread-scroll">
         <Spin :spinning="loading">
           <div v-if="conversationJobs.length" class="thread-timeline">
@@ -1399,7 +1328,8 @@ onBeforeUnmount(() => {
             <span>RAIL DESIGN COPILOT</span>
             <h2>从一个设计问题开始</h2>
             <p>
-              你好，我是你的客运装备内装设计助手。默认使用“文生图”工作流，你可以先选择业务模块，再切换重绘、融合、放大、理解等真实设计能力。
+              {{ activeDesignMode.description }}
+              选择下方真实可用的设计能力后，结果会登记到当前项目并保留完整任务血缘。
             </p>
             <div class="welcome-suggestions">
               <button
@@ -1464,7 +1394,7 @@ onBeforeUnmount(() => {
             :auto-size="{ minRows: 2, maxRows: 8 }"
             :value="fieldTextValue(promptField)"
             :maxlength="promptField.maxLength"
-            :placeholder="composerPromptPlaceholder"
+            :placeholder="activeDesignMode.placeholder"
             data-testid="design-prompt-input"
             @update:value="setFieldValue(promptField, $event)"
             @press-enter="
@@ -1477,7 +1407,6 @@ onBeforeUnmount(() => {
           <div class="composer-bottom">
             <div class="composer-toolbar">
               <button
-                v-if="mediaFields.length"
                 aria-label="添加输入素材"
                 class="composer-add-button"
                 data-testid="composer-add-material"
@@ -1486,42 +1415,6 @@ onBeforeUnmount(() => {
               >
                 <IconifyIcon icon="lucide:plus" />
               </button>
-
-              <Popover
-                v-if="promptField && activeDesignModule.templates.length"
-                placement="topLeft"
-                trigger="click"
-              >
-                <template #content>
-                  <div class="prompt-template-menu">
-                    <section
-                      v-for="group in activeDesignModule.templates"
-                      :key="group.label"
-                    >
-                      <strong>{{ group.label }}</strong>
-                      <div>
-                        <button
-                          v-for="option in group.options"
-                          :key="option"
-                          type="button"
-                          @click="applyPromptTemplate(group.label, option)"
-                        >
-                          {{ option }}
-                        </button>
-                      </div>
-                    </section>
-                  </div>
-                </template>
-                <button
-                  class="composer-template-button"
-                  data-testid="design-prompt-templates"
-                  title="提示词模板"
-                  type="button"
-                >
-                  <IconifyIcon icon="lucide:notebook-tabs" />
-                  模板
-                </button>
-              </Popover>
 
               <template v-if="selectedAppKey">
                 <span
@@ -1646,23 +1539,85 @@ onBeforeUnmount(() => {
             </Button>
           </div>
         </div>
-        <nav aria-label="设计生成模块" class="design-module-switcher">
+        <nav aria-label="设计业务模式" class="design-mode-switcher">
           <button
-            v-for="module in DESIGN_MODULES"
-            :key="module.key"
-            :class="{ active: module.key === activeDesignModuleKey }"
-            :disabled="module.status === 'planned'"
-            :title="module.description"
+            v-for="mode in designModes"
+            :key="mode.key"
+            :class="{
+              active: mode.key === selectedModeKey,
+              unavailable: !modeAvailability[mode.key],
+            }"
+            :data-unavailable="!modeAvailability[mode.key] || undefined"
+            :title="
+              modeAvailability[mode.key]
+                ? mode.description
+                : `${mode.label}执行服务待接入`
+            "
             type="button"
-            @click="chooseDesignModule(module.key)"
+            @click="chooseDesignMode(mode.key)"
           >
-            <IconifyIcon :icon="module.icon" />
-            <span>{{ module.label }}</span>
-            <em v-if="module.status === 'planned'">待接入</em>
+            <IconifyIcon :icon="mode.icon" />
+            <span>{{ mode.label }}</span>
+            <small v-if="!modeAvailability[mode.key]">待接入</small>
           </button>
         </nav>
       </footer>
     </section>
+
+    <Modal
+      v-model:open="reportPreviewOpen"
+      :footer="null"
+      title="报告生成"
+      width="min(820px, 94vw)"
+    >
+      <div class="report-layout" data-testid="report-layout">
+        <div class="report-layout__notice">
+          <IconifyIcon icon="lucide:circle-alert" />
+          <span>
+            当前仅按 0820
+            文档呈现报告配置布局；执行服务和能力契约尚未接入，不能提交生成。
+          </span>
+        </div>
+        <div class="report-layout__grid">
+          <label>
+            <span>报告类型</span>
+            <Select disabled placeholder="请选择报告类型" :value="undefined" />
+          </label>
+          <label>
+            <span>交付格式</span>
+            <Select disabled placeholder="Word / PPT" :value="undefined" />
+          </label>
+        </div>
+        <label class="report-layout__field">
+          <span>报告标题与说明</span>
+          <Textarea
+            disabled
+            :auto-size="{ minRows: 3, maxRows: 5 }"
+            placeholder="填写报告标题、章节重点和交付说明"
+          />
+        </label>
+        <section class="report-layout__assets" aria-label="报告图片素材">
+          <header>
+            <span>报告图片素材</span>
+            <small>从当前项目资产中选择</small>
+          </header>
+          <div>
+            <button v-for="index in 3" :key="index" disabled type="button">
+              <IconifyIcon icon="lucide:image-plus" />
+              <span>添加图片 {{ index }}</span>
+            </button>
+          </div>
+        </section>
+        <label class="report-layout__field">
+          <span>补充说明</span>
+          <Textarea
+            disabled
+            :auto-size="{ minRows: 2, maxRows: 4 }"
+            placeholder="填写报告结论、备注或其他结构化内容"
+          />
+        </label>
+      </div>
+    </Modal>
 
     <Modal
       v-model:open="mediaPickerOpen"
@@ -2308,91 +2263,89 @@ onBeforeUnmount(() => {
   }
 }
 
-/* 设计会话在平台固定外壳内运行，左侧会话栏可按画布需要折叠。 */
+/* 0820 工作区骨架：平台壳层提供功能侧栏与顶部栏，页面内部只承载任务栏和设计区。 */
 main.design-page {
+  --design-sidebar-width: 276px;
+
   position: relative;
-  grid-template-columns: 276px minmax(0, 1fr);
+  grid-template-columns: var(--design-sidebar-width) minmax(0, 1fr);
   width: 100%;
-  height: calc(100dvh - 106px);
-  min-height: 640px;
+  height: var(--vben-content-height, calc(100dvh - 106px));
+  min-height: 0;
   background: #fff;
   transition: grid-template-columns 180ms ease;
 }
 
-main.design-page.is-conversation-collapsed {
-  grid-template-columns: 0 minmax(0, 1fr);
-}
-
-.design-page.is-conversation-collapsed .conversation-sidebar {
-  visibility: hidden;
-  padding-right: 0;
-  padding-left: 0;
-  pointer-events: none;
-  opacity: 0;
-}
-
 .design-page .conversation-sidebar {
+  width: var(--design-sidebar-width);
   padding: 14px 12px 12px;
   overflow: hidden;
   background: #f7f7f8;
   border-color: #e6e6e8;
   transition:
-    padding 180ms ease,
-    opacity 140ms ease;
+    opacity 140ms ease,
+    transform 180ms ease;
 }
 
-.design-page .conversation-brand {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 28px;
-  gap: 10px;
-  align-items: center;
-  padding: 2px 4px 14px;
+.design-page.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
 }
 
-.conversation-brand img {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  box-shadow: 0 6px 16px rgb(185 28 50 / 18%);
+.design-page.sidebar-collapsed .conversation-sidebar {
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(-100%);
 }
 
-.conversation-brand div {
-  display: grid;
-  min-width: 0;
-}
-
-.conversation-brand strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  white-space: nowrap;
-}
-
-.conversation-collapse-button,
-.conversation-expand-button {
+.conversation-sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--design-sidebar-width) - 13px);
+  z-index: 1010;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  color: var(--design-muted);
+  width: 26px;
+  height: 48px;
+  color: #8a424f;
   cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e2a8b2;
+  border-radius: 0 10px 10px 0;
+  box-shadow: 0 6px 18px rgb(61 18 27 / 10%);
+  transform: translateY(-50%);
+  transition:
+    left 180ms ease,
+    color 140ms ease,
+    background 140ms ease;
 }
 
-.conversation-collapse-button:hover,
-.conversation-expand-button:hover {
-  color: var(--rail-red);
-  background: #fff1f3;
+.conversation-sidebar-toggle:hover {
+  color: #fff;
+  background: var(--rail-red);
 }
 
-.design-page .conversation-brand span {
-  margin-top: 2px;
-  font-size: 9px;
-  color: var(--rail-red);
-  letter-spacing: 0.14em;
+.design-page.sidebar-collapsed .conversation-sidebar-toggle {
+  left: 0;
+}
+
+.conversation-sidebar__heading {
+  display: grid;
+  gap: 3px;
+  padding: 4px 4px 13px;
+}
+
+.conversation-sidebar__heading span {
+  font-size: 15px;
+  font-weight: 750;
+  color: #2c3338;
+}
+
+.conversation-sidebar__heading small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--design-muted);
+  white-space: nowrap;
 }
 
 .project-select {
@@ -2543,52 +2496,14 @@ main.design-page.is-conversation-collapsed {
   border-radius: 8px;
 }
 
-.sidebar-user button:hover,
-.thread-header__actions > button:hover {
-  color: var(--rail-red);
-  background: #fff1f3;
-}
-
 .design-page .design-thread {
+  grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
   background: #fff;
 }
 
-.design-page .thread-header {
-  position: relative;
-  justify-content: center;
-  min-height: 56px;
-  padding: 7px 20px;
-  background: rgb(255 255 255 / 96%);
-  backdrop-filter: blur(12px);
-}
-
-.thread-header__center {
-  display: grid;
-  text-align: center;
-}
-
-.thread-header__center strong {
-  max-width: min(520px, 48vw);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.thread-header__actions {
-  position: absolute;
-  right: 18px;
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.conversation-expand-button {
-  position: absolute;
-  left: 18px;
-}
-
 .design-page .thread-scroll {
+  min-width: 0;
   min-height: 0;
   padding: 26px clamp(20px, 6vw, 88px) 18px;
   background: #fff;
@@ -2600,10 +2515,14 @@ main.design-page.is-conversation-collapsed {
 }
 
 .design-page .thread-timeline {
+  box-sizing: border-box;
+  width: 100%;
   max-width: var(--design-content-width);
 }
 
 .design-page .thread-welcome {
+  box-sizing: border-box;
+  width: 100%;
   max-width: 720px;
   min-height: 100%;
   padding: 48px 20px;
@@ -2642,64 +2561,63 @@ main.design-page.is-conversation-collapsed {
 .design-page .design-composer {
   position: relative;
   z-index: 4;
+  min-width: 0;
   padding: 10px clamp(20px, 6vw, 88px) 18px;
   background: linear-gradient(rgb(255 255 255 / 10%), #fff 20%);
 }
 
-.design-module-switcher {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 7px;
+.design-mode-switcher {
+  display: flex;
+  gap: 6px;
   width: 100%;
   max-width: var(--design-content-width);
-  margin: 8px auto 0;
+  padding: 8px 2px 0;
+  margin: 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.design-module-switcher > button {
-  display: flex;
-  gap: 7px;
+.design-mode-switcher::-webkit-scrollbar {
+  display: none;
+}
+
+.design-mode-switcher button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
   align-items: center;
-  justify-content: center;
-  min-width: 0;
-  min-height: 38px;
-  padding: 7px 10px;
+  min-height: 30px;
+  padding: 5px 10px;
   font-size: 12px;
-  font-weight: 650;
-  color: #56636b;
+  color: #56616a;
   cursor: pointer;
-  background: #f5f6f7;
-  border: 1px solid #e0e4e7;
-  border-radius: 10px;
-}
-
-.design-module-switcher > button:hover:not(:disabled),
-.design-module-switcher > button.active {
-  color: var(--rail-red);
-  background: #fff4f6;
-  border-color: #dda0aa;
-}
-
-.design-module-switcher > button:disabled {
-  cursor: not-allowed;
-  opacity: 0.62;
-}
-
-.design-module-switcher span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.design-module-switcher em {
-  padding: 2px 5px;
-  font-size: 9px;
-  font-style: normal;
-  color: #8a6b35;
-  background: #fff0c5;
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: 999px;
 }
 
+.design-mode-switcher button:hover,
+.design-mode-switcher button.active {
+  color: #b91c32;
+  background: #fff1f3;
+  border-color: #e8b5be;
+}
+
+.design-mode-switcher button.unavailable {
+  color: #92999f;
+  background: #f5f6f7;
+  border-color: #e6e8ea;
+}
+
+.design-mode-switcher small {
+  padding-left: 5px;
+  font-size: 10px;
+  color: #8a6b3a;
+  border-left: 1px solid #d8dcdf;
+}
+
 .design-page .composer-box {
+  box-sizing: border-box;
   max-width: var(--design-content-width);
   padding: 10px 12px 9px;
   border-color: #df8e9d;
@@ -2764,66 +2682,6 @@ main.design-page.is-conversation-collapsed {
   background: transparent;
   border: 0;
   border-right: 1px solid #d9dde2;
-}
-
-.composer-template-button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 5px;
-  align-items: center;
-  min-height: 30px;
-  padding: 4px 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: #17191c;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-right: 1px solid #d9dde2;
-  border-radius: 6px 0 0 6px;
-}
-
-.composer-template-button:hover {
-  color: #bd1934;
-  background: #fff1f3;
-}
-
-.prompt-template-menu {
-  display: grid;
-  gap: 12px;
-  width: min(420px, 76vw);
-  padding: 4px;
-}
-
-.prompt-template-menu section {
-  display: grid;
-  gap: 7px;
-}
-
-.prompt-template-menu section > strong {
-  font-size: 12px;
-  color: #536069;
-}
-
-.prompt-template-menu section > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.prompt-template-menu button {
-  padding: 5px 9px;
-  font-size: 12px;
-  color: #29343a;
-  cursor: pointer;
-  background: #f5f6f7;
-  border: 1px solid #e0e4e7;
-  border-radius: 7px;
-}
-
-.prompt-template-menu button:hover {
-  color: var(--rail-red);
-  border-color: #dda0aa;
 }
 
 .composer-add-button:hover,
@@ -3152,26 +3010,91 @@ main.design-page.is-conversation-collapsed {
   color: #73808a;
 }
 
+.report-layout {
+  display: grid;
+  gap: 18px;
+  padding-top: 4px;
+}
+
+.report-layout__notice {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  padding: 11px 13px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #7e3b48;
+  background: var(--rail-red-soft);
+  border: 1px solid #e9bdc5;
+  border-radius: 12px;
+}
+
+.report-layout__notice svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.report-layout__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.report-layout label,
+.report-layout__field,
+.report-layout__assets {
+  display: grid;
+  gap: 8px;
+}
+
+.report-layout label > span,
+.report-layout__assets header > span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #343b40;
+}
+
+.report-layout label :deep(.ant-select) {
+  width: 100%;
+}
+
+.report-layout__assets header {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.report-layout__assets header small {
+  font-size: 11px;
+  color: #7a858d;
+}
+
+.report-layout__assets > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.report-layout__assets button {
+  display: grid;
+  place-items: center;
+  min-height: 112px;
+  color: #7d858b;
+  background: var(--rail-mist);
+  border: 1px dashed #c7cdd1;
+  border-radius: 12px;
+}
+
+.report-layout__assets button svg {
+  width: 24px;
+  height: 24px;
+  margin-bottom: -28px;
+  color: var(--rail-red);
+}
+
 @media (max-width: 900px) {
-  main.design-page,
-  main.design-page.is-conversation-collapsed {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .design-page .conversation-sidebar {
-    display: none;
-  }
-
-  .conversation-expand-button {
-    display: none;
-  }
-
-  .design-module-switcher {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   main.design-page {
-    grid-template-columns: 224px minmax(0, 1fr);
+    --design-sidebar-width: 224px;
   }
 
   .conversation-brand strong {
@@ -3180,6 +3103,11 @@ main.design-page.is-conversation-collapsed {
 
   .thread-status {
     display: none;
+  }
+
+  .report-layout__grid,
+  .report-layout__assets > div {
+    grid-template-columns: 1fr;
   }
 }
 </style>
