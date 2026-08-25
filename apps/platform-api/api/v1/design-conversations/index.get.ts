@@ -19,6 +19,7 @@ export default apiHandler(async (event) => {
       id: string;
       lastAppKey: null | string;
       legacy: boolean;
+      previewAssetId: null | string;
       roundCount: number;
       title: string;
       updatedAt: Date;
@@ -44,7 +45,20 @@ export default apiHandler(async (event) => {
         WHERE latest.design_conversation_id = conversation.id
         ORDER BY latest.created_at DESC
         LIMIT 1
-      ) AS "lastAppKey"
+      ) AS "lastAppKey",
+      (
+        SELECT output.asset_id
+        FROM jobs latest
+        JOIN job_outputs output ON output.job_id = latest.id
+        JOIN assets output_asset
+          ON output_asset.id = output.asset_id
+          AND output_asset.deleted_at IS NULL
+          AND output_asset.kind = 'image'
+        WHERE latest.design_conversation_id = conversation.id
+          AND latest.archived_at IS NULL
+        ORDER BY latest.created_at DESC, output.position
+        LIMIT 1
+      ) AS "previewAssetId"
     FROM design_conversations conversation
     LEFT JOIN jobs job ON job.design_conversation_id = conversation.id
     WHERE conversation.user_id = ${identity.id}

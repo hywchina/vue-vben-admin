@@ -899,7 +899,9 @@ async function runBrowserAcceptance() {
   };
 
   try {
-    await page.goto(`${webUrl}/auth/login`);
+    await page.goto(
+      `${webUrl}/auth/login?redirect=${encodeURIComponent('/assets')}`,
+    );
     await page.getByText('欢迎回来 👋🏻').waitFor();
     const loginInputs = page.locator('form input:visible');
     await loginInputs.nth(0).fill(username);
@@ -911,6 +913,10 @@ async function runBrowserAcceptance() {
         name: '让客室内装设计 更聚焦、更高效',
       })
       .waitFor();
+    await page.locator('#__app-loading__').waitFor({ state: 'detached' });
+    await page
+      .locator('[data-app-loading^="inject"]')
+      .waitFor({ state: 'detached' });
     assert(
       (await page.getByRole('menuitem', { name: '首页' }).count()) === 1,
       '登录默认入口没有统一命名为“首页”',
@@ -958,7 +964,7 @@ async function runBrowserAcceptance() {
         homeLayout.gridWidth >= 1200 &&
         homeLayout.heroBackground !== 'none' &&
         homeLayout.buttonBackground === 'rgb(255, 255, 255)' &&
-        homeLayout.panelCount === 3,
+        homeLayout.panelCount === 2,
       `首页主视觉、六入口或最近工作区没有按新版布局渲染：${JSON.stringify(homeLayout)}`,
     );
     assert(
@@ -969,11 +975,25 @@ async function runBrowserAcceptance() {
         (homeLayout.metricValues[3] ?? 0) >= 1,
       `首页没有展示真实 Dashboard API 汇总数据：${JSON.stringify(homeLayout.metricValues)}`,
     );
+    await page.locator('.home-task-list > button').first().waitFor();
+    await page.locator('.home-asset-list > button').first().waitFor();
     assert(
-      (await page.locator('.home-project-list > button').count()) >= 2 &&
-        (await page.locator('.home-recent-list > button').count()) >= 1 &&
-        (await page.locator('.home-task-list > button').count()) >= 1,
-      '首页没有使用真实最近项目、设计会话和任务记录',
+      (await page.locator('.home-task-list > button').count()) >= 1 &&
+        (await page.locator('.home-asset-list > button').count()) >= 1,
+      '首页没有使用真实最近任务和生成资产记录',
+    );
+    assert(
+      (await page.locator('.home-hero__status').count()) === 0 &&
+        (await page
+          .locator('.home-entry-card__action')
+          .first()
+          .evaluate(
+            (element) =>
+              getComputedStyle(element).backgroundColor !== 'rgba(0, 0, 0, 0)',
+          )) &&
+        (await page.locator('.home-asset-list__preview img').count()) >= 1 &&
+        (await page.locator('.home-task-list img').count()) === 0,
+      '首页仍显示已移除状态卡、快捷按钮背景不醒目，或最近任务/资产展示方式不正确',
     );
 
     const newDesignEntry = page.locator(
@@ -995,24 +1015,34 @@ async function runBrowserAcceptance() {
       .getByRole('dialog')
       .filter({ has: page.getByText('查看我的设计', { exact: true }) });
     await historyDialog.waitFor();
+    await historyDialog.getByLabel('按项目筛选').click();
+    await page.getByText(primaryProjectName, { exact: false }).last().click();
+    await historyDialog.getByLabel('按任务名筛选').fill('浏览器验收');
+    await historyDialog.getByLabel('开始时间').fill('2020-01-01');
+    await historyDialog.getByLabel('结束时间').fill('2099-12-31');
+    assert(
+      (await historyDialog.locator('.home-history-list > button').count()) >= 1,
+      '查看我的设计不能按项目、任务名和时间组合检索',
+    );
     await historyDialog.locator('.ant-modal-close').click();
     await historyDialog.waitFor({ state: 'hidden' });
 
     await page.locator('.home-entry-grid [data-action="training"]').click();
+    await page.waitForURL((url) => url.pathname === '/model-training');
     await page.getByTestId('training-layout').waitFor();
     assert(
       (await page.getByText(/不能开始训练/).count()) === 1,
       '模型训练布局没有明确标识训练服务尚未接入',
     );
-    await page.getByRole('button', { name: 'Close' }).click();
+    await page.goto(`${webUrl}/home`);
     await page.locator('.home-entry-grid [data-action="report"]').click();
-    await page
-      .getByText('该外部服务与能力契约尚未接入', { exact: true })
-      .waitFor();
+    await page.waitForURL((url) => url.pathname === '/report-generation');
+    await page.getByTestId('report-layout').waitFor();
     assert(
-      new URL(page.url()).pathname === '/home',
-      '未接入的训练和报告入口不应离开首页',
+      (await page.getByText(/不能提交生成/).count()) === 1,
+      '报告生成专属页面没有明确标识执行服务尚未接入',
     );
+    await page.goto(`${webUrl}/home`);
 
     await page.locator('.home-page').evaluate((element) => {
       let parent = element.parentElement;
@@ -1021,6 +1051,9 @@ async function runBrowserAcceptance() {
         parent = parent.parentElement;
       }
     });
+    await page
+      .locator('.bg-overlay-content .loader')
+      .waitFor({ state: 'detached' });
 
     await page.screenshot({
       fullPage: true,
@@ -1979,6 +2012,16 @@ async function runBrowserAcceptance() {
       (await page.locator('.rail-ai-float-button').count()) === 1,
       '设计生成页面没有保留唯一的全局 AI 助手',
     );
+    await page.getByRole('button', { name: '打开 AI 设计助手' }).click();
+    const assistantInput = page.getByLabel('输入发给 AI 设计助手的消息');
+    await assistantInput.fill('浏览器验收：发送后输入框应立即清空');
+    await page.getByRole('button', { name: '发送消息' }).click();
+    assert(
+      (await assistantInput.inputValue()) === '',
+      'AI 助手发送后没有立即清空已提交文字',
+    );
+    await page.getByRole('button', { name: '关闭 AI 设计助手' }).click();
+    await page.locator('.rail-ai-assistant').waitFor({ state: 'detached' });
     const designPageBox = await page.locator('.design-page').boundingBox();
     assert(
       Boolean(
@@ -2905,7 +2948,7 @@ async function runBrowserAcceptance() {
     await page.screenshot({ fullPage: true, path: captureScreenshotPath });
     await page.getByRole('button', { name: 'Live On' }).click();
     await page.getByRole('button', { name: '停止 Live' }).waitFor();
-    await page.locator('.capability-line.running').waitFor();
+    await page.locator('.capability-line.running').waitFor({ timeout: 60_000 });
     await page.getByRole('button', { name: '停止 Live' }).click();
     await page.getByRole('button', { name: 'Live On' }).waitFor();
     const stopCaptureButton = page.getByRole('button', {

@@ -271,21 +271,23 @@ async function uploadPendingFiles(conversationId: string) {
 
 async function handleSend() {
   if (!canSend.value) return;
+  const submittedDraft = draft.value;
+  draft.value = '';
   sending.value = true;
   try {
     const conversationId = await ensureConversation();
     const attachmentIds = await uploadPendingFiles(conversationId);
     const result = await sendAiMessageApi(conversationId, {
       attachmentIds,
-      content: draft.value,
+      content: submittedDraft,
     });
-    draft.value = '';
     releasePendingFiles();
     await Promise.all([loadMessages(conversationId), refreshConversations()]);
     if (result.serviceError) {
       message.warning(result.serviceError.message);
     }
   } catch (error) {
+    if (!draft.value) draft.value = submittedDraft;
     if (error instanceof Error && error.message.startsWith('附件上传失败')) {
       message.error(error.message);
     }

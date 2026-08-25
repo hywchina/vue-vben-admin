@@ -24,6 +24,26 @@ const routes: RouteRecordRaw[] = [
     path: '/design',
   },
   {
+    component: () => import('#/views/platform/model-training/index.vue'),
+    meta: {
+      hideInMenu: true,
+      icon: 'lucide:graduation-cap',
+      title: '模型训练',
+    },
+    name: 'PlatformModelTraining',
+    path: '/model-training',
+  },
+  {
+    component: () => import('#/views/platform/report-generation/index.vue'),
+    meta: {
+      hideInMenu: true,
+      icon: 'lucide:file-chart-column',
+      title: '报告生成',
+    },
+    name: 'PlatformReportGeneration',
+    path: '/report-generation',
+  },
+  {
     component: () => import('#/views/platform/overview/index.vue'),
     meta: {
       affixTab: true,

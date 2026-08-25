@@ -1,7 +1,10 @@
 <script lang="ts" setup>
-import type { PlatformDashboard } from '#/modules/platform/types';
+import type {
+  DesignConversation,
+  PlatformDashboard,
+} from '#/modules/platform/types';
 
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
@@ -9,14 +12,21 @@ import { IconifyIcon } from '@vben/icons';
 import {
   Button,
   Input,
-  InputNumber,
   message,
   Modal,
   Select,
   Textarea,
 } from 'ant-design-vue';
 
-import { getDashboardApi } from '#/api';
+import {
+  getAssetPreviewApi,
+  getDashboardApi,
+  getDesignConversationsApi,
+} from '#/api';
+import {
+  assetTypeIcons,
+  assetTypeLabels,
+} from '#/modules/platform/asset-types';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
@@ -26,10 +36,25 @@ const dashboard = ref<null | PlatformDashboard>(null);
 const dashboardLoading = ref(true);
 const createProjectOpen = ref(false);
 const historyOpen = ref(false);
-const trainingPreviewOpen = ref(false);
 const projectName = ref('');
 const projectDescription = ref('');
 const projectSubmitting = ref(false);
+const historyLoading = ref(false);
+const historyKeyword = ref('');
+const historyProjectId = ref('');
+const historyStartDate = ref('');
+const historyEndDate = ref('');
+const myDesigns = ref<
+  Array<
+    DesignConversation & {
+      projectCode: string;
+      projectId: string;
+      projectName: string;
+    }
+  >
+>([]);
+const previewUrls = reactive(new Map<string, string>());
+const previewFailures = reactive(new Set<string>());
 
 const currentProjectId = computed(
   () => dashboard.value?.currentProject?.id ?? platformStore.currentProjectId,
@@ -111,6 +136,37 @@ const heroMetrics = computed(() => [
   },
 ]);
 
+const historyProjectOptions = computed(() => [
+  { label: '全部项目', value: '' },
+  ...platformStore.projects.map((project) => ({
+    label: `${project.name}（${project.code}）`,
+    value: project.id,
+  })),
+]);
+
+const filteredMyDesigns = computed(() => {
+  const query = historyKeyword.value.trim().toLowerCase();
+  const start = historyStartDate.value
+    ? new Date(`${historyStartDate.value}T00:00:00`).getTime()
+    : Number.NEGATIVE_INFINITY;
+  const end = historyEndDate.value
+    ? new Date(`${historyEndDate.value}T23:59:59.999`).getTime()
+    : Number.POSITIVE_INFINITY;
+  return myDesigns.value.filter((conversation) => {
+    const updatedAt = new Date(conversation.updatedAt).getTime();
+    return (
+      (!historyProjectId.value ||
+        conversation.projectId === historyProjectId.value) &&
+      (!query ||
+        `${conversation.title}${conversation.projectName}${conversation.projectCode}`
+          .toLowerCase()
+          .includes(query)) &&
+      updatedAt >= start &&
+      updatedAt <= end
+    );
+  });
+});
+
 function applicationAvailable(appKey: string) {
   const application = platformStore.applications.find(
     (item) => item.key === appKey,
@@ -146,8 +202,21 @@ function jobStatusLabel(status: string) {
   );
 }
 
-function projectSummary(project: PlatformDashboard['recentProjects'][number]) {
-  return `${project.assetCount} 项资产 · ${project.jobCount} 项任务`;
+function previewUrl(assetId?: null | string) {
+  return assetId ? previewUrls.get(assetId) : undefined;
+}
+
+async function loadPreview(assetId?: null | string) {
+  if (!assetId || previewUrls.has(assetId) || previewFailures.has(assetId)) {
+    return;
+  }
+  try {
+    const preview = await getAssetPreviewApi(assetId);
+    if (preview.mode === 'url') previewUrls.set(assetId, preview.url);
+    else previewFailures.add(assetId);
+  } catch {
+    previewFailures.add(assetId);
+  }
 }
 
 async function navigateTo(
@@ -161,9 +230,10 @@ async function navigateTo(
   await router.push({ path, query });
 }
 
-async function continueConversation(
-  conversation: PlatformDashboard['recentConversations'][number],
-) {
+async function continueConversation(conversation: {
+  id: string;
+  projectId: string;
+}) {
   historyOpen.value = false;
   await navigateTo('/design', conversation.projectId, {
     conversationId: conversation.id,
@@ -175,13 +245,53 @@ function startNewFromHistory() {
   createProjectOpen.value = true;
 }
 
+async function openDesignHistory() {
+  historyOpen.value = true;
+  historyLoading.value = true;
+  try {
+    const results = await Promise.all(
+      platformStore.projects.map(async (project) => {
+        const conversations = await getDesignConversationsApi(project.id);
+        return conversations
+          .filter((conversation) => !conversation.legacy)
+          .map((conversation) => ({
+            ...conversation,
+            projectCode: project.code,
+            projectId: project.id,
+            projectName: project.name,
+          }));
+      }),
+    );
+    myDesigns.value = results
+      .flat()
+      .toSorted(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      );
+    await Promise.all(
+      myDesigns.value.map((conversation) =>
+        loadPreview(conversation.previewAssetId),
+      ),
+    );
+  } finally {
+    historyLoading.value = false;
+  }
+}
+
+function clearHistoryFilters() {
+  historyKeyword.value = '';
+  historyProjectId.value = '';
+  historyStartDate.value = '';
+  historyEndDate.value = '';
+}
+
 function activateQuickEntry(action: string) {
   if (action === 'new-design') {
     createProjectOpen.value = true;
     return;
   }
   if (action === 'history') {
-    historyOpen.value = true;
+    void openDesignHistory();
     return;
   }
   if (action === 'assets') {
@@ -193,18 +303,13 @@ function activateQuickEntry(action: string) {
     return;
   }
 
-  let appKey = '';
-  if (action === 'training') appKey = 'lora-training';
-  if (action === 'report') appKey = 'report-generator';
-  if (!appKey || !applicationAvailable(appKey)) {
-    if (action === 'training') {
-      trainingPreviewOpen.value = true;
-      return;
-    }
-    message.info('该外部服务与能力契约尚未接入');
+  if (action === 'training') {
+    void navigateTo('/model-training', currentProjectId.value);
     return;
   }
-  void navigateTo('/design', currentProjectId.value, { appKey });
+  if (action === 'report') {
+    void navigateTo('/report-generation', currentProjectId.value);
+  }
 }
 
 async function createProjectAndDesign() {
@@ -233,12 +338,22 @@ async function loadDashboard() {
   dashboardLoading.value = true;
   try {
     dashboard.value = await getDashboardApi();
+    await Promise.all(
+      dashboard.value.recentAssets
+        .filter((asset) => asset.type === 'image')
+        .map((asset) => loadPreview(asset.id)),
+    );
   } finally {
     dashboardLoading.value = false;
   }
 }
 
 onMounted(loadDashboard);
+onBeforeUnmount(() => {
+  for (const url of previewUrls.values()) {
+    if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+  }
+});
 </script>
 
 <template>
@@ -299,16 +414,6 @@ onMounted(loadDashboard);
               <path d="M328 330c35-26 73-37 116-37 47 0 83 13 108 37" />
             </g>
           </svg>
-          <div class="home-hero__status">
-            <span><IconifyIcon icon="lucide:badge-check" /></span>
-            <div>
-              <strong>真实项目工作流</strong>
-              <small>
-                {{ dashboard?.currentProject?.name || '从第一个项目开始设计' }}
-              </small>
-            </div>
-            <IconifyIcon icon="lucide:arrow-up-right" />
-          </div>
         </div>
       </section>
 
@@ -339,121 +444,16 @@ onMounted(loadDashboard);
       </nav>
 
       <section class="home-work-grid" aria-label="最近工作">
-        <article class="home-panel home-panel--projects">
-          <header>
-            <div>
-              <span>RECENT PROJECTS</span>
-              <h2>最近项目</h2>
-            </div>
-            <button type="button" @click="navigateTo('/projects')">
-              查看全部
-              <IconifyIcon icon="lucide:arrow-right" />
-            </button>
-          </header>
-          <div v-if="dashboardLoading" class="home-panel__empty compact">
-            <IconifyIcon
-              class="home-loading-icon"
-              icon="lucide:loader-circle"
-            />
-            正在加载
-          </div>
-          <div
-            v-else-if="dashboard?.recentProjects.length"
-            class="home-project-list"
-          >
-            <button
-              v-for="project in dashboard.recentProjects.slice(0, 3)"
-              :key="project.id"
-              type="button"
-              @click="navigateTo('/projects', project.id)"
-            >
-              <span class="home-project-list__mark">
-                <IconifyIcon icon="lucide:train-front" />
-              </span>
-              <span>
-                <strong>{{ project.name }}</strong>
-                <small>
-                  {{ project.code }} · {{ projectSummary(project) }}
-                </small>
-                <time :datetime="project.updatedAt">
-                  更新于 {{ formatTime(project.updatedAt) }}
-                </time>
-              </span>
-              <em v-if="project.activeJobCount">
-                {{ project.activeJobCount }} 项运行中
-              </em>
-              <IconifyIcon v-else icon="lucide:chevron-right" />
-            </button>
-          </div>
-          <div v-else class="home-panel__empty">
-            <IconifyIcon icon="lucide:folder-plus" />
-            <span>暂无可访问项目</span>
-            <Button
-              size="small"
-              type="primary"
-              @click="createProjectOpen = true"
-            >
-              创建项目
-            </Button>
-          </div>
-        </article>
-
-        <article class="home-panel home-panel--designs">
-          <header>
-            <div>
-              <span>RECENT DESIGNS</span>
-              <h2>最近设计</h2>
-            </div>
-            <button type="button" @click="historyOpen = true">
-              查看全部
-              <IconifyIcon icon="lucide:arrow-right" />
-            </button>
-          </header>
-          <div v-if="dashboardLoading" class="home-panel__empty compact">
-            <IconifyIcon
-              class="home-loading-icon"
-              icon="lucide:loader-circle"
-            />
-            正在加载
-          </div>
-          <div
-            v-else-if="dashboard?.recentConversations.length"
-            class="home-recent-list"
-          >
-            <button
-              v-for="conversation in dashboard.recentConversations"
-              :key="conversation.id"
-              type="button"
-              @click="continueConversation(conversation)"
-            >
-              <span><IconifyIcon icon="lucide:message-square-more" /></span>
-              <div>
-                <strong>{{ conversation.title }}</strong>
-                <small>
-                  {{ conversation.projectName }} ·
-                  {{ conversation.roundCount }} 轮
-                </small>
-              </div>
-              <time :datetime="conversation.updatedAt">
-                {{ formatTime(conversation.updatedAt) }}
-              </time>
-            </button>
-          </div>
-          <div v-else class="home-panel__empty">
-            <IconifyIcon icon="lucide:message-square-plus" />
-            <span>还没有可继续的设计会话</span>
-          </div>
-        </article>
-
         <article class="home-panel home-panel--tasks">
           <header>
             <div>
               <span>RECENT TASKS</span>
-              <h2>任务动态</h2>
+              <h2>最近任务</h2>
             </div>
-            <span class="home-panel__summary">
-              {{ dashboard?.summary.activeJobCount ?? '—' }} 项运行
-            </span>
+            <button type="button" @click="navigateTo('/jobs')">
+              查看全部
+              <IconifyIcon icon="lucide:arrow-right" />
+            </button>
           </header>
           <div v-if="dashboardLoading" class="home-panel__empty compact">
             <IconifyIcon
@@ -467,12 +467,15 @@ onMounted(loadDashboard);
               v-for="job in dashboard.recentJobs"
               :key="job.id"
               type="button"
-              @click="navigateTo('/projects', job.projectId)"
+              @click="navigateTo('/jobs', job.projectId)"
             >
               <i :data-status="job.status"></i>
               <span>
                 <strong>{{ job.name }}</strong>
-                <small>{{ job.appName }} · {{ job.projectName }}</small>
+                <small>
+                  {{ job.appName }} · {{ job.projectName }} ·
+                  {{ formatTime(job.createdAt) }}
+                </small>
               </span>
               <em :data-status="job.status">
                 {{ jobStatusLabel(job.status) }}
@@ -482,6 +485,62 @@ onMounted(loadDashboard);
           <div v-else class="home-panel__empty">
             <IconifyIcon icon="lucide:list-checks" />
             <span>当前账号暂无任务记录</span>
+          </div>
+        </article>
+
+        <article class="home-panel home-panel--assets">
+          <header>
+            <div>
+              <span>RECENT ASSETS</span>
+              <h2>最近资产</h2>
+            </div>
+            <button type="button" @click="navigateTo('/assets')">
+              查看全部
+              <IconifyIcon icon="lucide:arrow-right" />
+            </button>
+          </header>
+          <div v-if="dashboardLoading" class="home-panel__empty compact">
+            <IconifyIcon
+              class="home-loading-icon"
+              icon="lucide:loader-circle"
+            />
+            正在加载
+          </div>
+          <div
+            v-else-if="dashboard?.recentAssets.length"
+            class="home-asset-list"
+          >
+            <button
+              v-for="asset in dashboard.recentAssets"
+              :key="asset.id"
+              type="button"
+              @click="
+                navigateTo('/assets', asset.projectId, { assetId: asset.id })
+              "
+            >
+              <span class="home-asset-list__preview">
+                <img
+                  v-if="asset.type === 'image' && previewUrl(asset.id)"
+                  :alt="`${asset.name} 资产预览`"
+                  :src="previewUrl(asset.id)"
+                />
+                <IconifyIcon v-else :icon="assetTypeIcons[asset.type]" />
+              </span>
+              <div>
+                <strong>{{ asset.name }}</strong>
+                <small>
+                  {{ assetTypeLabels[asset.type] }} · {{ asset.projectName }}
+                </small>
+                <em>{{ asset.appName || '项目资产' }}</em>
+              </div>
+              <time :datetime="asset.createdAt">
+                {{ formatTime(asset.createdAt) }}
+              </time>
+            </button>
+          </div>
+          <div v-else class="home-panel__empty">
+            <IconifyIcon icon="lucide:library-big" />
+            <span>当前账号暂无已生成资产</span>
           </div>
         </article>
       </section>
@@ -530,22 +589,53 @@ onMounted(loadDashboard);
       v-model:open="historyOpen"
       :footer="null"
       title="查看我的设计"
-      width="680px"
+      width="min(920px, 94vw)"
     >
-      <div v-if="dashboardLoading" class="home-history-empty">
-        <IconifyIcon class="home-loading-icon" icon="lucide:loader-circle" />
-        <span>正在加载最近设计</span>
+      <div class="home-history-filters" aria-label="设计会话筛选">
+        <Select
+          v-model:value="historyProjectId"
+          :options="historyProjectOptions"
+          aria-label="按项目筛选"
+        />
+        <Input
+          v-model:value="historyKeyword"
+          allow-clear
+          aria-label="按任务名筛选"
+          placeholder="搜索任务或设计名称"
+        >
+          <template #prefix>
+            <IconifyIcon icon="lucide:search" />
+          </template>
+        </Input>
+        <label>
+          <span>开始时间</span>
+          <input v-model="historyStartDate" aria-label="开始时间" type="date" />
+        </label>
+        <label>
+          <span>结束时间</span>
+          <input v-model="historyEndDate" aria-label="结束时间" type="date" />
+        </label>
+        <Button @click="clearHistoryFilters">清空</Button>
       </div>
-      <div
-        v-else-if="dashboard?.recentConversations.length"
-        class="home-history-list"
-      >
+      <div v-if="historyLoading" class="home-history-empty">
+        <IconifyIcon class="home-loading-icon" icon="lucide:loader-circle" />
+        <span>正在加载全部设计会话</span>
+      </div>
+      <div v-else-if="filteredMyDesigns.length" class="home-history-list">
         <button
-          v-for="conversation in dashboard.recentConversations"
+          v-for="conversation in filteredMyDesigns"
           :key="conversation.id"
           type="button"
           @click="continueConversation(conversation)"
         >
+          <span class="home-history-list__preview">
+            <img
+              v-if="previewUrl(conversation.previewAssetId)"
+              :alt="`${conversation.title} 设计资产预览`"
+              :src="previewUrl(conversation.previewAssetId)"
+            />
+            <IconifyIcon v-else icon="lucide:image-off" />
+          </span>
           <span>
             <strong>{{ conversation.title }}</strong>
             <small>
@@ -560,79 +650,19 @@ onMounted(loadDashboard);
       </div>
       <div v-else class="home-history-empty">
         <IconifyIcon icon="lucide:message-square-plus" />
-        <span>还没有可继续的设计会话</span>
-        <Button type="primary" @click="startNewFromHistory">开始新设计</Button>
-      </div>
-    </Modal>
-
-    <Modal
-      v-model:open="trainingPreviewOpen"
-      :footer="null"
-      title="模型训练"
-      width="min(960px, 94vw)"
-    >
-      <div class="training-layout" data-testid="training-layout">
-        <div class="training-layout__notice">
-          <IconifyIcon icon="lucide:circle-alert" />
-          <span>
-            当前仅按 0820 文档呈现训练配置布局；LoRA
-            训练服务和数据协议尚未接入，不能开始训练。
-          </span>
-        </div>
-        <div class="training-layout__body">
-          <section class="training-layout__parameters">
-            <header>
-              <b>1</b>
-              <strong>参数设置</strong>
-            </header>
-            <div class="training-layout__number-grid">
-              <label>
-                <span>单图次数 Repeat</span>
-                <InputNumber disabled :value="20" />
-              </label>
-              <label>
-                <span>循环轮次 Epoch</span>
-                <InputNumber disabled :value="5" />
-              </label>
-            </div>
-            <label>
-              <span>触发词</span>
-              <Input
-                disabled
-                placeholder="总步数 = 上传图片数 × Repeat × Epoch"
-              />
-            </label>
-            <label>
-              <span>模型效果预览提示词</span>
-              <Textarea
-                disabled
-                :rows="5"
-                placeholder="训练服务接入后填写用于验证模型效果的提示词"
-              />
-            </label>
-          </section>
-          <section class="training-layout__dataset">
-            <header>
-              <b>2</b>
-              <strong>图片打标/裁剪</strong>
-            </header>
-            <button disabled type="button">
-              <IconifyIcon icon="lucide:images" />
-              <strong>点击上传图片</strong>
-              <small>支持 JPG / PNG；数量和大小以最终训练协议为准</small>
-            </button>
-          </section>
-        </div>
-        <div class="training-layout__options">
-          <label
-            v-for="label in ['裁剪方式', '裁剪尺寸', '打标模型']"
-            :key="label"
-          >
-            <span>{{ label }}</span>
-            <Select disabled :placeholder="`选择${label}`" :value="undefined" />
-          </label>
-          <Button disabled type="primary">开始训练</Button>
-        </div>
+        <span>
+          {{
+            myDesigns.length
+              ? '没有符合当前筛选条件的设计会话'
+              : '还没有可继续的设计会话'
+          }}
+        </span>
+        <Button v-if="myDesigns.length" @click="clearHistoryFilters">
+          清空筛选
+        </Button>
+        <Button v-else type="primary" @click="startNewFromHistory">
+          开始新设计
+        </Button>
       </div>
     </Modal>
   </main>
@@ -707,7 +737,7 @@ onMounted(loadDashboard);
 .home-hero h1 {
   max-width: 640px;
   margin: 17px 0 0;
-  font-size: clamp(29px, 3vw, 46px);
+  font-size: clamp(29px, 2.7vw, 42px);
   font-weight: 760;
   line-height: 1.22;
   color: #17212b;
@@ -793,52 +823,6 @@ onMounted(loadDashboard);
   fill: none;
   stroke: #c97c89;
   stroke-width: 1.1;
-}
-
-.home-hero__status {
-  position: absolute;
-  right: 28px;
-  bottom: 24px;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  width: min(330px, calc(100% - 56px));
-  padding: 13px 15px;
-  background: rgb(255 255 255 / 90%);
-  border: 1px solid rgb(222 188 194 / 80%);
-  border-radius: 14px;
-  box-shadow: 0 12px 30px rgb(82 29 41 / 11%);
-  backdrop-filter: blur(12px);
-}
-
-.home-hero__status > span {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  color: #fff;
-  background: var(--rail-red);
-  border-radius: 10px;
-}
-
-.home-hero__status strong,
-.home-hero__status small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-hero__status strong {
-  font-size: 13px;
-  color: #29333c;
-}
-
-.home-hero__status small {
-  margin-top: 4px;
-  font-size: 11px;
-  color: #77828b;
 }
 
 .home-entry-grid {
@@ -937,12 +921,15 @@ onMounted(loadDashboard);
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding-top: 12px;
+  min-height: 34px;
+  padding: 8px 10px;
   margin-top: auto;
   font-size: 12px;
   font-weight: 650;
   color: var(--entry-color);
-  border-top: 1px solid #edf0f2;
+  background: var(--entry-soft);
+  border: 1px solid color-mix(in srgb, var(--entry-color) 24%, #fff);
+  border-radius: 8px;
 }
 
 .home-entry-card__action em {
@@ -960,10 +947,7 @@ onMounted(loadDashboard);
 
 .home-work-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.32fr) minmax(300px, 0.92fr) minmax(
-      300px,
-      0.92fr
-    );
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -1010,16 +994,18 @@ onMounted(loadDashboard);
   border: 0;
 }
 
-.home-project-list,
-.home-recent-list,
+.home-asset-list,
 .home-task-list {
   display: grid;
   gap: 8px;
   padding-top: 12px;
 }
 
-.home-project-list > button,
-.home-recent-list > button,
+.home-asset-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.home-asset-list > button,
 .home-task-list > button {
   display: grid;
   gap: 10px;
@@ -1036,33 +1022,52 @@ onMounted(loadDashboard);
     border-color 150ms ease;
 }
 
-.home-project-list > button:hover,
-.home-recent-list > button:hover,
+.home-asset-list > button:hover,
 .home-task-list > button:hover {
   background: #fff9fa;
   border-color: #ecd7db;
 }
 
-.home-project-list > button {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.home-asset-list > button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px;
 }
 
-.home-project-list__mark,
-.home-recent-list > button > span:first-child {
+.home-asset-list__preview,
+.home-history-list__preview {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  overflow: hidden;
   color: var(--rail-red);
-  background: var(--rail-red-soft);
+  background:
+    linear-gradient(135deg, rgb(197 31 58 / 8%), rgb(37 99 235 / 6%)), #f5f7f9;
   border-radius: 10px;
 }
 
-.home-project-list strong,
-.home-project-list small,
-.home-project-list time,
-.home-recent-list strong,
-.home-recent-list small,
+.home-asset-list__preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+}
+
+.home-asset-list__preview img,
+.home-history-list__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.home-asset-list__preview > svg,
+.home-history-list__preview > svg {
+  width: 22px;
+  height: 22px;
+  opacity: 0.58;
+}
+
+.home-asset-list strong,
+.home-asset-list small,
+.home-asset-list em,
 .home-task-list strong,
 .home-task-list small {
   display: block;
@@ -1071,38 +1076,32 @@ onMounted(loadDashboard);
   white-space: nowrap;
 }
 
-.home-project-list strong,
-.home-recent-list strong,
+.home-asset-list strong,
 .home-task-list strong {
   font-size: 12px;
 }
 
-.home-project-list small,
-.home-recent-list small,
+.home-asset-list small,
+.home-asset-list em,
 .home-task-list small,
-.home-project-list time,
-.home-recent-list time {
+.home-asset-list time {
   margin-top: 3px;
   font-size: 10px;
   color: #7a858e;
 }
 
-.home-project-list > button > em {
-  padding: 3px 7px;
-  font-size: 9px;
+.home-asset-list > button > div {
+  min-width: 0;
+  padding: 4px 2px 0;
+}
+
+.home-asset-list em {
   font-style: normal;
-  color: #8a5b22;
-  background: #fff4df;
-  border-radius: 999px;
+  color: #9a6570;
 }
 
-.home-recent-list > button {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.home-recent-list time {
-  margin: 0;
-  white-space: nowrap;
+.home-asset-list time {
+  padding: 0 2px 2px;
 }
 
 .home-task-list > button {
@@ -1207,9 +1206,38 @@ onMounted(loadDashboard);
   overflow: auto;
 }
 
+.home-history-filters {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1fr) minmax(220px, 1.25fr)
+    auto auto auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 14px;
+}
+
+.home-history-filters > label {
+  display: grid;
+  gap: 4px;
+}
+
+.home-history-filters > label > span {
+  font-size: 11px;
+  color: #71808c;
+}
+
+.home-history-filters input[type='date'] {
+  min-height: 32px;
+  padding: 4px 9px;
+  color: #46505a;
+  background: #fff;
+  border: 1px solid #d9d9d9;
+  border-radius: 6px;
+}
+
 .home-history-list button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: 76px minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: center;
   padding: 14px;
@@ -1218,6 +1246,11 @@ onMounted(loadDashboard);
   background: #fff;
   border: 1px solid #dde3e7;
   border-radius: 10px;
+}
+
+.home-history-list__preview {
+  width: 76px;
+  height: 50px;
 }
 
 .home-history-list button:hover {
@@ -1264,120 +1297,6 @@ onMounted(loadDashboard);
   animation: home-spin 1s linear infinite;
 }
 
-.training-layout {
-  display: grid;
-  gap: 16px;
-}
-
-.training-layout__notice {
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
-  padding: 11px 13px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #7e3b48;
-  background: var(--rail-red-soft);
-  border: 1px solid #e9bdc5;
-  border-radius: 12px;
-}
-
-.training-layout__notice svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-}
-
-.training-layout__body {
-  display: grid;
-  grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.15fr);
-  gap: 14px;
-}
-
-.training-layout__parameters,
-.training-layout__dataset {
-  display: grid;
-  gap: 14px;
-  padding: 16px;
-  background: #fff;
-  border: 1px solid var(--rail-line);
-  border-radius: 12px;
-}
-
-.training-layout header {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.training-layout header b {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  font-size: 12px;
-  color: #fff;
-  background: var(--rail-red);
-  border-radius: 50%;
-}
-
-.training-layout label {
-  display: grid;
-  gap: 7px;
-}
-
-.training-layout label > span {
-  font-size: 12px;
-  font-weight: 650;
-  color: #4f5961;
-}
-
-.training-layout__number-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.training-layout__number-grid :deep(.ant-input-number),
-.training-layout__options :deep(.ant-select) {
-  width: 100%;
-}
-
-.training-layout__dataset button {
-  display: grid;
-  place-items: center;
-  min-height: 235px;
-  padding: 24px;
-  color: #717c84;
-  background: var(--rail-mist);
-  border: 1px dashed #c5ccd1;
-  border-radius: 12px;
-}
-
-.training-layout__dataset button svg {
-  width: 34px;
-  height: 34px;
-  color: var(--rail-red);
-}
-
-.training-layout__dataset button strong {
-  margin-top: -42px;
-}
-
-.training-layout__dataset button small {
-  margin-top: -56px;
-  font-size: 11px;
-}
-
-.training-layout__options {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
-  gap: 10px;
-  align-items: end;
-  padding: 14px;
-  background: var(--rail-mist);
-  border-radius: 12px;
-}
-
 @keyframes home-spin {
   to {
     transform: rotate(360deg);
@@ -1401,8 +1320,8 @@ onMounted(loadDashboard);
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .home-panel--projects {
-    grid-column: 1 / -1;
+  .home-history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -1444,14 +1363,21 @@ onMounted(loadDashboard);
     grid-template-columns: 1fr;
   }
 
-  .home-panel--projects {
-    grid-column: auto;
+  .home-asset-list,
+  .home-history-filters {
+    grid-template-columns: 1fr;
   }
 
-  .training-layout__body,
-  .training-layout__number-grid,
-  .training-layout__options {
-    grid-template-columns: 1fr;
+  .home-history-list button {
+    grid-template-columns: 64px minmax(0, 1fr) auto;
+  }
+
+  .home-history-list button > time {
+    display: none;
+  }
+
+  .home-history-list__preview {
+    width: 64px;
   }
 }
 
