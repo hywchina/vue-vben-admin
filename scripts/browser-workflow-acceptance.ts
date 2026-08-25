@@ -908,7 +908,7 @@ async function runBrowserAcceptance() {
     await page.waitForURL((url) => url.pathname === '/home');
     await page
       .getByRole('heading', {
-        name: '欢迎来到客运装备内装模块化分区快速设计平台',
+        name: '让客室内装设计 更聚焦、更高效',
       })
       .waitFor();
     assert(
@@ -916,7 +916,7 @@ async function runBrowserAcceptance() {
       '登录默认入口没有统一命名为“首页”',
     );
     const homeEntryLabels = await page
-      .locator('.home-entry-grid > button')
+      .locator('.home-entry-grid > button > strong')
       .allTextContents();
     assert(
       JSON.stringify(homeEntryLabels.map((item) => item.trim())) ===
@@ -930,13 +930,14 @@ async function runBrowserAcceptance() {
         ]),
       `首页六个入口的名称或顺序不符合需求：${JSON.stringify(homeEntryLabels)}`,
     );
-    const homeLayout = await page.locator('.home-stage').evaluate((element) => {
-      const welcome = element.querySelector('.home-welcome');
+    const homeLayout = await page.locator('.home-shell').evaluate((element) => {
+      const hero = element.querySelector('.home-hero');
       const grid = element.querySelector('.home-entry-grid');
       const firstButton = grid?.querySelector('button');
-      const stageBox = element.getBoundingClientRect();
-      const welcomeBox = welcome?.getBoundingClientRect();
       const gridStyle = grid ? getComputedStyle(grid) : undefined;
+      const metricValues = [
+        ...element.querySelectorAll('.home-hero__metrics strong'),
+      ].map((item) => Number.parseInt(item.textContent ?? '', 10));
       return {
         buttonBackground: firstButton
           ? getComputedStyle(firstButton).backgroundColor
@@ -944,35 +945,35 @@ async function runBrowserAcceptance() {
         columnCount:
           gridStyle?.gridTemplateColumns.split(' ').filter(Boolean).length ?? 0,
         gridWidth: grid?.getBoundingClientRect().width ?? 0,
-        stageCenterOffset: welcomeBox
-          ? Math.abs(
-              welcomeBox.left +
-                welcomeBox.width / 2 -
-                (stageBox.left + stageBox.width / 2),
-            )
-          : Number.POSITIVE_INFINITY,
-        welcomeBackground: welcome
-          ? getComputedStyle(welcome).backgroundColor
-          : '',
-        welcomeWidth: welcomeBox?.width ?? 0,
+        heroBackground: hero ? getComputedStyle(hero).backgroundImage : '',
+        heroHeight: hero?.getBoundingClientRect().height ?? 0,
+        metricValues,
+        panelCount: element.querySelectorAll('.home-work-grid .home-panel')
+          .length,
       };
     });
     assert(
-      homeLayout.columnCount === 3 &&
-        homeLayout.welcomeWidth >= 600 &&
-        homeLayout.gridWidth >= 560 &&
-        homeLayout.stageCenterOffset <= 2 &&
-        homeLayout.welcomeBackground === 'rgb(244, 246, 248)' &&
-        homeLayout.buttonBackground === 'rgb(255, 240, 242)',
-      `首页欢迎区或 3×2 功能区没有按需求图布局：${JSON.stringify(homeLayout)}`,
+      homeLayout.columnCount === 6 &&
+        homeLayout.heroHeight >= 300 &&
+        homeLayout.gridWidth >= 1200 &&
+        homeLayout.heroBackground !== 'none' &&
+        homeLayout.buttonBackground === 'rgb(255, 255, 255)' &&
+        homeLayout.panelCount === 3,
+      `首页主视觉、六入口或最近工作区没有按新版布局渲染：${JSON.stringify(homeLayout)}`,
     );
     assert(
-      (await page
-        .locator(
-          '.design-cycle, .dashboard-grid, .dashboard-panel, .dashboard-entry-panel',
-        )
-        .count()) === 0,
-      '首页仍然包含设计闭环、统计图表或旧版仪表盘卡片',
+      homeLayout.metricValues.length === 4 &&
+        homeLayout.metricValues.every(Number.isFinite) &&
+        (homeLayout.metricValues[0] ?? 0) >= 2 &&
+        (homeLayout.metricValues[1] ?? 0) >= 1 &&
+        (homeLayout.metricValues[3] ?? 0) >= 1,
+      `首页没有展示真实 Dashboard API 汇总数据：${JSON.stringify(homeLayout.metricValues)}`,
+    );
+    assert(
+      (await page.locator('.home-project-list > button').count()) >= 2 &&
+        (await page.locator('.home-recent-list > button').count()) >= 1 &&
+        (await page.locator('.home-task-list > button').count()) >= 1,
+      '首页没有使用真实最近项目、设计会话和任务记录',
     );
 
     const newDesignEntry = page.locator(
@@ -1012,6 +1013,14 @@ async function runBrowserAcceptance() {
       new URL(page.url()).pathname === '/home',
       '未接入的训练和报告入口不应离开首页',
     );
+
+    await page.locator('.home-page').evaluate((element) => {
+      let parent = element.parentElement;
+      while (parent) {
+        parent.scrollTop = 0;
+        parent = parent.parentElement;
+      }
+    });
 
     await page.screenshot({
       fullPage: true,
