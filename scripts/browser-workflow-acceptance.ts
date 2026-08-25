@@ -900,7 +900,7 @@ async function runBrowserAcceptance() {
 
   try {
     await page.goto(
-      `${webUrl}/auth/login?redirect=${encodeURIComponent('/assets')}`,
+      `${webUrl}/auth/login?redirect=${encodeURIComponent('/projects')}`,
     );
     await page.getByText('欢迎回来 👋🏻').waitFor();
     const loginInputs = page.locator('form input:visible');

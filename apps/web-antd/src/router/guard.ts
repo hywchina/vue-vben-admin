@@ -10,6 +10,7 @@ import { accessRoutes, coreRouteNames } from '#/router/routes';
 import { useAuthStore } from '#/store';
 
 import { generateAccess } from './access';
+import { PLATFORM_HOME_PATH } from './constants';
 
 /**
  * 通用守卫配置
@@ -63,7 +64,7 @@ function setupAccessGuard(router: Router) {
     // 基本路由，这些路由不需要进入权限拦截
     if (coreRouteNames.includes(to.name as string)) {
       if (to.path === LOGIN_PATH && accessStore.accessToken) {
-        return userStore.userInfo?.homePath || preferences.app.defaultHomePath;
+        return PLATFORM_HOME_PATH;
       }
       return true;
     }
@@ -81,7 +82,7 @@ function setupAccessGuard(router: Router) {
           path: LOGIN_PATH,
           // 如不需要，直接删除 query
           query:
-            to.fullPath === preferences.app.defaultHomePath
+            to.fullPath === PLATFORM_HOME_PATH
               ? {}
               : { redirect: encodeURIComponent(to.fullPath) },
           // 携带当前跳转的页面，登录后重新跳转该页面
@@ -114,8 +115,8 @@ function setupAccessGuard(router: Router) {
     accessStore.setAccessRoutes(accessibleRoutes);
     accessStore.setIsAccessChecked(true);
     const redirectPath = (
-      to.path === preferences.app.defaultHomePath
-        ? userInfo.homePath || preferences.app.defaultHomePath
+      to.path === PLATFORM_HOME_PATH
+        ? PLATFORM_HOME_PATH
         : (from.query.redirect ?? to.fullPath)
     ) as string;
 

@@ -4,7 +4,6 @@ import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { LOGIN_PATH } from '@vben/constants';
-import { preferences } from '@vben/preferences';
 import { resetAllStores, useAccessStore, useUserStore } from '@vben/stores';
 
 import { notification } from 'ant-design-vue';
@@ -12,6 +11,7 @@ import { defineStore } from 'pinia';
 
 import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
 import { $t } from '#/locales';
+import { PLATFORM_HOME_PATH } from '#/router/constants';
 
 export const useAuthStore = defineStore('auth', () => {
   const accessStore = useAccessStore();
@@ -52,12 +52,9 @@ export const useAuthStore = defineStore('auth', () => {
 
         if (accessStore.loginExpired) {
           accessStore.setLoginExpired(false);
-        } else {
-          if (onSuccess) await onSuccess();
-          await router.replace(
-            userInfo.homePath || preferences.app.defaultHomePath,
-          );
         }
+        if (onSuccess) await onSuccess();
+        await router.replace(PLATFORM_HOME_PATH);
 
         if (userInfo?.realName) {
           notification.success({
