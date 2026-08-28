@@ -5,6 +5,7 @@ import { uploadPresignedFile } from './uploads';
 export interface AiAssistantStatus {
   configured: boolean;
   maxAttachmentBytes: number;
+  maxImagesPerMessage: number;
   model: string;
   provider: null | string;
 }
@@ -62,6 +63,17 @@ export function getAiConversationsApi() {
 export function createAiConversationApi(projectId?: string) {
   return requestClient.post<AiConversation>('/assistant/conversations', {
     projectId: projectId || undefined,
+  });
+}
+
+export function renameAiConversationApi(conversationId: string, title: string) {
+  return requestClient.request<{
+    id: string;
+    title: string;
+    updatedAt: string;
+  }>(`/assistant/conversations/${conversationId}`, {
+    data: { title },
+    method: 'PATCH',
   });
 }
 

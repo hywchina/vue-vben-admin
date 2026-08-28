@@ -1,6 +1,8 @@
 <script lang="ts" setup>
 import { computed } from 'vue';
 
+import PlatformMarkdownInline from './platform-markdown-inline.vue';
+
 type MarkdownBlock =
   | { content: string; kind: 'code'; language: string }
   | { content: string; kind: 'heading'; level: number }
@@ -118,24 +120,30 @@ function parseMarkdown(content: string): MarkdownBlock[] {
         v-if="block.kind === 'heading'"
         class="platform-markdown__heading"
       >
-        {{ block.content }}
+        <PlatformMarkdownInline :content="block.content" />
       </component>
-      <p v-else-if="block.kind === 'paragraph'">{{ block.content }}</p>
+      <p v-else-if="block.kind === 'paragraph'">
+        <PlatformMarkdownInline :content="block.content" />
+      </p>
       <blockquote v-else-if="block.kind === 'quote'">
-        {{ block.content }}
+        <PlatformMarkdownInline :content="block.content" />
       </blockquote>
       <ul v-else-if="block.kind === 'unordered-list'">
-        <li v-for="item in block.items" :key="item">{{ item }}</li>
+        <li v-for="item in block.items" :key="item">
+          <PlatformMarkdownInline :content="item" />
+        </li>
       </ul>
       <ol v-else-if="block.kind === 'ordered-list'">
-        <li v-for="item in block.items" :key="item">{{ item }}</li>
+        <li v-for="item in block.items" :key="item">
+          <PlatformMarkdownInline :content="item" />
+        </li>
       </ol>
       <pre
         v-else-if="block.kind === 'code'"
       ><code>{{ block.content }}</code></pre>
       <details v-else-if="block.kind === 'thinking'" class="thinking-block">
         <summary>思考过程</summary>
-        <p>{{ block.content }}</p>
+        <p><PlatformMarkdownInline :content="block.content" /></p>
       </details>
     </template>
   </div>
@@ -183,6 +191,18 @@ function parseMarkdown(content: string): MarkdownBlock[] {
 
 .platform-markdown :is(ul, ol) {
   padding-left: 24px;
+}
+
+.platform-markdown ul {
+  list-style: disc;
+}
+
+.platform-markdown ol {
+  list-style: decimal;
+}
+
+.platform-markdown li + li {
+  margin-top: 3px;
 }
 
 .platform-markdown blockquote {

@@ -378,7 +378,10 @@ export const usePlatformStore = defineStore('rail-platform', () => {
   async function runApplication(
     appKey: string,
     executionContext:
-      | { designConversationId: string }
+      | {
+          designConversationId: string;
+          designMode?: 'cabin' | 'cmf' | 'component' | 'report';
+        }
       | { workspaceInstanceId: string },
     inputAssetIds: string[],
     parameters: Record<string, unknown>,

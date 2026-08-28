@@ -16,6 +16,7 @@ import { getAssetApi, getAssetPreviewApi } from '#/api';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import ComfyMaskIcon from '#/components/platform/comfy-mask-icon.vue';
 import ImageLightbox from '#/components/platform/image-lightbox.vue';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 
 import AssetPickerModal from './asset-picker-modal.vue';
 import {
@@ -38,6 +39,7 @@ const props = defineProps<{
   assets: PlatformAsset[];
   field: CapabilityField;
   liveCapture?: (file: File) => Promise<boolean | undefined>;
+  openEditorRequest?: number;
   projectId?: string;
   refreshRate?: number;
   saveMask?: (file: File) => Promise<unknown>;
@@ -606,6 +608,19 @@ watch(
     redraw();
   },
 );
+watch(
+  () => props.openEditorRequest,
+  (request, previousRequest) => {
+    if (
+      props.field.type === 'region' &&
+      props.selectedAssetId &&
+      request &&
+      request !== previousRequest
+    ) {
+      editorOpen.value = true;
+    }
+  },
+);
 onBeforeUnmount(stopCapture);
 </script>
 
@@ -702,7 +717,7 @@ onBeforeUnmount(stopCapture);
       </div>
       <div class="capture-direct-actions utility-row">
         <Button class="asset-picker-button" @click="pickerOpen = true">
-          <IconifyIcon icon="lucide:library" />
+          <IconifyIcon :icon="platformSemanticIcons.assets" />
           项目资产
         </Button>
         <Button @click="fileInputRef?.click()">
@@ -759,7 +774,7 @@ onBeforeUnmount(stopCapture);
 
     <div v-if="field.type !== 'capture'" class="media-actions">
       <Button class="asset-picker-button" @click="pickerOpen = true">
-        <IconifyIcon icon="lucide:library" />
+        <IconifyIcon :icon="platformSemanticIcons.assets" />
         从项目资产选择
       </Button>
       <Button @click="fileInputRef?.click()">
@@ -1033,6 +1048,10 @@ onBeforeUnmount(stopCapture);
   height: auto;
   max-height: 260px;
   object-fit: contain;
+}
+
+.media-preview:has(img) {
+  background: #fff;
 }
 
 .media-preview.interactive {

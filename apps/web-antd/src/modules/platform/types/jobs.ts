@@ -13,6 +13,7 @@ export interface PlatformJob {
   createdBy: string;
   designConversationId?: string;
   designConversationTitle?: string;
+  designMode?: 'cabin' | 'cmf' | 'component' | 'report';
   duration?: string;
   externalExecution: boolean;
   error?: {

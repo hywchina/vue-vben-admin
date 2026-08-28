@@ -9,6 +9,7 @@ export interface PlatformProject {
   isPinned: boolean;
   isOwner: boolean;
   jobCount: number;
+  memberPreviews: ProjectMemberPreview[];
   members: number;
   name: string;
   ownerId: string;
@@ -16,8 +17,15 @@ export interface PlatformProject {
   updatedAt: string;
 }
 
+export interface ProjectMemberPreview {
+  avatar: null | string;
+  name: string;
+  publicId: string;
+}
+
 export interface ProjectMember {
   assetCount: number;
+  avatar: null | string;
   department: string;
   jobCount: number;
   joinedAt: string;

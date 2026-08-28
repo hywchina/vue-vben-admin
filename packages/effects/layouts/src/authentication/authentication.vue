@@ -93,10 +93,14 @@ const logoSrc = computed(() => {
             :key="logoSrc"
             :alt="appName"
             :src="logoSrc"
-            class="mr-2"
-            width="42"
+            class="mr-2 size-7 shrink-0 object-contain"
+            data-auth-brand-logo
           />
-          <p v-if="appName" class="m-0 text-xl font-medium">
+          <p
+            v-if="appName"
+            class="m-0 text-xl leading-7 font-medium"
+            data-auth-brand-title
+          >
             {{ appName }}
           </p>
         </div>

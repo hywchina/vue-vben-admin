@@ -46,6 +46,7 @@ export default apiHandler(async (event) => {
       createdBy: string;
       designConversationId: null | string;
       designConversationTitle: null | string;
+      designMode: 'cabin' | 'cmf' | 'component' | 'report' | null;
       errorCode: null | string;
       errorMessage: null | string;
       externalExecution: boolean;
@@ -95,6 +96,7 @@ export default apiHandler(async (event) => {
       j.app_key AS "appKey",
       j.design_conversation_id AS "designConversationId",
       design_conversation.title AS "designConversationTitle",
+      j.design_mode AS "designMode",
       j.workspace_instance_id AS "workspaceInstanceId",
       workspace_instance.title AS "workspaceInstanceTitle",
       j.name,
@@ -110,6 +112,12 @@ export default apiHandler(async (event) => {
       j.external_reference AS "externalReference",
       EXISTS(
         SELECT 1 FROM job_executions execution WHERE execution.job_id = j.id
+      ) OR EXISTS(
+        SELECT 1 FROM lora_training_executions lora_execution
+        WHERE lora_execution.job_id = j.id
+      ) OR EXISTS(
+        SELECT 1 FROM report_generation_executions report_execution
+        WHERE report_execution.job_id = j.id
       ) AS "externalExecution",
       j.error ->> 'code' AS "errorCode",
       j.error ->> 'message' AS "errorMessage",
@@ -214,10 +222,11 @@ export default apiHandler(async (event) => {
       j.id ASC
   `;
 
-  return jobs.map(({ completedAt, startedAt, ...job }) => ({
+  return jobs.map(({ completedAt, designMode, startedAt, ...job }) => ({
     ...job,
     completedAt: completedAt?.toISOString(),
     createdAt: job.createdAt.toISOString(),
+    designMode: designMode ?? undefined,
     duration:
       completedAt && startedAt
         ? Math.max(

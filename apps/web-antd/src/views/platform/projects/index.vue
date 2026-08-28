@@ -7,6 +7,7 @@ import { IconifyIcon } from '@vben/icons';
 import { Button, Input, message, Modal, Textarea } from 'ant-design-vue';
 
 import PageHeading from '#/components/platform/page-heading.vue';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
@@ -122,7 +123,7 @@ async function createProject() {
                 {{ project.members }} 位成员
               </span>
               <span>
-                <IconifyIcon icon="lucide:library" />
+                <IconifyIcon :icon="platformSemanticIcons.assets" />
                 {{ project.assetCount }} 项资产
               </span>
             </div>
@@ -235,7 +236,7 @@ async function createProject() {
 .project-stage,
 .current-badge {
   padding: 4px 8px;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   font-weight: 650;
   border-radius: 999px;
 }
@@ -291,7 +292,7 @@ async function createProject() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   color: #8a939c;
 }
 

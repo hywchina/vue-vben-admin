@@ -1,5 +1,7 @@
 # AI 设计助手 GeekAI 接入与验收手册
 
+> 历史文档：2026-08-25 起当前开发环境已切换为本地 Docker vLLM 与 `qwen3-vl-8b-instruct`。现行配置、图片 Data URL、多轮历史和部署方式以 [`README.md`](./README.md) 与 [`DEPLOYMENT.md`](./DEPLOYMENT.md) 为准；本文只保留此前 GeekAI 适配与密钥轮换记录，不再作为默认部署方案。
+
 ## 1. 文档目的
 
 本文档是 AI 设计助手的开发、部署和故障交接入口。目标是让后续开发人员在不重新阅读整个仓库的情况下，可以安全配置 GeekAI、验证用户隔离、定位上游问题并做小范围适配。

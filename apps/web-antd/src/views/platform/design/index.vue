@@ -1,8 +1,12 @@
 <script lang="ts" setup>
-import type { DesignModeKey } from '#/modules/platform/design-modes';
+import type {
+  DesignModeKey,
+  DesignModeToolDefinition,
+} from '#/modules/platform/design-modes';
 import type {
   CapabilityField,
   DesignConversation,
+  DesignPromptTemplateMode,
   PlatformCapability,
   PlatformJob,
   PlatformJobInput,
@@ -56,6 +60,7 @@ import {
   designModes,
   getDesignMode,
 } from '#/modules/platform/design-modes';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { usePlatformStore } from '#/store';
 import { selectDesignConversationJobs } from '#/store/platform/helpers';
 
@@ -63,11 +68,26 @@ import AssetPickerModal from '../workspace/asset-picker-modal.vue';
 import CameraAngleControl from '../workspace/camera-angle-control.vue';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
 import { createRegionInputAnnotations } from '../workspace/region-annotation';
+import {
+  assignMediaAssetIds,
+  mediaInputProgress,
+  moveMediaAsset,
+  orderedImageMediaFields,
+} from './design-composer-media';
 import { appendTextInput, markdownTextContent } from './design-input-utils';
+import DesignPromptTemplatePopover from './design-prompt-template-popover.vue';
 import DesignQuickField from './design-quick-field.vue';
 
 const DEFAULT_APP_KEY = 'text-chat';
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
+type BusinessResultAction =
+  | 'environment'
+  | 'mark'
+  | 'multi-angle'
+  | 'multi-image'
+  | 'three-d'
+  | 'understand'
+  | 'upscale';
 const route = useRoute();
 const router = useRouter();
 const platformStore = usePlatformStore();
@@ -79,6 +99,8 @@ const conversationSearch = ref('');
 const activeConversationId = ref('');
 const selectedAppKey = ref('');
 const selectedModeKey = ref<DesignModeKey>('cabin');
+const selectedModeCardKey = ref<DesignModeKey | null>(null);
+const selectedBusinessToolKey = ref('');
 const threadScrollRef = ref<HTMLElement>();
 const capability = ref<null | PlatformCapability>(null);
 const capabilityLoading = ref(false);
@@ -86,9 +108,16 @@ const capabilityCache = reactive<Record<string, PlatformCapability>>({});
 const selectedAssets = reactive<Record<number, string>>({});
 const parameterValues = reactive<Record<string, unknown>>({});
 const parameterDrawerOpen = ref(false);
-const reportPreviewOpen = ref(false);
 const mediaPickerOpen = ref(false);
 const markdownPickerOpen = ref(false);
+const composerAssetPickerOpen = ref(false);
+const composerSourcePickerOpen = ref(false);
+const composerFileInputRef = ref<HTMLInputElement>();
+const composerUploading = ref(false);
+const composerMaskEditorOpen = ref(false);
+const composerMaskField = ref<CapabilityField>();
+const composerMaskSource = ref('');
+const composerMaskTitle = ref('');
 const composerPreviewUrls = reactive<Record<string, string>>({});
 const submitting = ref(false);
 const renameOpen = ref(false);
@@ -100,6 +129,7 @@ const outputMaskTitle = ref('');
 const maskEditDerivedFromAssetId = ref('');
 const maskEditSourceAssetId = ref('');
 const actionOutput = ref<PlatformJobOutput>();
+const actionDesignMode = ref<Exclude<DesignModeKey, 'report'>>('cabin');
 const continueOpen = ref(false);
 const continueAppKey = ref('');
 const continueAssetIndex = ref<number>();
@@ -108,6 +138,30 @@ const saveOutputOpen = ref(false);
 const saveOutputTarget = ref<PlatformJobOutput>();
 const saveOutputFolderId = ref<string>();
 const saveOutputSubmitting = ref(false);
+const cmfMultiImageOpen = ref(false);
+const cmfMultiImageMode = ref<'choose' | 'dialog'>('choose');
+const cmfMultiImageOutput = ref<PlatformJobOutput>();
+const cmfMultiImageDesignMode = ref<Exclude<DesignModeKey, 'report'>>('cmf');
+const cmfMultiImagePrompt = ref('');
+const cmfMultiImageFiles = ref<File[]>([]);
+const cmfMultiImageSubmitting = ref(false);
+const cmfUpscaleOpen = ref(false);
+const cmfUpscaleOutput = ref<PlatformJobOutput>();
+const cmfUpscaleDesignMode = ref<Exclude<DesignModeKey, 'report'>>('cmf');
+const cmfUpscaleFactor = ref(4);
+const cmfUpscaleSubmitting = ref(false);
+const multiAngleOpen = ref(false);
+const multiAngleMode = ref<'choose' | 'dialog'>('choose');
+const multiAngleOutput = ref<PlatformJobOutput>();
+const multiAngleDesignMode = ref<'cabin' | 'component'>('component');
+const multiAngleFile = ref<File>();
+const multiAngleSubmitting = ref(false);
+const threeDOpen = ref(false);
+const threeDMode = ref<'choose' | 'dialog'>('choose');
+const threeDOutput = ref<PlatformJobOutput>();
+const threeDFiles = ref<File[]>([]);
+const threeDSubmitting = ref(false);
+const markerEditorRequest = ref(0);
 const draftReadyKey = ref('');
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -143,12 +197,19 @@ const saveOutputFolderOptions = computed(() => [
     })),
 ]);
 const activeDesignMode = computed(() => getDesignMode(selectedModeKey.value));
+const promptTemplateMode = computed<DesignPromptTemplateMode>(() =>
+  selectedModeKey.value === 'report' ? 'cabin' : selectedModeKey.value,
+);
 const modeAvailability = computed(
   () =>
     Object.fromEntries(
       designModes.map((mode) => [
         mode.key,
-        applicationsForDesignMode(platformStore.applications, mode).length > 0,
+        Boolean(
+          mode.standalonePath ||
+          applicationsForDesignMode(platformStore.applications, mode).length >
+            0,
+        ),
       ]),
     ) as Record<DesignModeKey, boolean>,
 );
@@ -167,8 +228,9 @@ const availableApplications = computed(() => {
 });
 const defaultApplicationKey = computed(
   () =>
-    availableApplications.value.find((item) => item.key === DEFAULT_APP_KEY)
-      ?.key ?? availableApplications.value[0]?.key,
+    availableApplications.value.find(
+      (item) => item.key === activeDesignMode.value.defaultApplicationKey,
+    )?.key ?? availableApplications.value[0]?.key,
 );
 const effectiveApplicationKey = computed(
   () => selectedAppKey.value || defaultApplicationKey.value || DEFAULT_APP_KEY,
@@ -178,12 +240,34 @@ const application = computed(() =>
     (item) => item.key === effectiveApplicationKey.value,
   ),
 );
-const orderedApplicationShortcuts = computed(() => availableApplications.value);
-const applicationShortcuts = computed(() =>
-  orderedApplicationShortcuts.value.slice(0, 7),
+const availableApplicationKeys = computed(() =>
+  availableApplications.value.map((item) => item.key),
 );
-const overflowApplications = computed(() =>
-  orderedApplicationShortcuts.value.slice(7),
+const allAvailableApplicationKeys = computed(() =>
+  platformStore.applications
+    .filter((item) => item.visible && item.capabilityCode)
+    .map((item) => item.key),
+);
+const activeModePrimaryTools = computed(
+  () => activeDesignMode.value.primaryTools ?? [],
+);
+const primaryApplicationKeySet = computed(
+  () => new Set(activeModePrimaryTools.value.map((tool) => tool.appKey)),
+);
+const modeOverflowApplications = computed(() =>
+  availableApplications.value.filter(
+    (item) => !primaryApplicationKeySet.value.has(item.key),
+  ),
+);
+const selectedBusinessTool = computed(() =>
+  activeModePrimaryTools.value.find(
+    (tool) => tool.key === selectedBusinessToolKey.value,
+  ),
+);
+const composerPlaceholder = computed(
+  () =>
+    selectedBusinessTool.value?.placeholder ??
+    activeDesignMode.value.placeholder,
 );
 const conversationJobs = computed(() =>
   selectDesignConversationJobs(
@@ -202,6 +286,9 @@ const mediaFields = computed(
     capability.value?.fields
       .filter((field) => mediaTypes.has(field.type))
       .toSorted((a, b) => (a.assetIndex ?? 0) - (b.assetIndex ?? 0)) ?? [],
+);
+const composerImageFields = computed(() =>
+  orderedImageMediaFields(mediaFields.value),
 );
 const scalarFields = computed(
   () =>
@@ -248,7 +335,7 @@ const selectedAssetIds = computed(() =>
   }),
 );
 const composerInputs = computed(() =>
-  mediaFields.value.flatMap((field) => {
+  composerImageFields.value.flatMap((field) => {
     if (field.assetIndex === undefined) return [];
     const assetId = selectedAssets[field.assetIndex];
     const asset = platformStore.currentAssets.find(
@@ -256,6 +343,13 @@ const composerInputs = computed(() =>
     );
     return asset ? [{ asset, field }] : [];
   }),
+);
+const composerMediaProgress = computed(() =>
+  mediaInputProgress(mediaFields.value, selectedAssets),
+);
+const composerCanAddMedia = computed(
+  () =>
+    composerMediaProgress.value.filled < composerMediaProgress.value.capacity,
 );
 const cameraPreviewUrl = computed(() => {
   const source = composerInputs.value.find(
@@ -386,6 +480,138 @@ function openMediaPicker() {
     return;
   }
   mediaPickerOpen.value = true;
+}
+
+function replaceSelectedAssets(nextSelections: Record<number, string>) {
+  for (const key of Object.keys(selectedAssets)) {
+    Reflect.deleteProperty(selectedAssets, key);
+  }
+  Object.assign(selectedAssets, nextSelections);
+}
+
+function showComposerMediaProgress() {
+  const progress = composerMediaProgress.value;
+  if (progress.missingRequired > 0) {
+    message.info(
+      `已上传 ${progress.filled}/${progress.capacity} 张，还需上传 ${progress.missingRequired} 张`,
+    );
+    return;
+  }
+  message.success(
+    progress.required === progress.capacity
+      ? `已完成 ${progress.filled}/${progress.capacity} 张图片输入`
+      : `必填图片已完成，当前 ${progress.filled}/${progress.capacity} 张`,
+  );
+}
+
+async function addComposerAssetIds(assetIds: string[]) {
+  const result = assignMediaAssetIds(
+    mediaFields.value,
+    selectedAssets,
+    assetIds,
+  );
+  replaceSelectedAssets(result.nextSelections);
+  composerAssetPickerOpen.value = false;
+  await saveDraftNow();
+  if (result.discardedCount > 0) {
+    message.warning(
+      `当前工作流最多需要 ${composerMediaProgress.value.capacity} 张图片，超出部分未加入`,
+    );
+  } else if (result.duplicateCount > 0) {
+    message.warning('已忽略重复选择的图片');
+  }
+  if (result.acceptedAssetIds.length > 0) showComposerMediaProgress();
+}
+
+function chooseComposerLocalFiles() {
+  composerSourcePickerOpen.value = false;
+  composerFileInputRef.value?.click();
+}
+
+function chooseComposerProjectAssets() {
+  composerSourcePickerOpen.value = false;
+  composerAssetPickerOpen.value = true;
+}
+
+async function uploadComposerFiles(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const selectedFiles = [...(input.files ?? [])].filter((file) =>
+    file.type.startsWith('image/'),
+  );
+  input.value = '';
+  if (selectedFiles.length === 0) {
+    message.warning('请选择图片文件');
+    return;
+  }
+  const emptyFields = composerImageFields.value.filter(
+    (field) =>
+      field.assetIndex !== undefined && !selectedAssets[field.assetIndex],
+  );
+  const retainedFiles = selectedFiles.slice(0, emptyFields.length);
+  const discardedCount = selectedFiles.length - retainedFiles.length;
+  if (retainedFiles.length === 0) {
+    message.warning(
+      `当前工作流最多需要 ${composerMediaProgress.value.capacity} 张图片`,
+    );
+    return;
+  }
+  composerUploading.value = true;
+  let uploadedCount = 0;
+  try {
+    for (const [index, file] of retainedFiles.entries()) {
+      const field = emptyFields[index];
+      if (!field) break;
+      await uploadMedia(field, file, { silent: true });
+      uploadedCount += 1;
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '图片上传失败');
+  } finally {
+    composerUploading.value = false;
+  }
+  if (discardedCount > 0) {
+    message.warning(
+      `本次选择 ${selectedFiles.length} 张，当前工作流仅剩 ${retainedFiles.length} 个位置，已只保留前 ${retainedFiles.length} 张`,
+    );
+  }
+  if (uploadedCount > 0) showComposerMediaProgress();
+}
+
+async function moveComposerInput(field: CapabilityField, direction: -1 | 1) {
+  if (field.assetIndex === undefined) return;
+  const nextSelections = moveMediaAsset(
+    mediaFields.value,
+    selectedAssets,
+    field.assetIndex,
+    direction,
+  );
+  if (!nextSelections) return;
+  replaceSelectedAssets(nextSelections);
+  await saveDraftNow();
+}
+
+function composerInputPosition(field: CapabilityField) {
+  return composerInputs.value.findIndex((item) => item.field.key === field.key);
+}
+
+function openComposerMask(field: CapabilityField, assetName: string) {
+  if (field.assetIndex === undefined) return;
+  const assetId = selectedAssets[field.assetIndex];
+  const source = assetId ? composerPreviewUrls[assetId] : undefined;
+  if (!source) {
+    message.warning('图片预览尚未加载，请稍后重试');
+    return;
+  }
+  composerMaskField.value = field;
+  composerMaskSource.value = source;
+  composerMaskTitle.value = assetName;
+  composerMaskEditorOpen.value = true;
+}
+
+async function saveComposerMask(file: File) {
+  const field = composerMaskField.value;
+  if (!field) throw new Error('当前没有可编辑的输入图片');
+  await saveInputMask(field, file);
 }
 
 async function loadMarkdownAsset(assetId: string) {
@@ -636,6 +862,8 @@ async function selectConversation(
     return;
   }
   await saveDraftNow();
+  selectedModeCardKey.value = null;
+  selectedBusinessToolKey.value = '';
   activeConversationId.value = conversationId;
   const availablePreferredApp =
     preferredAppKey &&
@@ -657,47 +885,77 @@ async function selectConversation(
   await scrollToLatestRound();
 }
 
-async function chooseApplication(appKey: string) {
-  if (appKey === selectedAppKey.value && capability.value) return;
+async function chooseApplication(appKey: string, businessToolKey = '') {
+  if (appKey === selectedAppKey.value && capability.value) {
+    selectedBusinessToolKey.value = businessToolKey;
+    return;
+  }
   await saveDraftNow();
   selectedModeKey.value = designModeForApplication(
     appKey,
     selectedModeKey.value,
   ).key;
+  selectedBusinessToolKey.value = businessToolKey;
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
 }
 
+async function choosePrimaryTool(tool: DesignModeToolDefinition) {
+  if (!availableApplicationKeys.value.includes(tool.appKey)) {
+    message.info(`${tool.label}能力未配置或当前账号不可用`);
+    return;
+  }
+  await chooseApplication(tool.appKey, tool.key);
+}
+
 async function chooseDesignMode(modeKey: DesignModeKey) {
-  if (modeKey === selectedModeKey.value) return;
   const mode = getDesignMode(modeKey);
+  if (mode.standalonePath) {
+    await router.push(mode.standalonePath);
+    return;
+  }
   const applications = applicationsForDesignMode(
     platformStore.applications,
     mode,
   );
   if (applications.length === 0) {
-    if (modeKey === 'report') {
-      reportPreviewOpen.value = true;
-      return;
-    }
     message.info(`${mode.label}的执行服务与能力契约尚未接入`);
     return;
   }
+  selectedModeCardKey.value = modeKey;
+  if (modeKey === selectedModeKey.value && !selectedAppKey.value) return;
   await saveDraftNow();
   selectedModeKey.value = modeKey;
-  const currentKey = effectiveApplicationKey.value;
-  const nextKey = applications.some((item) => item.key === currentKey)
-    ? currentKey
-    : applications[0]?.key;
+  selectedBusinessToolKey.value = '';
+  const preferredKey = mode.defaultApplicationKey ?? DEFAULT_APP_KEY;
+  const nextKey =
+    applications.find((item) => item.key === preferredKey)?.key ??
+    applications[0]?.key;
   if (!nextKey) return;
-  selectedAppKey.value = nextKey;
+  selectedAppKey.value = '';
   await loadCapability(nextKey);
+}
+
+function applyPromptTemplate(values: string[]) {
+  const field = promptField.value;
+  if (!field) {
+    message.warning('当前应用没有可填写的提示词');
+    return;
+  }
+  const next = appendTextInput(
+    parameterValues[field.key],
+    values.join('，'),
+    field.maxLength,
+  );
+  setFieldValue(field, next.value);
+  if (next.truncated) message.warning('部分模板内容因长度限制已截断');
 }
 
 async function clearApplicationSelection() {
   if (!selectedAppKey.value) return;
   await saveDraftNow();
   selectedAppKey.value = '';
+  selectedBusinessToolKey.value = '';
   await loadCapability();
 }
 
@@ -795,9 +1053,17 @@ async function runCapability() {
   if (!application.value || !capability.value || !activeConversationId.value) {
     return;
   }
+  if (composerMediaProgress.value.missingRequired > 0) {
+    const progress = composerMediaProgress.value;
+    message.warning(
+      `当前工作流需要 ${progress.required} 张图片，已上传 ${progress.filled} 张，还需上传 ${progress.missingRequired} 张`,
+    );
+    return;
+  }
   const missingAsset = mediaFields.value.find(
     (field) =>
       field.required &&
+      !field.acceptedKinds.includes('image') &&
       (field.assetIndex === undefined || !selectedAssets[field.assetIndex]),
   );
   if (missingAsset) {
@@ -823,7 +1089,10 @@ async function runCapability() {
     const inputAnnotations = await prepareRegionAnnotations();
     const job = await platformStore.runApplication(
       application.value.key,
-      { designConversationId: activeConversationId.value },
+      {
+        designConversationId: activeConversationId.value,
+        designMode: selectedModeKey.value || undefined,
+      },
       selectedAssetIds.value,
       taskParameters(),
       [],
@@ -874,6 +1143,10 @@ async function runJobSnapshot(
       `历史输入“${unavailableInput.name || unavailableInput.assetId}”已不可用，无法重新发送`,
     );
     return;
+  }
+  if (job.designMode) {
+    selectedModeKey.value = job.designMode;
+    selectedModeCardKey.value = job.designMode;
   }
   await chooseApplication(job.appKey);
   hydratingDraft = true;
@@ -1027,16 +1300,31 @@ async function downloadOutput(output: PlatformJobOutput) {
   });
 }
 
-function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
-  actionOutput.value = output;
-  maskEditSourceAssetId.value = output.assetId;
-  maskEditDerivedFromAssetId.value = output.saved ? output.assetId : '';
-  outputMaskSource.value = previewUrl;
-  outputMaskTitle.value = output.name;
-  outputMaskEditorOpen.value = true;
+function designModeForOutput(output: PlatformJobOutput) {
+  const mode = conversationJobs.value.find((job) =>
+    job.outputs.some((item) => item.assetId === output.assetId),
+  )?.designMode;
+  if (mode === 'cabin' || mode === 'cmf' || mode === 'component') return mode;
+  return selectedModeKey.value === 'report' ? 'cabin' : selectedModeKey.value;
+}
+
+async function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
+  try {
+    await ensureWorkflowOutputAsset(output);
+    actionOutput.value = output;
+    actionDesignMode.value = designModeForOutput(output);
+    maskEditSourceAssetId.value = output.assetId;
+    maskEditDerivedFromAssetId.value = output.assetId;
+    outputMaskSource.value = previewUrl;
+    outputMaskTitle.value = output.name;
+    outputMaskEditorOpen.value = true;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '无法进入局部重绘');
+  }
 }
 
 function openInputMask(input: PlatformJobInput, previewUrl: string) {
+  actionOutput.value = undefined;
   maskEditSourceAssetId.value = input.assetId;
   maskEditDerivedFromAssetId.value = input.assetId;
   outputMaskSource.value = previewUrl;
@@ -1046,7 +1334,7 @@ function openInputMask(input: PlatformJobInput, previewUrl: string) {
 
 async function saveOutputMask(file: File) {
   if (!maskEditSourceAssetId.value) throw new Error('当前没有可编辑的图片');
-  await platformStore.uploadAsset({
+  const maskAsset = await platformStore.uploadAsset({
     derivedFromAssetId: maskEditDerivedFromAssetId.value || undefined,
     description: '设计会话图片遮罩编辑',
     file,
@@ -1054,6 +1342,18 @@ async function saveOutputMask(file: File) {
     tags: ['设计会话图片编辑', '遮罩'],
     type: 'image',
   });
+  if (actionOutput.value) {
+    selectedModeKey.value = actionDesignMode.value;
+    selectedModeCardKey.value = actionDesignMode.value;
+    await chooseApplication('inpaint-single');
+    const maskField = mediaFields.value.find(
+      (field) => field.type === 'mask' && field.assetIndex !== undefined,
+    );
+    if (!maskField) throw new Error('局部重绘能力缺少遮罩输入位');
+    await selectAsset(maskField, maskAsset.id);
+    message.success('遮罩已保存并填入“局部重绘”编辑框，请确认提示词后发送');
+    return;
+  }
   message.success('遮罩编辑结果已保存到当前项目资产中心');
 }
 
@@ -1102,6 +1402,364 @@ async function continueDesign() {
   } finally {
     continueSubmitting.value = false;
   }
+}
+
+async function ensureWorkflowOutputAsset(output: PlatformJobOutput) {
+  if (output.saved) return;
+  await platformStore.saveWorkflowOutput(output.assetId);
+  output.saved = true;
+}
+
+async function prepareOutputInComposer(
+  output: PlatformJobOutput,
+  appKey: string,
+  modeKey = designModeForOutput(output),
+  businessToolKey = '',
+) {
+  await ensureWorkflowOutputAsset(output);
+  selectedModeKey.value = modeKey;
+  selectedModeCardKey.value = modeKey;
+  await chooseApplication(appKey, businessToolKey);
+  const target = mediaFields.value.find(
+    (field) =>
+      field.assetIndex !== undefined && field.acceptedKinds.includes('image'),
+  );
+  if (!target) throw new Error('目标能力没有可接收图像的输入位');
+  await selectAsset(target, output.assetId);
+  parameterDrawerOpen.value = false;
+  mediaPickerOpen.value = false;
+  await nextTick();
+  return target;
+}
+
+async function understandOutput(
+  output: PlatformJobOutput,
+  mode: Exclude<DesignModeKey, 'report'>,
+) {
+  try {
+    await prepareOutputInComposer(output, 'image-understanding', mode);
+    message.success('图片已填入“图像理解”编辑框，请确认提示词后再发送');
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '无法将图片填入图像理解编辑框',
+    );
+  }
+}
+
+function openMultiImage(
+  output: PlatformJobOutput,
+  mode: Exclude<DesignModeKey, 'report'>,
+) {
+  cmfMultiImageOutput.value = output;
+  cmfMultiImageDesignMode.value = mode;
+  cmfMultiImageMode.value = 'choose';
+  cmfMultiImagePrompt.value = '';
+  cmfMultiImageFiles.value = [];
+  cmfMultiImageOpen.value = true;
+}
+
+async function transferCmfMultiImageToComposer() {
+  const output = cmfMultiImageOutput.value;
+  if (!output) return;
+  cmfMultiImageSubmitting.value = true;
+  try {
+    await prepareOutputInComposer(
+      output,
+      'multi-image-edit',
+      cmfMultiImageDesignMode.value,
+    );
+    cmfMultiImageOpen.value = false;
+    message.success('图片已填入“多图融合”编辑框，请继续添加参考图和提示词');
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '无法进入多图融合编辑框',
+    );
+  } finally {
+    cmfMultiImageSubmitting.value = false;
+  }
+}
+
+function selectCmfMultiImageFiles(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = [...(input.files ?? [])].filter((file) =>
+    file.type.startsWith('image/'),
+  );
+  cmfMultiImageFiles.value = files.slice(0, 2);
+  if (files.length > 2) message.info('当前融合工作流最多接收两张额外参考图');
+  input.value = '';
+}
+
+async function runCmfMultiImageDialog() {
+  const output = cmfMultiImageOutput.value;
+  const prompt = cmfMultiImagePrompt.value.trim();
+  if (!output || cmfMultiImageFiles.value.length !== 2 || !prompt) {
+    message.warning('请上传两张参考图并填写融合提示词');
+    return;
+  }
+  cmfMultiImageSubmitting.value = true;
+  try {
+    await prepareOutputInComposer(
+      output,
+      'multi-image-edit',
+      cmfMultiImageDesignMode.value,
+    );
+    const referenceFields = mediaFields.value
+      .filter(
+        (field) =>
+          field.assetIndex !== undefined &&
+          field.assetIndex > 0 &&
+          field.acceptedKinds.includes('image'),
+      )
+      .toSorted(
+        (left, right) => (left.assetIndex ?? 0) - (right.assetIndex ?? 0),
+      );
+    if (referenceFields.length < 2) {
+      throw new Error('多图融合能力的参考图输入契约不完整');
+    }
+    for (const [index, file] of cmfMultiImageFiles.value.entries()) {
+      const field = referenceFields[index];
+      if (!field) continue;
+      await uploadMedia(field, file, {
+        silent: true,
+        tags: ['设计会话输入', `${activeDesignMode.value.label}多图融合`],
+      });
+    }
+    if (!promptField.value) throw new Error('多图融合能力缺少提示词输入');
+    setFieldValue(promptField.value, prompt);
+    await saveDraftNow();
+    cmfMultiImageOpen.value = false;
+    await runCapability();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '多图融合提交失败');
+  } finally {
+    cmfMultiImageSubmitting.value = false;
+  }
+}
+
+function openUpscale(
+  output: PlatformJobOutput,
+  mode: Exclude<DesignModeKey, 'report'>,
+) {
+  cmfUpscaleOutput.value = output;
+  cmfUpscaleDesignMode.value = mode;
+  cmfUpscaleFactor.value = 4;
+  cmfUpscaleOpen.value = true;
+}
+
+async function runCmfUpscale() {
+  const output = cmfUpscaleOutput.value;
+  if (!output) return;
+  cmfUpscaleSubmitting.value = true;
+  try {
+    await prepareOutputInComposer(
+      output,
+      'image-upscale',
+      cmfUpscaleDesignMode.value,
+    );
+    const factorField = scalarFields.value.find(
+      (field) => field.key === 'upscaleFactor',
+    );
+    if (!factorField) throw new Error('图像放大能力缺少倍率参数');
+    setFieldValue(factorField, cmfUpscaleFactor.value);
+    await saveDraftNow();
+    cmfUpscaleOpen.value = false;
+    await runCapability();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '图像放大提交失败');
+  } finally {
+    cmfUpscaleSubmitting.value = false;
+  }
+}
+
+async function markOutput(
+  output: PlatformJobOutput,
+  mode: 'cabin' | 'component',
+) {
+  try {
+    await prepareOutputInComposer(output, 'region-marker-edit', mode);
+    mediaPickerOpen.value = true;
+    await nextTick();
+    markerEditorRequest.value += 1;
+    message.success('图片已进入标记编辑器，请完成区域标记和修改指令');
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '无法进入标记编辑器',
+    );
+  }
+}
+
+async function changeEnvironment(output: PlatformJobOutput) {
+  try {
+    await prepareOutputInComposer(
+      output,
+      'single-image-edit',
+      'cabin',
+      'environment-change',
+    );
+    message.success('图片已填入“环境更改”编辑框，请选择环境模板并确认后发送');
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '无法进入环境更改编辑框',
+    );
+  }
+}
+
+function openMultiAngle(
+  output: PlatformJobOutput,
+  mode: 'cabin' | 'component',
+) {
+  multiAngleOutput.value = output;
+  multiAngleDesignMode.value = mode;
+  multiAngleMode.value = 'choose';
+  multiAngleFile.value = undefined;
+  multiAngleOpen.value = true;
+}
+
+function selectMultiAngleFile(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = [...(input.files ?? [])].find((item) =>
+    item.type.startsWith('image/'),
+  );
+  multiAngleFile.value = file;
+  input.value = '';
+}
+
+async function transferMultiAngleToComposer() {
+  const output = multiAngleOutput.value;
+  if (!output) return;
+  multiAngleSubmitting.value = true;
+  try {
+    await prepareOutputInComposer(
+      output,
+      'camera-control-multi',
+      multiAngleDesignMode.value,
+    );
+    multiAngleOpen.value = false;
+    message.success('图片已填入“多角度生成”编辑框，请确认参数后发送');
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '无法进入多角度生成编辑框',
+    );
+  } finally {
+    multiAngleSubmitting.value = false;
+  }
+}
+
+async function runMultiAngleDialog() {
+  const output = multiAngleOutput.value;
+  if (!output) return;
+  multiAngleSubmitting.value = true;
+  try {
+    const sourceField = await prepareOutputInComposer(
+      output,
+      'camera-control-multi',
+      multiAngleDesignMode.value,
+    );
+    if (multiAngleFile.value) {
+      await uploadMedia(sourceField, multiAngleFile.value, {
+        silent: true,
+        tags: ['设计会话输入', '多角度生成'],
+      });
+    }
+    await saveDraftNow();
+    multiAngleOpen.value = false;
+    await runCapability();
+  } catch (error) {
+    message.error(
+      error instanceof Error ? error.message : '多角度生成提交失败',
+    );
+  } finally {
+    multiAngleSubmitting.value = false;
+  }
+}
+
+function openThreeD(output: PlatformJobOutput) {
+  threeDOutput.value = output;
+  threeDMode.value = 'choose';
+  threeDFiles.value = [];
+  threeDOpen.value = true;
+}
+
+function selectThreeDFiles(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = [...(input.files ?? [])].filter((item) =>
+    item.type.startsWith('image/'),
+  );
+  threeDFiles.value = files.slice(0, 3);
+  if (files.length > 3) message.info('三维生成只需补充左、后、右三张视图');
+  input.value = '';
+}
+
+async function transferThreeDToComposer() {
+  const output = threeDOutput.value;
+  if (!output) return;
+  threeDSubmitting.value = true;
+  try {
+    await prepareOutputInComposer(output, 'multiview-to-3d', 'component');
+    threeDOpen.value = false;
+    message.success('当前图片已作为正视图，请继续补充左、后、右三张视图');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '无法进入三维生成');
+  } finally {
+    threeDSubmitting.value = false;
+  }
+}
+
+async function runThreeDDialog() {
+  const output = threeDOutput.value;
+  if (!output || threeDFiles.value.length !== 3) {
+    message.warning('请补充左、后、右三张视图');
+    return;
+  }
+  threeDSubmitting.value = true;
+  try {
+    await prepareOutputInComposer(output, 'multiview-to-3d', 'component');
+    const viewFields = mediaFields.value
+      .filter(
+        (field) =>
+          field.assetIndex !== undefined &&
+          field.assetIndex > 0 &&
+          field.acceptedKinds.includes('image'),
+      )
+      .toSorted(
+        (left, right) => (left.assetIndex ?? 0) - (right.assetIndex ?? 0),
+      );
+    if (viewFields.length < 3)
+      throw new Error('三维生成能力缺少四视图输入契约');
+    for (const [index, file] of threeDFiles.value.entries()) {
+      const field = viewFields[index];
+      if (!field) continue;
+      await uploadMedia(field, file, {
+        silent: true,
+        tags: ['设计会话输入', '三维生成多视图'],
+      });
+    }
+    await saveDraftNow();
+    threeDOpen.value = false;
+    await runCapability();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '三维生成提交失败');
+  } finally {
+    threeDSubmitting.value = false;
+  }
+}
+
+function handleBusinessResultAction(
+  action: BusinessResultAction,
+  output: PlatformJobOutput,
+  mode: Exclude<DesignModeKey, 'report'>,
+) {
+  if (action === 'multi-image') return openMultiImage(output, mode);
+  if (action === 'upscale') return openUpscale(output, mode);
+  if (action === 'understand') return void understandOutput(output, mode);
+  if (action === 'mark' && mode !== 'cmf') return void markOutput(output, mode);
+  if (action === 'environment' && mode === 'cabin') {
+    return void changeEnvironment(output);
+  }
+  if (action === 'multi-angle' && mode !== 'cmf') {
+    return openMultiAngle(output, mode);
+  }
+  if (action === 'three-d' && mode === 'component') return openThreeD(output);
 }
 
 async function useWelcomeSuggestion(value: string) {
@@ -1292,7 +1950,7 @@ onBeforeUnmount(() => {
     >
       <IconifyIcon
         :icon="
-          sidebarCollapsed ? 'lucide:chevrons-right' : 'lucide:chevrons-left'
+          sidebarCollapsed ? 'lucide:chevron-right' : 'lucide:chevron-left'
         "
       />
     </button>
@@ -1305,6 +1963,7 @@ onBeforeUnmount(() => {
               v-for="(job, index) in conversationJobs"
               :key="job.id"
               :accent="jobApplication(job)?.color ?? '#b91c32'"
+              :available-application-keys="allAvailableApplicationKeys"
               :fields="jobCapability(job)?.fields ?? []"
               flow-label="深化设计"
               :job="job"
@@ -1312,6 +1971,7 @@ onBeforeUnmount(() => {
               :supports-image-comparison="
                 jobCapability(job)?.supportsImageComparison ?? false
               "
+              @business-action="handleBusinessResultAction"
               @download="downloadOutput"
               @edit-rerun="editAndRerunJob"
               @edit-input="openInputMask"
@@ -1353,48 +2013,131 @@ onBeforeUnmount(() => {
           :data-effective-app-key="effectiveApplicationKey"
           :style="{ '--app-accent': application?.color }"
         >
-          <div
-            v-if="composerInputs.length"
-            class="composer-input-assets"
-            data-testid="composer-input-assets"
+          <section
+            v-if="composerImageFields.length"
+            class="composer-media-tray"
+            data-testid="composer-media-tray"
           >
-            <article
-              v-for="item in composerInputs"
-              :key="`${item.field.key}:${item.asset.id}`"
+            <div
+              class="composer-input-assets"
+              data-testid="composer-input-assets"
             >
-              <button
-                :aria-label="`编辑${item.field.label}`"
-                class="composer-input-asset__preview"
-                type="button"
-                @click="openMediaPicker"
+              <article
+                v-for="item in composerInputs"
+                :key="`${item.field.key}:${item.asset.id}`"
+                class="composer-input-asset"
               >
-                <img
-                  v-if="composerPreviewUrls[item.asset.id]"
-                  :alt="item.asset.name"
-                  :src="composerPreviewUrls[item.asset.id]"
-                />
-                <IconifyIcon v-else icon="lucide:file-image" />
-              </button>
-              <span>
-                <small>{{ item.field.label }}</small>
-                <strong>{{ item.asset.name }}</strong>
-              </span>
-              <button
-                :aria-label="`移除${item.asset.name}`"
-                class="composer-input-asset__remove"
-                type="button"
-                @click="removeSelectedAsset(item.field)"
+                <button
+                  :aria-label="`遮罩编辑：${item.asset.name}`"
+                  class="composer-input-asset__preview"
+                  title="点击进入遮罩编辑"
+                  type="button"
+                  @click="openComposerMask(item.field, item.asset.name)"
+                >
+                  <img
+                    v-if="composerPreviewUrls[item.asset.id]"
+                    :alt="item.asset.name"
+                    :src="composerPreviewUrls[item.asset.id]"
+                  />
+                  <IconifyIcon v-else icon="lucide:file-image" />
+                </button>
+                <div class="composer-input-asset__move-actions">
+                  <button
+                    :aria-label="`左移${item.asset.name}`"
+                    :disabled="composerInputPosition(item.field) === 0"
+                    title="左移"
+                    type="button"
+                    @click="moveComposerInput(item.field, -1)"
+                  >
+                    <IconifyIcon icon="lucide:arrow-left" />
+                  </button>
+                  <button
+                    :aria-label="`编辑${item.asset.name}`"
+                    title="编辑遮罩"
+                    type="button"
+                    @click.stop="openComposerMask(item.field, item.asset.name)"
+                  >
+                    <IconifyIcon icon="lucide:paintbrush" />
+                  </button>
+                  <button
+                    :aria-label="`右移${item.asset.name}`"
+                    :disabled="
+                      composerInputPosition(item.field) ===
+                      composerInputs.length - 1
+                    "
+                    title="右移"
+                    type="button"
+                    @click="moveComposerInput(item.field, 1)"
+                  >
+                    <IconifyIcon icon="lucide:arrow-right" />
+                  </button>
+                </div>
+                <button
+                  :aria-label="`移除${item.asset.name}`"
+                  class="composer-input-asset__remove"
+                  title="移除"
+                  type="button"
+                  @click="removeSelectedAsset(item.field)"
+                >
+                  <IconifyIcon icon="lucide:x" />
+                </button>
+              </article>
+
+              <Popover
+                v-if="composerCanAddMedia"
+                v-model:open="composerSourcePickerOpen"
+                placement="topLeft"
+                trigger="click"
               >
-                <IconifyIcon icon="lucide:x" />
-              </button>
-            </article>
-          </div>
+                <template #content>
+                  <div class="composer-media-source-menu">
+                    <button type="button" @click="chooseComposerLocalFiles">
+                      <IconifyIcon icon="lucide:upload" />
+                      <span>
+                        <strong>本地上传</strong>
+                        <small>可一次选择多张图片</small>
+                      </span>
+                    </button>
+                    <button type="button" @click="chooseComposerProjectAssets">
+                      <IconifyIcon :icon="platformSemanticIcons.assets" />
+                      <span>
+                        <strong>从资产中心选择</strong>
+                        <small>支持多选当前项目图片</small>
+                      </span>
+                    </button>
+                  </div>
+                </template>
+                <button
+                  aria-label="添加输入图片"
+                  :disabled="composerUploading"
+                  class="composer-input-asset__add"
+                  data-testid="composer-add-image"
+                  type="button"
+                >
+                  <IconifyIcon
+                    :icon="
+                      composerUploading ? 'lucide:loader-circle' : 'lucide:plus'
+                    "
+                  />
+                  <span>{{ composerUploading ? '上传中' : '添加图片' }}</span>
+                </button>
+              </Popover>
+            </div>
+            <input
+              ref="composerFileInputRef"
+              accept="image/*"
+              hidden
+              multiple
+              type="file"
+              @change="uploadComposerFiles"
+            />
+          </section>
           <Textarea
             v-if="promptField"
             :auto-size="{ minRows: 2, maxRows: 8 }"
             :value="fieldTextValue(promptField)"
             :maxlength="promptField.maxLength"
-            :placeholder="activeDesignMode.placeholder"
+            :placeholder="composerPlaceholder"
             data-testid="design-prompt-input"
             @update:value="setFieldValue(promptField, $event)"
             @press-enter="
@@ -1406,16 +2149,6 @@ onBeforeUnmount(() => {
           </div>
           <div class="composer-bottom">
             <div class="composer-toolbar">
-              <button
-                aria-label="添加输入素材"
-                class="composer-add-button"
-                data-testid="composer-add-material"
-                type="button"
-                @click="openMediaPicker"
-              >
-                <IconifyIcon icon="lucide:plus" />
-              </button>
-
               <template v-if="selectedAppKey">
                 <span
                   class="selected-application-chip"
@@ -1426,7 +2159,10 @@ onBeforeUnmount(() => {
                       :icon="application?.icon ?? 'lucide:message-circle'"
                     />
                     {{
-                      application?.shortName ?? application?.name ?? '选择应用'
+                      selectedBusinessTool?.label ??
+                      application?.shortName ??
+                      application?.name ??
+                      '选择应用'
                     }}
                   </span>
                   <button
@@ -1438,6 +2174,12 @@ onBeforeUnmount(() => {
                     <IconifyIcon icon="lucide:x" />
                   </button>
                 </span>
+                <DesignPromptTemplatePopover
+                  v-if="selectedBusinessTool?.templateCategoryIds"
+                  :category-ids="selectedBusinessTool.templateCategoryIds"
+                  :mode="promptTemplateMode"
+                  @apply="applyPromptTemplate"
+                />
                 <div class="parameter-chips">
                   <div class="parameter-chips__scroll">
                     <DesignQuickField
@@ -1476,28 +2218,86 @@ onBeforeUnmount(() => {
                 v-else
                 aria-label="设计应用"
                 class="composer-application-shortcuts"
+                :class="{
+                  'composer-application-shortcuts--business':
+                    activeModePrimaryTools.length > 0,
+                }"
                 :data-application-count="availableApplications.length"
               >
-                <button
-                  v-for="item in applicationShortcuts"
-                  :key="item.key"
-                  :data-app-key="item.key"
-                  :title="item.name"
-                  type="button"
-                  @click="chooseApplication(item.key)"
-                >
-                  <IconifyIcon :icon="item.icon" />
-                  {{ item.shortName }}
-                </button>
+                <template v-if="activeModePrimaryTools.length">
+                  <div class="primary-tool-scroll">
+                    <button
+                      v-for="tool in activeModePrimaryTools"
+                      :key="tool.key"
+                      :data-app-key="tool.appKey"
+                      :data-tool-key="tool.key"
+                      :disabled="
+                        !availableApplicationKeys.includes(tool.appKey)
+                      "
+                      :title="
+                        availableApplicationKeys.includes(tool.appKey)
+                          ? tool.label
+                          : `${tool.label}能力未配置或不可用`
+                      "
+                      type="button"
+                      @click="choosePrimaryTool(tool)"
+                    >
+                      <IconifyIcon :icon="tool.icon" />
+                      {{ tool.label }}
+                    </button>
+                  </div>
+                  <div class="primary-tool-fixed">
+                    <DesignPromptTemplatePopover
+                      :mode="promptTemplateMode"
+                      @apply="applyPromptTemplate"
+                    />
+                    <Popover placement="topLeft" trigger="click">
+                      <template #content>
+                        <div class="more-applications-grid">
+                          <button
+                            v-for="item in modeOverflowApplications"
+                            :key="item.key"
+                            :data-app-key="item.key"
+                            type="button"
+                            @click="chooseApplication(item.key)"
+                          >
+                            <IconifyIcon :icon="item.icon" />
+                            <span>
+                              <strong>{{ item.shortName }}</strong>
+                              <small>{{ item.description }}</small>
+                            </span>
+                          </button>
+                          <span
+                            v-if="modeOverflowApplications.length === 0"
+                            class="more-applications-empty"
+                          >
+                            暂无更多能力
+                          </span>
+                        </div>
+                      </template>
+                      <button
+                        data-testid="more-design-applications"
+                        title="查看更多应用"
+                        type="button"
+                      >
+                        <IconifyIcon icon="lucide:grid-2x2" />
+                        更多
+                      </button>
+                    </Popover>
+                  </div>
+                </template>
                 <Popover
-                  v-if="overflowApplications.length"
+                  v-if="
+                    !activeModePrimaryTools.length &&
+                    modeOverflowApplications.length
+                  "
                   placement="topLeft"
                   trigger="click"
                 >
                   <template #content>
                     <div class="more-applications-grid">
                       <button
-                        v-for="item in overflowApplications"
+                        v-for="item in modeOverflowApplications"
                         :key="item.key"
                         :data-app-key="item.key"
                         type="button"
@@ -1544,10 +2344,14 @@ onBeforeUnmount(() => {
             v-for="mode in designModes"
             :key="mode.key"
             :class="{
-              active: mode.key === selectedModeKey,
+              active: mode.key === selectedModeCardKey,
               unavailable: !modeAvailability[mode.key],
             }"
             :data-unavailable="!modeAvailability[mode.key] || undefined"
+            :aria-pressed="mode.key === selectedModeCardKey"
+            :style="{
+              backgroundImage: `linear-gradient(90deg, rgba(8, 17, 23, 0.96) 0%, rgba(8, 17, 23, 0.82) 48%, rgba(8, 17, 23, 0.18) 100%), url(${mode.backgroundImage})`,
+            }"
             :title="
               modeAvailability[mode.key]
                 ? mode.description
@@ -1556,68 +2360,15 @@ onBeforeUnmount(() => {
             type="button"
             @click="chooseDesignMode(mode.key)"
           >
-            <IconifyIcon :icon="mode.icon" />
-            <span>{{ mode.label }}</span>
+            <span class="design-mode-switcher__label">
+              {{ mode.label }}
+              <IconifyIcon icon="lucide:chevron-right" />
+            </span>
             <small v-if="!modeAvailability[mode.key]">待接入</small>
           </button>
         </nav>
       </footer>
     </section>
-
-    <Modal
-      v-model:open="reportPreviewOpen"
-      :footer="null"
-      title="报告生成"
-      width="min(820px, 94vw)"
-    >
-      <div class="report-layout" data-testid="report-layout">
-        <div class="report-layout__notice">
-          <IconifyIcon icon="lucide:circle-alert" />
-          <span>
-            当前仅按 0820
-            文档呈现报告配置布局；执行服务和能力契约尚未接入，不能提交生成。
-          </span>
-        </div>
-        <div class="report-layout__grid">
-          <label>
-            <span>报告类型</span>
-            <Select disabled placeholder="请选择报告类型" :value="undefined" />
-          </label>
-          <label>
-            <span>交付格式</span>
-            <Select disabled placeholder="Word / PPT" :value="undefined" />
-          </label>
-        </div>
-        <label class="report-layout__field">
-          <span>报告标题与说明</span>
-          <Textarea
-            disabled
-            :auto-size="{ minRows: 3, maxRows: 5 }"
-            placeholder="填写报告标题、章节重点和交付说明"
-          />
-        </label>
-        <section class="report-layout__assets" aria-label="报告图片素材">
-          <header>
-            <span>报告图片素材</span>
-            <small>从当前项目资产中选择</small>
-          </header>
-          <div>
-            <button v-for="index in 3" :key="index" disabled type="button">
-              <IconifyIcon icon="lucide:image-plus" />
-              <span>添加图片 {{ index }}</span>
-            </button>
-          </div>
-        </section>
-        <label class="report-layout__field">
-          <span>补充说明</span>
-          <Textarea
-            disabled
-            :auto-size="{ minRows: 2, maxRows: 4 }"
-            placeholder="填写报告结论、备注或其他结构化内容"
-          />
-        </label>
-      </div>
-    </Modal>
 
     <Modal
       v-model:open="mediaPickerOpen"
@@ -1632,7 +2383,7 @@ onBeforeUnmount(() => {
       <button
         v-if="promptField"
         class="markdown-asset-entry"
-        data-testid="open-markdown-asset-picker"
+        data-testid="open-markdown-asset-picker-from-media"
         type="button"
         @click="markdownPickerOpen = true"
       >
@@ -1651,6 +2402,7 @@ onBeforeUnmount(() => {
           :assets="platformStore.currentAssets"
           :field="field"
           :live-capture="(file) => runLiveCapture(field, file)"
+          :open-editor-request="markerEditorRequest"
           :project-id="platformStore.currentProjectId"
           :refresh-rate="captureRefreshRate()"
           :save-mask="(file) => saveInputMask(field, file)"
@@ -1680,6 +2432,17 @@ onBeforeUnmount(() => {
       @update:open="markdownPickerOpen = $event"
     />
 
+    <AssetPickerModal
+      :accepted-kinds="['image']"
+      :assets="platformStore.currentAssets"
+      multiple
+      :open="composerAssetPickerOpen"
+      :project-id="platformStore.currentProjectId"
+      :selected-asset-ids="[]"
+      @select-multiple="addComposerAssetIds"
+      @update:open="composerAssetPickerOpen = $event"
+    />
+
     <Drawer
       v-model:open="parameterDrawerOpen"
       :title="`${application?.name ?? '应用'} · 参数与输入`"
@@ -1688,6 +2451,22 @@ onBeforeUnmount(() => {
       width="min(520px, 94vw)"
     >
       <Spin :spinning="capabilityLoading">
+        <div v-if="promptField" class="drawer-section">
+          <h3>文本素材</h3>
+          <button
+            class="markdown-asset-entry"
+            data-testid="open-markdown-asset-picker"
+            type="button"
+            @click="markdownPickerOpen = true"
+          >
+            <IconifyIcon icon="lucide:file-text" />
+            <span>
+              <strong>从资产加载 Markdown 文本</strong>
+              <small>只提取文字并追加到当前编辑框</small>
+            </span>
+            <em>{{ markdownAssets.length }} 个可用</em>
+          </button>
+        </div>
         <div class="drawer-section" v-if="mediaFields.length">
           <h3>输入内容</h3>
           <CapabilityMediaField
@@ -1842,6 +2621,226 @@ onBeforeUnmount(() => {
         placeholder="选择目标输入位"
       />
     </Modal>
+
+    <Modal
+      v-model:open="cmfMultiImageOpen"
+      :footer="null"
+      :title="
+        cmfMultiImageDesignMode === 'cabin' ? '部件/材质融合' : '多图融合'
+      "
+      width="min(720px, 94vw)"
+    >
+      <div
+        v-if="cmfMultiImageMode === 'choose'"
+        class="cmf-action-choices"
+        data-testid="cmf-multi-image-methods"
+      >
+        <button type="button" @click="transferCmfMultiImageToComposer">
+          <IconifyIcon icon="lucide:panel-bottom-open" />
+          <span>
+            <strong>转入下方编辑框</strong>
+            <small>将当前图片带入融合能力，再自行添加素材和提示词</small>
+          </span>
+          <IconifyIcon icon="lucide:arrow-right" />
+        </button>
+        <button type="button" @click="cmfMultiImageMode = 'dialog'">
+          <IconifyIcon :icon="platformSemanticIcons.workbench" />
+          <span>
+            <strong>在弹窗中完成</strong>
+            <small>上传两张参考图并填写提示词，确认后直接进入生成流程</small>
+          </span>
+          <IconifyIcon icon="lucide:arrow-right" />
+        </button>
+      </div>
+      <div v-else class="cmf-multi-dialog">
+        <p class="continue-description">
+          当前生成图将作为基础图。请再上传两张参考图，并描述要保留、融合或替换的内容。
+        </p>
+        <label class="cmf-file-picker">
+          <input
+            accept="image/*"
+            multiple
+            type="file"
+            @change="selectCmfMultiImageFiles"
+          />
+          <IconifyIcon icon="lucide:images" />
+          <span>
+            <strong>上传两张参考图</strong>
+            <small>已选择 {{ cmfMultiImageFiles.length }}/2 张</small>
+          </span>
+        </label>
+        <div v-if="cmfMultiImageFiles.length" class="cmf-file-list">
+          <span
+            v-for="file in cmfMultiImageFiles"
+            :key="`${file.name}:${file.size}`"
+          >
+            <IconifyIcon icon="lucide:image" />
+            {{ file.name }}
+          </span>
+        </div>
+        <Textarea
+          v-model:value="cmfMultiImagePrompt"
+          :auto-size="{ minRows: 4, maxRows: 8 }"
+          :maxlength="6000"
+          placeholder="描述三张图像的融合关系、目标纹样、色彩与材质效果……"
+        />
+        <div class="cmf-dialog-actions">
+          <Button @click="cmfMultiImageMode = 'choose'">返回</Button>
+          <Button
+            :disabled="
+              cmfMultiImageFiles.length !== 2 || !cmfMultiImagePrompt.trim()
+            "
+            :loading="cmfMultiImageSubmitting"
+            type="primary"
+            @click="runCmfMultiImageDialog"
+          >
+            开始融合
+          </Button>
+        </div>
+      </div>
+    </Modal>
+
+    <Modal
+      v-model:open="cmfUpscaleOpen"
+      :confirm-loading="cmfUpscaleSubmitting"
+      ok-text="开始放大"
+      title="选择图像放大倍率"
+      @ok="runCmfUpscale"
+    >
+      <p class="continue-description">
+        当前图片会作为原始图像，确认倍率后直接创建图像放大任务。
+      </p>
+      <Select
+        v-model:value="cmfUpscaleFactor"
+        :options="[
+          { label: '2 倍', value: 2 },
+          { label: '4 倍（推荐）', value: 4 },
+          { label: '8 倍', value: 8 },
+        ]"
+        class="w-full"
+      />
+    </Modal>
+
+    <Modal
+      v-model:open="multiAngleOpen"
+      :footer="null"
+      title="多角度生成"
+      width="min(720px, 94vw)"
+    >
+      <div v-if="multiAngleMode === 'choose'" class="cmf-action-choices">
+        <button type="button" @click="transferMultiAngleToComposer">
+          <IconifyIcon icon="lucide:panel-bottom-open" />
+          <span>
+            <strong>转入下方编辑框</strong>
+            <small>使用当前图片作为源图，检查参数后再发送</small>
+          </span>
+          <IconifyIcon icon="lucide:arrow-right" />
+        </button>
+        <button type="button" @click="multiAngleMode = 'dialog'">
+          <IconifyIcon :icon="platformSemanticIcons.workbench" />
+          <span>
+            <strong>在弹窗中完成</strong>
+            <small>直接使用当前图片，或上传另一张图片替换后生成</small>
+          </span>
+          <IconifyIcon icon="lucide:arrow-right" />
+        </button>
+      </div>
+      <div v-else class="cmf-multi-dialog">
+        <p class="continue-description">
+          多角度工作流只接收一张源图。未上传替换图时，将使用当前生成结果。
+        </p>
+        <label class="cmf-file-picker">
+          <input accept="image/*" type="file" @change="selectMultiAngleFile" />
+          <IconifyIcon icon="lucide:image-up" />
+          <span>
+            <strong>可选：替换源图</strong>
+            <small>{{ multiAngleFile?.name ?? '当前使用生成结果' }}</small>
+          </span>
+        </label>
+        <div class="cmf-dialog-actions">
+          <Button @click="multiAngleMode = 'choose'">返回</Button>
+          <Button
+            :loading="multiAngleSubmitting"
+            type="primary"
+            @click="runMultiAngleDialog"
+          >
+            开始生成
+          </Button>
+        </div>
+      </div>
+    </Modal>
+
+    <Modal
+      v-model:open="threeDOpen"
+      :footer="null"
+      title="三维生成"
+      width="min(720px, 94vw)"
+    >
+      <div v-if="threeDMode === 'choose'" class="cmf-action-choices">
+        <button type="button" @click="transferThreeDToComposer">
+          <IconifyIcon icon="lucide:panel-bottom-open" />
+          <span>
+            <strong>转入下方编辑框</strong>
+            <small>将当前图片作为正视图，再自行补充左、后、右视图</small>
+          </span>
+          <IconifyIcon icon="lucide:arrow-right" />
+        </button>
+        <button type="button" @click="threeDMode = 'dialog'">
+          <IconifyIcon :icon="platformSemanticIcons.workbench" />
+          <span>
+            <strong>在弹窗中完成</strong>
+            <small>补充三张视图，确认后直接进入三维生成流程</small>
+          </span>
+          <IconifyIcon icon="lucide:arrow-right" />
+        </button>
+      </div>
+      <div v-else class="cmf-multi-dialog">
+        <p class="continue-description">
+          当前图片作为正视图。请按左视图、后视图、右视图的顺序上传三张图片。
+        </p>
+        <label class="cmf-file-picker">
+          <input
+            accept="image/*"
+            multiple
+            type="file"
+            @change="selectThreeDFiles"
+          />
+          <IconifyIcon icon="lucide:box" />
+          <span>
+            <strong>上传左、后、右三张视图</strong>
+            <small>已选择 {{ threeDFiles.length }}/3 张</small>
+          </span>
+        </label>
+        <div v-if="threeDFiles.length" class="cmf-file-list">
+          <span
+            v-for="(file, index) in threeDFiles"
+            :key="`${file.name}:${file.size}`"
+          >
+            <IconifyIcon icon="lucide:image" />
+            {{ ['左视图', '后视图', '右视图'][index] }}：{{ file.name }}
+          </span>
+        </div>
+        <div class="cmf-dialog-actions">
+          <Button @click="threeDMode = 'choose'">返回</Button>
+          <Button
+            :disabled="threeDFiles.length !== 3"
+            :loading="threeDSubmitting"
+            type="primary"
+            @click="runThreeDDialog"
+          >
+            开始生成
+          </Button>
+        </div>
+      </div>
+    </Modal>
+
+    <ComfyMaskEditor
+      v-if="composerMaskField"
+      v-model:open="composerMaskEditorOpen"
+      :on-save="saveComposerMask"
+      :src="composerMaskSource"
+      :title="composerMaskTitle"
+    />
 
     <ComfyMaskEditor
       v-if="maskEditSourceAssetId"
@@ -2245,9 +3244,132 @@ onBeforeUnmount(() => {
   color: var(--design-muted);
 }
 
+.cmf-action-choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cmf-action-choices > button {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 20px;
+  gap: 10px;
+  align-items: center;
+  min-height: 112px;
+  padding: 16px;
+  color: #26323a;
+  text-align: left;
+  cursor: pointer;
+  background: #f7f8f9;
+  border: 1px solid #e2e6e9;
+  border-radius: 12px;
+}
+
+.cmf-action-choices > button:hover {
+  color: #b91c32;
+  background: #fff4f5;
+  border-color: #df8e9d;
+}
+
+.cmf-action-choices > button > svg:first-child {
+  width: 34px;
+  height: 34px;
+  padding: 8px;
+  background: #fff;
+  border-radius: 10px;
+}
+
+.cmf-action-choices span {
+  display: grid;
+  gap: 5px;
+}
+
+.cmf-action-choices strong {
+  font-size: 14px;
+}
+
+.cmf-action-choices small {
+  font-size: 12px;
+  line-height: 1.55;
+  color: #74808a;
+}
+
+.cmf-multi-dialog {
+  display: grid;
+  gap: 12px;
+}
+
+.cmf-file-picker {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px;
+  cursor: pointer;
+  background: #f7f8f9;
+  border: 1px dashed #cbd2d7;
+  border-radius: 10px;
+}
+
+.cmf-file-picker input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.cmf-file-picker > svg {
+  width: 28px;
+  height: 28px;
+  color: #b91c32;
+}
+
+.cmf-file-picker span {
+  display: grid;
+  gap: 2px;
+}
+
+.cmf-file-picker small {
+  color: #74808a;
+}
+
+.cmf-file-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cmf-file-list span {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  max-width: 100%;
+  padding: 5px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  white-space: nowrap;
+  background: #f2f4f5;
+  border-radius: 7px;
+}
+
+.cmf-dialog-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 @keyframes design-pulse {
   50% {
     opacity: 0.35;
+  }
+}
+
+@media (max-width: 1500px) {
+  .thread-scroll,
+  .design-composer {
+    padding-right: 18px;
+    padding-left: 18px;
   }
 }
 
@@ -2304,24 +3426,39 @@ main.design-page {
   z-index: 1010;
   display: grid;
   place-items: center;
-  width: 26px;
+  width: 28px;
   height: 48px;
-  color: #8a424f;
+  color: #9da2aa;
   cursor: pointer;
-  background: #fff;
-  border: 1px solid #e2a8b2;
-  border-radius: 0 10px 10px 0;
-  box-shadow: 0 6px 18px rgb(61 18 27 / 10%);
+  background: transparent;
+  border: 0;
+  border-radius: 0 8px 8px 0;
+  opacity: 0.62;
   transform: translateY(-50%);
   transition:
     left 180ms ease,
+    opacity 140ms ease,
     color 140ms ease,
     background 140ms ease;
 }
 
 .conversation-sidebar-toggle:hover {
-  color: #fff;
-  background: var(--rail-red);
+  color: #646a73;
+  background: rgb(17 24 39 / 5%);
+  opacity: 1;
+}
+
+.conversation-sidebar-toggle:focus-visible {
+  color: #646a73;
+  outline: 2px solid rgb(194 24 54 / 45%);
+  outline-offset: -2px;
+  background: rgb(17 24 39 / 5%);
+  opacity: 1;
+}
+
+.conversation-sidebar-toggle svg {
+  width: 14px;
+  height: 14px;
 }
 
 .design-page.sidebar-collapsed .conversation-sidebar-toggle {
@@ -2479,7 +3616,7 @@ main.design-page {
 }
 
 .sidebar-user small {
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   color: var(--design-muted);
 }
 
@@ -2562,16 +3699,17 @@ main.design-page {
   position: relative;
   z-index: 4;
   min-width: 0;
-  padding: 10px clamp(20px, 6vw, 88px) 18px;
+  padding: 10px 18px 18px;
   background: linear-gradient(rgb(255 255 255 / 10%), #fff 20%);
 }
 
 .design-mode-switcher {
-  display: flex;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(138px, 1fr));
+  gap: 8px;
   width: 100%;
   max-width: var(--design-content-width);
-  padding: 8px 2px 0;
+  padding: 8px 0 0;
   margin: 0 auto;
   overflow-x: auto;
   scrollbar-width: none;
@@ -2582,38 +3720,81 @@ main.design-page {
 }
 
 .design-mode-switcher button {
-  display: inline-flex;
-  flex: 0 0 auto;
-  gap: 6px;
+  position: relative;
+  display: flex;
+  gap: 8px;
   align-items: center;
-  min-height: 30px;
-  padding: 5px 10px;
-  font-size: 12px;
-  color: #56616a;
+  justify-content: space-between;
+  min-width: 138px;
+  min-height: 48px;
+  padding: 8px 11px;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  text-align: left;
   cursor: pointer;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 999px;
+  background-color: #111c23;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 11px;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 14%);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
-.design-mode-switcher button:hover,
+.design-mode-switcher button:hover {
+  color: #fff;
+  border-color: rgb(255 255 255 / 42%);
+  box-shadow: 0 7px 16px rgb(15 23 42 / 20%);
+  transform: translateY(-1px);
+}
+
 .design-mode-switcher button.active {
-  color: #b91c32;
-  background: #fff1f3;
-  border-color: #e8b5be;
+  color: #fff;
+  border-color: #d4203c;
+  box-shadow:
+    0 0 0 2px rgb(212 32 60 / 18%),
+    0 7px 16px rgb(15 23 42 / 20%);
 }
 
 .design-mode-switcher button.unavailable {
-  color: #92999f;
-  background: #f5f6f7;
-  border-color: #e6e8ea;
+  color: rgb(255 255 255 / 70%);
+  cursor: not-allowed;
+  opacity: 0.62;
+  filter: grayscale(0.85);
+}
+
+.design-mode-switcher__label {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  min-width: 0;
+  white-space: nowrap;
+  text-shadow: 0 1px 4px rgb(0 0 0 / 50%);
+}
+
+.design-mode-switcher__label svg {
+  width: 14px;
+  height: 14px;
 }
 
 .design-mode-switcher small {
-  padding-left: 5px;
-  font-size: 10px;
-  color: #8a6b3a;
-  border-left: 1px solid #d8dcdf;
+  position: relative;
+  z-index: 1;
+  padding: 2px 5px;
+  font-size: var(--rail-font-caption);
+  font-weight: 500;
+  color: rgb(255 255 255 / 80%);
+  white-space: nowrap;
+  background: rgb(0 0 0 / 24%);
+  border-radius: 999px;
 }
 
 .design-page .composer-box {
@@ -2668,23 +3849,6 @@ main.design-page {
   overflow: hidden;
 }
 
-.composer-add-button {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 34px;
-  height: 30px;
-  padding: 0;
-  font-size: 21px;
-  font-weight: 650;
-  color: #16191d;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-right: 1px solid #d9dde2;
-}
-
-.composer-add-button:hover,
 .composer-application-shortcuts button:hover,
 .parameter-chips button:hover {
   color: #bd1934;
@@ -2699,6 +3863,47 @@ main.design-page {
 .composer-application-shortcuts::-webkit-scrollbar,
 .parameter-chips::-webkit-scrollbar {
   display: none;
+}
+
+.composer-application-shortcuts--business > button,
+.composer-application-shortcuts--business > :deep(button) {
+  gap: 3px;
+  padding-right: 4px;
+  padding-left: 4px;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.composer-application-shortcuts--business > button svg,
+.composer-application-shortcuts--business > :deep(button svg) {
+  width: 14px;
+  height: 14px;
+}
+
+.primary-tool-scroll,
+.primary-tool-fixed {
+  display: flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.primary-tool-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.primary-tool-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.primary-tool-fixed {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 auto;
+  background: #fff;
+  box-shadow: -10px 0 10px #fff;
 }
 
 .selected-application-chip {
@@ -2806,83 +4011,178 @@ main.design-page {
   border-color: #e6a2ad;
 }
 
+.composer-media-tray {
+  display: grid;
+  padding: 2px 0 10px;
+}
+
 .composer-input-assets {
   display: flex;
   gap: 9px;
-  padding: 2px 0 8px;
+  min-height: 82px;
+  padding: 1px 0 3px;
   overflow-x: auto;
+  scrollbar-width: thin;
 }
 
-.composer-input-assets article {
+.composer-input-asset {
   position: relative;
-  display: grid;
-  grid-template-columns: 52px minmax(90px, 150px) 20px;
-  gap: 8px;
-  align-items: center;
-  min-width: 190px;
-  padding: 6px;
-  background: #faf7f7;
-  border: 1px solid #f0dcdf;
-  border-radius: 12px;
+  flex: 0 0 78px;
+  width: 78px;
+  height: 78px;
 }
 
 .composer-input-asset__preview {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
+  width: 78px;
+  height: 78px;
   padding: 0;
   overflow: hidden;
   color: #bd1934;
   cursor: pointer;
   background: #fff;
-  border: 0;
-  border-radius: 9px;
+  border: 1px solid #e5d8da;
+  border-radius: 11px;
 }
 
 .composer-input-asset__preview img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
-.composer-input-assets article > span {
-  display: grid;
-  min-width: 0;
+.composer-input-asset__move-actions {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity 150ms ease;
 }
 
-.composer-input-assets small,
-.composer-input-assets strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.composer-input-asset:hover .composer-input-asset__move-actions,
+.composer-input-asset:focus-within .composer-input-asset__move-actions {
+  opacity: 1;
 }
 
-.composer-input-assets small {
-  font-size: 12px;
-  color: #8a6269;
-}
-
-.composer-input-assets strong {
-  font-size: 14px;
-}
-
+.composer-input-asset__move-actions button,
 .composer-input-asset__remove {
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   padding: 0;
-  color: #7a858c;
+  color: #fff;
   cursor: pointer;
-  background: transparent;
+  background: rgb(18 25 30 / 76%);
   border: 0;
-  border-radius: 5px;
+  border-radius: 7px;
+}
+
+.composer-input-asset__move-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.composer-input-asset__remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  z-index: 3;
+  width: 21px;
+  height: 21px;
+  background: #343a3f;
+  border: 2px solid #fff;
+  border-radius: 50%;
 }
 
 .composer-input-asset__remove:hover {
+  color: #fff;
+  background: #bd1934;
+}
+
+.composer-input-asset__add {
+  display: grid;
+  flex: 0 0 78px;
+  gap: 4px;
+  place-items: center;
+  align-content: center;
+  width: 78px;
+  height: 78px;
+  padding: 0;
+  font-size: 22px;
+  color: #6c777e;
+  cursor: pointer;
+  background: #f3f4f5;
+  border: 1px dashed #cfd5d8;
+  border-radius: 11px;
+}
+
+.composer-input-asset__add span {
+  font-size: var(--rail-font-caption);
+  font-weight: 650;
+}
+
+.composer-input-asset__add:hover {
   color: #bd1934;
-  background: #fff;
+  background: #fff5f6;
+  border-color: #cf6476;
+}
+
+.composer-input-asset__add:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+:global(.composer-media-source-menu) {
+  display: grid;
+  gap: 6px;
+  width: 250px;
+}
+
+:global(.composer-media-source-menu > button) {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding: 9px;
+  color: #20272c;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+}
+
+:global(.composer-media-source-menu > button:hover) {
+  color: #bd1934;
+  background: #fff1f3;
+}
+
+:global(.composer-media-source-menu > button > svg) {
+  width: 21px;
+  height: 21px;
+  margin: auto;
+}
+
+:global(.composer-media-source-menu span),
+:global(.composer-media-source-menu strong),
+:global(.composer-media-source-menu small) {
+  display: block;
+}
+
+:global(.composer-media-source-menu strong) {
+  font-size: 13px;
+}
+
+:global(.composer-media-source-menu small) {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #758087;
 }
 
 .composer-media-summary strong {
@@ -3010,88 +4310,6 @@ main.design-page {
   color: #73808a;
 }
 
-.report-layout {
-  display: grid;
-  gap: 18px;
-  padding-top: 4px;
-}
-
-.report-layout__notice {
-  display: flex;
-  gap: 9px;
-  align-items: flex-start;
-  padding: 11px 13px;
-  font-size: 13px;
-  line-height: 1.55;
-  color: #7e3b48;
-  background: var(--rail-red-soft);
-  border: 1px solid #e9bdc5;
-  border-radius: 12px;
-}
-
-.report-layout__notice svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-}
-
-.report-layout__grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-}
-
-.report-layout label,
-.report-layout__field,
-.report-layout__assets {
-  display: grid;
-  gap: 8px;
-}
-
-.report-layout label > span,
-.report-layout__assets header > span {
-  font-size: 13px;
-  font-weight: 700;
-  color: #343b40;
-}
-
-.report-layout label :deep(.ant-select) {
-  width: 100%;
-}
-
-.report-layout__assets header {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-}
-
-.report-layout__assets header small {
-  font-size: 11px;
-  color: #7a858d;
-}
-
-.report-layout__assets > div {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.report-layout__assets button {
-  display: grid;
-  place-items: center;
-  min-height: 112px;
-  color: #7d858b;
-  background: var(--rail-mist);
-  border: 1px dashed #c7cdd1;
-  border-radius: 12px;
-}
-
-.report-layout__assets button svg {
-  width: 24px;
-  height: 24px;
-  margin-bottom: -28px;
-  color: var(--rail-red);
-}
-
 @media (max-width: 900px) {
   main.design-page {
     --design-sidebar-width: 224px;
@@ -3103,11 +4321,6 @@ main.design-page {
 
   .thread-status {
     display: none;
-  }
-
-  .report-layout__grid,
-  .report-layout__assets > div {
-    grid-template-columns: 1fr;
   }
 }
 </style>

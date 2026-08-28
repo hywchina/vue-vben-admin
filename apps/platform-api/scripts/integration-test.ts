@@ -32,6 +32,11 @@ let projectId: null | string = null;
 const disposableProjectIds: string[] = [];
 let conversationId: null | string = null;
 let visibilityTestApplication: null | { key: string; visible: boolean } = null;
+let promptTemplateCatalogBackup: null | {
+  categories: unknown;
+  updatedAt: Date;
+  updatedBy: null | string;
+} = null;
 const notificationIds: string[] = [];
 const testUserIds: string[] = [];
 
@@ -182,6 +187,18 @@ async function cleanup() {
       WHERE key = ${visibilityTestApplication.key}
     `;
   }
+  if (promptTemplateCatalogBackup) {
+    await sql`
+      UPDATE design_prompt_template_catalogs
+      SET
+        categories = ${sql.json(
+          JSON.parse(JSON.stringify(promptTemplateCatalogBackup.categories)),
+        )},
+        updated_by = ${promptTemplateCatalogBackup.updatedBy},
+        updated_at = ${promptTemplateCatalogBackup.updatedAt}
+      WHERE design_mode = 'cmf'
+    `;
+  }
   if (projectId) {
     const objects = await sql<{ objectKey: string }[]>`
       SELECT version.object_key AS "objectKey"
@@ -242,6 +259,30 @@ async function run() {
   const account4 = await createTestAccount('user', 4);
   const user1 = await login(account1.username, account1.password);
   const sql = useDatabase();
+  const settleJobsForIntegration = async (jobIds: string[], stage: string) => {
+    await sql.begin(async (transaction) => {
+      await transaction`
+        UPDATE job_executions
+        SET
+          status = 'cancelled',
+          completed_at = now(),
+          lease_owner = NULL,
+          lease_expires_at = NULL,
+          updated_at = now()
+        WHERE job_id IN ${transaction(jobIds)}
+          AND status NOT IN ('succeeded', 'failed', 'cancelled')
+      `;
+      await transaction`
+        UPDATE jobs
+        SET
+          status = 'cancelled',
+          stage = ${stage},
+          completed_at = now(),
+          updated_at = now()
+        WHERE id IN ${transaction(jobIds)}
+      `;
+    });
+  };
   const user2 = await login(account2.username, account2.password);
   const admin = await login(adminAccount.username, adminAccount.password);
   const user4 = await login(account4.username, account4.password);
@@ -490,6 +531,100 @@ async function run() {
     (application) => application.key === 'text-to-image',
   );
   assert(textToImageTarget, '没有可用于应用单任务互斥验收的文生图工作流');
+  const [cmfTemplateBackup] = await sql<
+    {
+      categories: unknown;
+      updatedAt: Date;
+      updatedBy: null | string;
+    }[]
+  >`
+    SELECT
+      categories,
+      updated_by AS "updatedBy",
+      updated_at AS "updatedAt"
+    FROM design_prompt_template_catalogs
+    WHERE design_mode = 'cmf'
+  `;
+  assert(cmfTemplateBackup, 'CMF 提示词模板初始目录不存在');
+  promptTemplateCatalogBackup = cmfTemplateBackup;
+  const initialCmfTemplates = await apiRequest<{
+    categories: Array<{ id: string; options: Array<{ id: string }> }>;
+    designMode: string;
+  }>('/design-prompt-templates/cmf', { session: user1 });
+  assert(
+    initialCmfTemplates.envelope.data.designMode === 'cmf' &&
+      initialCmfTemplates.envelope.data.categories.length > 0,
+    '普通用户无法读取 CMF 提示词模板',
+  );
+  const initialComponentTemplates = await apiRequest<{
+    categories: Array<{ id: string }>;
+    designMode: string;
+  }>('/design-prompt-templates/component', { session: user1 });
+  assert(
+    initialComponentTemplates.envelope.data.designMode === 'component' &&
+      initialComponentTemplates.envelope.data.categories.some(
+        (category) => category.id === 'component-type',
+      ),
+    '普通用户无法读取客室零部件提示词模板',
+  );
+  const initialCabinTemplates = await apiRequest<{
+    categories: Array<{ id: string }>;
+    designMode: string;
+  }>('/design-prompt-templates/cabin', { session: user1 });
+  assert(
+    initialCabinTemplates.envelope.data.designMode === 'cabin' &&
+      initialCabinTemplates.envelope.data.categories.some(
+        (category) => category.id === 'light-environment',
+      ) &&
+      initialCabinTemplates.envelope.data.categories.some(
+        (category) => category.id === 'outside-environment',
+      ),
+    '普通用户无法读取客室效果与环境更改提示词模板',
+  );
+  const testPromptCategories = [
+    {
+      id: 'integration-color',
+      name: '验收颜色',
+      options: [
+        {
+          id: 'integration-color-red',
+          label: '验收红色',
+          value: '验收红色提示词',
+        },
+      ],
+    },
+    {
+      id: 'integration-material',
+      name: '验收材质',
+      options: [
+        {
+          id: 'integration-material-fabric',
+          label: '验收布料',
+          value: '验收布料提示词',
+        },
+      ],
+    },
+  ];
+  await apiRequest('/design-prompt-templates/cmf', {
+    body: { categories: testPromptCategories },
+    expectedStatus: 403,
+    method: 'PUT',
+    session: user1,
+  });
+  await apiRequest('/design-prompt-templates/cmf', {
+    body: { categories: testPromptCategories },
+    method: 'PUT',
+    session: admin,
+  });
+  const updatedCmfTemplates = await apiRequest<{
+    categories: Array<{ id: string }>;
+  }>('/design-prompt-templates/cmf', { session: user1 });
+  assert(
+    updatedCmfTemplates.envelope.data.categories
+      .map((category) => category.id)
+      .join(',') === 'integration-color,integration-material',
+    '管理员维护的 CMF 提示词模板没有按顺序持久化',
+  );
   assert(
     visibilityTarget.canManageVisibility,
     '管理员应用列表没有返回可见性管理能力',
@@ -1090,14 +1225,10 @@ async function run() {
     },
     session: user1,
   });
-  await sql`
-    UPDATE jobs
-    SET status = 'cancelled', stage = '互斥验收完成', completed_at = now()
-    WHERE id IN ${sql([
-      activeWorkspaceJobId,
-      parallelWorkspaceJob.envelope.data.id,
-    ])}
-  `;
+  await settleJobsForIntegration(
+    [activeWorkspaceJobId, parallelWorkspaceJob.envelope.data.id],
+    '互斥验收完成',
+  );
 
   const automaticTitleConversation = await apiRequest<{
     id: string;
@@ -1106,10 +1237,14 @@ async function run() {
     body: { projectId },
     session: user1,
   });
-  const automaticTitleJob = await apiRequest<{ id: string }>('/jobs', {
+  const automaticTitleJob = await apiRequest<{
+    designMode?: string;
+    id: string;
+  }>('/jobs', {
     body: {
       appKey: textToImageTarget.key,
       designConversationId: automaticTitleConversation.envelope.data.id,
+      designMode: 'cmf',
       inputAssetIds: [],
       name: '自动会话标题验收',
       parameters: {
@@ -1119,6 +1254,19 @@ async function run() {
     },
     session: user1,
   });
+  assert(
+    automaticTitleJob.envelope.data.designMode === 'cmf',
+    '任务创建响应没有保留 CMF 设计模式',
+  );
+  const designModeJobs = await apiRequest<
+    Array<{ designMode?: string; id: string }>
+  >(`/jobs?projectId=${projectId}`, { session: user1 });
+  assert(
+    designModeJobs.envelope.data.find(
+      (job) => job.id === automaticTitleJob.envelope.data.id,
+    )?.designMode === 'cmf',
+    '任务历史没有恢复 CMF 设计模式',
+  );
   const automaticallyTitled = await apiRequest<
     Array<{ id: string; title: string }>
   >(`/design-conversations?projectId=${projectId}`, { session: user1 });
@@ -1128,11 +1276,10 @@ async function run() {
     )?.title === '设计现代轨道客室空间并优化照明与耐用材…',
     '新设计会话没有使用首次文本生成简短名称',
   );
-  await sql`
-    UPDATE jobs
-    SET status = 'cancelled', stage = '自动标题验收完成', completed_at = now()
-    WHERE id = ${automaticTitleJob.envelope.data.id}
-  `;
+  await settleJobsForIntegration(
+    [automaticTitleJob.envelope.data.id],
+    '自动标题验收完成',
+  );
   await apiRequest(
     `/design-conversations/${automaticTitleConversation.envelope.data.id}`,
     {
@@ -1162,11 +1309,10 @@ async function run() {
     )?.title === '用户手动命名的设计会话',
     '后续任务覆盖了用户手动设置的会话名称',
   );
-  await sql`
-    UPDATE jobs
-    SET status = 'cancelled', stage = '手动标题保护验收完成', completed_at = now()
-    WHERE id = ${manualTitleJob.envelope.data.id}
-  `;
+  await settleJobsForIntegration(
+    [manualTitleJob.envelope.data.id],
+    '手动标题保护验收完成',
+  );
 
   const designConversation = await apiRequest<{ id: string; title: string }>(
     '/design-conversations',
@@ -1255,11 +1401,10 @@ async function run() {
     expectedStatus: 409,
     session: user1,
   });
-  await sql`
-    UPDATE jobs
-    SET status = 'cancelled', stage = '设计会话并发验收完成', completed_at = now()
-    WHERE id IN ${sql([activeDesignJobId, parallelDesignJob.envelope.data.id])}
-  `;
+  await settleJobsForIntegration(
+    [activeDesignJobId, parallelDesignJob.envelope.data.id],
+    '设计会话并发验收完成',
+  );
 
   const designDraftPath = `/design-conversations/${designConversation.envelope.data.id}/drafts/${flowTarget.key}`;
   await apiRequest(designDraftPath, {
@@ -1322,11 +1467,10 @@ async function run() {
         derivedPrepared.envelope.data.asset.id,
     '任务历史没有恢复分区标记图与原图的关联',
   );
-  await sql`
-    UPDATE jobs
-    SET status = 'cancelled', stage = '分区标记快照验收完成', completed_at = now()
-    WHERE id = ${annotatedJob.envelope.data.id}
-  `;
+  await settleJobsForIntegration(
+    [annotatedJob.envelope.data.id],
+    '分区标记快照验收完成',
+  );
   const rejectedAnnotation = await apiRequest<unknown>('/jobs', {
     body: {
       appKey: flowTarget.key,
@@ -1677,6 +1821,32 @@ async function run() {
     expectedStatus: 404,
     session: user2,
   });
+  await apiRequest(`/assistant/conversations/${conversationId}`, {
+    body: { title: '越权重命名不应成功' },
+    expectedStatus: 404,
+    method: 'PATCH',
+    session: user2,
+  });
+  const renamedAssistantConversation = await apiRequest<{
+    id: string;
+    title: string;
+  }>(`/assistant/conversations/${conversationId}`, {
+    body: { title: 'AI 助手集成验收会话' },
+    method: 'PATCH',
+    session: user1,
+  });
+  const listedAssistantConversations = await apiRequest<
+    Array<{ id: string; title: string }>
+  >('/assistant/conversations', { session: user1 });
+  assert(
+    renamedAssistantConversation.envelope.data.title ===
+      'AI 助手集成验收会话' &&
+      listedAssistantConversations.envelope.data.some(
+        (item) =>
+          item.id === conversationId && item.title === 'AI 助手集成验收会话',
+      ),
+    'AI 助手会话重命名没有持久化到历史列表',
+  );
 
   const user2Info = await apiRequest<{ publicId: string }>('/user/info', {
     session: user2,
@@ -1726,7 +1896,7 @@ async function run() {
   });
   const memberList = await apiRequest<{
     canInvite: boolean;
-    items: Array<{ publicId: string; userId: string }>;
+    items: Array<{ avatar: null | string; publicId: string; userId: string }>;
   }>(`/projects/${projectId}/members`, { session: user2 });
   assert(
     !memberList.envelope.data.canInvite &&
@@ -1735,17 +1905,34 @@ async function run() {
       ) &&
       memberList.envelope.data.items.some(
         (member) => member.publicId === user4Info.envelope.data.publicId,
+      ) &&
+      memberList.envelope.data.items.some(
+        (member) =>
+          member.publicId === user1Info.envelope.data.publicId &&
+          Boolean(member.avatar),
       ),
     '受邀成员列表或创建者/管理员邀请边界不正确',
   );
   const user2ProjectsAfterInvite = await apiRequest<{
-    items: Array<{ id: string }>;
+    items: Array<{
+      id: string;
+      memberPreviews: Array<{
+        avatar: null | string;
+        publicId: string;
+      }>;
+    }>;
   }>('/projects', { session: user2 });
   assert(
     user2ProjectsAfterInvite.envelope.data.items.some(
-      (item) => item.id === projectId,
+      (item) =>
+        item.id === projectId &&
+        item.memberPreviews.some(
+          (member) =>
+            member.publicId === user1Info.envelope.data.publicId &&
+            Boolean(member.avatar),
+        ),
     ),
-    '通过用户 ID 邀请后，成员仍无法访问项目',
+    '通过用户 ID 邀请后，成员仍无法访问项目或读取真实成员头像',
   );
   const user4ProjectsAfterInvite = await apiRequest<{
     items: Array<{ id: string }>;

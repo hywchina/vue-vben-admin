@@ -9,6 +9,7 @@ import {
   requestAssistantReply,
 } from '~/utils/assistant-provider';
 import { writeAudit } from '~/utils/audit';
+import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
 import { requireIdentity } from '~/utils/identity';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -45,8 +46,19 @@ export default apiHandler(async (event) => {
   const attachments =
     attachmentIds.length === 0
       ? []
-      : await sql<{ filename: string; id: string }[]>`
-          SELECT id, original_filename AS filename
+      : await sql<
+          {
+            filename: string;
+            id: string;
+            mimeType: string;
+            sizeBytes: number;
+          }[]
+        >`
+          SELECT
+            id,
+            original_filename AS filename,
+            mime_type AS "mimeType",
+            size_bytes::integer AS "sizeBytes"
           FROM ai_attachments
           WHERE id = ANY(${attachmentIds}::uuid[])
             AND conversation_id = ${conversationId}
@@ -59,6 +71,28 @@ export default apiHandler(async (event) => {
       400,
       'AI_ATTACHMENT_INVALID',
       '附件不存在、尚未上传完成或已被使用',
+    );
+  }
+  const config = getConfig();
+  const imageAttachments = attachments.filter((attachment) =>
+    attachment.mimeType.startsWith('image/'),
+  );
+  if (imageAttachments.length > config.aiAssistantMaxImagesPerMessage) {
+    throw new ApiError(
+      400,
+      'AI_TOO_MANY_IMAGES',
+      `每条消息最多上传 ${config.aiAssistantMaxImagesPerMessage} 张图片`,
+    );
+  }
+  const imageBytes = imageAttachments.reduce(
+    (total, attachment) => total + attachment.sizeBytes,
+    0,
+  );
+  if (imageBytes > config.aiAssistantMaxImageBytesPerRequest) {
+    throw new ApiError(
+      413,
+      'AI_IMAGES_TOO_LARGE',
+      `本条消息的图片总大小不能超过 ${config.aiAssistantMaxImageBytesPerRequest} 字节`,
     );
   }
 

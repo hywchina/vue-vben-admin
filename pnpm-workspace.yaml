@@ -99,6 +99,7 @@ catalog:
   czg: ^1.13.1
   dayjs: ^1.11.21
   defu: ^6.1.7
+  docx: ^9.7.1
   dotenv: ^17.4.2
   es-toolkit: ^1.49.0
   eslint: ^10.7.0
@@ -117,6 +118,7 @@ catalog:
   h3: ^1.15.11
   happy-dom: ^20.11.1
   html-minifier-terser: ^7.2.0
+  image-size: ^2.0.2
   is-ci: ^4.1.0
   jose: ^6.2.8
   json-bigint: ^1.0.0
@@ -137,6 +139,7 @@ catalog:
   postcss: ^8.5.22
   postcss-html: ^1.8.1
   postcss-scss: ^4.0.9
+  pptxgenjs: ^4.0.1
   postgres: ^3.4.9
   publint: ^0.3.22
   qrcode: ^1.5.4

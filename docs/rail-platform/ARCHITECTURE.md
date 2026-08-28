@@ -63,11 +63,13 @@ flowchart TB
   Identity -->|"密码重置邮件"| Mail
 
   subgraph Capability["外部能力层"]
-    ChatAdapter["AI 助手适配器<br/>GeekAI / OpenAI 兼容协议"]
+    ChatAdapter["AI 助手适配器<br/>vLLM / OpenAI 兼容协议"]
     JobAdapter["ComfyUI 独立 Worker<br/>已实现"]
-    External["LLM / ComfyUI / LoRA / 报告服务"]
+    LoraAdapter["AI Toolkit LoRA Worker<br/>已实现"]
+    External["LLM / ComfyUI / AI Toolkit / 报告服务"]
     ChatAdapter --> External
     JobAdapter --> External
+    LoraAdapter --> External
   end
 
   Domains -->|"可配置的同步聊天请求"| ChatAdapter
@@ -137,8 +139,8 @@ flowchart LR
 ```mermaid
 flowchart TB
   Layout["BasicLayout 固定外壳"]
-  Layout --> Nav["左侧导航"]
-  Layout --> Header["顶栏：面包屑 / 当前项目（首页与项目空间隐藏）/ 通知 / 用户"]
+  Layout --> Nav["左侧导航：首页 / 设计生成 / 模型训练 / 资产中心 / 报告生成 / 设计工作台"]
+  Layout --> Header["顶栏：面包屑 / 当前项目（首页与设计工作台隐藏）/ 通知 / 用户"]
   Layout --> RouteArea["路由内容区"]
   Layout --> Tabs["多页签区域"]
   Layout --> Assistant["全局 AI 助手<br/>全部登录后页面保留"]
@@ -161,15 +163,15 @@ flowchart TB
 | 账号认证 | `/auth/login`、`register`、`forget-password`、`reset-password` | Vben Auth、Vue 表单、Zod、Pinia | 用户名密码登录、企业邮箱注册与找回密码、协议校验、登录态恢复 | 认证 API |
 | 固定平台外壳 | `layouts/basic.vue` | Vben BasicLayout、Pinia、Ant Design Vue | 导航、当前项目切换、通知、用户 ID/菜单、退出登录 | 项目、通知、当前用户 API |
 | 首页 | `/home`（登录默认入口） | Vue、Pinia、响应式 CSS/SVG | 参考甲方 AI 视觉稿建立项目主视觉、四项真实指标、六个业务入口和最近工作区；建筑/客室线稿由本地 SVG/CSS 绘制，不引入外部素材；最近工作只展示无图片任务列表与八类最近生成资产，直接消费 `/dashboard` 权限过滤结果并提供真实空状态；模型训练和报告使用独立禁用页面，不伪造外部成功或系统性能数据 | `/dashboard` 聚合 + 会话、资产、应用状态 API |
-| 项目空间 | `/projects`；旧 `/workspace/overview` 只重定向 | Vue、Pinia、Modal/Form、Tooltip | 单层浅色卡片展示全部可访问项目及统计，支持搜索、更新时间/创建时间/名称服务端排序、创建、负责人/管理员修改名称与说明、个人置顶；创建者可软删除自有项目、管理员可软删除任意项目；卡片主体可点击并支持键盘进入，三级文字色、强化统计、运行任务强调、整卡悬浮、操作提示、空状态和禁用态共用一套视觉规范；只保留一个开始设计入口，四项统计进入项目资产、全部任务、运行任务和成员面板；创建者或管理员按用户 ID 邀请或移除非创建者成员 | 项目、成员、个人置顶、软归档和当前项目偏好 API |
+| 设计工作台 | `/projects`；旧 `/workspace/overview` 只重定向 | Vue、Pinia、Modal/Form、Tooltip | 由原项目空间升级：单层浅色卡片展示全部可访问项目及统计，支持搜索、排序、创建、修改、个人置顶、软删除、成员管理和项目任务入口；页面内提供平台管理与操作日志入口，用户与权限和工作流管理仅管理员可见，日志对所有账号开放但服务端强制管理员全量、普通用户仅自身 | 项目、成员、个人置顶、软归档、当前项目偏好、用户/角色、工作流与审计 API |
 | 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、业务 ID、成员筛选/排序、持久化多级文件夹、网格/列表、多选批量移动/独立复制/软删除、图片放大、详情、下载和收藏；“收藏”是按当前用户收藏关系展示的系统软链接目录，不改变原资产目录，未确认的工作流结果不进入列表 | 资产/成员/文件夹 API + PostgreSQL + MinIO/S3 |
-| 设计生成 | `/design?conversationId=:id` | 平台基础布局内的 Vue 工作区、Pinia、Canvas、MediaDevices | 复用固定平台功能侧栏和顶部项目/用户设置栏，其右侧增加独立可折叠任务栏，主区固定承载结果与底部输入，形成 0820 两级侧栏结构；统一输入器通过可扩展模式目录组织客室零部件、CMF、客室效果和报告能力，三种视觉模式按 0820 顺序显示七个常用工具并将高级能力收进“更多”，仍由平台 API 决定真实可用应用；主要参数在底部快捷区编辑，完整参数由“更多”打开；报告契约未接入时只展示禁用的结构化配置布局；统一资产选择器、图片/Markdown 输入、遮罩和分区编辑、对比、3D、任务状态与会话内深化设计保持原链路；暂存结果可选择当前项目普通资产目录入库；多图片结果使用自适应网格和支持键盘导航的共享全屏查看器 | 设计会话、应用、能力、资产、资产目录、草稿、任务 API |
+| 设计生成 | `/design?conversationId=:id` | 平台基础布局内的 Vue 工作区、Pinia、Canvas、MediaDevices | 复用固定平台功能侧栏和顶部项目/用户设置栏，其右侧增加独立可折叠任务栏，主区固定承载结果与底部输入，形成 0820 两级侧栏结构；统一输入器通过可扩展模式目录组织客室零部件、CMF、客室效果和报告能力，三种视觉模式各自定义固定工具、占位提示、结果操作和可维护提示词模板，真实可用性仍由平台 API 决定；任务以 `design_mode` 固化提交时模式，历史轮次据此恢复专属操作；需要图片输入时按能力 Schema 的 `assetIndex` 在编辑框上方生成有序托盘，本地多选先通过既有上传链路登记为当前项目资产，资产中心多选复用项目范围校验，左右移动直接交换槽位并持久化草稿，固定 N 张由槽位数量与必填标记约束；环境更改与平面图填色复用单图编辑契约，多图融合复用三图输入契约，多角度生成复用单图契约，三维生成复用前/左/后/右四视图契约；理解、环境和复合生成入口先将素材带入编辑器，只有用户确认后才创建任务；统一资产选择器、图片/Markdown 输入、遮罩和分区编辑、对比、3D、任务状态与会话内深化设计保持原链路；多图片结果使用自适应网格和支持键盘导航的共享全屏查看器 | 设计会话、应用、能力、资产、资产目录、提示词模板、草稿、任务 API |
 | 单能力调试兼容 | `/workspace/:appKey?instanceId=:id` | 隐藏管理员路由、Canvas、MediaDevices | 保留历史实例和旧精确流转链路用于兼容回溯，不在产品菜单展示 | 应用、调试实例、资产、任务 API |
-| 任务中心 | `/jobs` | Vue、Pinia、状态组件 | 显示任务业务 ID、创建成员、状态和进度；失败错误使用限长摘要并可展开完整详情；支持状态/成员/关键词筛选、排序、多选和取消选择；活动任务显示取消操作，没有执行记录的孤立任务立即转为取消，真实 Worker 任务进入取消中，终态任务才可批量软删除 | `jobs`、`job_executions`、`project_members`、`job_inputs`、`job_outputs` |
+| 项目任务台账 | `/jobs`（不在侧栏展示，由设计工作台项目指标进入） | Vue、Pinia、状态组件 | 显示任务业务 ID、创建成员、状态和进度；失败错误使用限长摘要并可展开完整详情；支持状态/成员/关键词筛选、排序、多选和取消选择；活动任务显示取消操作，没有执行记录的孤立任务立即转为取消，真实 Worker 任务进入取消中，终态任务才可批量软删除 | `jobs`、`job_executions`、`project_members`、`job_inputs`、`job_outputs` |
 | 个人中心 | `/profile` | Vben Profile、Vue 表单、Canvas 裁剪 | 展示唯一用户 ID；资料与企业邮箱更新、邮箱安全状态、真实密码修改、消息提醒偏好；角色只读；头像悬浮上传，非方图经 1:1 拖动、缩放、旋转裁剪后写入私有对象存储并刷新全局用户态 | 用户、偏好与头像对象 API |
-| 用户与权限 | `/administration/access` | 路由角色守卫、管理员表格和弹窗 | 按字段标明姓名、用户 ID、用户名与邮箱；用户状态、其他用户角色管理、角色统计；窄卡片文字不越界 | 用户、角色 API |
-| 操作日志 | `/audit` | Vue、Pinia、服务端分页与筛选 | 管理员查看全部账号，普通用户只查看自身；区分姓名、用户名和角色快照 | `audit_events` |
-| AI 设计助手 | 全部登录后页面的右下角弹窗 | Vue Teleport、Iconify、预签名上传 | 个人历史对话、文本、附件、预览、下载、清空与服务状态；与项目设计会话分层但共享平台外壳 | AI 助手 API + PostgreSQL + MinIO/S3 |
+| 用户与权限 | `/administration/access`（从设计工作台进入） | 路由角色守卫、管理员表格和弹窗 | 仅管理员可见；按字段标明姓名、用户 ID、用户名与邮箱；用户状态、其他用户角色管理、角色统计；窄卡片文字不越界 | 用户、角色 API |
+| 操作日志 | `/audit`（从设计工作台进入） | Vue、Pinia、服务端分页与筛选 | 管理员查看全部账号，普通用户只查看自身；区分姓名、用户名和角色快照 | `audit_events` |
+| AI 设计助手 | 全部登录后页面的右下角弹窗 | Vue Teleport、Iconify、安全 Markdown 解析、预签名上传 | 个人历史对话、名称搜索、时间排序、重命名、Markdown 回复与复制、附件、预览、下载、清空与服务状态；与项目设计会话分层但共享平台外壳 | AI 助手 API + PostgreSQL + MinIO/S3 |
 
 前端 `usePlatformStore` 只缓存当前会话页面所需的 API 返回值，不把项目、资产或任务的业务真值写入本地静态数据。早期 `modules/platform/data.ts` 样例常量已在核心模块重构中删除，平台领域目录不再保留可被误用的运行时假数据。
 
@@ -202,7 +204,7 @@ Nitro 使用文件路径生成 `/api/v1` 路由。每个业务接口一般按以
 | 站内通知 | `/notifications/**` | PostgreSQL | 查询、已读、全部已读、单条删除和清空 |
 | 用户与角色 | `/users`、`/users/:id/status`、`/users/:id/roles`、`/roles` | RBAC、事务和末位管理员保护 | 管理其他用户状态与角色、角色统计；每个账号只能分配一个角色 |
 | 审计 | `/audit-events`、`/audit-events/client` | Request ID、IP、角色快照、统一响应层 | 记录 API 请求、业务事件和页面访问；管理员全量、普通用户仅自身 |
-| AI 助手 | `/assistant/status`、`conversations/**`、`attachments/**` | PostgreSQL 事务、AWS SDK 预签名、Zod、可配置外部 `fetch` | 按用户隔离的会话/消息，附件直传、预览和下载，外部 AI 转发，清空对象清理 |
+| AI 助手 | `/assistant/status`、`conversations/**`、`attachments/**` | PostgreSQL 事务、AWS SDK 预签名、Zod、可配置外部 `fetch` | 按用户隔离的会话/消息与会话重命名，附件直传、预览和下载，外部 AI 转发，清空对象清理 |
 
 统一成功响应如下：
 
@@ -274,7 +276,7 @@ erDiagram
 | 会话偏好 | `refresh_sessions`、`user_preferences` | 刷新令牌哈希、当前项目、提醒偏好 |
 | 项目 | `projects`、`project_members`、`project_user_pins` | `CR-*` 项目元数据、owner/editor/viewer 成员关系、用户级置顶，以及 `archived_at/archived_by` 项目软删除记录 |
 | 资产 | `assets`、`asset_versions`、`asset_tags`、`asset_favorites`、`asset_folders` | `AST-*` 统一资产、成员归属、版本、来源、标签、个人收藏软链接和多级普通目录；收藏系统目录不写入 `assets.folder_id` |
-| 项目设计与应用任务 | `design_conversations`、`design_conversation_drafts`、`applications`、`jobs`、`job_inputs`、`job_outputs` | 用户项目设计会话、会话内多应用草稿、`TSK-*` 任务参数、成员归属、软归档、状态、输入输出与资产血缘；`job_inputs.asset_id` 始终是适配器消费的原始输入，可选 `annotation_asset_id` 只登记用户可见的分区标记快照 |
+| 项目设计与应用任务 | `design_conversations`、`design_conversation_drafts`、`design_prompt_template_catalogs`、`applications`、`jobs`、`job_inputs`、`job_outputs` | 用户项目设计会话、会话内多应用草稿、管理员维护的模式提示词目录、`TSK-*` 任务参数、`design_mode`、成员归属、软归档、状态、输入输出与资产血缘；`job_inputs.asset_id` 始终是适配器消费的原始输入，可选 `annotation_asset_id` 只登记用户可见的分区标记快照 |
 | 管理员调试兼容 | `workflow_workspace_instances`、`workflow_workspace_drafts`、`workflow_asset_transfers` | 单能力调试实例及旧精确流转；不再作为普通用户主交互模型 |
 | 运营记录 | `notifications`、`audit_events` | 站内消息；操作人快照、请求路径、状态、耗时、IP 和可追踪业务事件 |
 | AI 助手 | `ai_conversations`、`ai_messages`、`ai_attachments` | 用户私有会话、消息、上游错误/消息编号和附件对象元数据 |
@@ -444,7 +446,36 @@ interface CapabilityAdapter {
 
 适配器输出必须先写入 MinIO/S3，再登记为 `source = 'workflow'` 的项目资产，并通过 `job_outputs` 建立来源关系。浏览器不应获得第三方密钥或直接访问第三方工作流管理接口。
 
-### 8.6 AI 助手数据流与隔离
+### 8.6 LoRA 训练数据流
+
+`POST /api/v1/lora/trainings` 是 LoRA 的稳定业务入口。浏览器只提交当前项目图片 ID、逐图 caption 和 Repeat、Epoch、rank、学习率、分辨率、触发词、预览提示词等白名单字段，不接收训练服务器路径或完整 `job_config`。
+
+```mermaid
+sequenceDiagram
+  participant W as 模型训练页
+  participant A as 平台 API
+  participant D as PostgreSQL
+  participant S as MinIO
+  participant K as LoRA Worker
+  participant T as AI Toolkit
+  W->>A: 项目、图片 ID、caption、白名单参数
+  A->>D: 校验项目/资产并写 jobs + lora_training_executions
+  K->>D: 租约领取任务
+  K->>S: 读取当前项目图片
+  K->>T: 创建数据集并上传图片/caption
+  K->>T: 生成受控 Flux2 配置、创建任务、启动任务与 GPU 队列
+  loop 每 5 秒
+    K->>T: 查询 step/total_steps/status
+    K->>D: 同步状态、进度和稳定错误
+  end
+  K->>T: 查询并下载 safetensors
+  K->>S: 写入模型对象
+  K->>D: 登记 model 资产、标签和 job_outputs 血缘
+```
+
+`lora_artifact_receipts` 以外部绝对路径做内部幂等键；该路径、AI Toolkit Token 和公开下载路由都不会返回浏览器。模型和 VAE 路径来自服务端环境配置，默认值与已验证的 `flux2_klein_9b_interior_lora.yaml` 一致。任务取消由 Worker 调用 AI Toolkit 停止接口，训练已完成与取消并发时优先完成产物登记。
+
+### 8.7 AI 助手数据流与隔离
 
 ```mermaid
 sequenceDiagram
@@ -462,9 +493,9 @@ sequenceDiagram
   W->>A: complete + POST messages
   A->>D: 校验对象，原子写用户消息并绑定附件
   A->>D: 读取当前用户最近 50 条已完成消息
-  A->>S: 为对话附件生成短时读 URL
+  A->>S: 读取最近图片上下文
   alt AI_ASSISTANT_API_URL 已配置
-    A->>X: 后端携带密钥调用外部 API
+    A->>X: 后端携带密钥和多轮消息调用 vLLM
     X-->>A: content + optional messageId
     A->>D: 保存 completed 助手消息
   else 未配置或服务失败
@@ -571,7 +602,7 @@ flowchart LR
   Domain --> DB["PostgreSQL"]
   Domain --> Object["MinIO/S3"]
   Domain --> AssistantAdapter["AI 助手适配器"]
-  Domain -. "未来" .-> Adapters["任务型能力适配器"]
+  Domain --> Adapters["ComfyUI / LoRA / 报告能力适配器"]
 ```
 
 ## 11. 当前完成度与明确缺口
@@ -585,12 +616,13 @@ flowchart LR
 - 文件直传、文本入库、版本 API、收藏、下载和图片预览。
 - 项目“开始设计”、多应用会话时间线、按成员管理的任务台账、通知和审计。
 - 全局 AI 设计助手：按用户隔离的会话历史、文本、图片/音视频/文档附件、预览下载、清空、外部 API 转发与失败留痕。
+- 报告生成：结构化章节与项目 PNG/JPEG 资产输入、模板/AI 双适配器路由、持久化 Worker、DOCX/PPTX/Markdown 输出、任务取消，以及 `document`/`text` 资产回流。外部 `generate-file` 地址只存在于平台 API/Worker 配置中。
 - PostgreSQL/MinIO 数据持久化、SMTP 邮件投递、迁移、种子、测试和生产构建。
 
 ### 已预留但尚未完成
 
 - AI 助手的具体内网模型服务需部署时配置；平台端转发适配器已完成。
-- 报告等尚未实现的其他任务型能力适配器。
+- 除 ComfyUI、AI Toolkit LoRA、内置 OOXML 报告和外部 AI 报告外的其他任务型能力适配器。
 - ComfyUI 目标服务的真实 GPU、模型、自定义节点和效果验收。
 - 项目成员移除和角色调整；成员查看及创建者/管理员按用户 ID 邀请已经完成，项目归档已经支持软删除。
 - 管理员创建用户、应用配置/发布管理页面。

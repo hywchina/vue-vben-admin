@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { DesignImageResultActionKey } from '#/modules/platform/design-result-actions';
 import type {
   CapabilityField,
   PlatformJob,
@@ -10,10 +11,15 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, message, Modal, Tag, Textarea, Tooltip } from 'ant-design-vue';
+import { Button, message, Modal, Textarea, Tooltip } from 'ant-design-vue';
 
 import { getAssetDownloadApi, getAssetPreviewApi } from '#/api';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
+import {
+  designImageResultActions,
+  designResultActionApplicationKeys,
+} from '#/modules/platform/design-result-actions';
+import { copyTextToClipboard } from '#/utils/copy-text';
 
 import ComfyMaskIcon from './comfy-mask-icon.vue';
 import ImageComparisonSlider from './image-comparison-slider.vue';
@@ -24,6 +30,7 @@ import StatusPill from './status-pill.vue';
 
 const props = defineProps<{
   accent: string;
+  availableApplicationKeys?: string[];
   fields: CapabilityField[];
   flowLabel?: string;
   job: PlatformJob;
@@ -32,6 +39,18 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  businessAction: [
+    action:
+      | 'environment'
+      | 'mark'
+      | 'multi-angle'
+      | 'multi-image'
+      | 'three-d'
+      | 'understand'
+      | 'upscale',
+    output: PlatformJobOutput,
+    mode: 'cabin' | 'cmf' | 'component',
+  ];
   download: [output: PlatformJobOutput];
   editInput: [input: PlatformJobInput, previewUrl: string];
   editRerun: [job: PlatformJob, parameterKey: string, value: string];
@@ -65,7 +84,7 @@ const imageOutputs = computed(() =>
     (output) => output.kind === 'image' && previewUrls[output.assetId],
   ),
 );
-const visibleImageOutputs = computed(() => imageOutputs.value.slice(0, 4));
+const visibleImageOutputs = computed(() => imageOutputs.value.slice(0, 3));
 const activeImageOutputIndex = computed(() =>
   imageOutputs.value.findIndex(
     (output) => output.assetId === activeOutput.value?.assetId,
@@ -125,7 +144,6 @@ const promptEntry = computed(() => {
   if (!preferred) return undefined;
   return {
     key: preferred.key,
-    label: preferred.label,
     value: String(props.job.parameters[preferred.key]),
   };
 });
@@ -142,6 +160,47 @@ const parameterEntries = computed(() => {
 const isActive = computed(() =>
   ['cancelling', 'queued', 'running'].includes(props.job.status),
 );
+const businessResultMode = computed(() => {
+  const mode = props.job.designMode;
+  return mode === 'cabin' || mode === 'cmf' || mode === 'component'
+    ? mode
+    : undefined;
+});
+const isBusinessImageResult = computed(() =>
+  Boolean(businessResultMode.value && activeOutput.value?.kind === 'image'),
+);
+const resultActions = computed(() => {
+  const mode = businessResultMode.value;
+  return mode ? designImageResultActions(mode) : [];
+});
+
+function resultActionDisabled(action: DesignImageResultActionKey) {
+  if (action === 'save') return Boolean(activeOutput.value?.saved);
+  if (action === 'mask') {
+    return !activeOutput.value || !previewUrls[activeOutput.value.assetId];
+  }
+  const applicationKey = designResultActionApplicationKeys[action];
+  return Boolean(
+    applicationKey &&
+    props.availableApplicationKeys &&
+    !props.availableApplicationKeys.includes(applicationKey),
+  );
+}
+
+function triggerResultAction(action: DesignImageResultActionKey) {
+  const output = activeOutput.value;
+  if (!output || resultActionDisabled(action)) return;
+  if (action === 'download') return emit('download', output);
+  if (action === 'save') return emit('save', output);
+  if (action === 'rerun') return emit('rerun', props.job);
+  if (action === 'mask') {
+    const previewUrl = previewUrls[output.assetId];
+    if (previewUrl) emit('mask', output, previewUrl);
+    return;
+  }
+  const mode = businessResultMode.value;
+  if (mode) emit('businessAction', action, output, mode);
+}
 
 function formatValue(value: unknown) {
   if (typeof value === 'boolean') return value ? '开启' : '关闭';
@@ -193,26 +252,12 @@ function submitEditedPrompt() {
 }
 
 async function copyText(content: string, successMessage: string) {
-  let copied = false;
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(content);
-      copied = true;
-    } catch {
-      // 非安全来源可能拒绝 Clipboard API，继续使用浏览器兼容方案。
-    }
+  const copied = await copyTextToClipboard(content);
+  if (copied) {
+    message.success(successMessage);
+    return;
   }
-  if (!copied) {
-    const textarea = document.createElement('textarea');
-    textarea.value = content;
-    textarea.style.position = 'fixed';
-    textarea.style.opacity = '0';
-    document.body.append(textarea);
-    textarea.select();
-    document.execCommand('copy');
-    textarea.remove();
-  }
-  message.success(successMessage);
+  message.error('复制失败，请检查浏览器剪贴板权限后重试');
 }
 
 async function copyInput() {
@@ -280,6 +325,14 @@ function openAnnotation(input: PlatformJobInput) {
   annotationLightboxOpen.value = true;
 }
 
+function openInputImage(input: PlatformJobInput) {
+  const url = previewUrls[input.assetId];
+  if (!url) return;
+  annotationLightboxTitle.value = input.name || '本轮输入图片';
+  annotationLightboxUrl.value = url;
+  annotationLightboxOpen.value = true;
+}
+
 function openOutputImage(output: PlatformJobOutput) {
   activeOutputAssetId.value = output.assetId;
   outputLightboxOpen.value = true;
@@ -319,9 +372,6 @@ onMounted(() => void loadPreviews());
       <span>第 {{ round }} 轮</span>
       <time :datetime="job.createdAt">{{ formatDate(job.createdAt) }}</time>
       <StatusPill :status="job.status" />
-      <small v-if="job.workflowVersion">
-        能力版本 V{{ job.workflowVersion }}
-      </small>
     </header>
 
     <section class="round-input">
@@ -342,10 +392,10 @@ onMounted(() => void loadPreviews());
               >
                 <button
                   v-if="previewUrls[input.assetId]"
-                  :aria-label="`查看并编辑输入图片：${input.name || inputFieldLabel(input.position)}`"
+                  :aria-label="`放大查看输入图片：${input.name || inputFieldLabel(input.position)}`"
                   class="round-input-image"
                   type="button"
-                  @click="emit('editInput', input, previewUrls[input.assetId]!)"
+                  @click="openInputImage(input)"
                 >
                   <img :alt="input.name" :src="previewUrls[input.assetId]" />
                   <span
@@ -354,9 +404,20 @@ onMounted(() => void loadPreviews());
                   >
                     标记前原图
                   </span>
-                  <ComfyMaskIcon :size="16" />
                 </button>
-                <template v-else>
+                <Tooltip title="编辑图片遮罩">
+                  <button
+                    :aria-label="`编辑输入图片遮罩：${input.name || inputFieldLabel(input.position)}`"
+                    class="round-input-mask-trigger"
+                    type="button"
+                    @click.stop="
+                      emit('editInput', input, previewUrls[input.assetId]!)
+                    "
+                  >
+                    <ComfyMaskIcon :size="16" />
+                  </button>
+                </Tooltip>
+                <template v-if="!previewUrls[input.assetId]">
                   <span>
                     <IconifyIcon icon="lucide:file-input" />
                     {{ assetTypeLabels[input.kind] }}
@@ -391,7 +452,6 @@ onMounted(() => void loadPreviews());
             </template>
           </div>
           <div v-if="!editingPrompt" class="round-input__bubble">
-            <strong>{{ promptEntry?.label ?? '本轮输入' }}</strong>
             <p>
               {{ promptEntry?.value ?? '使用当前参数和输入素材执行工作流。' }}
             </p>
@@ -602,7 +662,7 @@ onMounted(() => void loadPreviews());
         </div>
         <div
           v-else-if="imageOutputs.length > 1"
-          :data-count="Math.min(imageOutputs.length, 4)"
+          :data-count="Math.min(imageOutputs.length, 3)"
           class="round-output-gallery"
         >
           <button
@@ -615,12 +675,11 @@ onMounted(() => void loadPreviews());
           >
             <img :alt="output.name" :src="previewUrls[output.assetId]" />
             <span
-              v-if="index === 3 && imageOutputs.length > 4"
+              v-if="index === 2 && imageOutputs.length > 3"
               class="round-output-gallery__more"
             >
-              +{{ imageOutputs.length - 4 }}
+              +{{ imageOutputs.length - 2 }}
             </span>
-            <span class="round-output-gallery__index">{{ index + 1 }}</span>
           </button>
         </div>
         <div
@@ -662,7 +721,9 @@ onMounted(() => void loadPreviews());
           </div>
           <button
             v-if="
-              activeOutput.kind === 'image' && previewUrls[activeOutput.assetId]
+              !isBusinessImageResult &&
+              activeOutput.kind === 'image' &&
+              previewUrls[activeOutput.assetId]
             "
             aria-label="打开遮罩编辑器"
             class="round-mask-trigger"
@@ -677,13 +738,42 @@ onMounted(() => void loadPreviews());
         </div>
 
         <footer class="round-output__footer">
-          <div>
-            <Tag :color="activeOutput.saved ? 'green' : 'orange'">
-              {{ activeOutput.saved ? '已保存到资产' : '任务暂存结果' }}
-            </Tag>
-            <strong>{{ activeOutput.name }}</strong>
+          <div
+            v-if="isBusinessImageResult"
+            class="round-output-actions round-output-actions--business"
+            :data-testid="`${businessResultMode}-result-actions`"
+          >
+            <button
+              v-for="action in resultActions"
+              :key="action.key"
+              :aria-label="
+                action.key === 'save' && activeOutput.saved
+                  ? '已添加至资产中心'
+                  : action.label
+              "
+              class="round-action-button"
+              :disabled="resultActionDisabled(action.key)"
+              :title="
+                resultActionDisabled(action.key) && action.key !== 'save'
+                  ? `${action.label}能力未配置或不可用`
+                  : action.label
+              "
+              type="button"
+              @click="triggerResultAction(action.key)"
+            >
+              <ComfyMaskIcon v-if="action.key === 'mask'" :size="16" />
+              <IconifyIcon
+                v-else
+                :icon="
+                  action.key === 'save' && activeOutput.saved
+                    ? 'lucide:check'
+                    : action.icon
+                "
+              />
+              <span>{{ action.label }}</span>
+            </button>
           </div>
-          <div class="round-output-actions">
+          <div v-else class="round-output-actions">
             <Tooltip
               v-if="
                 activeOutput.kind === 'image' &&
@@ -829,10 +919,6 @@ onMounted(() => void loadPreviews());
   color: var(--round-accent);
 }
 
-.round-heading small {
-  margin-left: auto;
-}
-
 .round-input {
   flex-direction: column;
   align-items: flex-end;
@@ -873,6 +959,7 @@ onMounted(() => void loadPreviews());
 }
 
 .round-input__visible-assets article.is-image {
+  position: relative;
   display: block;
   min-width: 0;
   padding: 0;
@@ -886,7 +973,7 @@ onMounted(() => void loadPreviews());
   grid-row: 1 / 3;
   width: 72px;
   height: 72px;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 9px;
 }
 
@@ -942,6 +1029,41 @@ onMounted(() => void loadPreviews());
   opacity: 1;
 }
 
+.round-input-mask-trigger {
+  position: absolute;
+  right: 9px;
+  bottom: 9px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: #fff;
+  cursor: pointer;
+  background: rgb(13 20 24 / 78%);
+  border: 1px solid rgb(255 255 255 / 48%);
+  border-radius: 50%;
+  opacity: 0;
+  transition:
+    background 150ms ease,
+    opacity 150ms ease,
+    transform 150ms ease;
+}
+
+.round-input__visible-assets article.is-image:hover .round-input-mask-trigger,
+.round-input__visible-assets
+  article.is-image:focus-within
+  .round-input-mask-trigger {
+  opacity: 1;
+}
+
+.round-input-mask-trigger:hover,
+.round-input-mask-trigger:focus-visible {
+  background: var(--round-accent);
+  transform: translateY(-1px);
+}
+
 .round-input__visible-assets article > span {
   display: grid;
   gap: 3px;
@@ -974,13 +1096,8 @@ onMounted(() => void loadPreviews());
   border-radius: 15px 15px 4px;
 }
 
-.round-input__bubble strong {
-  font-size: 12px;
-  color: var(--round-accent);
-}
-
 .round-input__bubble p {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 14px;
   line-height: 1.65;
   white-space: pre-wrap;
@@ -1091,7 +1208,7 @@ onMounted(() => void loadPreviews());
   grid-row: 1 / 3;
   width: 44px;
   height: 44px;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 7px;
 }
 
@@ -1269,19 +1386,17 @@ onMounted(() => void loadPreviews());
 
 .round-output-gallery {
   display: grid;
+  grid-template-rows: minmax(0, 2fr) minmax(0, 1fr);
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   width: min(100%, 920px);
   min-height: 300px;
+  aspect-ratio: 16 / 9;
   margin: 0 auto;
 }
 
-.round-output-gallery[data-count='2'] {
-  min-height: 360px;
-}
-
-.round-output-gallery[data-count='3'] button:first-child {
-  grid-row: span 2;
+.round-output-gallery button:first-child {
+  grid-column: 1 / -1;
 }
 
 .round-output-gallery button,
@@ -1291,13 +1406,13 @@ onMounted(() => void loadPreviews());
   padding: 0;
   overflow: hidden;
   cursor: zoom-in;
-  background: #1d272d;
+  background: #fff;
   border: 2px solid transparent;
   border-radius: 12px;
 }
 
 .round-output-gallery button {
-  min-height: 180px;
+  min-height: 0;
 }
 
 .round-output-gallery button:hover,
@@ -1309,7 +1424,7 @@ onMounted(() => void loadPreviews());
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   transition: transform 180ms ease;
 }
 
@@ -1317,28 +1432,16 @@ onMounted(() => void loadPreviews());
   transform: scale(1.02);
 }
 
-.round-output-gallery__index,
 .round-output-gallery__more {
   position: absolute;
-  color: #fff;
-  background: rgb(18 25 29 / 72%);
-  backdrop-filter: blur(6px);
-}
-
-.round-output-gallery__index {
-  right: 8px;
-  bottom: 8px;
-  padding: 3px 7px;
-  font-size: 11px;
-  border-radius: 999px;
-}
-
-.round-output-gallery__more {
   inset: 0;
   display: grid;
   place-items: center;
   font-size: 34px;
   font-weight: 750;
+  color: #fff;
+  background: rgb(18 25 29 / 72%);
+  backdrop-filter: blur(6px);
 }
 
 .round-output-visual {
@@ -1436,26 +1539,31 @@ onMounted(() => void loadPreviews());
 .round-output__footer {
   flex-wrap: wrap;
   gap: 10px;
-  justify-content: space-between;
-}
-
-.round-output__footer > div:first-child {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  min-width: 0;
-}
-
-.round-output__footer strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  white-space: nowrap;
+  justify-content: flex-end;
 }
 
 .round-output-actions {
   flex-wrap: wrap;
   gap: 2px;
+}
+
+.round-output-actions--business {
+  gap: 5px;
+  justify-content: flex-end;
+}
+
+.round-output-actions--business .round-action-button {
+  display: inline-flex;
+  gap: 5px;
+  width: auto;
+  min-width: 0;
+  padding: 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.round-output-actions--business .round-action-button span {
+  white-space: nowrap;
 }
 
 .round-empty-output {

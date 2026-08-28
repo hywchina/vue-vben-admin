@@ -1,11 +1,13 @@
 import type { CurrentIdentity } from '../../identity';
 import type { AssistantConversationRecord } from './conversations';
 
+import { Buffer } from 'node:buffer';
+
 import { z } from 'zod';
 
 import { getConfig } from '../../config';
 import { useDatabase } from '../../database';
-import { createDownloadUrl } from '../../storage';
+import { readObject } from '../../storage';
 
 const openAiProviderResponseSchema = z.object({
   choices: z
@@ -70,8 +72,7 @@ export function parseAssistantProviderResponse(input: unknown) {
 
 export type AssistantProviderContentPart =
   | { image_url: { url: string }; type: 'image_url' }
-  | { text: string; type: 'text' }
-  | { type: 'video_url'; video_url: { url: string } };
+  | { text: string; type: 'text' };
 
 export interface AssistantProviderMessage {
   content: AssistantProviderContentPart[] | string;
@@ -99,8 +100,6 @@ export function buildAssistantProviderMessage(input: {
   for (const attachment of input.attachments) {
     if (attachment.mimeType.startsWith('image/')) {
       content.push({ image_url: { url: attachment.url }, type: 'image_url' });
-    } else if (attachment.mimeType.startsWith('video/')) {
-      content.push({ type: 'video_url', video_url: { url: attachment.url } });
     } else {
       unsupportedFilenames.push(attachment.filename);
     }
@@ -128,11 +127,55 @@ interface HistoryMessage {
 }
 
 interface HistoryAttachment {
+  id: string;
   filename: string;
   messageId: string;
   mimeType: string;
   objectKey: string;
   sizeBytes: number;
+}
+
+export function detectAssistantProvider(apiUrl: null | string) {
+  if (!apiUrl) return null;
+  const hostname = new URL(apiUrl).hostname.toLowerCase();
+  if (
+    hostname === '127.0.0.1' ||
+    hostname === 'localhost' ||
+    hostname.includes('vllm')
+  ) {
+    return 'vLLM';
+  }
+  return hostname.includes('geekai.') ? 'GeekAI' : 'OpenAI 兼容服务';
+}
+
+export function selectRecentImageAttachmentIds(input: {
+  attachments: Array<
+    Pick<HistoryAttachment, 'id' | 'messageId' | 'mimeType' | 'sizeBytes'>
+  >;
+  maxBytes: number;
+  maxImages: number;
+  messageIds: string[];
+}) {
+  const attachmentsByMessage = new Map<string, typeof input.attachments>();
+  for (const attachment of input.attachments) {
+    const list = attachmentsByMessage.get(attachment.messageId) ?? [];
+    list.push(attachment);
+    attachmentsByMessage.set(attachment.messageId, list);
+  }
+
+  const selectedIds = new Set<string>();
+  let selectedBytes = 0;
+  for (const messageId of input.messageIds.toReversed()) {
+    const messageAttachments = attachmentsByMessage.get(messageId) ?? [];
+    for (const attachment of messageAttachments.toReversed()) {
+      if (!attachment.mimeType.startsWith('image/')) continue;
+      if (selectedIds.size >= input.maxImages) continue;
+      if (selectedBytes + attachment.sizeBytes > input.maxBytes) continue;
+      selectedIds.add(attachment.id);
+      selectedBytes += attachment.sizeBytes;
+    }
+  }
+  return selectedIds;
 }
 
 async function loadProviderMessages(conversationId: string, userId: string) {
@@ -160,6 +203,7 @@ async function loadProviderMessages(conversationId: string, userId: string) {
 
   const attachments = await sql<HistoryAttachment[]>`
     SELECT
+      attachment.id,
       attachment.message_id AS "messageId",
       attachment.original_filename AS filename,
       attachment.mime_type AS "mimeType",
@@ -171,16 +215,34 @@ async function loadProviderMessages(conversationId: string, userId: string) {
       AND attachment.status = 'available'
     ORDER BY attachment.created_at
   `;
+  const config = getConfig();
+  const selectedImageAttachmentIds = selectRecentImageAttachmentIds({
+    attachments,
+    maxBytes: config.aiAssistantMaxImageBytesPerRequest,
+    maxImages: config.aiAssistantMaxImagesPerMessage,
+    messageIds: messages.map((message) => message.id),
+  });
   const preparedAttachments = await Promise.all(
-    attachments.map(async (attachment) => {
-      return {
-        filename: attachment.filename,
-        messageId: attachment.messageId,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        url: await createDownloadUrl(attachment.objectKey, attachment.filename),
-      };
-    }),
+    attachments
+      .filter(
+        (attachment) =>
+          !attachment.mimeType.startsWith('image/') ||
+          selectedImageAttachmentIds.has(attachment.id),
+      )
+      .map(async (attachment) => {
+        const url = attachment.mimeType.startsWith('image/')
+          ? `data:${attachment.mimeType};base64,${Buffer.from(
+              await readObject(attachment.objectKey),
+            ).toString('base64')}`
+          : '';
+        return {
+          filename: attachment.filename,
+          messageId: attachment.messageId,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          url,
+        };
+      }),
   );
   const attachmentsByMessage = new Map<
     string,
@@ -207,7 +269,6 @@ export async function requestAssistantCompletion(
     apiUrl: string;
     messages: AssistantProviderMessage[];
     model: string;
-    sessionId: string;
     timeoutMs: number;
   },
   fetcher: typeof fetch = fetch,
@@ -218,7 +279,6 @@ export async function requestAssistantCompletion(
       body: JSON.stringify({
         messages: input.messages,
         model: input.model,
-        sess_id: input.sessionId,
         stream: false,
       }),
       headers: {
@@ -304,7 +364,7 @@ export async function requestAssistantReply(input: {
   const messages: AssistantProviderMessage[] = [
     {
       content:
-        '你是轨道交通客室智能设计平台的设计辅助助手。回答应准确、简洁，明确区分事实、建议和待确认条件。不得声称已读取当前接口没有传递正文的附件。',
+        '你是轨道交通客室智能设计平台的设计辅助助手。你会收到当前用户本次会话的多轮历史，并可直接查看请求中携带的一张或多张图片。回答应准确、简洁，明确区分事实、建议和待确认条件。不得声称已读取当前接口没有传递正文的附件。',
       role: 'system',
     },
     ...history,
@@ -314,7 +374,6 @@ export async function requestAssistantReply(input: {
     apiUrl: config.aiAssistantApiUrl,
     messages,
     model: config.aiAssistantModel,
-    sessionId: input.conversation.id,
     timeoutMs: config.aiAssistantTimeoutMs,
   });
 }

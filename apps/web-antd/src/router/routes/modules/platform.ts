@@ -1,11 +1,13 @@
 import type { RouteRecordRaw } from 'vue-router';
 
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+
 const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/dashboard/index.vue'),
     meta: {
       affixTab: true,
-      icon: 'lucide:layout-dashboard',
+      icon: platformSemanticIcons.home,
       order: -120,
       title: '首页',
     },
@@ -16,7 +18,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('#/views/platform/design/index.vue'),
     meta: {
       hideInTab: true,
-      icon: 'lucide:message-square-more',
+      icon: platformSemanticIcons.design,
       order: -110,
       title: '设计生成',
     },
@@ -26,8 +28,8 @@ const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/model-training/index.vue'),
     meta: {
-      hideInMenu: true,
-      icon: 'lucide:graduation-cap',
+      icon: platformSemanticIcons.modelTraining,
+      order: -100,
       title: '模型训练',
     },
     name: 'PlatformModelTraining',
@@ -36,8 +38,8 @@ const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/report-generation/index.vue'),
     meta: {
-      hideInMenu: true,
-      icon: 'lucide:file-chart-column',
+      icon: platformSemanticIcons.report,
+      order: -80,
       title: '报告生成',
     },
     name: 'PlatformReportGeneration',
@@ -47,9 +49,9 @@ const routes: RouteRecordRaw[] = [
     component: () => import('#/views/platform/overview/index.vue'),
     meta: {
       affixTab: true,
-      icon: 'lucide:folder-kanban',
-      order: -100,
-      title: '项目空间',
+      icon: platformSemanticIcons.workbench,
+      order: -70,
+      title: '设计工作台',
     },
     name: 'PlatformProjects',
     path: '/projects',
@@ -58,7 +60,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       hideInMenu: true,
       hideInTab: true,
-      title: '项目空间',
+      title: '设计工作台',
     },
     name: 'LegacyPlatformOverview',
     path: '/workspace/overview',
@@ -70,7 +72,7 @@ const routes: RouteRecordRaw[] = [
       authority: ['admin'],
       fullPathKey: true,
       hideInMenu: true,
-      icon: 'lucide:workflow',
+      icon: platformSemanticIcons.workflow,
       title: '应用工作区',
     },
     name: 'ApplicationWorkspace',
@@ -79,8 +81,8 @@ const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/assets/index.vue'),
     meta: {
-      icon: 'lucide:library-big',
-      order: -80,
+      icon: platformSemanticIcons.assets,
+      order: -90,
       title: '资产中心',
     },
     name: 'PlatformAssets',
@@ -89,7 +91,8 @@ const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/jobs/index.vue'),
     meta: {
-      icon: 'lucide:list-checks',
+      hideInMenu: true,
+      icon: platformSemanticIcons.jobs,
       order: -60,
       title: '任务中心',
     },
@@ -99,7 +102,8 @@ const routes: RouteRecordRaw[] = [
   {
     meta: {
       authority: ['admin'],
-      icon: 'lucide:shield-check',
+      hideInMenu: true,
+      icon: platformSemanticIcons.security,
       order: -50,
       title: '平台管理',
     },
@@ -109,7 +113,7 @@ const routes: RouteRecordRaw[] = [
       {
         component: () => import('#/views/platform/access/index.vue'),
         meta: {
-          icon: 'lucide:users-round',
+          icon: platformSemanticIcons.access,
           title: '用户与权限',
         },
         name: 'PlatformAccess',
@@ -119,7 +123,7 @@ const routes: RouteRecordRaw[] = [
         component: () =>
           import('#/views/platform/workflow-management/index.vue'),
         meta: {
-          icon: 'lucide:workflow',
+          icon: platformSemanticIcons.workflow,
           title: '工作流管理',
         },
         name: 'PlatformWorkflowManagement',
@@ -130,7 +134,8 @@ const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/audit/index.vue'),
     meta: {
-      icon: 'lucide:scroll-text',
+      hideInMenu: true,
+      icon: platformSemanticIcons.audit,
       order: -40,
       title: '操作日志',
     },
@@ -141,7 +146,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('#/views/_core/profile/index.vue'),
     meta: {
       hideInMenu: true,
-      icon: 'lucide:user',
+      icon: platformSemanticIcons.profile,
       title: '个人中心',
     },
     name: 'Profile',

@@ -24,6 +24,8 @@ async function initApplication() {
     copyright: {
       companyName: '客运装备内装模块化分区快速设计平台',
     },
+    logo: { showText: true },
+    sidebar: { width: 320 },
   });
 
   // 启动应用并挂载

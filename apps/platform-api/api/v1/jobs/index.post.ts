@@ -30,6 +30,7 @@ const createJobSchema = z
   .object({
     appKey: z.string().trim().min(1).max(100),
     designConversationId: z.string().uuid().optional(),
+    designMode: z.enum(['cabin', 'cmf', 'component', 'report']).optional(),
     inputAnnotations: z
       .array(
         z.object({
@@ -51,6 +52,10 @@ const createJobSchema = z
       Boolean(value.designConversationId) !==
       Boolean(value.workspaceInstanceId),
     '任务必须且只能属于一个设计会话或管理员调试实例',
+  )
+  .refine(
+    (value) => !value.designMode || Boolean(value.designConversationId),
+    '只有设计会话任务可以记录设计业务模式',
   );
 
 export default apiHandler(async (event) => {
@@ -90,6 +95,20 @@ export default apiHandler(async (event) => {
   }
   if (!application.visible && !hasAdministrativeRole(identity)) {
     throw new ApiError(404, 'APPLICATION_NOT_FOUND', '应用不存在');
+  }
+  if (input.appKey === 'lora-training') {
+    throw new ApiError(
+      409,
+      'LORA_TRAINING_ENDPOINT_REQUIRED',
+      'LoRA 训练必须通过受控训练接口提交',
+    );
+  }
+  if (input.appKey === 'report-generator') {
+    throw new ApiError(
+      409,
+      'REPORT_GENERATION_ENDPOINT_REQUIRED',
+      '报告生成必须通过受控报告接口提交',
+    );
   }
 
   const capability = await getCapabilityByAppKey(input.appKey);
@@ -339,7 +358,7 @@ export default apiHandler(async (event) => {
       INSERT INTO jobs (
         project_id, app_key, name, parameters, created_by, status, stage,
         error, completed_at, workflow_version_id, workspace_instance_id,
-        design_conversation_id
+        design_conversation_id, design_mode
       ) VALUES (
         ${input.projectId},
         ${input.appKey},
@@ -359,7 +378,8 @@ export default apiHandler(async (event) => {
         ${adapterConfigured ? null : new Date()},
         ${capability?.workflowVersionId ?? null},
         ${input.workspaceInstanceId ?? null},
-        ${input.designConversationId ?? null}
+        ${input.designConversationId ?? null},
+        ${input.designMode ?? null}
       )
       RETURNING id, public_id AS "publicId", status, stage, progress, created_at AS "createdAt"
     `;
@@ -414,6 +434,7 @@ export default apiHandler(async (event) => {
       inputAnnotationCount: input.inputAnnotations.length,
       inputTransferCount: input.inputTransferIds.length,
       designConversationId: input.designConversationId,
+      designMode: input.designMode,
       workspaceInstanceId: input.workspaceInstanceId,
       workflowVersion: capability?.workflowVersion,
     },
@@ -459,6 +480,7 @@ export default apiHandler(async (event) => {
     createdBy: identity.id,
     designConversationId: designConversation?.id,
     designConversationTitle: job.designConversationTitle,
+    designMode: input.designMode,
     workspaceInstanceId: workspaceInstance?.id,
     workspaceInstanceTitle: workspaceInstance?.title,
   };

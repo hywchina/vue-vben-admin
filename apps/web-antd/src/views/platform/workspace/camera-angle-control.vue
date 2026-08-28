@@ -528,7 +528,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   padding: 5px 8px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   color: #f35c8c;
   white-space: nowrap;
   pointer-events: none;
@@ -616,7 +616,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
 }
 
 .subject-placeholder text {
-  font-size: 8px;
+  font-size: 10px;
   text-anchor: middle;
   fill: #8798a2;
 }
@@ -655,7 +655,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   display: flex;
   gap: 4px;
   align-items: center;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   color: #8da7b2;
   pointer-events: none;
 }
@@ -679,7 +679,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
 
 .camera-presets label span {
   display: block;
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   line-height: 25px;
   white-space: nowrap;
 }
@@ -702,7 +702,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   min-width: 0;
   height: 25px;
   padding: 0 3px;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   color: #edf4f6;
   cursor: pointer;
   outline: none;

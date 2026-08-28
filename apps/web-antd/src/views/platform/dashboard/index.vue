@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { LoraAdapterStatus } from '#/api';
 import type {
   DesignConversation,
   PlatformDashboard,
@@ -22,11 +23,13 @@ import {
   getAssetPreviewApi,
   getDashboardApi,
   getDesignConversationsApi,
+  getLoraStatusApi,
 } from '#/api';
 import {
   assetTypeIcons,
   assetTypeLabels,
 } from '#/modules/platform/asset-types';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
@@ -55,82 +58,105 @@ const myDesigns = ref<
 >([]);
 const previewUrls = reactive(new Map<string, string>());
 const previewFailures = reactive(new Set<string>());
+const loraStatus = ref<LoraAdapterStatus>();
+
+interface QuickEntry {
+  action: string;
+  badge?: string;
+  cta: string;
+  description: string;
+  icon: string;
+  label: string;
+  status?: 'error' | 'loading' | 'ready';
+  title?: string;
+}
 
 const currentProjectId = computed(
   () => dashboard.value?.currentProject?.id ?? platformStore.currentProjectId,
 );
 
-const quickEntries = computed(() => [
-  {
-    action: 'new-design',
-    cta: '立即开始',
-    description: '新建项目并进入设计会话',
-    icon: 'lucide:wand-sparkles',
-    label: '开始新设计',
-    tone: 'red',
-  },
-  {
-    action: 'history',
-    cta: '继续设计',
-    description: '查找并续接个人设计会话',
-    icon: 'lucide:history',
-    label: '查看我的设计',
-    tone: 'violet',
-  },
-  {
-    action: 'assets',
-    cta: '进入中心',
-    description: '管理当前项目的设计资产',
-    icon: 'lucide:boxes',
-    label: '查看资产中心',
-    tone: 'blue',
-  },
-  {
+const quickEntries = computed<QuickEntry[]>(() => {
+  const trainingStatus = loraStatus.value;
+  const trainingModel = trainingStatus?.models.find(
+    (model) => model.key === trainingStatus.model,
+  );
+  let trainingBadge: string | undefined = '检测中';
+  let trainingEntryStatus: QuickEntry['status'] = 'loading';
+  if (trainingStatus) {
+    if (trainingStatus.reachable) trainingBadge = undefined;
+    else trainingBadge = trainingStatus.configured ? '服务异常' : '未配置';
+    trainingEntryStatus = trainingStatus.reachable ? 'ready' : 'error';
+  }
+  const trainingEntry: QuickEntry = {
     action: 'training',
-    cta: '查看配置',
-    description: '训练服务接入后配置专用模型',
-    icon: 'lucide:graduation-cap',
+    badge: trainingBadge,
+    cta: trainingStatus?.reachable ? '开始训练' : '进入训练配置',
+    description: trainingStatus?.reachable
+      ? `${trainingModel?.label ?? trainingStatus.model} · GPU ${trainingStatus.gpuIds ?? '0'}`
+      : (trainingStatus?.reason ?? '正在检测 AI Toolkit 训练服务'),
+    icon: platformSemanticIcons.modelTraining,
     label: '开始模型训练',
-    tone: 'green',
-    unavailable: !applicationAvailable('lora-training'),
-  },
-  {
-    action: 'report',
-    cta: '查看状态',
-    description: '基于项目成果生成交付报告',
-    icon: 'lucide:file-chart-column',
-    label: '开始报告生成',
-    tone: 'orange',
-    unavailable: !applicationAvailable('report-generator'),
-  },
-  {
-    action: 'workspace',
-    cta: '进入工作台',
-    description: '查看项目、任务与协作信息',
-    icon: 'lucide:panels-top-left',
-    label: '设计工作台',
-    tone: 'pink',
-  },
-]);
+    status: trainingEntryStatus,
+    title: trainingStatus?.reason,
+  };
+  return [
+    {
+      action: 'new-design',
+      cta: '立即开始',
+      description: '新建项目并进入设计会话',
+      icon: platformSemanticIcons.newDesign,
+      label: '开始新设计',
+    },
+    {
+      action: 'history',
+      cta: '继续设计',
+      description: '查找并续接个人设计会话',
+      icon: platformSemanticIcons.history,
+      label: '查看我的设计',
+    },
+    {
+      action: 'assets',
+      cta: '进入中心',
+      description: '管理当前项目的设计资产',
+      icon: platformSemanticIcons.assets,
+      label: '查看资产中心',
+    },
+    trainingEntry,
+    {
+      action: 'report',
+      cta: '开始生成',
+      description: '基于项目成果生成交付报告',
+      icon: platformSemanticIcons.report,
+      label: '开始报告生成',
+    },
+    {
+      action: 'workspace',
+      cta: '进入工作台',
+      description: '查看项目、任务与协作信息',
+      icon: platformSemanticIcons.workbench,
+      label: '设计工作台',
+    },
+  ];
+});
 
 const heroMetrics = computed(() => [
   {
-    icon: 'lucide:folder-kanban',
+    icon: platformSemanticIcons.projects,
     label: '可访问项目',
     value: dashboard.value?.summary.projectCount,
   },
   {
-    icon: 'lucide:library-big',
+    icon: platformSemanticIcons.assets,
     label: '项目资产',
     value: dashboard.value?.flow.assetCount,
   },
   {
-    icon: 'lucide:messages-square',
+    icon: platformSemanticIcons.conversations,
     label: '设计会话',
     value: dashboard.value?.flow.conversationCount,
   },
   {
-    icon: 'lucide:sparkles',
+    icon: platformSemanticIcons.applications,
     label: '已发布应用',
     value: dashboard.value?.flow.applicationCount,
   },
@@ -166,13 +192,6 @@ const filteredMyDesigns = computed(() => {
     );
   });
 });
-
-function applicationAvailable(appKey: string) {
-  const application = platformStore.applications.find(
-    (item) => item.key === appKey,
-  );
-  return Boolean(application?.visible && application.capabilityCode);
-}
 
 function formatTime(value: string) {
   const date = new Date(value);
@@ -337,7 +356,20 @@ async function createProjectAndDesign() {
 async function loadDashboard() {
   dashboardLoading.value = true;
   try {
-    dashboard.value = await getDashboardApi();
+    const [dashboardResult, loraStatusResult] = await Promise.all([
+      getDashboardApi(),
+      getLoraStatusApi().catch(
+        (): LoraAdapterStatus => ({
+          configured: false,
+          model: 'flux2-klein-9b',
+          models: [],
+          reachable: false,
+          reason: '无法读取 AI Toolkit 训练服务状态',
+        }),
+      ),
+    ]);
+    dashboard.value = dashboardResult;
+    loraStatus.value = loraStatusResult;
     await Promise.all(
       dashboard.value.recentAssets
         .filter((asset) => asset.type === 'image')
@@ -421,12 +453,9 @@ onBeforeUnmount(() => {
         <button
           v-for="entry in quickEntries"
           :key="entry.action"
-          :class="`tone-${entry.tone}`"
           :data-action="entry.action"
-          :data-unavailable="entry.unavailable || undefined"
-          :title="
-            entry.unavailable ? '该外部服务与能力契约尚未接入' : undefined
-          "
+          :data-status="entry.status"
+          :title="entry.title"
           type="button"
           @click="activateQuickEntry(entry.action)"
         >
@@ -437,7 +466,7 @@ onBeforeUnmount(() => {
           <small>{{ entry.description }}</small>
           <span class="home-entry-card__action">
             {{ entry.cta }}
-            <em v-if="entry.unavailable">待接入</em>
+            <em v-if="entry.badge">{{ entry.badge }}</em>
             <IconifyIcon v-else icon="lucide:arrow-right" />
           </span>
         </button>
@@ -483,7 +512,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <div v-else class="home-panel__empty">
-            <IconifyIcon icon="lucide:list-checks" />
+            <IconifyIcon :icon="platformSemanticIcons.jobs" />
             <span>当前账号暂无任务记录</span>
           </div>
         </article>
@@ -539,7 +568,7 @@ onBeforeUnmount(() => {
             </button>
           </div>
           <div v-else class="home-panel__empty">
-            <IconifyIcon icon="lucide:library-big" />
+            <IconifyIcon :icon="platformSemanticIcons.assets" />
             <span>当前账号暂无已生成资产</span>
           </div>
         </article>
@@ -670,6 +699,10 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .home-page {
+  --home-accent: #c71938;
+  --home-accent-soft: #fff1f3;
+  --home-border: #e4e7ec;
+
   min-height: 100%;
   padding: clamp(16px, 2vw, 28px);
   background:
@@ -774,8 +807,8 @@ onBeforeUnmount(() => {
 }
 
 .home-hero__metrics > div > svg {
-  width: 22px;
-  height: 22px;
+  width: var(--rail-icon-md);
+  height: var(--rail-icon-md);
   color: var(--rail-red);
 }
 
@@ -832,9 +865,6 @@ onBeforeUnmount(() => {
 }
 
 .home-entry-grid button {
-  --entry-color: #c51f3a;
-  --entry-soft: #fff0f2;
-
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -845,7 +875,7 @@ onBeforeUnmount(() => {
   text-align: left;
   cursor: pointer;
   background: #fff;
-  border: 1px solid #e0e5e9;
+  border: 1px solid var(--home-border);
   border-radius: 16px;
   box-shadow: 0 8px 22px rgb(24 35 44 / 4%);
   transition:
@@ -857,34 +887,9 @@ onBeforeUnmount(() => {
 .home-entry-grid button:hover,
 .home-entry-grid button:focus-visible {
   outline: none;
-  border-color: color-mix(in srgb, var(--entry-color) 34%, #e0e5e9);
+  border-color: #e4b5bf;
   box-shadow: 0 15px 34px rgb(24 35 44 / 9%);
   transform: translateY(-3px);
-}
-
-.home-entry-grid button.tone-violet {
-  --entry-color: #7c3aed;
-  --entry-soft: #f4efff;
-}
-
-.home-entry-grid button.tone-blue {
-  --entry-color: #2563eb;
-  --entry-soft: #edf4ff;
-}
-
-.home-entry-grid button.tone-green {
-  --entry-color: #238451;
-  --entry-soft: #edf8f1;
-}
-
-.home-entry-grid button.tone-orange {
-  --entry-color: #c86a18;
-  --entry-soft: #fff4e9;
-}
-
-.home-entry-grid button.tone-pink {
-  --entry-color: #c61f65;
-  --entry-soft: #fff0f7;
 }
 
 .home-entry-card__icon {
@@ -892,25 +897,26 @@ onBeforeUnmount(() => {
   place-items: center;
   width: 42px;
   height: 42px;
-  color: var(--entry-color);
-  background: var(--entry-soft);
+  color: var(--home-accent);
+  background: var(--home-accent-soft);
   border-radius: 11px;
 }
 
 .home-entry-card__icon svg {
-  width: 22px;
-  height: 22px;
+  width: var(--rail-icon-md);
+  height: var(--rail-icon-md);
 }
 
 .home-entry-grid button > strong {
   margin-top: 14px;
-  font-size: 15px;
+  font-size: var(--rail-font-section-title);
+  font-weight: 700;
 }
 
 .home-entry-grid button > small {
   min-height: 38px;
   margin-top: 7px;
-  font-size: 12px;
+  font-size: var(--rail-font-label);
   line-height: 1.55;
   color: #74808a;
 }
@@ -924,25 +930,41 @@ onBeforeUnmount(() => {
   min-height: 34px;
   padding: 8px 10px;
   margin-top: auto;
-  font-size: 12px;
+  font-size: var(--rail-font-label);
   font-weight: 650;
-  color: var(--entry-color);
-  background: var(--entry-soft);
-  border: 1px solid color-mix(in srgb, var(--entry-color) 24%, #fff);
+  color: var(--home-accent);
+  background: #fff;
+  border: 1px solid #e4b5bf;
   border-radius: 8px;
+}
+
+.home-entry-grid button:hover .home-entry-card__action,
+.home-entry-grid button:focus-visible .home-entry-card__action {
+  background: var(--home-accent-soft);
 }
 
 .home-entry-card__action em {
   padding: 2px 7px;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   font-style: normal;
   color: #8a6b47;
   background: #fff7e6;
   border-radius: 999px;
 }
 
-.home-entry-grid button[data-unavailable='true'] {
-  --entry-color: #8a949c;
+.home-entry-grid button[data-status='ready'] .home-entry-card__action em {
+  color: #166b42;
+  background: #dcfce7;
+}
+
+.home-entry-grid button[data-status='error'] .home-entry-card__action em {
+  color: #9f2d2d;
+  background: #fff0f0;
+}
+
+.home-entry-grid button[data-status='loading'] .home-entry-card__action em {
+  color: #5f6b75;
+  background: #eef1f4;
 }
 
 .home-work-grid {
@@ -971,7 +993,7 @@ onBeforeUnmount(() => {
 }
 
 .home-panel > header span {
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   font-weight: 700;
   color: #a2717a;
   letter-spacing: 0.12em;
@@ -979,7 +1001,8 @@ onBeforeUnmount(() => {
 
 .home-panel h2 {
   margin: 3px 0 0;
-  font-size: 15px;
+  font-size: var(--rail-font-section-title);
+  font-weight: 700;
   color: #28323b;
 }
 
@@ -988,7 +1011,7 @@ onBeforeUnmount(() => {
   gap: 5px;
   align-items: center;
   padding: 4px;
-  font-size: 11px;
+  font-size: var(--rail-font-caption);
   color: #7b858e;
   background: transparent;
   border: 0;
@@ -1042,7 +1065,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   color: var(--rail-red);
   background:
-    linear-gradient(135deg, rgb(197 31 58 / 8%), rgb(37 99 235 / 6%)), #f5f7f9;
+    linear-gradient(135deg, rgb(199 25 56 / 8%), rgb(199 25 56 / 2%)), #f5f7f9;
   border-radius: 10px;
 }
 
@@ -1055,7 +1078,12 @@ onBeforeUnmount(() => {
 .home-history-list__preview img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+}
+
+.home-asset-list__preview:has(img),
+.home-history-list__preview:has(img) {
+  background: #fff;
 }
 
 .home-asset-list__preview > svg,
@@ -1078,7 +1106,8 @@ onBeforeUnmount(() => {
 
 .home-asset-list strong,
 .home-task-list strong {
-  font-size: 12px;
+  font-size: var(--rail-font-label);
+  font-weight: 700;
 }
 
 .home-asset-list small,
@@ -1086,7 +1115,7 @@ onBeforeUnmount(() => {
 .home-task-list small,
 .home-asset-list time {
   margin-top: 3px;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   color: #7a858e;
 }
 
@@ -1130,7 +1159,7 @@ onBeforeUnmount(() => {
 
 .home-task-list > button > em,
 .home-panel__summary {
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   font-style: normal;
   color: #78838c;
   white-space: nowrap;
@@ -1168,7 +1197,7 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
   min-height: 30px;
   padding: 0 4px;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   color: #7d8790;
 }
 

@@ -482,7 +482,7 @@ async function openConversation(job: PlatformJob) {
   place-items: center;
   width: 42px;
   height: 42px;
-  font-size: 19px;
+  font-size: var(--rail-icon-md);
   color: var(--rail-red);
   background: var(--rail-red-soft);
   border-radius: 10px;
@@ -522,7 +522,7 @@ async function openConversation(job: PlatformJob) {
 
 .job-row__progress > div > span:last-child {
   font-family: ui-monospace, monospace;
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   color: var(--rail-steel);
 }
 

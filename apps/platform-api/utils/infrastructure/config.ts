@@ -5,6 +5,8 @@ export interface PlatformConfig {
   aiAssistantApiKey: null | string;
   aiAssistantApiUrl: null | string;
   aiAssistantMaxAttachmentBytes: number;
+  aiAssistantMaxImageBytesPerRequest: number;
+  aiAssistantMaxImagesPerMessage: number;
   aiAssistantModel: string;
   aiAssistantTimeoutMs: number;
   allowSelfRegistration: boolean;
@@ -32,10 +34,25 @@ export interface PlatformConfig {
   databaseUrl: string;
   isProduction: boolean;
   jwtSecret: string;
+  loraApiToken: null | string;
+  loraApiUrl: null | string;
+  loraDatasetsRoot: string;
+  loraGpuIds: string;
+  loraMaxDatasetBytes: number;
+  loraMaxOutputBytes: number;
+  loraModelPath: string;
+  loraPollIntervalMs: number;
+  loraTimeoutMs: number;
+  loraVaePath: string;
+  loraWorkerLeaseSeconds: number;
   maxInlineTextBytes: number;
   maxUploadBytes: number;
   passwordResetTtlMinutes: number;
   refreshTokenTtlDays: number;
+  reportAiApiUrl: null | string;
+  reportAiMaxOutputBytes: number;
+  reportAiTemplate: string;
+  reportAiTimeoutMs: number;
   s3AccessKey: string;
   s3Bucket: string;
   s3CorsOrigins: string[];
@@ -181,6 +198,32 @@ export function validateProductionEnvironment(environment: NodeJS.ProcessEnv) {
       issues.push('COMFYUI_API_URL 不是有效地址');
     }
   }
+  if (environment.LORA_API_TOKEN?.trim() && !environment.LORA_API_URL?.trim()) {
+    issues.push('配置 LORA_API_TOKEN 时必须同时配置 LORA_API_URL');
+  }
+  if (environment.LORA_API_TOKEN?.includes('CHANGE_ME')) {
+    issues.push('LORA_API_TOKEN 仍包含 CHANGE_ME 占位值');
+  }
+  if (environment.LORA_API_URL?.trim()) {
+    try {
+      const url = new URL(environment.LORA_API_URL);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        issues.push('LORA_API_URL 必须使用 http 或 https');
+      }
+    } catch {
+      issues.push('LORA_API_URL 不是有效地址');
+    }
+  }
+  if (environment.REPORT_AI_API_URL?.trim()) {
+    try {
+      const url = new URL(environment.REPORT_AI_API_URL);
+      if (!['http:', 'https:'].includes(url.protocol)) {
+        issues.push('REPORT_AI_API_URL 必须使用 http 或 https');
+      }
+    } catch {
+      issues.push('REPORT_AI_API_URL 不是有效地址');
+    }
+  }
 
   return issues;
 }
@@ -218,8 +261,16 @@ export function getConfig(): PlatformConfig {
       process.env.AI_ASSISTANT_MAX_ATTACHMENT_BYTES,
       50 * 1024 * 1024,
     ),
+    aiAssistantMaxImageBytesPerRequest: positiveInteger(
+      process.env.AI_ASSISTANT_MAX_IMAGE_BYTES_PER_REQUEST,
+      20 * 1024 * 1024,
+    ),
+    aiAssistantMaxImagesPerMessage: positiveInteger(
+      process.env.AI_ASSISTANT_MAX_IMAGES_PER_MESSAGE,
+      4,
+    ),
     aiAssistantModel:
-      process.env.AI_ASSISTANT_MODEL?.trim() || 'deepseek-v4-flash-0731',
+      process.env.AI_ASSISTANT_MODEL?.trim() || 'qwen3-vl-8b-instruct',
     aiAssistantTimeoutMs: positiveInteger(
       process.env.AI_ASSISTANT_TIMEOUT_MS,
       60_000,
@@ -278,6 +329,35 @@ export function getConfig(): PlatformConfig {
       'postgresql://rail_platform:rail_platform_dev@localhost:5432/rail_platform',
     isProduction,
     jwtSecret,
+    loraApiToken: process.env.LORA_API_TOKEN?.trim() || null,
+    loraApiUrl: process.env.LORA_API_URL?.trim() || null,
+    loraDatasetsRoot:
+      process.env.LORA_DATASETS_ROOT?.trim() ||
+      '/opt/ai-toolkit/data/ai-toolkit-lora-datasets',
+    loraGpuIds: process.env.LORA_GPU_IDS?.trim() || '0',
+    loraMaxDatasetBytes: positiveInteger(
+      process.env.LORA_MAX_DATASET_BYTES,
+      2 * 1024 * 1024 * 1024,
+    ),
+    loraMaxOutputBytes: positiveInteger(
+      process.env.LORA_MAX_OUTPUT_BYTES,
+      1024 * 1024 * 1024,
+    ),
+    loraModelPath:
+      process.env.LORA_MODEL_PATH?.trim() ||
+      '/data_hdd/data/models/Flux2Klein/unet/flux-2-klein-9b.safetensors',
+    loraPollIntervalMs: positiveInteger(
+      process.env.LORA_POLL_INTERVAL_MS,
+      5000,
+    ),
+    loraTimeoutMs: positiveInteger(process.env.LORA_API_TIMEOUT_MS, 120_000),
+    loraVaePath:
+      process.env.LORA_VAE_PATH?.trim() ||
+      '/data_hdd/data/models/flux2-klein-9B/split_files/vae/flux2-vae.safetensors',
+    loraWorkerLeaseSeconds: positiveInteger(
+      process.env.LORA_WORKER_LEASE_SECONDS,
+      180,
+    ),
     maxInlineTextBytes: positiveInteger(
       process.env.MAX_INLINE_TEXT_BYTES,
       5 * 1024 * 1024,
@@ -293,6 +373,16 @@ export function getConfig(): PlatformConfig {
     refreshTokenTtlDays: positiveInteger(
       process.env.REFRESH_TOKEN_TTL_DAYS,
       30,
+    ),
+    reportAiApiUrl: process.env.REPORT_AI_API_URL?.trim() || null,
+    reportAiMaxOutputBytes: positiveInteger(
+      process.env.REPORT_AI_MAX_OUTPUT_BYTES,
+      100 * 1024 * 1024,
+    ),
+    reportAiTemplate: process.env.REPORT_AI_TEMPLATE?.trim() || 'general',
+    reportAiTimeoutMs: positiveInteger(
+      process.env.REPORT_AI_TIMEOUT_MS,
+      10 * 60 * 1000,
     ),
     s3AccessKey: process.env.S3_ACCESS_KEY ?? 'railminio',
     s3Bucket: process.env.S3_BUCKET ?? 'rail-platform-assets',

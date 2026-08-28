@@ -237,11 +237,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
   touch-action: none;
   cursor: default;
   user-select: none;
-  background:
-    linear-gradient(45deg, #20262b 25%, transparent 25%) 0 0 / 20px 20px,
-    linear-gradient(45deg, transparent 75%, #20262b 75%) 0 0 / 20px 20px,
-    linear-gradient(45deg, transparent 75%, #20262b 75%) 10px -10px / 20px 20px,
-    linear-gradient(45deg, #20262b 25%, #171c20 25%) 10px 10px / 20px 20px;
+  background: #fff;
   border-radius: 12px;
 }
 

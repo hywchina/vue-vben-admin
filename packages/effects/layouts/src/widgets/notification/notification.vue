@@ -62,7 +62,10 @@ defineExpose({ toggle });
   <VbenPopover v-model:open="open" content-class="relative right-2 w-90 p-0">
     <template #trigger>
       <div class="mr-2 flex-center h-full" @click.stop="toggle()">
-        <VbenIconButton class="bell-button relative text-foreground">
+        <VbenIconButton
+          aria-label="通知"
+          class="bell-button relative text-foreground"
+        >
           <span
             v-if="dot"
             class="absolute top-0.5 right-0.5 size-2 rounded-sm bg-primary"
@@ -87,7 +90,7 @@ defineExpose({ toggle });
         <ul class="flex! max-h-90 w-full flex-col">
           <template v-for="item in notifications" :key="item.id ?? item.title">
             <li
-              class="relative flex w-full cursor-pointer items-start gap-5 border-t border-border p-3 hover:bg-accent"
+              class="notification-item relative w-full cursor-pointer border-t border-border p-3 hover:bg-accent"
               @click="emit('onClick', item)"
             >
               <slot name="content" :item="item">
@@ -104,7 +107,9 @@ defineExpose({ toggle });
                     class="aspect-square size-full object-cover"
                   />
                 </span>
-                <div class="flex flex-col gap-1 leading-none">
+                <div
+                  class="notification-item__content flex flex-col gap-1 leading-none"
+                >
                   <p class="font-semibold">{{ item.title }}</p>
                   <p class="my-1 line-clamp-2 text-xs text-muted-foreground">
                     {{ item.message }}
@@ -113,9 +118,7 @@ defineExpose({ toggle });
                     {{ item.date }}
                   </p>
                 </div>
-                <div
-                  class="absolute top-1/2 right-3 flex -translate-y-1/2 flex-row gap-1"
-                >
+                <div class="notification-item__action flex flex-row gap-1">
                   <slot name="action" :item="item">
                     <slot name="action-prepend" :item="item"></slot>
                     <VbenIconButton
@@ -173,6 +176,27 @@ defineExpose({ toggle });
 </template>
 
 <style scoped>
+.notification-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 32px;
+  gap: 12px;
+  align-items: start;
+}
+
+.notification-item__content {
+  min-width: 0;
+}
+
+.notification-item__content p {
+  overflow-wrap: anywhere;
+}
+
+.notification-item__action {
+  align-self: center;
+  justify-content: center;
+  width: 32px;
+}
+
 :deep(.bell-button) {
   &:hover {
     svg {

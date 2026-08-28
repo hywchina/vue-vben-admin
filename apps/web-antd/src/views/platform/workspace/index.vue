@@ -43,6 +43,7 @@ import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { usePlatformStore } from '#/store';
 import { selectWorkspaceJobs } from '#/store/platform/helpers';
 
@@ -966,7 +967,7 @@ onBeforeUnmount(() => {
           :status="application.adapterConfigured ? 'available' : 'planned'"
         />
         <Button @click="router.push('/jobs')">
-          <IconifyIcon icon="lucide:list-checks" />
+          <IconifyIcon :icon="platformSemanticIcons.jobs" />
           任务记录
         </Button>
         <Button
@@ -1005,7 +1006,7 @@ onBeforeUnmount(() => {
         </div>
         <b><em></em></b>
         <div>
-          <i><IconifyIcon icon="lucide:library" /></i>
+          <i><IconifyIcon :icon="platformSemanticIcons.assets" /></i>
           <span>{{ assetTypeLabels[resultKind] ?? '项目资产' }}</span>
         </div>
       </div>

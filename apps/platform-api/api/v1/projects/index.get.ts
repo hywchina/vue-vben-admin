@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { useDatabase } from '~/utils/database';
 import { hasAdministrativeRole, requireIdentity } from '~/utils/identity';
 import { apiHandler } from '~/utils/response';
+import { createPreviewUrl } from '~/utils/storage';
 import { parseQuery } from '~/utils/validation';
 
 const querySchema = z.object({
@@ -18,6 +19,12 @@ interface ProjectRow {
   id: string;
   isPinned: boolean;
   jobCount: number;
+  memberPreviews: Array<{
+    avatarMimeType: null | string;
+    avatarObjectKey: null | string;
+    name: string;
+    publicId: string;
+  }>;
   members: number;
   name: string;
   ownerId: string;
@@ -50,7 +57,28 @@ export default apiHandler(async (event) => {
       count(DISTINCT job.id)::integer AS "jobCount",
       count(DISTINCT job.id) FILTER (
         WHERE job.status IN ('queued', 'running', 'cancelling')
-      )::integer AS "activeJobCount"
+      )::integer AS "activeJobCount",
+      COALESCE((
+        SELECT jsonb_agg(to_jsonb(member_preview))
+        FROM (
+          SELECT
+            user_account.public_id AS "publicId",
+            user_account.real_name AS name,
+            user_account.avatar_object_key AS "avatarObjectKey",
+            user_account.avatar_mime_type AS "avatarMimeType"
+          FROM project_members preview_member
+          JOIN users user_account ON user_account.id = preview_member.user_id
+          WHERE preview_member.project_id = p.id
+          ORDER BY
+            CASE preview_member.project_role
+              WHEN 'owner' THEN 0
+              WHEN 'editor' THEN 1
+              ELSE 2
+            END,
+            preview_member.joined_at ASC
+          LIMIT 3
+        ) member_preview
+      ), '[]'::jsonb) AS "memberPreviews"
     FROM projects p
     LEFT JOIN project_members pm_all ON pm_all.project_id = p.id
     LEFT JOIN assets a
@@ -93,12 +121,27 @@ export default apiHandler(async (event) => {
 
   return {
     currentProjectId: visibleCurrentProjectId,
-    items: items.map((project) => ({
-      ...project,
-      canDelete: isAdmin || project.ownerId === identity.id,
-      createdAt: project.createdAt.toISOString(),
-      isOwner: project.ownerId === identity.id,
-      updatedAt: project.updatedAt.toISOString(),
-    })),
+    items: await Promise.all(
+      items.map(async (project) => ({
+        ...project,
+        canDelete: isAdmin || project.ownerId === identity.id,
+        createdAt: project.createdAt.toISOString(),
+        isOwner: project.ownerId === identity.id,
+        memberPreviews: await Promise.all(
+          project.memberPreviews.map(async (member) => ({
+            avatar:
+              member.avatarObjectKey && member.avatarMimeType
+                ? await createPreviewUrl(
+                    member.avatarObjectKey,
+                    member.avatarMimeType,
+                  ).catch(() => null)
+                : null,
+            name: member.name,
+            publicId: member.publicId,
+          })),
+        ),
+        updatedAt: project.updatedAt.toISOString(),
+      })),
+    ),
   };
 });

@@ -3,6 +3,7 @@ import { useDatabase } from '~/utils/database';
 import { hasAdministrativeRole, requireIdentity } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
+import { createPreviewUrl } from '~/utils/storage';
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
@@ -20,6 +21,8 @@ export default apiHandler(async (event) => {
   const members = await sql<
     {
       assetCount: number;
+      avatarMimeType: null | string;
+      avatarObjectKey: null | string;
       department: string;
       jobCount: number;
       joinedAt: Date;
@@ -36,6 +39,8 @@ export default apiHandler(async (event) => {
       user_account.username,
       user_account.real_name AS name,
       user_account.department,
+      user_account.avatar_object_key AS "avatarObjectKey",
+      user_account.avatar_mime_type AS "avatarMimeType",
       member.project_role AS "projectRole",
       member.joined_at AS "joinedAt",
       count(DISTINCT asset.id) FILTER (
@@ -60,10 +65,18 @@ export default apiHandler(async (event) => {
   return {
     canInvite:
       project.ownerId === identity.id || hasAdministrativeRole(identity),
-    items: members.map((member) => ({
-      ...member,
-      joinedAt: member.joinedAt.toISOString(),
-    })),
+    items: await Promise.all(
+      members.map(async ({ avatarMimeType, avatarObjectKey, ...member }) => ({
+        ...member,
+        avatar:
+          avatarObjectKey && avatarMimeType
+            ? await createPreviewUrl(avatarObjectKey, avatarMimeType).catch(
+                () => null,
+              )
+            : null,
+        joinedAt: member.joinedAt.toISOString(),
+      })),
+    ),
     projectId,
   };
 });

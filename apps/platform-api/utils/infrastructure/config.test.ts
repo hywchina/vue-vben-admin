@@ -85,6 +85,43 @@ describe('production configuration validation', () => {
     ).toContain('COMFYUI_API_URL 必须使用 http 或 https');
   });
 
+  it('validates the LoRA adapter URL and token', () => {
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        LORA_API_TOKEN: 'secret',
+      }),
+    ).toContain('配置 LORA_API_TOKEN 时必须同时配置 LORA_API_URL');
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        LORA_API_URL: 'file:///srv/ai-toolkit',
+      }),
+    ).toContain('LORA_API_URL 必须使用 http 或 https');
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        LORA_API_TOKEN: 'CHANGE_ME_LORA_TOKEN',
+        LORA_API_URL: 'https://training.example.internal',
+      }),
+    ).toContain('LORA_API_TOKEN 仍包含 CHANGE_ME 占位值');
+  });
+
+  it('validates the AI report adapter URL', () => {
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        REPORT_AI_API_URL: 'file:///srv/report-generator',
+      }),
+    ).toContain('REPORT_AI_API_URL 必须使用 http 或 https');
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        REPORT_AI_API_URL: 'not-a-url',
+      }),
+    ).toContain('REPORT_AI_API_URL 不是有效地址');
+  });
+
   it('rejects deployment template placeholders', () => {
     expect(
       validateProductionEnvironment({

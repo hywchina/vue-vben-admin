@@ -29,6 +29,70 @@ export default apiHandler(async (event) => {
     FROM job_executions
     WHERE job_id = ${jobId}
   `;
+  const [loraExecution] = await sql<{ status: string }[]>`
+    SELECT status
+    FROM lora_training_executions
+    WHERE job_id = ${jobId}
+  `;
+  const [reportExecution] = await sql<{ status: string }[]>`
+    SELECT status
+    FROM report_generation_executions
+    WHERE job_id = ${jobId}
+  `;
+  if (reportExecution) {
+    await sql.begin(async (transaction) => {
+      await transaction`
+        UPDATE report_generation_executions
+        SET status = 'cancel_requested', next_attempt_at = now(),
+            lease_expires_at = null, updated_at = now()
+        WHERE job_id = ${jobId}
+      `;
+      await transaction`
+        UPDATE jobs
+        SET status = 'cancelling', stage = '正在安全停止报告生成', updated_at = now()
+        WHERE id = ${jobId}
+      `;
+    });
+    await writeAudit(event, {
+      action: 'job.cancel',
+      actor: identity,
+      details: {
+        cancellationMode: 'report-worker',
+        previousStatus: job.status,
+      },
+      module: 'job',
+      targetId: jobId,
+      targetType: 'job',
+    });
+    return { id: jobId, status: 'cancelling' };
+  }
+  if (loraExecution) {
+    await sql.begin(async (transaction) => {
+      await transaction`
+        UPDATE lora_training_executions
+        SET
+          status = 'cancel_requested',
+          next_poll_at = now(),
+          lease_expires_at = null,
+          updated_at = now()
+        WHERE job_id = ${jobId}
+      `;
+      await transaction`
+        UPDATE jobs
+        SET status = 'cancelling', stage = '正在安全停止 LoRA 训练', updated_at = now()
+        WHERE id = ${jobId}
+      `;
+    });
+    await writeAudit(event, {
+      action: 'job.cancel',
+      actor: identity,
+      details: { cancellationMode: 'lora-worker', previousStatus: job.status },
+      module: 'job',
+      targetId: jobId,
+      targetType: 'job',
+    });
+    return { id: jobId, status: 'cancelling' };
+  }
   await (execution
     ? sql.begin(async (transaction) => {
         await transaction`

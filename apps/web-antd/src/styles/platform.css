@@ -10,6 +10,16 @@
   --rail-success: #287a53;
   --rail-warning: #a56516;
   --rail-shadow: 0 12px 34px rgb(28 35 43 / 7%);
+  --rail-font-page-title: clamp(24px, 2.2vw, 34px);
+  --rail-font-section-title: 16px;
+  --rail-font-card-title: 14px;
+  --rail-font-body: 13px;
+  --rail-font-label: 12px;
+  --rail-font-caption: 11px;
+  --rail-icon-xs: 14px;
+  --rail-icon-sm: 16px;
+  --rail-icon-md: 20px;
+  --rail-icon-lg: 24px;
 }
 
 .platform-page {
@@ -33,7 +43,7 @@
 
 .platform-page-heading__eyebrow {
   margin-bottom: 6px;
-  font-size: 11px;
+  font-size: var(--rail-font-caption);
   font-weight: 750;
   color: var(--rail-red);
   text-transform: uppercase;
@@ -42,8 +52,8 @@
 
 .platform-page-heading h1 {
   margin: 0;
-  font-size: clamp(24px, 2.2vw, 34px);
-  font-weight: 720;
+  font-size: var(--rail-font-page-title);
+  font-weight: 740;
   line-height: 1.15;
   color: var(--rail-ink);
   letter-spacing: -0.035em;
@@ -52,7 +62,7 @@
 .platform-page-heading p {
   max-width: 720px;
   margin: 8px 0 0;
-  font-size: 14px;
+  font-size: var(--rail-font-card-title);
   line-height: 1.65;
   color: var(--rail-steel);
 }
@@ -88,13 +98,13 @@
 
 .platform-panel__header h2 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 680;
+  font-size: var(--rail-font-section-title);
+  font-weight: 700;
 }
 
 .platform-panel__header p {
   margin: 3px 0 0;
-  font-size: 12px;
+  font-size: var(--rail-font-label);
   color: var(--rail-steel);
 }
 
@@ -107,7 +117,7 @@
   align-items: center;
   min-height: 24px;
   padding: 2px 9px;
-  font-size: 11px;
+  font-size: var(--rail-font-caption);
   font-weight: 650;
   white-space: nowrap;
   border: 1px solid transparent;
@@ -146,7 +156,7 @@
 }
 
 .rail-section-label {
-  font-size: 11px;
+  font-size: var(--rail-font-caption);
   font-weight: 700;
   color: var(--rail-steel);
   text-transform: uppercase;
@@ -182,7 +192,7 @@
 
 .rail-metric__hint {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: var(--rail-font-label);
   color: var(--rail-steel);
 }
 
@@ -207,10 +217,30 @@
 }
 
 .rail-project-switcher__label {
-  font-size: 11px;
+  font-size: var(--rail-font-caption);
   font-weight: 650;
   color: var(--rail-steel);
   white-space: nowrap;
+}
+
+.rail-icon--xs {
+  width: var(--rail-icon-xs);
+  height: var(--rail-icon-xs);
+}
+
+.rail-icon--sm {
+  width: var(--rail-icon-sm);
+  height: var(--rail-icon-sm);
+}
+
+.rail-icon--md {
+  width: var(--rail-icon-md);
+  height: var(--rail-icon-md);
+}
+
+.rail-icon--lg {
+  width: var(--rail-icon-lg);
+  height: var(--rail-icon-lg);
 }
 
 @media (max-width: 768px) {

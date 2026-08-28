@@ -284,7 +284,7 @@ async function toggleStatus(user: PlatformUser) {
 
 .access-table-head {
   min-height: 38px;
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   font-weight: 700;
   color: var(--rail-steel);
   text-transform: uppercase;
@@ -340,7 +340,7 @@ async function toggleStatus(user: PlatformUser) {
 
 .user-identity b {
   flex: 0 0 48px;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   font-weight: 650;
   color: #7c858d;
 }
@@ -353,7 +353,7 @@ async function toggleStatus(user: PlatformUser) {
 
 .user-roles :deep(.ant-tag) {
   margin: 0;
-  font-size: 8px;
+  font-size: var(--rail-font-caption);
 }
 
 .user-actions {
@@ -363,7 +363,7 @@ async function toggleStatus(user: PlatformUser) {
 
 .user-actions :deep(.ant-btn) {
   padding-inline: 5px;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
 }
 
 .role-grid {
@@ -394,7 +394,7 @@ async function toggleStatus(user: PlatformUser) {
   place-items: center;
   width: 40px;
   height: 40px;
-  font-size: 19px;
+  font-size: var(--rail-icon-md);
   color: var(--rail-red);
   background: var(--rail-red-soft);
   border-radius: 10px;
@@ -406,7 +406,7 @@ async function toggleStatus(user: PlatformUser) {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 10px;
+  font-size: var(--rail-font-caption);
   color: var(--rail-steel);
   white-space: nowrap;
 }
@@ -474,7 +474,7 @@ async function toggleStatus(user: PlatformUser) {
 
 .role-card p {
   min-height: 52px;
-  font-size: 10px;
+  font-size: var(--rail-font-label);
   line-height: 1.6;
   color: var(--rail-steel);
 }
@@ -502,7 +502,7 @@ async function toggleStatus(user: PlatformUser) {
 }
 
 .role-card__metrics span {
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   color: var(--rail-steel);
 }
 
@@ -512,7 +512,7 @@ async function toggleStatus(user: PlatformUser) {
   justify-content: space-between;
   padding-top: 12px;
   margin-top: 14px;
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   border-top: 1px solid var(--rail-line);
 }
 

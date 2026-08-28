@@ -26,17 +26,20 @@ import {
 const props = defineProps<{
   acceptedKinds: AssetType[];
   assets: PlatformAsset[];
+  multiple?: boolean;
   open: boolean;
   projectId?: string;
   selectedAssetId?: string;
+  selectedAssetIds?: string[];
 }>();
 
 const emit = defineEmits<{
   select: [assetId: string];
+  selectMultiple: [assetIds: string[]];
   'update:open': [open: boolean];
 }>();
 const keyword = ref('');
-const selected = ref('');
+const selected = ref<string[]>([]);
 const currentFolderId = ref<null | string>(null);
 const typeFilter = ref<'all' | AssetType>('all');
 const sortValue = ref<
@@ -145,7 +148,11 @@ async function loadFolderAssets() {
 }
 
 async function initializePicker() {
-  selected.value = props.selectedAssetId ?? '';
+  if (props.multiple) {
+    selected.value = [...(props.selectedAssetIds ?? [])];
+  } else {
+    selected.value = props.selectedAssetId ? [props.selectedAssetId] : [];
+  }
   keyword.value = '';
   typeFilter.value = 'all';
   currentFolderId.value = null;
@@ -170,13 +177,32 @@ async function initializePicker() {
 
 function enterFolder(folderId: null | string) {
   currentFolderId.value = folderId;
-  selected.value = '';
+  if (!props.multiple) selected.value = [];
 }
 
 function confirmSelection() {
-  if (!selected.value) return;
-  emit('select', selected.value);
+  if (selected.value.length === 0) return;
+  if (props.multiple) emit('selectMultiple', selected.value);
+  else {
+    const selectedAssetId = selected.value[0];
+    if (!selectedAssetId) return;
+    emit('select', selectedAssetId);
+  }
   emit('update:open', false);
+}
+
+function confirmSelectionOnDoubleClick() {
+  if (!props.multiple) confirmSelection();
+}
+
+function toggleSelection(assetId: string) {
+  if (!props.multiple) {
+    selected.value = [assetId];
+    return;
+  }
+  selected.value = selected.value.includes(assetId)
+    ? selected.value.filter((id) => id !== assetId)
+    : [...selected.value, assetId];
 }
 
 watch(
@@ -269,10 +295,10 @@ watch(compatibleAssets, () => {
           <button
             v-for="asset in compatibleAssets"
             :key="asset.id"
-            :class="{ selected: selected === asset.id }"
+            :class="{ selected: selected.includes(asset.id) }"
             type="button"
-            @click="selected = asset.id"
-            @dblclick="confirmSelection"
+            @click="toggleSelection(asset.id)"
+            @dblclick="confirmSelectionOnDoubleClick"
           >
             <div class="asset-picker-preview">
               <img
@@ -297,8 +323,12 @@ watch(compatibleAssets, () => {
     </Spin>
     <template #footer>
       <Button @click="emit('update:open', false)">取消</Button>
-      <Button :disabled="!selected" type="primary" @click="confirmSelection">
-        使用所选资产
+      <Button
+        :disabled="selected.length === 0"
+        type="primary"
+        @click="confirmSelection"
+      >
+        使用所选资产{{ multiple ? `（${selected.length}）` : '' }}
       </Button>
     </template>
   </Modal>
@@ -430,7 +460,8 @@ watch(compatibleAssets, () => {
   position: relative;
   display: grid;
   place-items: center;
-  height: 118px;
+  min-height: 128px;
+  aspect-ratio: 4 / 3;
   overflow: hidden;
   color: #6e7a82;
   background: #f0f3f4;
@@ -440,7 +471,11 @@ watch(compatibleAssets, () => {
 .asset-picker-preview img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
+}
+
+.asset-picker-preview:has(img) {
+  background: #fff;
 }
 
 .asset-picker-preview > svg {
@@ -463,13 +498,13 @@ watch(compatibleAssets, () => {
 }
 
 .asset-picker-grid strong {
-  margin-top: 8px;
-  font-size: 14px;
+  margin-top: 6px;
+  font-size: 13px;
 }
 
 .asset-picker-grid small {
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: 2px;
+  font-size: 11px;
   color: #7b878e;
 }
 

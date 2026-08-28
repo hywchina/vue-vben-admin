@@ -10,7 +10,7 @@ export const overridesPreferences = defineOverridesPreferences({
     accessMode: 'frontend',
     authPageLayout: 'panel-right',
     contentCompact: 'wide',
-    defaultAvatar: '/rail-logo.svg',
+    defaultAvatar: '/rail-logo.svg?v=crrc',
     defaultHomePath: '/home',
     enableCheckUpdates: false,
     enablePreferences: true,
@@ -35,11 +35,11 @@ export const overridesPreferences = defineOverridesPreferences({
   logo: {
     logoMode: 'icon',
     showText: true,
-    source: '/rail-logo.svg',
-    sourceDark: '/rail-logo.svg',
+    source: '/rail-logo.svg?v=crrc',
+    sourceDark: '/rail-logo.svg?v=crrc',
   },
   sidebar: {
-    width: 226,
+    width: 320,
   },
   theme: {
     colorDestructive: 'hsl(351 74% 42%)',

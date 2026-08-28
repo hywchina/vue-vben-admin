@@ -163,6 +163,30 @@ Copy-Item apps/platform-api/.env.example apps/platform-api/.env
 
 编辑 `.env` 后重新启动 API。`.env` 不应提交到 Git。
 
+本机 Docker vLLM 使用宿主机 `18081` 端口时，源码开发模式配置如下：
+
+```dotenv
+AI_ASSISTANT_API_URL=http://127.0.0.1:18081/v1/chat/completions
+AI_ASSISTANT_API_KEY=<与 vLLM --api-key 一致>
+AI_ASSISTANT_MODEL=qwen3-vl-8b-instruct
+AI_ASSISTANT_TIMEOUT_MS=60000
+AI_ASSISTANT_MAX_IMAGES_PER_MESSAGE=4
+AI_ASSISTANT_MAX_IMAGE_BYTES_PER_REQUEST=20971520
+```
+
+图片由平台 API 从私有对象存储读取并作为 Data URL 发送给 vLLM，因此 vLLM 容器不需要访问 `localhost:9000`。修改上述配置后必须重启平台 API。
+
+报告页面默认可使用内置模板生成。启用独立 AI 报告服务时追加：
+
+```dotenv
+REPORT_AI_API_URL=http://127.0.0.1:5001/api/v1/generate-file
+REPORT_AI_TIMEOUT_MS=600000
+REPORT_AI_MAX_OUTPUT_BYTES=104857600
+REPORT_AI_TEMPLATE=general
+```
+
+源码开发时可使用宿主机 `127.0.0.1`；生产 Compose 中必须把 URL 改为 API/Worker 容器可访问的服务名或宿主机地址。图片由 Worker 从私有对象存储读取后，以 multipart 文件上传给外部服务。配置变更后需同时重启 API 和 Worker。
+
 本机 ComfyUI 使用 HTTPS 时可追加：
 
 ```dotenv
@@ -176,6 +200,24 @@ COMFYUI_MAX_OUTPUT_BYTES=268435456
 ```
 
 `NODE_EXTRA_CA_CERTS` 必须指向签发 ComfyUI 服务证书的 CA 文件，不能填写服务端私钥，也不要通过关闭 TLS 校验绕过证书问题。开发脚本会先加载 `.env`，再启动 API、数据库脚本和 Worker 子进程，确保 Node.js 在 HTTPS 初始化前读取该变量。
+
+AI Toolkit LoRA 服务按外部工程中的 `config/flux2_klein_9b_interior_lora.yaml` 已验证配置接入时追加：
+
+```dotenv
+LORA_API_URL=http://127.0.0.1:8675
+LORA_API_TOKEN=<与 AI_TOOLKIT_AUTH 一致；开发服务未启用鉴权时可留空>
+LORA_GPU_IDS=0
+LORA_DATASETS_ROOT=/opt/ai-toolkit/data/ai-toolkit-lora-datasets
+LORA_MODEL_PATH=/data_hdd/data/models/Flux2Klein/unet/flux-2-klein-9b.safetensors
+LORA_VAE_PATH=/data_hdd/data/models/flux2-klein-9B/split_files/vae/flux2-vae.safetensors
+LORA_API_TIMEOUT_MS=120000
+LORA_POLL_INTERVAL_MS=5000
+LORA_WORKER_LEASE_SECONDS=180
+LORA_MAX_DATASET_BYTES=2147483648
+LORA_MAX_OUTPUT_BYTES=1073741824
+```
+
+平台 Worker 会优先读取 AI Toolkit `/api/settings` 返回的 `DATASETS_FOLDER`，确保上传目录和训练配置的 `folder_path` 一致；`LORA_DATASETS_ROOT` 是该请求不可用时的受控回退值。开发端口通常是 `3000`，`build_and_start`/生产端口通常是 `8675`，按实际启动方式填写。训练服务只能在可信内网被平台 API/Worker 访问，不应直接暴露给浏览器或公网。
 
 ### 4.4 一键启动
 
@@ -289,6 +331,8 @@ Copy-Item deploy/rail-platform/.env.production.example `
 - `S3_SECRET_KEY`：对象存储随机密码。
 - `BOOTSTRAP_ADMIN_PASSWORD`：首个管理员密码，至少 12 字符。
 - 管理员邮箱和企业 `SMTP_*` 参数。
+- `AI_ASSISTANT_API_URL`、`AI_ASSISTANT_API_KEY` 和 `AI_ASSISTANT_MODEL`：生产 API 容器不能使用宿主机 `127.0.0.1:18081`；vLLM 加入同一 Compose 网络后应使用 `http://vllm:8000/v1/chat/completions`。
+- `LORA_API_URL` 和 `LORA_API_TOKEN`：必须从 `api` 与 `platform-worker` 容器网络可达；AI Toolkit 使用宿主机服务时不能填写容器自身的 `127.0.0.1`。`LORA_MODEL_PATH`、`LORA_VAE_PATH` 和数据集根目录是训练服务器视角的路径。
 
 不能保留任何 `CHANGE_ME`。API 生产配置校验会主动拒绝开发默认密码、占位值、短密钥、演示用户和通配 CORS。
 

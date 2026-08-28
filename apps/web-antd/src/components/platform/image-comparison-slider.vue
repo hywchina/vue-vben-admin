@@ -64,7 +64,7 @@ const clipStyle = computed(() => ({
   overflow: hidden;
   line-height: 0;
   user-select: none;
-  background: #1d272d;
+  background: #fff;
   border-radius: 14px;
   box-shadow: 0 10px 34px rgb(24 34 40 / 14%);
 }

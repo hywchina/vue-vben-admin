@@ -1,7 +1,14 @@
 <script lang="ts" setup>
 import type { AiAssistantStatus, AiConversation, AiMessage } from '#/api';
 
-import { computed, nextTick, onBeforeUnmount, reactive, ref } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+} from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
@@ -16,10 +23,14 @@ import {
   getAiConversationsApi,
   getAiMessagesApi,
   removeAiAttachmentApi,
+  renameAiConversationApi,
   sendAiMessageApi,
   uploadAiAttachmentApi,
 } from '#/api';
+import PlatformMarkdown from '#/components/platform/platform-markdown.vue';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { usePlatformStore } from '#/store';
+import { copyTextToClipboard } from '#/utils/copy-text';
 
 interface PendingFile {
   attachmentId?: string;
@@ -27,6 +38,16 @@ interface PendingFile {
   id: string;
   previewUrl?: string;
   state: 'failed' | 'local' | 'ready' | 'uploading';
+}
+
+type DisplayAttachment = AiMessage['attachments'][number] & {
+  isLocal?: boolean;
+  previewUrl?: string;
+};
+
+interface DisplayMessage extends Omit<AiMessage, 'attachments'> {
+  attachments: DisplayAttachment[];
+  uiState?: 'sending';
 }
 
 const platformStore = usePlatformStore();
@@ -38,17 +59,25 @@ const sending = ref(false);
 const status = ref<AiAssistantStatus>();
 const conversations = ref<AiConversation[]>([]);
 const activeConversationId = ref('');
-const messages = ref<AiMessage[]>([]);
+const messages = ref<DisplayMessage[]>([]);
 const draft = ref('');
 const pendingFiles = ref<PendingFile[]>([]);
 const fileInput = ref<HTMLInputElement>();
 const composerInput = ref<HTMLTextAreaElement>();
 const messageViewport = ref<HTMLElement>();
+const conversationPicker = ref<HTMLElement>();
 const imagePreviewUrls = reactive(new Map<string, string>());
+const conversationMenuOpen = ref(false);
+const conversationSearch = ref('');
+const conversationSortOrder = ref<'asc' | 'desc'>('desc');
+const editingConversationId = ref('');
+const editingConversationTitle = ref('');
+const renamingConversation = ref(false);
 
 const attachmentAccept =
   '.png,.jpg,.jpeg,.gif,.webp,.mp3,.wav,.m4a,.mp4,.mov,.webm,.txt,.md,.csv,.json,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip';
 const defaultMaxAttachmentBytes = 50 * 1024 * 1024;
+const defaultMaxImagesPerMessage = 4;
 
 const activeConversation = computed(() =>
   conversations.value.find(
@@ -66,9 +95,61 @@ const canSend = computed(
     !sending.value &&
     (draft.value.trim().length > 0 || pendingFiles.value.length > 0),
 );
+const pendingImageCount = computed(
+  () =>
+    pendingFiles.value.filter((item) => item.file.type.startsWith('image/'))
+      .length,
+);
+const maxImagesPerMessage = computed(
+  () => status.value?.maxImagesPerMessage ?? defaultMaxImagesPerMessage,
+);
+const visibleConversations = computed(() => {
+  const query = conversationSearch.value.trim().toLocaleLowerCase('zh-CN');
+  const direction = conversationSortOrder.value === 'desc' ? -1 : 1;
+  return conversations.value
+    .filter((conversation) => {
+      if (!query) return true;
+      return `${conversation.title} ${conversation.projectName ?? ''}`
+        .toLocaleLowerCase('zh-CN')
+        .includes(query);
+    })
+    .toSorted((left, right) => {
+      const leftTime = Date.parse(
+        left.lastMessageAt ?? left.createdAt ?? left.updatedAt,
+      );
+      const rightTime = Date.parse(
+        right.lastMessageAt ?? right.createdAt ?? right.updatedAt,
+      );
+      return (leftTime - rightTime) * direction;
+    });
+});
 
 function createLocalId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function createOptimisticMessage(content: string): DisplayMessage {
+  const createdAt = new Date().toISOString();
+  return {
+    attachments: pendingFiles.value.map((item) => ({
+      createdAt,
+      filename: item.file.name,
+      id: `local-attachment-${item.id}`,
+      isImage: item.file.type.startsWith('image/'),
+      isLocal: true,
+      mimeType: item.file.type,
+      previewUrl: item.previewUrl,
+      sizeBytes: item.file.size,
+      status: 'pending',
+    })),
+    content,
+    createdAt,
+    errorCode: null,
+    id: `local-message-${createLocalId()}`,
+    role: 'user',
+    status: 'completed',
+    uiState: 'sending',
+  };
 }
 
 function formatBytes(size: number) {
@@ -89,6 +170,86 @@ function conversationLabel(conversation: AiConversation) {
     ? ` · ${conversation.projectName}`
     : '';
   return `${conversation.title}${project}`;
+}
+
+function formatConversationDate(conversation: AiConversation) {
+  const value = conversation.lastMessageAt ?? conversation.createdAt;
+  return new Intl.DateTimeFormat('zh-CN', {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: '2-digit',
+  }).format(new Date(value));
+}
+
+function closeConversationMenu() {
+  conversationMenuOpen.value = false;
+  editingConversationId.value = '';
+  editingConversationTitle.value = '';
+}
+
+function toggleConversationMenu() {
+  conversationMenuOpen.value = !conversationMenuOpen.value;
+  if (!conversationMenuOpen.value) {
+    editingConversationId.value = '';
+    editingConversationTitle.value = '';
+  }
+}
+
+function toggleConversationSort() {
+  conversationSortOrder.value =
+    conversationSortOrder.value === 'desc' ? 'asc' : 'desc';
+}
+
+function startConversationRename(conversation: AiConversation) {
+  editingConversationId.value = conversation.id;
+  editingConversationTitle.value = conversation.title;
+  void nextTick(() => {
+    const input = conversationPicker.value?.querySelector<HTMLInputElement>(
+      '.rail-ai-conversation-rename input',
+    );
+    input?.focus();
+    input?.select();
+  });
+}
+
+function cancelConversationRename() {
+  editingConversationId.value = '';
+  editingConversationTitle.value = '';
+}
+
+async function saveConversationRename(conversation: AiConversation) {
+  const title = editingConversationTitle.value.trim();
+  if (!title) {
+    message.warning('会话名称不能为空');
+    return;
+  }
+  if (title === conversation.title) {
+    cancelConversationRename();
+    return;
+  }
+  renamingConversation.value = true;
+  try {
+    const updated = await renameAiConversationApi(conversation.id, title);
+    conversations.value = conversations.value.map((item) =>
+      item.id === conversation.id
+        ? { ...item, title: updated.title, updatedAt: updated.updatedAt }
+        : item,
+    );
+    cancelConversationRename();
+    message.success('会话名称已更新');
+  } finally {
+    renamingConversation.value = false;
+  }
+}
+
+function handleOutsideConversationMenu(event: PointerEvent) {
+  if (!conversationMenuOpen.value) return;
+  const target = event.target;
+  if (target instanceof Node && conversationPicker.value?.contains(target)) {
+    return;
+  }
+  closeConversationMenu();
 }
 
 async function scrollToLatest() {
@@ -163,6 +324,7 @@ async function openAssistant() {
 }
 
 function closeAssistant() {
+  closeConversationMenu();
   isOpen.value = false;
 }
 
@@ -174,6 +336,7 @@ function releasePendingFiles() {
 }
 
 async function startNewConversation() {
+  closeConversationMenu();
   activeConversationId.value = '';
   messages.value = [];
   draft.value = '';
@@ -182,12 +345,13 @@ async function startNewConversation() {
   composerInput.value?.focus();
 }
 
-async function selectConversation(event: Event) {
-  const target = event.target as HTMLSelectElement;
-  activeConversationId.value = target.value;
+async function selectConversation(conversationId: string) {
+  closeConversationMenu();
+  if (conversationId === activeConversationId.value) return;
+  activeConversationId.value = conversationId;
   messages.value = [];
   releasePendingFiles();
-  if (target.value) await loadMessages(target.value);
+  if (conversationId) await loadMessages(conversationId);
 }
 
 function chooseFiles() {
@@ -204,6 +368,11 @@ function handleFiles(event: Event) {
   }
   const maxBytes =
     status.value?.maxAttachmentBytes ?? defaultMaxAttachmentBytes;
+  let remainingImageSlots = Math.max(
+    0,
+    maxImagesPerMessage.value - pendingImageCount.value,
+  );
+  let skippedImages = 0;
   for (const file of selectedFiles.slice(0, remainingSlots)) {
     if (file.size === 0) {
       message.warning(`${file.name} 是空文件，已跳过`);
@@ -213,6 +382,11 @@ function handleFiles(event: Event) {
       message.warning(`${file.name} 超过单个附件上限 ${formatBytes(maxBytes)}`);
       continue;
     }
+    if (file.type.startsWith('image/') && remainingImageSlots === 0) {
+      skippedImages += 1;
+      continue;
+    }
+    if (file.type.startsWith('image/')) remainingImageSlots -= 1;
     pendingFiles.value.push({
       file,
       id: createLocalId(),
@@ -221,6 +395,9 @@ function handleFiles(event: Event) {
         : undefined,
       state: 'local',
     });
+  }
+  if (skippedImages > 0) {
+    message.warning(`每条消息最多添加 ${maxImagesPerMessage.value} 张图片`);
   }
 }
 
@@ -272,8 +449,11 @@ async function uploadPendingFiles(conversationId: string) {
 async function handleSend() {
   if (!canSend.value) return;
   const submittedDraft = draft.value;
+  const optimisticMessage = createOptimisticMessage(submittedDraft);
   draft.value = '';
   sending.value = true;
+  messages.value.push(optimisticMessage);
+  await scrollToLatest();
   try {
     const conversationId = await ensureConversation();
     const attachmentIds = await uploadPendingFiles(conversationId);
@@ -287,12 +467,16 @@ async function handleSend() {
       message.warning(result.serviceError.message);
     }
   } catch (error) {
+    messages.value = messages.value.filter(
+      (item) => item.id !== optimisticMessage.id,
+    );
     if (!draft.value) draft.value = submittedDraft;
     if (error instanceof Error && error.message.startsWith('附件上传失败')) {
       message.error(error.message);
     }
   } finally {
     sending.value = false;
+    await scrollToLatest();
     await nextTick();
     composerInput.value?.focus();
   }
@@ -329,12 +513,28 @@ async function downloadAttachment(attachmentId: string) {
   window.open(result.url, '_blank', 'noopener,noreferrer');
 }
 
+async function copyAssistantMessage(content: string) {
+  const copied = await copyTextToClipboard(content);
+  if (copied) {
+    message.success('回复内容已复制');
+    return;
+  }
+  message.error('复制失败，请检查浏览器剪贴板权限后重试');
+}
+
 function useSuggestion(text: string) {
   draft.value = text;
   nextTick(() => composerInput.value?.focus());
 }
 
-onBeforeUnmount(() => releasePendingFiles());
+onMounted(() => {
+  document.addEventListener('pointerdown', handleOutsideConversationMenu);
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', handleOutsideConversationMenu);
+  releasePendingFiles();
+});
 </script>
 
 <template>
@@ -401,25 +601,153 @@ onBeforeUnmount(() => releasePendingFiles());
         </header>
 
         <div class="rail-ai-context">
-          <label>
-            <IconifyIcon icon="lucide:messages-square" />
-            <select
+          <div ref="conversationPicker" class="rail-ai-conversation-picker">
+            <button
+              type="button"
+              class="rail-ai-conversation-trigger"
+              aria-haspopup="dialog"
+              :aria-expanded="conversationMenuOpen"
               aria-label="选择历史对话"
-              :value="activeConversationId"
-              @change="selectConversation"
+              @click="toggleConversationMenu"
             >
-              <option value="">新对话</option>
-              <option
-                v-for="conversation in conversations"
-                :key="conversation.id"
-                :value="conversation.id"
-              >
-                {{ conversationLabel(conversation) }}
-              </option>
-            </select>
-          </label>
+              <IconifyIcon icon="lucide:messages-square" />
+              <span>
+                {{
+                  activeConversation
+                    ? conversationLabel(activeConversation)
+                    : '选择历史对话'
+                }}
+              </span>
+              <IconifyIcon
+                icon="lucide:chevron-down"
+                :class="{ 'is-open': conversationMenuOpen }"
+              />
+            </button>
+
+            <div
+              v-if="conversationMenuOpen"
+              class="rail-ai-conversation-menu"
+              role="dialog"
+              aria-label="历史对话管理"
+              @keydown.esc.stop="closeConversationMenu"
+            >
+              <div class="rail-ai-conversation-tools">
+                <label>
+                  <IconifyIcon icon="lucide:search" />
+                  <input
+                    v-model="conversationSearch"
+                    type="search"
+                    maxlength="120"
+                    placeholder="按名称查找"
+                    aria-label="按名称查找历史对话"
+                  />
+                </label>
+                <button
+                  type="button"
+                  class="rail-ai-conversation-sort"
+                  :title="
+                    conversationSortOrder === 'desc'
+                      ? '当前从新到旧，点击改为从旧到新'
+                      : '当前从旧到新，点击改为从新到旧'
+                  "
+                  :aria-label="
+                    conversationSortOrder === 'desc'
+                      ? '按时间从新到旧'
+                      : '按时间从旧到新'
+                  "
+                  @click="toggleConversationSort"
+                >
+                  <IconifyIcon
+                    :icon="
+                      conversationSortOrder === 'desc'
+                        ? 'lucide:arrow-down-wide-narrow'
+                        : 'lucide:arrow-up-narrow-wide'
+                    "
+                  />
+                  {{ conversationSortOrder === 'desc' ? '新→旧' : '旧→新' }}
+                </button>
+              </div>
+
+              <div class="rail-ai-conversation-list" role="list">
+                <button
+                  type="button"
+                  class="rail-ai-conversation-new"
+                  @click="startNewConversation"
+                >
+                  <IconifyIcon icon="lucide:plus" />
+                  新对话
+                </button>
+                <div
+                  v-for="conversation in visibleConversations"
+                  :key="conversation.id"
+                  class="rail-ai-conversation-item"
+                  :class="{
+                    'is-active': conversation.id === activeConversationId,
+                  }"
+                  role="listitem"
+                >
+                  <form
+                    v-if="editingConversationId === conversation.id"
+                    class="rail-ai-conversation-rename"
+                    @submit.prevent="saveConversationRename(conversation)"
+                  >
+                    <input
+                      v-model="editingConversationTitle"
+                      maxlength="120"
+                      aria-label="新的会话名称"
+                      @keydown.esc.stop.prevent="cancelConversationRename"
+                    />
+                    <button
+                      type="submit"
+                      title="保存名称"
+                      aria-label="保存名称"
+                      :disabled="renamingConversation"
+                    >
+                      <IconifyIcon icon="lucide:check" />
+                    </button>
+                    <button
+                      type="button"
+                      title="取消重命名"
+                      aria-label="取消重命名"
+                      :disabled="renamingConversation"
+                      @click="cancelConversationRename"
+                    >
+                      <IconifyIcon icon="lucide:x" />
+                    </button>
+                  </form>
+                  <template v-else>
+                    <button
+                      type="button"
+                      class="rail-ai-conversation-main"
+                      @click="selectConversation(conversation.id)"
+                    >
+                      <strong>{{ conversation.title }}</strong>
+                      <small>
+                        {{ formatConversationDate(conversation) }}
+                        <template v-if="conversation.projectName">
+                          · {{ conversation.projectName }}
+                        </template>
+                      </small>
+                    </button>
+                    <button
+                      type="button"
+                      class="rail-ai-conversation-rename-button"
+                      :aria-label="`重命名 ${conversation.title}`"
+                      title="重命名"
+                      @click="startConversationRename(conversation)"
+                    >
+                      <IconifyIcon icon="lucide:pencil" />
+                    </button>
+                  </template>
+                </div>
+                <p v-if="visibleConversations.length === 0">
+                  没有匹配的历史对话
+                </p>
+              </div>
+            </div>
+          </div>
           <span class="rail-ai-project" :title="contextProjectName">
-            <IconifyIcon icon="lucide:folder-kanban" />
+            <IconifyIcon :icon="platformSemanticIcons.projects" />
             {{ contextProjectName }}
           </span>
         </div>
@@ -436,7 +764,9 @@ onBeforeUnmount(() => releasePendingFiles());
             </div>
             <p class="rail-ai-empty__eyebrow">RAIL DESIGN COPILOT</p>
             <h2>从当前设计上下文开始</h2>
-            <p>可以询问设计思路、检查方案条件，或上传图片和文档一起分析。</p>
+            <p>
+              可以询问设计思路、检查方案条件，或上传一张/多张图片连续分析；当前对话会保留多轮上下文。
+            </p>
             <div class="rail-ai-suggestions">
               <button
                 type="button"
@@ -460,7 +790,10 @@ onBeforeUnmount(() => releasePendingFiles());
               class="rail-ai-message"
               :class="[
                 item.role === 'user' ? 'is-user' : 'is-assistant',
-                { 'is-failed': item.status === 'failed' },
+                {
+                  'is-failed': item.status === 'failed',
+                  'is-sending': item.uiState === 'sending',
+                },
               ]"
             >
               <div v-if="item.role !== 'user'" class="rail-ai-avatar">
@@ -473,14 +806,22 @@ onBeforeUnmount(() => releasePendingFiles());
                     :key="attachment.id"
                     type="button"
                     class="rail-ai-attachment"
-                    @click="downloadAttachment(attachment.id)"
+                    :class="{ 'is-local': attachment.isLocal }"
+                    :disabled="attachment.isLocal"
+                    @click="
+                      attachment.isLocal || downloadAttachment(attachment.id)
+                    "
                   >
                     <img
                       v-if="
                         attachment.isImage &&
+                        (attachment.previewUrl ||
+                          imagePreviewUrls.get(attachment.id))
+                      "
+                      :src="
+                        attachment.previewUrl ||
                         imagePreviewUrls.get(attachment.id)
                       "
-                      :src="imagePreviewUrls.get(attachment.id)"
                       :alt="attachment.filename"
                     />
                     <span v-else class="rail-ai-attachment__icon">
@@ -492,15 +833,62 @@ onBeforeUnmount(() => releasePendingFiles());
                     </span>
                   </button>
                 </div>
-                <p v-if="item.content">{{ item.content }}</p>
-                <div class="rail-ai-message__time">
-                  <IconifyIcon
-                    v-if="item.status === 'failed'"
-                    icon="lucide:circle-alert"
-                  />
-                  {{ item.status === 'failed' ? '未完成 · ' : ''
-                  }}{{ formatTime(item.createdAt) }}
+                <PlatformMarkdown
+                  v-if="item.role !== 'user' && item.content"
+                  class="rail-ai-message__markdown"
+                  :content="item.content"
+                />
+                <p v-else-if="item.content">{{ item.content }}</p>
+                <div class="rail-ai-message__meta">
+                  <button
+                    v-if="item.role !== 'user' && item.content"
+                    type="button"
+                    class="rail-ai-copy-button"
+                    title="复制 Markdown"
+                    aria-label="复制 Markdown"
+                    @click="copyAssistantMessage(item.content)"
+                  >
+                    <IconifyIcon icon="lucide:copy" />
+                  </button>
+                  <div class="rail-ai-message__time">
+                    <IconifyIcon
+                      v-if="item.uiState === 'sending'"
+                      icon="lucide:loader-circle"
+                      class="is-spinning"
+                    />
+                    <IconifyIcon
+                      v-if="item.status === 'failed'"
+                      icon="lucide:circle-alert"
+                    />
+                    {{
+                      item.uiState === 'sending'
+                        ? '正在发送…'
+                        : `${item.status === 'failed' ? '未完成 · ' : ''}${formatTime(item.createdAt)}`
+                    }}
+                  </div>
                 </div>
+              </div>
+              <div
+                v-if="item.role === 'user'"
+                class="rail-ai-avatar is-user"
+                aria-label="用户"
+              >
+                <IconifyIcon icon="lucide:user-round" />
+              </div>
+            </article>
+            <article
+              v-if="sending"
+              class="rail-ai-message is-assistant is-waiting"
+              aria-label="AI 正在生成回复"
+            >
+              <div class="rail-ai-avatar">
+                <IconifyIcon icon="lucide:bot" />
+              </div>
+              <div class="rail-ai-message__body">
+                <div class="rail-ai-thinking" aria-hidden="true">
+                  <span></span><span></span><span></span>
+                </div>
+                <div class="rail-ai-message__time">正在生成回复…</div>
               </div>
             </article>
           </div>
@@ -564,14 +952,17 @@ onBeforeUnmount(() => releasePendingFiles());
               <button
                 type="button"
                 class="rail-ai-attach-button"
-                title="添加图片或文件"
-                aria-label="添加图片或文件"
+                :title="`添加图片或文件；每条消息最多 ${maxImagesPerMessage} 张图片`"
+                :aria-label="`添加图片或文件；每条消息最多 ${maxImagesPerMessage} 张图片`"
                 :disabled="sending || pendingFiles.length >= 8"
                 @click="chooseFiles"
               >
                 <IconifyIcon icon="lucide:paperclip" />
               </button>
-              <span>{{ draft.length.toLocaleString() }} / 20,000</span>
+              <span>
+                图片 {{ pendingImageCount }}/{{ maxImagesPerMessage }} ·
+                {{ draft.length.toLocaleString() }} / 20,000
+              </span>
               <button
                 type="button"
                 class="rail-ai-send-button"
@@ -753,44 +1144,252 @@ onBeforeUnmount(() => releasePendingFiles());
 }
 
 .rail-ai-context {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: 6px;
   align-items: center;
-  min-height: 48px;
-  padding: 8px 14px;
+  min-height: 44px;
+  padding: 6px 10px;
   background: #fafbfc;
   border-bottom: 1px solid var(--assistant-line);
 }
 
-.rail-ai-context label {
-  display: flex;
-  gap: 7px;
-  align-items: center;
+.rail-ai-conversation-picker {
+  position: relative;
   min-width: 0;
-  color: var(--assistant-steel);
 }
 
-.rail-ai-context select {
+.rail-ai-conversation-trigger {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) 14px;
+  gap: 5px;
+  align-items: center;
   width: 100%;
   min-width: 0;
-  padding: 3px 24px 3px 0;
+  padding: 5px 6px;
+  color: var(--assistant-steel);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  transition: 150ms ease;
+}
+
+.rail-ai-conversation-trigger:hover,
+.rail-ai-conversation-trigger[aria-expanded='true'] {
+  color: var(--assistant-red);
+  background: #fff0f2;
+}
+
+.rail-ai-conversation-trigger > span {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 12px;
   font-weight: 650;
+  color: var(--assistant-ink);
+  white-space: nowrap;
+}
+
+.rail-ai-conversation-trigger > svg:last-child {
+  transition: transform 150ms ease;
+}
+
+.rail-ai-conversation-trigger > svg:last-child.is-open {
+  transform: rotate(180deg);
+}
+
+.rail-ai-conversation-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 8;
+  width: min(320px, calc(100vw - 84px));
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid var(--assistant-line);
+  border-radius: 12px;
+  box-shadow: 0 16px 38px rgb(28 35 43 / 16%);
+}
+
+.rail-ai-conversation-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 7px;
+  background: #fafbfc;
+  border-bottom: 1px solid var(--assistant-line);
+}
+
+.rail-ai-conversation-tools label {
+  display: flex;
+  gap: 5px;
+  align-items: center;
+  min-width: 0;
+  padding: 0 7px;
+  color: var(--assistant-steel);
+  background: #fff;
+  border: 1px solid var(--assistant-line);
+  border-radius: 7px;
+}
+
+.rail-ai-conversation-tools input {
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0;
+  font-size: 11px;
   color: var(--assistant-ink);
   outline: none;
   background: transparent;
   border: 0;
 }
 
+.rail-ai-conversation-sort {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  height: 32px;
+  padding: 0 7px;
+  font-size: 10px;
+  color: var(--assistant-steel);
+  background: #fff;
+  border: 1px solid var(--assistant-line);
+  border-radius: 7px;
+}
+
+.rail-ai-conversation-sort:hover {
+  color: var(--assistant-red);
+  border-color: #d99ca7;
+}
+
+.rail-ai-conversation-list {
+  display: grid;
+  gap: 3px;
+  max-height: 274px;
+  padding: 6px;
+  overflow-y: auto;
+}
+
+.rail-ai-conversation-new,
+.rail-ai-conversation-main {
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+
+.rail-ai-conversation-new {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 7px 8px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--assistant-red);
+  border-radius: 7px;
+}
+
+.rail-ai-conversation-new:hover {
+  background: #fff0f2;
+}
+
+.rail-ai-conversation-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 3px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+
+.rail-ai-conversation-item:hover,
+.rail-ai-conversation-item.is-active {
+  background: var(--assistant-mist);
+}
+
+.rail-ai-conversation-item.is-active {
+  border-color: #e5c0c7;
+}
+
+.rail-ai-conversation-main {
+  display: grid;
+  gap: 2px;
+  padding: 7px 5px 7px 8px;
+}
+
+.rail-ai-conversation-main strong,
+.rail-ai-conversation-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-ai-conversation-main strong {
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--assistant-ink);
+}
+
+.rail-ai-conversation-main small {
+  font-size: 9px;
+  color: var(--assistant-steel);
+}
+
+.rail-ai-conversation-rename-button,
+.rail-ai-conversation-rename button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  font-size: 13px;
+  color: var(--assistant-steel);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.rail-ai-conversation-rename-button:hover,
+.rail-ai-conversation-rename button:hover:not(:disabled) {
+  color: var(--assistant-red);
+  background: #fff0f2;
+}
+
+.rail-ai-conversation-rename {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px 26px;
+  grid-column: 1 / -1;
+  gap: 2px;
+  align-items: center;
+  padding: 4px;
+}
+
+.rail-ai-conversation-rename input {
+  min-width: 0;
+  height: 28px;
+  padding: 0 7px;
+  font-size: 11px;
+  color: var(--assistant-ink);
+  outline: none;
+  background: #fff;
+  border: 1px solid #d99ca7;
+  border-radius: 6px;
+}
+
+.rail-ai-conversation-list > p {
+  padding: 20px 8px;
+  margin: 0;
+  font-size: 10px;
+  color: var(--assistant-steel);
+  text-align: center;
+}
+
 .rail-ai-project {
   display: flex;
   gap: 5px;
   align-items: center;
-  max-width: 145px;
-  padding-left: 10px;
+  max-width: 112px;
+  padding-left: 7px;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 11px;
@@ -956,6 +1555,12 @@ onBeforeUnmount(() => releasePendingFiles());
   border-radius: 9px 9px 9px 3px;
 }
 
+.rail-ai-avatar.is-user {
+  background: var(--assistant-red);
+  border-radius: 9px 9px 3px;
+  box-shadow: 0 5px 12px rgb(185 28 50 / 16%);
+}
+
 .rail-ai-message__body {
   min-width: 0;
   padding: 10px 12px 7px;
@@ -966,11 +1571,11 @@ onBeforeUnmount(() => releasePendingFiles());
 }
 
 .rail-ai-message.is-user .rail-ai-message__body {
-  color: #fff;
-  background: var(--assistant-red);
-  border-color: var(--assistant-red);
   border-radius: 13px 4px 13px 13px;
-  box-shadow: 0 5px 14px rgb(185 28 50 / 15%);
+}
+
+.rail-ai-message.is-sending .rail-ai-message__body {
+  opacity: 0.88;
 }
 
 .rail-ai-message.is-failed .rail-ai-message__body {
@@ -987,18 +1592,102 @@ onBeforeUnmount(() => releasePendingFiles());
   white-space: pre-wrap;
 }
 
+.rail-ai-message__body :deep(.platform-markdown) {
+  padding: 0;
+  font-size: 13px;
+  line-height: 1.68;
+  color: inherit;
+}
+
+.rail-ai-message__body
+  :deep(.platform-markdown :is(p, blockquote, ul, ol, pre)) {
+  margin: 0 0 8px;
+}
+
+.rail-ai-message__body
+  :deep(.platform-markdown :is(p, blockquote, ul, ol, pre):last-child) {
+  margin-bottom: 0;
+}
+
+.rail-ai-message__body :deep(.platform-markdown__heading) {
+  margin: 3px 0 7px;
+  font-size: 14px;
+  color: inherit;
+}
+
+.rail-ai-message__body :deep(.platform-markdown :is(ul, ol)) {
+  padding-left: 20px;
+}
+
+.rail-ai-message__body :deep(.platform-markdown pre) {
+  padding: 9px;
+  font-size: 11px;
+  border-radius: 7px;
+}
+
+.rail-ai-message__meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 20px;
+  margin-top: 5px;
+}
+
 .rail-ai-message__time {
   display: flex;
   gap: 4px;
   align-items: center;
   justify-content: flex-end;
-  margin-top: 5px;
+  margin-left: auto;
   font-size: 9px;
   color: #8a949e;
 }
 
+.rail-ai-copy-button {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  color: var(--assistant-steel);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  transition: 150ms ease;
+}
+
+.rail-ai-copy-button:hover {
+  color: var(--assistant-red);
+  background: #fff0f2;
+}
+
 .rail-ai-message.is-user .rail-ai-message__time {
-  color: rgb(255 255 255 / 68%);
+  justify-content: flex-end;
+}
+
+.rail-ai-thinking {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 38px;
+  height: 18px;
+}
+
+.rail-ai-thinking span {
+  width: 5px;
+  height: 5px;
+  background: var(--assistant-steel);
+  border-radius: 50%;
+  animation: rail-ai-thinking 1.1s ease-in-out infinite;
+}
+
+.rail-ai-thinking span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.rail-ai-thinking span:nth-child(3) {
+  animation-delay: 240ms;
 }
 
 .rail-ai-attachments {
@@ -1021,6 +1710,11 @@ onBeforeUnmount(() => releasePendingFiles());
   border-radius: 9px;
 }
 
+.rail-ai-attachment.is-local {
+  cursor: default;
+  opacity: 0.86;
+}
+
 .rail-ai-message.is-user .rail-ai-attachment {
   background: rgb(255 255 255 / 12%);
   border-color: rgb(255 255 255 / 22%);
@@ -1034,7 +1728,7 @@ onBeforeUnmount(() => releasePendingFiles());
   width: 42px;
   height: 42px;
   font-size: 19px;
-  object-fit: cover;
+  object-fit: contain;
   background: #fff;
   border-radius: 7px;
 }
@@ -1107,7 +1801,7 @@ onBeforeUnmount(() => releasePendingFiles());
   height: 34px;
   padding: 6px;
   color: var(--assistant-red);
-  object-fit: cover;
+  object-fit: contain;
   background: #fff;
   border-radius: 6px;
 }
@@ -1315,6 +2009,20 @@ onBeforeUnmount(() => releasePendingFiles());
   }
 }
 
+@keyframes rail-ai-thinking {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: translateY(0);
+  }
+
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
 :global(.dark) .rail-ai-assistant {
   --assistant-ink: #f1f3f5;
   --assistant-steel: #a8b0b8;
@@ -1327,6 +2035,9 @@ onBeforeUnmount(() => releasePendingFiles());
 
 :global(.dark) .rail-ai-context,
 :global(.dark) .rail-ai-composer,
+:global(.dark) .rail-ai-conversation-menu,
+:global(.dark) .rail-ai-conversation-sort,
+:global(.dark) .rail-ai-conversation-tools label,
 :global(.dark) .rail-ai-input-shell,
 :global(.dark) .rail-ai-empty__mark,
 :global(.dark) .rail-ai-suggestions button,
@@ -1334,11 +2045,11 @@ onBeforeUnmount(() => releasePendingFiles());
   background: #20252c;
 }
 
-:global(.dark) .rail-ai-message.is-user .rail-ai-message__body {
-  background: var(--assistant-red);
+:global(.dark) .rail-ai-conversation-tools {
+  background: #171b20;
 }
 
-:global(.dark) .rail-ai-context select,
+:global(.dark) .rail-ai-conversation-tools input,
 :global(.dark) .rail-ai-input-shell textarea {
   color: #f1f3f5;
 }

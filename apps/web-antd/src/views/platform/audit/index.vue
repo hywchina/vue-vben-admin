@@ -227,7 +227,7 @@ onMounted(loadEvents);
 
 .audit-head {
   min-height: 38px;
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   font-weight: 700;
   color: var(--rail-steel);
   text-transform: uppercase;
@@ -236,7 +236,7 @@ onMounted(loadEvents);
 
 .audit-row {
   min-height: 76px;
-  font-size: 10px;
+  font-size: var(--rail-font-label);
   border-top: 1px solid var(--rail-line);
 }
 
@@ -247,22 +247,22 @@ onMounted(loadEvents);
 }
 
 .audit-row small {
-  font-size: 8px;
+  font-size: var(--rail-font-caption);
   color: var(--rail-steel);
 }
 
 .audit-row strong {
-  font-size: 10px;
+  font-size: var(--rail-font-label);
 }
 
 .audit-row code {
-  font-size: 9px;
+  font-size: var(--rail-font-caption);
   color: var(--rail-steel);
 }
 
 .audit-actor :deep(.ant-tag) {
   margin-top: 4px;
-  font-size: 8px;
+  font-size: var(--rail-font-caption);
 }
 
 .audit-target {
