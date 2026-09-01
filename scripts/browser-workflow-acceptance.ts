@@ -964,24 +964,50 @@ async function runBrowserAcceptance() {
       .evaluate((element) => {
         const sidebar = element.closest('aside');
         const sidebarSurface = sidebar?.firstElementChild;
+        const inactiveMenuItem = sidebar?.querySelector(
+          '.vben-menu-item:not(.is-active)',
+        );
         const header = document.querySelector('header');
+        const tabbar = header?.nextElementSibling;
+        const mainContent = document.querySelector('main.bg-background-deep');
         const sidebarRect = sidebar?.getBoundingClientRect();
         const headerRect = header?.getBoundingClientRect();
+        const tabbarRect = tabbar?.getBoundingClientRect();
         return {
-          backgroundColor: sidebarSurface
+          contentBackgroundColor: mainContent
+            ? getComputedStyle(mainContent).backgroundColor
+            : '',
+          sidebarBackgroundColor: sidebarSurface
             ? getComputedStyle(sidebarSurface).backgroundColor
+            : '',
+          inactiveMenuItemBackgroundColor: inactiveMenuItem
+            ? getComputedStyle(inactiveMenuItem).backgroundColor
+            : '',
+          sidebarBorderRightWidth: sidebarSurface
+            ? getComputedStyle(sidebarSurface).borderRightWidth
             : '',
           headerBottom: headerRect?.bottom ?? 0,
           sidebarTop: sidebarRect?.top ?? 0,
           sidebarWidth: sidebarRect?.width ?? 0,
+          tabbarBottom: tabbarRect?.bottom ?? 0,
+          tabbarLeft: tabbarRect?.left ?? Number.POSITIVE_INFINITY,
+          tabbarRight: tabbarRect?.right ?? 0,
+          viewportWidth: window.innerWidth,
         };
       });
     assert(
-      shellLayout.backgroundColor === 'rgb(255, 255, 255)' &&
-        shellLayout.sidebarTop >= shellLayout.headerBottom - 1 &&
+      shellLayout.sidebarBackgroundColor ===
+        shellLayout.contentBackgroundColor &&
+        shellLayout.inactiveMenuItemBackgroundColor ===
+          shellLayout.contentBackgroundColor &&
+        shellLayout.sidebarBorderRightWidth === '0px' &&
+        shellLayout.tabbarLeft <= 1 &&
+        Math.abs(shellLayout.tabbarRight - shellLayout.viewportWidth) <= 1 &&
+        shellLayout.sidebarTop >= shellLayout.tabbarBottom - 1 &&
+        shellLayout.tabbarBottom > shellLayout.headerBottom &&
         shellLayout.sidebarWidth >= 176 &&
         shellLayout.sidebarWidth <= 192,
-      `平台侧栏没有迁入顶栏下方的白色一体化区域：${JSON.stringify(shellLayout)}`,
+      `平台侧栏和全宽标签栏没有形成无边界的一体化画布：${JSON.stringify(shellLayout)}`,
     );
     const notificationButton = page.getByRole('button', { name: '通知' });
     await notificationButton.click();
@@ -2778,7 +2804,7 @@ async function runBrowserAcceptance() {
         composerBox.y > 0 &&
         composerBox.y + composerBox.height <= 1001,
       ),
-      '设计输入器没有固定显示在当前视口底部',
+      `设计输入器没有固定显示在当前视口底部：${JSON.stringify(composerBox)}`,
     );
     const composerPanelBox = await page.locator('.composer-box').boundingBox();
     const threadPanelBox = await page.locator('.design-thread').boundingBox();

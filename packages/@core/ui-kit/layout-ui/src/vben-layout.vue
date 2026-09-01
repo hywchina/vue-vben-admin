@@ -117,6 +117,10 @@ const {
   isSidebarMixedNav,
 } = useLayout(props);
 
+const isEmbeddedSidebarLayout = computed(
+  () => currentLayout.value === 'header-sidebar-nav' && !props.isMobile,
+);
+
 /**
  * 顶栏是否自动隐藏
  */
@@ -171,6 +175,9 @@ const sidebarEnableState = computed(() => {
  */
 const sidebarMarginTop = computed(() => {
   const { headerHeight, isMobile } = props;
+  if (isEmbeddedSidebarLayout.value) {
+    return headerWrapperHeight.value;
+  }
   return isMixedNav.value && !isMobile ? headerHeight : 0;
 });
 
@@ -298,7 +305,11 @@ const tabbarStyle = computed((): CSSProperties => {
   let marginLeft = 0;
 
   // 如果不是混合导航，tabbar 的宽度为 100%
-  if (!isMixedNav.value || props.sidebarHidden) {
+  if (
+    isEmbeddedSidebarLayout.value ||
+    !isMixedNav.value ||
+    props.sidebarHidden
+  ) {
     width = '100%';
   } else if (sidebarEnable.value) {
     // 鼠标在侧边栏上时，且侧边栏展开时的宽度
@@ -576,6 +587,7 @@ const layoutStaticHeaderTarget = `#${idLayoutStaticHeader}`;
       :extra-width="sidebarExtraWidth"
       :fixed-extra="sidebarExpandOnHover"
       :header-height="sidebarHeaderHeight"
+      :embedded="isEmbeddedSidebarLayout"
       :extra-title-height="
         isSidebarMixedNav || isHeaderMixedNav ? sidebarExtraTitleHeight : 0
       "

@@ -23,7 +23,7 @@ flowchart TB
   User["公司内网用户"] --> Shell
 
   subgraph Browser["浏览器：Vue 平台"]
-    Shell["白色一体化固定平台外壳<br/>顶部品牌栏 / 下置导航 / 当前项目 / 通知 / AI 助手"]
+    Shell["一体化固定平台外壳<br/>顶部品牌栏 / 全宽标签栏 / 嵌入式竖向导航 / 当前项目 / 通知 / AI 助手"]
     Pages["业务页面<br/>项目 / 开始设计 / 资产 / 任务 / 管理"]
     Workspace["项目设计会话<br/>多应用轮次 / 参数 / 结果 / 资产"]
     Store["Pinia 状态<br/>当前项目与 API 返回数据"]
@@ -140,9 +140,9 @@ flowchart LR
 flowchart TB
   Layout["BasicLayout 固定外壳"]
   Layout --> Header["白色顶栏：红色 Logo / 完整平台名 / 当前项目（首页与设计工作台隐藏）/ 通知 / 用户"]
-  Layout --> Nav["顶栏下方白色侧栏：首页 / 设计生成 / 模型训练 / 资产中心 / 报告生成 / 设计工作台"]
+  Layout --> Tabs["横跨页面的全宽标签栏"]
+  Layout --> Nav["标签栏下方嵌入式竖向导航：首页 / 设计生成 / 模型训练 / 资产中心 / 报告生成 / 设计工作台"]
   Layout --> RouteArea["路由内容区"]
-  Layout --> Tabs["多页签区域"]
   Layout --> Assistant["全局 AI 助手<br/>全部登录后页面保留"]
 
   RouteArea --> Normal["普通平台页面"]
@@ -161,7 +161,7 @@ flowchart TB
 | 模块 | 页面/入口 | 实现技术 | 当前功能 | 主要数据来源 |
 | --- | --- | --- | --- | --- |
 | 账号认证 | `/auth/login`、`register`、`forget-password`、`reset-password` | Vben Auth、Vue 表单、Zod、Pinia | 用户名密码登录、企业邮箱注册与找回密码、协议校验、登录态恢复 | 认证 API |
-| 固定平台外壳 | `layouts/basic.vue` | Vben BasicLayout、Pinia、Ant Design Vue | 白色一体化顶部品牌栏与下置侧栏、当前项目切换、通知、用户 ID/菜单、退出登录；品牌红 Logo 与完整平台名固定在顶栏，约 184 px 侧栏保留六项导航、折叠和移动端抽屉 | 项目、通知、当前用户 API |
+| 固定平台外壳 | `layouts/basic.vue` | Vben BasicLayout、Pinia、Ant Design Vue | 顶部品牌栏、全宽标签栏与嵌入式竖向导航、当前项目切换、通知、用户 ID/菜单、退出登录；品牌红 Logo 与完整平台名固定在白色顶栏，约 184 px 侧栏从标签栏下方开始，与内容共享画布背景且无分隔边框，并保留折叠和移动端抽屉 | 项目、通知、当前用户 API |
 | 首页 | `/home`（登录默认入口） | Vue、Pinia、响应式 CSS/SVG | 参考甲方 AI 视觉稿建立项目主视觉、四项真实指标、六个业务入口和最近工作区；建筑/客室线稿由本地 SVG/CSS 绘制，不引入外部素材；最近工作只展示无图片任务列表与八类最近生成资产，直接消费 `/dashboard` 权限过滤结果并提供真实空状态；模型训练和报告使用独立禁用页面，不伪造外部成功或系统性能数据 | `/dashboard` 聚合 + 会话、资产、应用状态 API |
 | 设计工作台 | `/projects`；旧 `/workspace/overview` 只重定向 | Vue、Pinia、Modal/Form、Tooltip | 由原项目空间升级：单层浅色卡片展示全部可访问项目及统计，支持搜索、排序、创建、修改、个人置顶、软删除、成员管理和项目任务入口；页面内提供平台管理与操作日志入口，用户与权限和工作流管理仅管理员可见，日志对所有账号开放但服务端强制管理员全量、普通用户仅自身 | 项目、成员、个人置顶、软归档、当前项目偏好、用户/角色、工作流与审计 API |
 | 资产中心 | `/assets` | Vue、Pinia、浏览器 Fetch、Ant Design Vue | 文件/文本资产登记、业务 ID、成员筛选/排序、持久化多级文件夹、网格/列表、多选批量移动/独立复制/软删除、图片放大、详情、下载和收藏；“收藏”是按当前用户收藏关系展示的系统软链接目录，不改变原资产目录，未确认的工作流结果不进入列表 | 资产/成员/文件夹 API + PostgreSQL + MinIO/S3 |

@@ -26,6 +26,11 @@ interface Props {
    */
   domVisible?: boolean;
   /**
+   * 与主内容共享画布，不显示独立侧栏边界
+   * @default false
+   */
+  embedded?: boolean;
+  /**
    * 扩展区域extra-title的高度
    */
   extraTitleHeight?: number;
@@ -100,6 +105,7 @@ const props = withDefaults(defineProps<Props>(), {
   collapseHeight: 42,
   collapseWidth: 48,
   domVisible: true,
+  embedded: false,
   extraTitleHeight: undefined,
   fixedExtra: false,
   isSidebarMixed: false,
@@ -129,10 +135,10 @@ const dragBarRef = shallowRef<HTMLElement | null>(null);
 const hiddenSideStyle = computed((): CSSProperties => calcMenuWidthStyle(true));
 
 const style = computed((): CSSProperties => {
-  const { isSidebarMixed, marginTop, paddingTop, zIndex } = props;
+  const { embedded, isSidebarMixed, marginTop, paddingTop, zIndex } = props;
 
   return {
-    '--scroll-shadow': 'var(--sidebar)',
+    '--scroll-shadow': embedded ? 'var(--background-deep)' : 'var(--sidebar)',
     ...calcMenuWidthStyle(false),
     height: `calc(100% - ${marginTop}px)`,
     marginTop: `${marginTop}px`,
@@ -322,7 +328,9 @@ onUnmounted(() => {
       :class="[
         {
           'bg-sidebar-deep': isSidebarMixed,
-          'border-r border-border bg-sidebar': !isSidebarMixed,
+          'border-r border-border bg-sidebar': !isSidebarMixed && !embedded,
+          'embedded-sidebar-surface bg-background-deep':
+            !isSidebarMixed && embedded,
         },
       ]"
       :style="{ width: `${width}px` }"
@@ -384,3 +392,13 @@ onUnmounted(() => {
     ></div>
   </aside>
 </template>
+
+<style scoped>
+.embedded-sidebar-surface {
+  --menu: var(--background-deep);
+}
+
+.embedded-sidebar-surface :deep(.vben-menu.light) {
+  --menu: var(--background-deep);
+}
+</style>
