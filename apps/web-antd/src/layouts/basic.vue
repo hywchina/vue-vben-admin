@@ -206,7 +206,7 @@ watch(
     @logout="handleLogout"
   >
     <template #logo-text>
-      <span class="rail-sidebar-brand" data-sidebar-brand-title>
+      <span class="rail-header-brand" data-header-brand-title>
         客运装备内装模块化分区快速设计平台
       </span>
     </template>
@@ -335,7 +335,7 @@ watch(
 </template>
 
 <style scoped>
-.rail-sidebar-brand {
+.rail-header-brand {
   display: inline-block;
   flex: 0 0 auto;
   min-width: 0;

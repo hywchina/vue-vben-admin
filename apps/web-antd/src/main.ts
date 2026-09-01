@@ -18,14 +18,20 @@ async function initApplication() {
     namespace,
     overrides: overridesPreferences,
   });
-  // 平台名称属于发布身份而非用户偏好；只同步品牌字段，保留主题和布局缓存。
+  // 固定平台发布外壳，避免旧的本地偏好恢复黑色独立侧栏。
   updatePreferences({
-    app: { name: import.meta.env.VITE_APP_TITLE },
+    app: {
+      layout: 'header-sidebar-nav',
+      name: import.meta.env.VITE_APP_TITLE,
+    },
+    breadcrumb: { enable: false },
     copyright: {
       companyName: '客运装备内装模块化分区快速设计平台',
     },
-    logo: { showText: true },
-    sidebar: { width: 320 },
+    logo: { enable: true, showText: true },
+    navigation: { split: false },
+    sidebar: { draggable: false, width: 184 },
+    theme: { semiDarkSidebar: false, semiDarkSidebarSub: false },
   });
 
   // 启动应用并挂载

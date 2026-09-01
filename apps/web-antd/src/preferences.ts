@@ -14,10 +14,12 @@ export const overridesPreferences = defineOverridesPreferences({
     defaultHomePath: '/home',
     enableCheckUpdates: false,
     enablePreferences: true,
+    layout: 'header-sidebar-nav',
     locale: 'zh-CN',
     name: '客运装备内装模块化分区快速设计平台',
   },
   breadcrumb: {
+    enable: false,
     showHome: true,
   },
   copyright: {
@@ -33,13 +35,18 @@ export const overridesPreferences = defineOverridesPreferences({
     height: 54,
   },
   logo: {
+    enable: true,
     logoMode: 'icon',
     showText: true,
     source: '/rail-logo.svg?v=crrc',
     sourceDark: '/rail-logo.svg?v=crrc',
   },
+  navigation: {
+    split: false,
+  },
   sidebar: {
-    width: 320,
+    draggable: false,
+    width: 184,
   },
   theme: {
     colorDestructive: 'hsl(351 74% 42%)',
@@ -49,7 +56,8 @@ export const overridesPreferences = defineOverridesPreferences({
     fontSize: 15,
     mode: 'light',
     radius: '0.5',
-    semiDarkSidebar: true,
+    semiDarkSidebar: false,
+    semiDarkSidebarSub: false,
   },
   widget: {
     languageToggle: false,

@@ -921,14 +921,16 @@ async function runBrowserAcceptance() {
       (await page.getByRole('menuitem', { name: '首页' }).count()) === 1,
       '登录默认入口没有统一命名为“首页”',
     );
-    const sidebarBrand = page.locator('[data-sidebar-brand-title]');
-    await sidebarBrand.waitFor();
-    const sidebarBrandLayout = await sidebarBrand.evaluate((element) => {
+    const headerBrand = page.locator('[data-header-brand-title]');
+    await headerBrand.waitFor();
+    const headerBrandLayout = await headerBrand.evaluate((element) => {
       const link = element.closest('a');
+      const header = element.closest('header');
       const logo = link?.querySelector('img');
       const logoRect = logo?.getBoundingClientRect();
       const titleRect = element.getBoundingClientRect();
       return {
+        backgroundColor: header ? getComputedStyle(header).backgroundColor : '',
         centerDelta: logoRect
           ? Math.abs(
               (logoRect.top + logoRect.bottom) / 2 -
@@ -938,21 +940,48 @@ async function runBrowserAcceptance() {
         linkClientWidth: link?.clientWidth ?? 0,
         linkScrollWidth: link?.scrollWidth ?? Number.POSITIVE_INFINITY,
         logoHeight: logoRect?.height ?? 0,
+        logoSource: logo?.getAttribute('src') ?? '',
         text: (element.textContent ?? '').replaceAll(/\s+/g, ''),
         titleHeight: titleRect.height,
         whiteSpace: getComputedStyle(element).whiteSpace,
       };
     });
     assert(
-      sidebarBrandLayout.text === '客运装备内装模块化分区快速设计平台' &&
-        sidebarBrandLayout.whiteSpace === 'nowrap' &&
+      headerBrandLayout.text === '客运装备内装模块化分区快速设计平台' &&
+        headerBrandLayout.whiteSpace === 'nowrap' &&
         Math.abs(
-          sidebarBrandLayout.logoHeight - sidebarBrandLayout.titleHeight,
+          headerBrandLayout.logoHeight - headerBrandLayout.titleHeight,
         ) <= 0.5 &&
-        sidebarBrandLayout.centerDelta <= 0.5 &&
-        sidebarBrandLayout.linkScrollWidth <=
-          sidebarBrandLayout.linkClientWidth,
-      `侧栏品牌名称不完整、与 Logo 不等高或发生裁切：${JSON.stringify(sidebarBrandLayout)}`,
+        headerBrandLayout.centerDelta <= 0.5 &&
+        headerBrandLayout.linkScrollWidth <=
+          headerBrandLayout.linkClientWidth &&
+        headerBrandLayout.backgroundColor === 'rgb(255, 255, 255)' &&
+        headerBrandLayout.logoSource.includes('/rail-logo.svg'),
+      `顶部白色品牌栏名称不完整、Logo 不正确或发生裁切：${JSON.stringify(headerBrandLayout)}`,
+    );
+    const shellLayout = await page
+      .getByRole('menuitem', { exact: true, name: '首页' })
+      .evaluate((element) => {
+        const sidebar = element.closest('aside');
+        const sidebarSurface = sidebar?.firstElementChild;
+        const header = document.querySelector('header');
+        const sidebarRect = sidebar?.getBoundingClientRect();
+        const headerRect = header?.getBoundingClientRect();
+        return {
+          backgroundColor: sidebarSurface
+            ? getComputedStyle(sidebarSurface).backgroundColor
+            : '',
+          headerBottom: headerRect?.bottom ?? 0,
+          sidebarTop: sidebarRect?.top ?? 0,
+          sidebarWidth: sidebarRect?.width ?? 0,
+        };
+      });
+    assert(
+      shellLayout.backgroundColor === 'rgb(255, 255, 255)' &&
+        shellLayout.sidebarTop >= shellLayout.headerBottom - 1 &&
+        shellLayout.sidebarWidth >= 176 &&
+        shellLayout.sidebarWidth <= 192,
+      `平台侧栏没有迁入顶栏下方的白色一体化区域：${JSON.stringify(shellLayout)}`,
     );
     const notificationButton = page.getByRole('button', { name: '通知' });
     await notificationButton.click();
