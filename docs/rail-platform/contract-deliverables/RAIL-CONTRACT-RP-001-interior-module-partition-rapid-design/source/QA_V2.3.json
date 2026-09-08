@@ -1,0 +1,22 @@
+{
+  "pages": 38,
+  "source_chinese_characters": 19979,
+  "body_and_table_chinese_characters": 20219,
+  "assistant_section_chinese_characters": 274,
+  "figures": 14,
+  "tables": 12,
+  "heading_bookmarks": 61,
+  "toc_entries": 16,
+  "toc_links": 32,
+  "toc_page_map_matches_render": true,
+  "pricing_and_code_detail_matches": 0,
+  "page_geometry_and_fonts": "pass",
+  "zip_integrity": "pass",
+  "visual_review": "38 pages inspected; final three changed pages rechecked; 35 other pages pixel-identical",
+  "figure_accessibility": "14 HTML self-checks passed",
+  "document_accessibility": {
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  }
+}

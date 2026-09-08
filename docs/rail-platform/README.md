@@ -6,6 +6,8 @@
 
 2026-08-20 甲方前端意见的原始需求、提交映射、验证证据、已知问题和后续检查清单见 [`customer-feedback/20260820/ITERATION_HANDOFF.md`](customer-feedback/20260820/ITERATION_HANDOFF.md)。面向甲方确认的逐条需求、22 张配图说明、疑问与不合理项见 [`customer-feedback/20260820/CUSTOMER_REQUIREMENTS_ANALYSIS.md`](customer-feedback/20260820/CUSTOMER_REQUIREMENTS_ANALYSIS.md)，同目录提供已完成全页渲染检查的 PDF 版本。
 
+合同要求的研究报告、说明书及后续交付文档统一存放于 [`contract-deliverables/`](contract-deliverables/README.md)，每个版本必须在内部登记对应的 Git 分支、完整提交哈希、取证时间、工作区状态和验证范围。当前《基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告》为 V2.3 建设指导评审稿：研究内容约两万字，共 38 页，按合同、技术响应及实际实现校准现有能力与后续研究边界；多模态仅简述 AI 助手图文问答，与 ComfyUI 设计任务分开。正式报告不展示代码、报价或商务内容，重绘 14 幅黑白灰论文式技术图，保留 12 张连续编号表格、可点击目录及指定页面和正文格式。原始材料版本差异、代码基线和验证限制仅保存在内部取证记录中。
+
 ## 1. 当前系统组成
 
 | 组成 | 技术 | 当前职责 |
@@ -275,3 +277,7 @@ pnpm build:rail
 平台已接入 18 项 ComfyUI 工作流能力，包括工作流注册与不可变版本、管理员管理、能力映射、独立持久化 Worker、任务取消/恢复、结果暂存、用户确认保存和跨工作流流转。原始 API JSON 作为只读快照管理，浏览器只获取平台公开的业务参数映射。
 
 架构、目录对应关系、数据模型、状态机、配置和运维入口见 [COMFYUI_WORKFLOW_INTEGRATION.md](./COMFYUI_WORKFLOW_INTEGRATION.md)。运行时不提供模拟成功；`COMFYUI_API_URL` 为空时工作流明确显示不可执行。
+
+## 开发机跨项目整体架构（2026-09-08）
+
+平台、ComfyUI、AI Toolkit、Presenton 报告服务与共享 Qwen3-VL 的实际接入关系、端口、运行快照及已知契约差异，见 [整体架构梳理](SYSTEM_ARCHITECTURE_OVERVIEW.md) 和 [双图架构页面](architecture-overview/index.html)。本次为代码/配置核对，不代表已完成当前环境端到端联调。
