@@ -5,6 +5,7 @@ export default defineConfig(async () => {
     application: {},
     vite: {
       server: {
+        allowedHosts: ['rail.yuanmou.ltd'],
         proxy: {
           '/api': {
             changeOrigin: true,

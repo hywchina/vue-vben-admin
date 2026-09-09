@@ -1,5 +1,7 @@
 import process from 'node:process';
 
+import { resolveCorsOrigins } from './cors-origins';
+
 export interface PlatformConfig {
   accessTokenTtlSeconds: number;
   aiAssistantApiKey: null | string;
@@ -320,10 +322,7 @@ export function getConfig(): PlatformConfig {
       process.env.COMFYUI_API_TIMEOUT_MS,
       30_000,
     ),
-    corsAllowedOrigins: commaSeparatedValues(
-      process.env.CORS_ALLOWED_ORIGINS,
-      process.env.APP_PUBLIC_URL ?? 'http://localhost:5666',
-    ),
+    corsAllowedOrigins: resolveCorsOrigins(process.env),
     databaseUrl:
       process.env.DATABASE_URL ??
       'postgresql://rail_platform:rail_platform_dev@localhost:5432/rail_platform',
