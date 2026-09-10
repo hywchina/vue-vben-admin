@@ -28,6 +28,7 @@ export default apiHandler(async (event) => {
       folder.parent_id AS "parentId",
       folder.name,
       folder.kind,
+      folder.generation_category AS "generationCategory",
       folder.created_at AS "createdAt",
       folder.updated_at AS "updatedAt",
       CASE

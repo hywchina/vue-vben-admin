@@ -25,10 +25,6 @@ import {
   getDesignConversationsApi,
   getLoraStatusApi,
 } from '#/api';
-import {
-  assetTypeIcons,
-  assetTypeLabels,
-} from '#/modules/platform/asset-types';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { usePlatformStore } from '#/store';
 
@@ -36,7 +32,6 @@ const router = useRouter();
 const platformStore = usePlatformStore();
 
 const dashboard = ref<null | PlatformDashboard>(null);
-const dashboardLoading = ref(true);
 const createProjectOpen = ref(false);
 const historyOpen = ref(false);
 const projectName = ref('');
@@ -117,7 +112,7 @@ const quickEntries = computed<QuickEntry[]>(() => {
     {
       action: 'assets',
       cta: '进入中心',
-      description: '管理当前项目的设计资产',
+      description: '按项目查看和管理设计资产',
       icon: platformSemanticIcons.assets,
       label: '查看资产中心',
     },
@@ -206,19 +201,6 @@ function formatTime(value: string) {
     month: '2-digit',
     day: '2-digit',
   });
-}
-
-function jobStatusLabel(status: string) {
-  return (
-    {
-      cancelled: '已取消',
-      cancelling: '取消中',
-      failed: '执行异常',
-      queued: '排队中',
-      running: '运行中',
-      succeeded: '已完成',
-    }[status] ?? status
-  );
 }
 
 function previewUrl(assetId?: null | string) {
@@ -354,30 +336,20 @@ async function createProjectAndDesign() {
 }
 
 async function loadDashboard() {
-  dashboardLoading.value = true;
-  try {
-    const [dashboardResult, loraStatusResult] = await Promise.all([
-      getDashboardApi(),
-      getLoraStatusApi().catch(
-        (): LoraAdapterStatus => ({
-          configured: false,
-          model: 'flux2-klein-9b',
-          models: [],
-          reachable: false,
-          reason: '无法读取 AI Toolkit 训练服务状态',
-        }),
-      ),
-    ]);
-    dashboard.value = dashboardResult;
-    loraStatus.value = loraStatusResult;
-    await Promise.all(
-      dashboard.value.recentAssets
-        .filter((asset) => asset.type === 'image')
-        .map((asset) => loadPreview(asset.id)),
-    );
-  } finally {
-    dashboardLoading.value = false;
-  }
+  const [dashboardResult, loraStatusResult] = await Promise.all([
+    getDashboardApi(),
+    getLoraStatusApi().catch(
+      (): LoraAdapterStatus => ({
+        configured: false,
+        model: 'flux2-klein-9b',
+        models: [],
+        reachable: false,
+        reason: '无法读取 AI Toolkit 训练服务状态',
+      }),
+    ),
+  ]);
+  dashboard.value = dashboardResult;
+  loraStatus.value = loraStatusResult;
 }
 
 onMounted(loadDashboard);
@@ -471,108 +443,6 @@ onBeforeUnmount(() => {
           </span>
         </button>
       </nav>
-
-      <section class="home-work-grid" aria-label="最近工作">
-        <article class="home-panel home-panel--tasks">
-          <header>
-            <div>
-              <span>RECENT TASKS</span>
-              <h2>最近任务</h2>
-            </div>
-            <button type="button" @click="navigateTo('/jobs')">
-              查看全部
-              <IconifyIcon icon="lucide:arrow-right" />
-            </button>
-          </header>
-          <div v-if="dashboardLoading" class="home-panel__empty compact">
-            <IconifyIcon
-              class="home-loading-icon"
-              icon="lucide:loader-circle"
-            />
-            正在加载
-          </div>
-          <div v-else-if="dashboard?.recentJobs.length" class="home-task-list">
-            <button
-              v-for="job in dashboard.recentJobs"
-              :key="job.id"
-              type="button"
-              @click="navigateTo('/jobs', job.projectId)"
-            >
-              <i :data-status="job.status"></i>
-              <span>
-                <strong>{{ job.name }}</strong>
-                <small>
-                  {{ job.appName }} · {{ job.projectName }} ·
-                  {{ formatTime(job.createdAt) }}
-                </small>
-              </span>
-              <em :data-status="job.status">
-                {{ jobStatusLabel(job.status) }}
-              </em>
-            </button>
-          </div>
-          <div v-else class="home-panel__empty">
-            <IconifyIcon :icon="platformSemanticIcons.jobs" />
-            <span>当前账号暂无任务记录</span>
-          </div>
-        </article>
-
-        <article class="home-panel home-panel--assets">
-          <header>
-            <div>
-              <span>RECENT ASSETS</span>
-              <h2>最近资产</h2>
-            </div>
-            <button type="button" @click="navigateTo('/assets')">
-              查看全部
-              <IconifyIcon icon="lucide:arrow-right" />
-            </button>
-          </header>
-          <div v-if="dashboardLoading" class="home-panel__empty compact">
-            <IconifyIcon
-              class="home-loading-icon"
-              icon="lucide:loader-circle"
-            />
-            正在加载
-          </div>
-          <div
-            v-else-if="dashboard?.recentAssets.length"
-            class="home-asset-list"
-          >
-            <button
-              v-for="asset in dashboard.recentAssets"
-              :key="asset.id"
-              type="button"
-              @click="
-                navigateTo('/assets', asset.projectId, { assetId: asset.id })
-              "
-            >
-              <span class="home-asset-list__preview">
-                <img
-                  v-if="asset.type === 'image' && previewUrl(asset.id)"
-                  :alt="`${asset.name} 资产预览`"
-                  :src="previewUrl(asset.id)"
-                />
-                <IconifyIcon v-else :icon="assetTypeIcons[asset.type]" />
-              </span>
-              <div>
-                <strong>{{ asset.name }}</strong>
-                <small>
-                  {{ assetTypeLabels[asset.type] }} · {{ asset.projectName }}
-                </small>
-                <em>{{ asset.appName || '项目资产' }}</em>
-              </div>
-              <time :datetime="asset.createdAt">
-                {{ formatTime(asset.createdAt) }}
-              </time>
-            </button>
-          </div>
-          <div v-else class="home-panel__empty">
-            <IconifyIcon :icon="platformSemanticIcons.assets" />
-            <span>当前账号暂无已生成资产</span>
-          </div>
-        </article>
-      </section>
 
       <footer class="home-data-note">
         <IconifyIcon icon="lucide:shield-check" />
@@ -701,13 +571,13 @@ onBeforeUnmount(() => {
 .home-page {
   --home-accent: #c71938;
   --home-accent-soft: #fff1f3;
-  --home-border: #e4e7ec;
+  --home-border: var(--rail-theme-border, #e4e7ec);
 
   min-height: 100%;
   padding: clamp(16px, 2vw, 28px);
   background:
     radial-gradient(circle at 92% 4%, rgb(201 24 56 / 5%), transparent 24%),
-    #f5f7f9;
+    var(--rail-theme-surface, #f5f7f9);
 }
 
 .home-shell {
@@ -724,8 +594,13 @@ onBeforeUnmount(() => {
   grid-template-columns: minmax(700px, 1.15fr) minmax(400px, 0.85fr);
   min-height: 310px;
   overflow: hidden;
-  background: linear-gradient(115deg, #fff 0%, #fffafa 56%, #fff3f5 100%);
-  border: 1px solid #eadfe2;
+  background: linear-gradient(
+    115deg,
+    var(--rail-theme-surface, #fff) 0%,
+    var(--rail-theme-surface, #fffafa) 56%,
+    var(--rail-theme-surface, #fff3f5) 100%
+  );
+  border: 1px solid var(--rail-theme-border, #eadfe2);
   border-radius: 22px;
   box-shadow: 0 18px 42px rgb(29 39 49 / 5%);
 }
@@ -764,7 +639,7 @@ onBeforeUnmount(() => {
 .home-hero__eyebrow i {
   width: 22px;
   height: 2px;
-  background: var(--rail-red);
+  background: var(--rail-theme-solid-accent, var(--rail-red));
 }
 
 .home-hero h1 {
@@ -773,7 +648,7 @@ onBeforeUnmount(() => {
   font-size: clamp(29px, 2.7vw, 42px);
   font-weight: 760;
   line-height: 1.22;
-  color: #17212b;
+  color: var(--rail-theme-text, #17212b);
   letter-spacing: -0.04em;
 }
 
@@ -788,7 +663,7 @@ onBeforeUnmount(() => {
   margin: 14px 0 0;
   font-size: 14px;
   line-height: 1.75;
-  color: #66727d;
+  color: var(--rail-theme-secondary, #66727d);
 }
 
 .home-hero__metrics {
@@ -821,7 +696,7 @@ onBeforeUnmount(() => {
 .home-hero__metrics strong {
   font-size: 21px;
   line-height: 1.1;
-  color: #1d2730;
+  color: var(--rail-theme-text, #1d2730);
 }
 
 .home-hero__metrics small {
@@ -829,7 +704,7 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 11px;
-  color: #7d8790;
+  color: var(--rail-theme-secondary, #7d8790);
   white-space: nowrap;
 }
 
@@ -860,7 +735,7 @@ onBeforeUnmount(() => {
 
 .home-entry-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
 }
 
@@ -869,12 +744,12 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: flex-start;
   min-width: 0;
-  min-height: 194px;
-  padding: 18px;
-  color: #232d36;
+  min-height: 216px;
+  padding: 24px;
+  color: var(--rail-theme-text, #232d36);
   text-align: left;
   cursor: pointer;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 1px solid var(--home-border);
   border-radius: 16px;
   box-shadow: 0 8px 22px rgb(24 35 44 / 4%);
@@ -887,7 +762,7 @@ onBeforeUnmount(() => {
 .home-entry-grid button:hover,
 .home-entry-grid button:focus-visible {
   outline: none;
-  border-color: #e4b5bf;
+  border-color: var(--rail-theme-border, #e4b5bf);
   box-shadow: 0 15px 34px rgb(24 35 44 / 9%);
   transform: translateY(-3px);
 }
@@ -918,7 +793,7 @@ onBeforeUnmount(() => {
   margin-top: 7px;
   font-size: var(--rail-font-label);
   line-height: 1.55;
-  color: #74808a;
+  color: var(--rail-theme-secondary, #74808a);
 }
 
 .home-entry-card__action {
@@ -933,8 +808,8 @@ onBeforeUnmount(() => {
   font-size: var(--rail-font-label);
   font-weight: 650;
   color: var(--home-accent);
-  background: #fff;
-  border: 1px solid #e4b5bf;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #e4b5bf);
   border-radius: 8px;
 }
 
@@ -948,257 +823,64 @@ onBeforeUnmount(() => {
   font-size: var(--rail-font-caption);
   font-style: normal;
   color: #8a6b47;
-  background: #fff7e6;
+  background: var(--rail-theme-surface, #fff7e6);
   border-radius: 999px;
 }
 
 .home-entry-grid button[data-status='ready'] .home-entry-card__action em {
   color: #166b42;
-  background: #dcfce7;
+  background: var(--rail-theme-surface, #dcfce7);
 }
 
 .home-entry-grid button[data-status='error'] .home-entry-card__action em {
-  color: #9f2d2d;
-  background: #fff0f0;
+  color: var(--rail-theme-accent, #9f2d2d);
+  background: var(--rail-theme-surface, #fff0f0);
 }
 
 .home-entry-grid button[data-status='loading'] .home-entry-card__action em {
-  color: #5f6b75;
-  background: #eef1f4;
+  color: var(--rail-theme-secondary, #5f6b75);
+  background: var(--rail-theme-surface, #eef1f4);
 }
 
-.home-work-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.home-panel {
-  min-width: 0;
-  padding: 18px;
-  background: #fff;
-  border: 1px solid #e0e5e9;
-  border-radius: 16px;
-  box-shadow: 0 8px 22px rgb(24 35 44 / 4%);
-}
-
-.home-panel > header {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
-  justify-content: space-between;
-  min-height: 44px;
-  padding-bottom: 13px;
-  border-bottom: 1px solid #edf0f2;
-}
-
-.home-panel > header span {
-  font-size: var(--rail-font-caption);
-  font-weight: 700;
-  color: #a2717a;
-  letter-spacing: 0.12em;
-}
-
-.home-panel h2 {
-  margin: 3px 0 0;
-  font-size: var(--rail-font-section-title);
-  font-weight: 700;
-  color: #28323b;
-}
-
-.home-panel > header button {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  padding: 4px;
-  font-size: var(--rail-font-caption);
-  color: #7b858e;
-  background: transparent;
-  border: 0;
-}
-
-.home-asset-list,
-.home-task-list {
-  display: grid;
-  gap: 8px;
-  padding-top: 12px;
-}
-
-.home-asset-list {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-.home-asset-list > button,
-.home-task-list > button {
-  display: grid;
-  gap: 10px;
-  align-items: center;
-  min-width: 0;
-  padding: 10px;
-  color: #29333c;
-  text-align: left;
-  background: #fff;
-  border: 1px solid transparent;
-  border-radius: 11px;
-  transition:
-    background-color 150ms ease,
-    border-color 150ms ease;
-}
-
-.home-asset-list > button:hover,
-.home-task-list > button:hover {
-  background: #fff9fa;
-  border-color: #ecd7db;
-}
-
-.home-asset-list > button {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  padding: 8px;
-}
-
-.home-asset-list__preview,
 .home-history-list__preview {
   display: grid;
   place-items: center;
+  width: 76px;
+  height: 50px;
   overflow: hidden;
   color: var(--rail-red);
   background:
-    linear-gradient(135deg, rgb(199 25 56 / 8%), rgb(199 25 56 / 2%)), #f5f7f9;
+    linear-gradient(135deg, rgb(199 25 56 / 8%), rgb(199 25 56 / 2%)),
+    var(--rail-theme-surface, #f5f7f9);
   border-radius: 10px;
 }
 
-.home-asset-list__preview {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-}
-
-.home-asset-list__preview img,
 .home-history-list__preview img {
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-.home-asset-list__preview:has(img),
 .home-history-list__preview:has(img) {
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
-.home-asset-list__preview > svg,
 .home-history-list__preview > svg {
   width: 22px;
   height: 22px;
   opacity: 0.58;
 }
 
-.home-asset-list strong,
-.home-asset-list small,
-.home-asset-list em,
-.home-task-list strong,
-.home-task-list small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.home-asset-list strong,
-.home-task-list strong {
-  font-size: var(--rail-font-label);
-  font-weight: 700;
-}
-
-.home-asset-list small,
-.home-asset-list em,
-.home-task-list small,
-.home-asset-list time {
-  margin-top: 3px;
-  font-size: var(--rail-font-caption);
-  color: #7a858e;
-}
-
-.home-asset-list > button > div {
-  min-width: 0;
-  padding: 4px 2px 0;
-}
-
-.home-asset-list em {
-  font-style: normal;
-  color: #9a6570;
-}
-
-.home-asset-list time {
-  padding: 0 2px 2px;
-}
-
-.home-task-list > button {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.home-task-list > button > i {
-  width: 7px;
-  height: 7px;
-  background: #99a2a9;
-  border-radius: 50%;
-}
-
-.home-task-list > button > i[data-status='succeeded'] {
-  background: #2f9565;
-}
-
-.home-task-list > button > i[data-status='running'],
-.home-task-list > button > i[data-status='queued'] {
-  background: #d28a2d;
-}
-
-.home-task-list > button > i[data-status='failed'] {
-  background: #d43d4e;
-}
-
-.home-task-list > button > em,
-.home-panel__summary {
-  font-size: var(--rail-font-caption);
-  font-style: normal;
-  color: #78838c;
-  white-space: nowrap;
-}
-
-.home-task-list > button > em[data-status='failed'] {
-  color: #c51f3a;
-}
-
-.home-panel__empty {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-  min-height: 165px;
-  font-size: 11px;
-  color: #84909a;
-}
-
-.home-panel__empty.compact {
-  flex-direction: row;
-}
-
-.home-panel__empty > svg {
-  width: 24px;
-  height: 24px;
-  color: #c51f3a;
-}
-
 .home-data-note {
   display: flex;
+  flex-wrap: wrap;
   gap: 9px;
   align-items: center;
   justify-content: flex-end;
   min-height: 30px;
   padding: 0 4px;
   font-size: var(--rail-font-caption);
-  color: #7d8790;
+  color: var(--rail-theme-secondary, #7d8790);
 }
 
 .home-data-note > svg {
@@ -1208,7 +890,7 @@ onBeforeUnmount(() => {
 .home-data-note > i {
   width: 1px;
   height: 12px;
-  background: #ced4d9;
+  background: var(--rail-theme-surface, #ced4d9);
 }
 
 .home-project-form,
@@ -1225,7 +907,7 @@ onBeforeUnmount(() => {
 .home-project-form label > span {
   font-size: 13px;
   font-weight: 650;
-  color: #46505a;
+  color: var(--rail-theme-text, #46505a);
 }
 
 .home-history-list {
@@ -1252,15 +934,15 @@ onBeforeUnmount(() => {
 
 .home-history-filters > label > span {
   font-size: 11px;
-  color: #71808c;
+  color: var(--rail-theme-secondary, #71808c);
 }
 
 .home-history-filters input[type='date'] {
   min-height: 32px;
   padding: 4px 9px;
-  color: #46505a;
-  background: #fff;
-  border: 1px solid #d9d9d9;
+  color: var(--rail-theme-text, #46505a);
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #d9d9d9);
   border-radius: 6px;
 }
 
@@ -1270,20 +952,15 @@ onBeforeUnmount(() => {
   gap: 12px;
   align-items: center;
   padding: 14px;
-  color: #1c252d;
+  color: var(--rail-theme-text, #1c252d);
   text-align: left;
-  background: #fff;
-  border: 1px solid #dde3e7;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #dde3e7);
   border-radius: 10px;
 }
 
-.home-history-list__preview {
-  width: 76px;
-  height: 50px;
-}
-
 .home-history-list button:hover {
-  border-color: #c51f3a;
+  border-color: var(--rail-theme-accent, #c51f3a);
 }
 
 .home-history-list button > span,
@@ -1303,7 +980,7 @@ onBeforeUnmount(() => {
 .home-history-list time {
   margin-top: 5px;
   font-size: 12px;
-  color: #71808c;
+  color: var(--rail-theme-secondary, #71808c);
 }
 
 .home-history-empty {
@@ -1313,13 +990,13 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   min-height: 220px;
-  color: #71808c;
+  color: var(--rail-theme-secondary, #71808c);
 }
 
 .home-history-empty > svg {
   width: 34px;
   height: 34px;
-  color: #c51f3a;
+  color: var(--rail-theme-accent, #c51f3a);
 }
 
 .home-loading-icon {
@@ -1337,24 +1014,21 @@ onBeforeUnmount(() => {
     grid-template-columns: minmax(500px, 1.15fr) minmax(360px, 0.85fr);
   }
 
-  .home-entry-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .home-entry-grid button {
-    min-height: 174px;
-  }
-
-  .home-work-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .home-history-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 980px) {
+  .home-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-entry-grid button {
+    min-height: 200px;
+    padding: 20px;
+  }
+
   .home-hero {
     grid-template-columns: 1fr;
   }
@@ -1387,12 +1061,10 @@ onBeforeUnmount(() => {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .home-entry-grid,
-  .home-work-grid {
+  .home-entry-grid {
     grid-template-columns: 1fr;
   }
 
-  .home-asset-list,
   .home-history-filters {
     grid-template-columns: 1fr;
   }

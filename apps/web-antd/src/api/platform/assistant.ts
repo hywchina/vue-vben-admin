@@ -60,10 +60,8 @@ export function getAiConversationsApi() {
   return requestClient.get<AiConversation[]>('/assistant/conversations');
 }
 
-export function createAiConversationApi(projectId?: string) {
-  return requestClient.post<AiConversation>('/assistant/conversations', {
-    projectId: projectId || undefined,
-  });
+export function createAiConversationApi() {
+  return requestClient.post<AiConversation>('/assistant/conversations', {});
 }
 
 export function renameAiConversationApi(conversationId: string, title: string) {
@@ -135,5 +133,11 @@ export function getAiAttachmentPreviewApi(attachmentId: string) {
 export function getAiAttachmentDownloadApi(attachmentId: string) {
   return requestClient.get<{ expiresAt: string; url: string }>(
     `/assistant/attachments/${attachmentId}/download`,
+  );
+}
+
+export function deleteAiConversationApi(conversationId: string) {
+  return requestClient.delete<{ deleted: boolean }>(
+    `/assistant/conversations/${conversationId}`,
   );
 }

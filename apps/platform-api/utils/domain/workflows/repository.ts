@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 
 import { useDatabase } from '../../database';
 import { ApiError } from '../../response';
+import { resolveQuickFieldKeys } from './presentation';
 import { parseWorkflowVersion, publicParameterSchema } from './schema';
 
 export function workflowChecksum(snapshot: unknown) {
@@ -116,6 +117,7 @@ interface CapabilityRow {
   name: string;
   outputSchema: unknown;
   parameterSchema: unknown;
+  quickFieldKeys?: null | string[];
   provider: string;
   workflowCode: string;
   workflowName: string;
@@ -138,8 +140,10 @@ export async function getCapabilityByCode(code: string) {
       wv.version AS "workflowVersion",
       wv.api_json AS "apiJson",
       wv.parameter_schema AS "parameterSchema",
-      wv.output_schema AS "outputSchema"
+      wv.output_schema AS "outputSchema",
+      cp.quick_field_keys AS "quickFieldKeys"
     FROM capabilities c
+    LEFT JOIN capability_parameter_presentations cp ON cp.capability_code = c.code
     JOIN capability_workflows cw
       ON cw.capability_code = c.code AND cw.active = true
     JOIN workflow_versions wv ON wv.id = cw.workflow_version_id
@@ -167,6 +171,13 @@ export function toPublicCapability(row: CapabilityRow) {
     code: row.code,
     description: row.description,
     fields: publicParameterSchema(row.parameterSchema),
+    presentation: {
+      quickFieldKeys: resolveQuickFieldKeys(
+        row.parameterSchema,
+        row.quickFieldKeys,
+      ),
+      workflowVersionId: row.workflowVersionId,
+    },
     name: row.name,
     outputTypes: (row.outputSchema as { kind?: string }[]).flatMap((output) =>
       output.kind ? [output.kind] : [],

@@ -1,4 +1,7 @@
-import type { AssetType } from '#/modules/platform/types';
+import type {
+  AssetGenerationCategory,
+  AssetType,
+} from '#/modules/platform/types';
 
 import { computed, ref } from 'vue';
 
@@ -208,11 +211,16 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     assetFolders.value = await getAssetFoldersApi(currentProjectId.value);
   }
 
-  async function createAssetFolder(name: string, parentId?: null | string) {
+  async function createAssetFolder(
+    name: string,
+    parentId?: null | string,
+    generationCategory?: AssetGenerationCategory,
+  ) {
     if (!currentProjectId.value) throw new Error('请先创建或选择项目');
     const folder = await createAssetFolderApi({
       name,
       parentId,
+      generationCategory,
       projectId: currentProjectId.value,
     });
     assetFolders.value.push(folder);
@@ -332,6 +340,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     description?: string;
     file: File;
     folderId?: string;
+    generationCategory?: AssetGenerationCategory;
     name: string;
     tags?: string[];
     type: AssetType;
@@ -342,6 +351,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
       derivedFromAssetId: input.derivedFromAssetId,
       file: input.file,
       folderId: input.folderId,
+      generationCategory: input.generationCategory,
       kind: input.type,
       name: input.name,
       projectId: currentProjectId.value,
@@ -357,6 +367,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     content: string;
     description?: string;
     folderId?: string;
+    generationCategory?: AssetGenerationCategory;
     name: string;
     tags?: string[];
   }) {
@@ -365,6 +376,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
       content: input.content,
       description: input.description ?? '',
       folderId: input.folderId,
+      generationCategory: input.generationCategory,
       name: input.name,
       projectId: currentProjectId.value,
       tags: input.tags,

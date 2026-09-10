@@ -17,6 +17,7 @@ import {
   getAssetPreviewApi,
   getAssetsApi,
 } from '#/api';
+import { assetCategoryLabel } from '#/modules/platform/asset-browser';
 import {
   assetTypeIcons,
   assetTypeLabels,
@@ -286,7 +287,13 @@ watch(compatibleAssets, () => {
             />
             <span>
               <strong>{{ folder.name }}</strong>
-              <small>{{ folder.assetCount }} 项资产</small>
+              <small>
+                {{
+                  folder.kind === 'normal'
+                    ? `${assetCategoryLabel(folder.generationCategory)} · `
+                    : ''
+                }}{{ folder.assetCount }} 项资产
+              </small>
             </span>
             <IconifyIcon icon="lucide:chevron-right" />
           </button>
@@ -358,15 +365,15 @@ watch(compatibleAssets, () => {
   align-items: center;
   padding: 4px 6px;
   font-size: 13px;
-  color: #59666e;
+  color: var(--rail-theme-secondary, #59666e);
   background: transparent;
   border: 0;
   border-radius: 6px;
 }
 
 .asset-picker-breadcrumbs button:hover {
-  color: #b91c32;
-  background: #fff1f3;
+  color: var(--rail-theme-accent, #b91c32);
+  background: var(--rail-theme-surface, #fff1f3);
 }
 
 .asset-picker-scroll {
@@ -390,25 +397,25 @@ watch(compatibleAssets, () => {
   min-width: 0;
   padding: 12px;
   text-align: left;
-  background: #fff;
-  border: 1px solid #dce2e5;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #dce2e5);
   border-radius: 10px;
 }
 
 .asset-picker-folders button:hover {
-  background: #fffafb;
-  border-color: #c51f3a;
+  background: var(--rail-theme-surface, #fffafb);
+  border-color: var(--rail-theme-accent, #c51f3a);
 }
 
 .asset-picker-folders button > svg:first-child {
   flex: 0 0 auto;
   font-size: 22px;
-  color: #c51f3a;
+  color: var(--rail-theme-accent, #c51f3a);
 }
 
 .asset-picker-folders button > svg:last-child {
   margin-left: auto;
-  color: #8b969d;
+  color: var(--rail-theme-secondary, #8b969d);
 }
 
 .asset-picker-folders span,
@@ -432,7 +439,7 @@ watch(compatibleAssets, () => {
 .asset-picker-folders small {
   margin-top: 3px;
   font-size: 12px;
-  color: #7b878e;
+  color: var(--rail-theme-secondary, #7b878e);
 }
 
 .asset-picker-grid {
@@ -445,14 +452,14 @@ watch(compatibleAssets, () => {
   min-width: 0;
   padding: 8px;
   text-align: left;
-  background: #fff;
-  border: 1px solid #dce2e5;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #dce2e5);
   border-radius: 12px;
 }
 
 .asset-picker-grid > button:hover,
 .asset-picker-grid > button.selected {
-  border-color: #b91c32;
+  border-color: var(--rail-theme-accent, #b91c32);
   box-shadow: 0 0 0 2px rgb(185 28 50 / 10%);
 }
 
@@ -463,8 +470,8 @@ watch(compatibleAssets, () => {
   min-height: 128px;
   aspect-ratio: 4 / 3;
   overflow: hidden;
-  color: #6e7a82;
-  background: #f0f3f4;
+  color: var(--rail-theme-secondary, #6e7a82);
+  background: var(--rail-theme-surface, #f0f3f4);
   border-radius: 8px;
 }
 
@@ -475,7 +482,7 @@ watch(compatibleAssets, () => {
 }
 
 .asset-picker-preview:has(img) {
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .asset-picker-preview > svg {
@@ -505,7 +512,7 @@ watch(compatibleAssets, () => {
 .asset-picker-grid small {
   margin-top: 2px;
   font-size: 11px;
-  color: #7b878e;
+  color: var(--rail-theme-secondary, #7b878e);
 }
 
 @media (max-width: 760px) {

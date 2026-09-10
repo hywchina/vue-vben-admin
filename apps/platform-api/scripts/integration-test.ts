@@ -34,6 +34,7 @@ let conversationId: null | string = null;
 let visibilityTestApplication: null | { key: string; visible: boolean } = null;
 let promptTemplateCatalogBackup: null | {
   categories: unknown;
+  revision: number;
   updatedAt: Date;
   updatedBy: null | string;
 } = null;
@@ -188,6 +189,7 @@ async function cleanup() {
     `;
   }
   if (promptTemplateCatalogBackup) {
+    await sql`DELETE FROM design_prompt_template_versions WHERE design_mode = 'cmf' AND revision > ${promptTemplateCatalogBackup.revision}`;
     await sql`
       UPDATE design_prompt_template_catalogs
       SET
@@ -195,6 +197,7 @@ async function cleanup() {
           JSON.parse(JSON.stringify(promptTemplateCatalogBackup.categories)),
         )},
         updated_by = ${promptTemplateCatalogBackup.updatedBy},
+        revision = ${promptTemplateCatalogBackup.revision},
         updated_at = ${promptTemplateCatalogBackup.updatedAt}
       WHERE design_mode = 'cmf'
     `;
@@ -511,6 +514,69 @@ async function run() {
       visible: boolean;
     }>
   >('/applications', { session: admin });
+  const presentationCode = 'text-to-image';
+  const presentationPath = `/capabilities/${presentationCode}/presentation`;
+  const presentationCapability = await apiRequest<{
+    presentation: { quickFieldKeys: string[]; workflowVersionId: string };
+  }>(`/capabilities/${presentationCode}`, { session: admin });
+  const presentationInput = presentationCapability.envelope.data.presentation;
+  const [previousPresentation] = await sql<
+    { keys: string[]; updatedAt: Date; updatedBy: null | string }[]
+  >`
+    SELECT quick_field_keys AS keys, updated_by AS "updatedBy", updated_at AS "updatedAt"
+    FROM capability_parameter_presentations WHERE capability_code = ${presentationCode}
+  `;
+  try {
+    await apiRequest(presentationPath, {
+      body: presentationInput,
+      method: 'PUT',
+      session: user1,
+      expectedStatus: 403,
+    });
+    await apiRequest(presentationPath, {
+      body: { ...presentationInput, quickFieldKeys: ['missing'] },
+      method: 'PUT',
+      session: admin,
+      expectedStatus: 400,
+    });
+    await apiRequest(presentationPath, {
+      body: { ...presentationInput, workflowVersionId: randomUUID() },
+      method: 'PUT',
+      session: admin,
+      expectedStatus: 409,
+    });
+    await apiRequest(presentationPath, {
+      body: { ...presentationInput, quickFieldKeys: [] },
+      method: 'PUT',
+      session: admin,
+    });
+    const emptyPresentation = await apiRequest<{
+      presentation: { quickFieldKeys: string[] };
+    }>(`/capabilities/${presentationCode}`, { session: user1 });
+    assert(
+      emptyPresentation.envelope.data.presentation.quickFieldKeys.length === 0,
+      '管理员配置未对普通用户生效',
+    );
+    const reversedKeys = [...presentationInput.quickFieldKeys].toReversed();
+    await apiRequest(presentationPath, {
+      body: { ...presentationInput, quickFieldKeys: reversedKeys },
+      method: 'PUT',
+      session: admin,
+    });
+    const persistedPresentation = await apiRequest<{
+      presentation: { quickFieldKeys: string[] };
+    }>(`/capabilities/${presentationCode}`, { session: user1 });
+    assert(
+      JSON.stringify(
+        persistedPresentation.envelope.data.presentation.quickFieldKeys,
+      ) === JSON.stringify(reversedKeys),
+      '外显参数顺序未持久化',
+    );
+  } finally {
+    await (previousPresentation
+      ? sql`UPDATE capability_parameter_presentations SET quick_field_keys = ${sql.json(previousPresentation.keys)}, updated_by = ${previousPresentation.updatedBy}, updated_at = ${previousPresentation.updatedAt} WHERE capability_code = ${presentationCode}`
+      : sql`DELETE FROM capability_parameter_presentations WHERE capability_code = ${presentationCode}`);
+  }
   const visibilityTarget = adminApplications.envelope.data.find(
     (application) => application.capabilityCode,
   );
@@ -534,12 +600,13 @@ async function run() {
   const [cmfTemplateBackup] = await sql<
     {
       categories: unknown;
+      revision: number;
       updatedAt: Date;
       updatedBy: null | string;
     }[]
   >`
     SELECT
-      categories,
+      categories, revision,
       updated_by AS "updatedBy",
       updated_at AS "updatedAt"
     FROM design_prompt_template_catalogs
@@ -606,16 +673,87 @@ async function run() {
     },
   ];
   await apiRequest('/design-prompt-templates/cmf', {
-    body: { categories: testPromptCategories },
+    body: {
+      categories: testPromptCategories,
+      expectedRevision: cmfTemplateBackup.revision,
+    },
     expectedStatus: 403,
     method: 'PUT',
     session: user1,
   });
   await apiRequest('/design-prompt-templates/cmf', {
-    body: { categories: testPromptCategories },
+    body: {
+      categories: testPromptCategories,
+      expectedRevision: cmfTemplateBackup.revision,
+    },
     method: 'PUT',
     session: admin,
   });
+  await apiRequest('/design-prompt-templates/cmf', {
+    body: {
+      categories: testPromptCategories,
+      expectedRevision: cmfTemplateBackup.revision,
+    },
+    expectedStatus: 409,
+    method: 'PUT',
+    session: admin,
+  });
+  await apiRequest('/design-prompt-templates/cmf/maintenance', {
+    expectedStatus: 403,
+    session: user1,
+  });
+  const maintenance = await apiRequest<{
+    defaults: { version: string };
+    versions: { revision: number }[];
+  }>('/design-prompt-templates/cmf/maintenance', { session: admin });
+  assert(
+    maintenance.envelope.data.defaults.version &&
+      maintenance.envelope.data.versions.some(
+        (item) => item.revision === cmfTemplateBackup.revision,
+      ),
+    '默认目录或历史快照缺失',
+  );
+  const previewBody = {
+    selected: ['integration-color/integration-color-red'],
+    workflowKey: 'text-to-image',
+    editing: false,
+    maxLength: 1000,
+  };
+  const expanded = await apiRequest<{ errors: string[]; text: string }>(
+    '/design-prompt-templates/cmf/preview',
+    { method: 'POST', session: user1, body: previewBody },
+  );
+  assert(
+    expanded.envelope.data.text.includes('验收红色提示词') &&
+      expanded.envelope.data.errors.length === 0,
+    '普通用户无法预览真实配置',
+  );
+  await apiRequest('/design-prompt-templates/cmf/preview', {
+    method: 'POST',
+    session: user1,
+    expectedStatus: 403,
+    body: { ...previewBody, categories: testPromptCategories },
+  });
+  await apiRequest('/design-prompt-templates/cmf/preview', {
+    method: 'POST',
+    session: admin,
+    expectedStatus: 400,
+    body: { ...previewBody, categories: [{ id: 'invalid' }] },
+  });
+  await apiRequest('/design-prompt-templates/cmf', {
+    method: 'PUT',
+    session: admin,
+    expectedStatus: 400,
+    body: {
+      expectedRevision: cmfTemplateBackup.revision + 1,
+      categories: [{ id: 'invalid' }],
+    },
+  });
+  const oversized = await apiRequest<{ errors: string[] }>(
+    '/design-prompt-templates/cmf/preview',
+    { method: 'POST', session: user1, body: { ...previewBody, maxLength: 1 } },
+  );
+  assert(oversized.envelope.data.errors.length > 0, '超长提示词未阻止应用');
   const updatedCmfTemplates = await apiRequest<{
     categories: Array<{ id: string }>;
   }>('/design-prompt-templates/cmf', { session: user1 });
@@ -624,6 +762,22 @@ async function run() {
       .map((category) => category.id)
       .join(',') === 'integration-color,integration-material',
     '管理员维护的 CMF 提示词模板没有按顺序持久化',
+  );
+  const restoredTemplates = await apiRequest<{ revision: number }>(
+    '/design-prompt-templates/cmf',
+    {
+      method: 'PUT',
+      session: admin,
+      body: {
+        categories: cmfTemplateBackup.categories,
+        expectedRevision: cmfTemplateBackup.revision + 1,
+        reason: 'restore-version',
+      },
+    },
+  );
+  assert(
+    restoredTemplates.envelope.data.revision === cmfTemplateBackup.revision + 2,
+    '历史恢复未生成新版本',
   );
   assert(
     visibilityTarget.canManageVisibility,
@@ -1427,6 +1581,39 @@ async function run() {
         '在同一设计会话中继续编辑',
     '设计会话没有按应用恢复输入资产与参数草稿',
   );
+  await apiRequest(designDraftPath, {
+    body: {
+      designMode: 'cmf',
+      inputAssetIds: {},
+      parameterValues: { prompt: '独立CMF模式草稿' },
+      projectId,
+    },
+    method: 'PUT',
+    session: user1,
+  });
+  const cmfDraft = await apiRequest<{
+    parameterValues: Record<string, unknown>;
+  }>(`${designDraftPath}?projectId=${projectId}&designMode=cmf`, {
+    session: user1,
+  });
+  const cabinDraft = await apiRequest<{
+    parameterValues: Record<string, unknown>;
+  }>(`${designDraftPath}?projectId=${projectId}`, { session: user1 });
+  assert(
+    cmfDraft.envelope.data.parameterValues.prompt === '独立CMF模式草稿' &&
+      cabinDraft.envelope.data.parameterValues.prompt ===
+        '在同一设计会话中继续编辑',
+    '不同业务模式的草稿相互覆盖',
+  );
+  await apiRequest(`${designDraftPath}?projectId=${projectId}&designMode=cmf`, {
+    session: user2,
+    expectedStatus: 404,
+  });
+  await apiRequest(
+    `${designDraftPath}?projectId=${projectId}&designMode=invalid`,
+    { session: user1, expectedStatus: 400 },
+  );
+
   const annotatedJob = await apiRequest<{
     id: string;
     inputs: Array<{ annotationAssetId?: string; assetId: string }>;

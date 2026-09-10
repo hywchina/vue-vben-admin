@@ -261,12 +261,8 @@ export function designModeForApplication(
   applicationKey: string,
   currentModeKey: DesignModeKey = 'cabin',
 ) {
-  const currentMode = getDesignMode(currentModeKey);
-  if (currentMode.applicationKeys.includes(applicationKey)) return currentMode;
-  return (
-    designModes.find((mode) => mode.applicationKeys.includes(applicationKey)) ??
-    currentMode
-  );
+  if (applicationKey === 'report-generator') return getDesignMode('report');
+  return getDesignMode(currentModeKey === 'report' ? 'cabin' : currentModeKey);
 }
 
 export function applicationsForDesignMode(
@@ -274,10 +270,16 @@ export function applicationsForDesignMode(
   mode: DesignModeDefinition,
 ) {
   const positions = new Map(
-    mode.applicationKeys.map((applicationKey, index) => [
-      applicationKey,
-      index,
-    ]),
+    (mode.standalonePath
+      ? mode.applicationKeys
+      : [
+          ...new Set(
+            designModes
+              .filter((item) => !item.standalonePath)
+              .flatMap((item) => item.applicationKeys),
+          ),
+        ]
+    ).map((applicationKey, index) => [applicationKey, index]),
   );
 
   return applications
@@ -285,11 +287,27 @@ export function applicationsForDesignMode(
       (application) =>
         application.visible &&
         application.capabilityCode &&
-        positions.has(application.key),
+        (!mode.standalonePath || positions.has(application.key)),
     )
     .toSorted((left, right) => {
       const leftPosition = positions.get(left.key) ?? Number.MAX_SAFE_INTEGER;
       const rightPosition = positions.get(right.key) ?? Number.MAX_SAFE_INTEGER;
       return leftPosition - rightPosition;
     });
+}
+
+// 模式预设仅用于该模式尚未保存草稿的首次加载，不覆盖已保存的用户输入。
+export function designModeDefaults(
+  mode: DesignModeKey,
+  appKey: string,
+): Record<string, unknown> {
+  if (appKey !== 'text-to-image') return {};
+  const prompts = {
+    cabin: '现代轨道交通客室设计，空间关系清晰，材质真实，工业设计效果图',
+    cmf: '轨道客室面料纹样设计，四方连续图案，色彩协调，材质细节清晰',
+    component:
+      '轨道客室座椅设计，独立部件展示，结构合理，材质真实，工业设计效果图',
+    report: '',
+  };
+  return { prompt: prompts[mode] };
 }

@@ -288,7 +288,7 @@ async function toggleStatus(user: PlatformUser) {
   font-weight: 700;
   color: var(--rail-steel);
   text-transform: uppercase;
-  background: #fafbfc;
+  background: var(--rail-theme-surface, #fafbfc);
 }
 
 .user-row {
@@ -312,7 +312,7 @@ async function toggleStatus(user: PlatformUser) {
   font-size: 12px;
   font-weight: 700;
   color: #fff;
-  background: #37414b;
+  background: var(--rail-theme-surface, #37414b);
   border-radius: 9px;
 }
 
@@ -342,7 +342,7 @@ async function toggleStatus(user: PlatformUser) {
   flex: 0 0 48px;
   font-size: var(--rail-font-caption);
   font-weight: 650;
-  color: #7c858d;
+  color: var(--rail-theme-secondary, #7c858d);
 }
 
 .user-roles {

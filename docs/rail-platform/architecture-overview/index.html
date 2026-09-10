@@ -1,1 +1,526 @@
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>轨道客室智能设计平台架构</title><style>body{margin:0;background:#f4f6f8;color:#20252c;font-family:"Noto Sans CJK SC",sans-serif}main{max-width:1600px;margin:auto}svg{display:block;width:100%;height:auto}nav{padding:20px 48px;border-bottom:1px solid #dde2e7}a{color:#b91c32;margin-right:24px}section{margin-bottom:32px}@media print{nav{display:none}section{break-after:page}}</style><nav><a href="#overview">整体架构</a><a href="#report">报告链路</a></nav><main><section id="overview"><svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1080" viewBox="0 0 1600 1080" role="img" aria-labelledby="overview-title overview-desc"><title id="overview-title">轨道客室智能设计平台 · 整体架构</title><desc id="overview-desc">开发机上的平台、独立能力服务、共享模型与持久化边界；连接表示实现或配置关系，不代表当前在线。</desc><defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#5e6975"/></marker><marker id="arrow-accent" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#b91c32"/></marker><marker id="arrow-link" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#5e6975"/></marker></defs><rect width="1600" height="1080" fill="#f4f6f8"/><style>text{font-family:Geist,"Noto Sans CJK SC",sans-serif;fill:#20252c}.sub{fill:#5e6975;font-size:20px}.title{font-family:"Instrument Serif","Noto Serif CJK SC",serif;font-size:36px}.name{font-size:24px;font-weight:600}.small{font-size:16px;fill:#5e6975}</style><text x="48" y="56" class="title">轨道客室智能设计平台 · 整体架构</text><text x="48" y="96" class="sub">开发机单机多项目 / 2026-09-08 核对 / 实线为调用与读写；虚线为离线配置中的模型依赖</text><path d="M368 240H464" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#arrow)"/><path d="M944 240H1040" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#arrow)"/><path d="M944 512H1000Q1008 512 1008 504V428Q1008 420 1016 420H1040" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#arrow)"/><path d="M944 600H1040" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#arrow)"/><path d="M944 760H1040" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#arrow)"/><path d="M464 540H368" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#arrow)"/><path d="M464 736H368" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#arrow)"/><path d="M1392 752H1464Q1472 752 1472 744V248Q1472 240 1464 240H1392" fill="none" stroke="#5e6975" stroke-width="1.2" stroke-dasharray="8,4" marker-end="url(#arrow)"/><rect x="48" y="160" width="320" height="176" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="72" y="200" class="name">平台 Web</text><text x="72" y="236" class="sub">Vue 3 / Ant Design Vue</text><text x="72" y="264" class="sub">身份、项目、设计、资产</text><text x="72" y="292" class="sub">训练、报告、全局助手</text><rect x="48" y="464" width="320" height="160" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="72" y="504" class="name">PostgreSQL</text><text x="72" y="540" class="sub">平台业务与权限真值</text><text x="72" y="568" class="sub">任务队列、租约、审计</text><text x="72" y="596" class="sub">会话、资产元数据</text><rect x="48" y="668" width="320" height="160" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="72" y="708" class="name">MinIO / S3</text><text x="72" y="744" class="sub">私有对象存储</text><text x="72" y="772" class="sub">输入素材、暂存结果</text><text x="72" y="800" class="sub">模型、报告、助手附件</text><rect x="464" y="160" width="480" height="640" rx="8" fill="#fff0f2" stroke="#b91c32" stroke-width="1.2"/><text x="488" y="200" class="name">vue-vben-admin · 平台后端</text><text x="488" y="236" class="sub">apps/platform-api · Nitro / H3</text><text x="488" y="264" class="sub">认证 / RBAC / 项目范围 / 审计</text><path d="M488 308H920M488 480H920" stroke="#dde2e7"/><text x="488" y="352" class="name">API：同步请求与持久化任务</text><text x="488" y="392" class="sub">AI 助手 → 受控多模态转发</text><text x="488" y="432" class="sub">业务任务 → PostgreSQL 执行记录</text><text x="488" y="528" class="name">独立 Worker 进程</text><text x="488" y="568" class="sub">ComfyUI / LoRA / Report 三个循环</text><text x="488" y="608" class="sub">领取任务、轮询、取消、失败恢复</text><text x="488" y="648" class="sub">读取输入 → 调用能力 → 接收产物</text><text x="488" y="704" class="sub">报告 template：内置文件渲染</text><text x="488" y="744" class="sub">报告 ai：调用 Presenton</text><rect x="1040" y="160" width="352" height="160" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="1064" y="200" class="name">rail-vllm · Qwen3-VL</text><text x="1064" y="236" class="sub">Docker / 8B-Instruct</text><text x="1064" y="264" class="sub">OpenAI-compatible API</text><text x="1064" y="292" class="sub">共享多模态推理能力</text><rect x="1040" y="360" width="352" height="136" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="1064" y="400" class="name">ComfyUI</text><text x="1064" y="436" class="sub">工作流 JSON / 自定义节点</text><text x="1064" y="464" class="sub">GPU 推理 / 图片与三维等</text><rect x="1040" y="540" width="352" height="136" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="1064" y="580" class="name">AI Toolkit</text><text x="1064" y="616" class="sub">LoRA 数据集 / GPU 队列</text><text x="1064" y="644" class="sub">训练、Loss、checkpoint</text><rect x="1040" y="716" width="352" height="144" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="1064" y="756" class="name">Presenton</text><text x="1064" y="792" class="sub">FastAPI + Next.js 渲染</text><text x="1064" y="820" class="sub">文字 + 图片 → 结构化计划</text><text x="1064" y="848" class="sub">DOCX / PPTX / Markdown</text><text x="48" y="376" class="small">浏览器通过 API 获取预签名 URL</text><text x="48" y="404" class="small">再直传或读取 MinIO（连线省略）</text><text x="48" y="888" class="sub">数据归属：平台保存业务真值；各执行服务保留自己的模型、工作目录及内部状态。</text><path d="M48 920H1552" stroke="#dde2e7"/><text x="48" y="956" class="sub">资产回流：ComfyUI 结果先暂存，用户确认入库；LoRA 与报告成功后自动登记为项目资产。</text><text x="48" y="992" class="small">运行快照：PostgreSQL / MinIO / Mailpit 在线；rail-vllm 已停止；业务入口端口未监听。</text><text x="48" y="1024" class="small">辅助服务：Mailpit 为开发邮件服务，生产使用企业 SMTP。图中未展开页面、数据表和每个工作流节点。</text></svg></section><section id="report"><svg xmlns="http://www.w3.org/2000/svg" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-labelledby="report-title report-desc"><title id="report-title">报告生成 · 两条执行路径</title><desc id="report-desc">平台模板渲染与外部 Presenton AI 渲染共用任务和资产入库。</desc><defs><marker id="report-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#5e6975"/></marker><marker id="report-arrow-accent" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#b91c32"/></marker><marker id="report-arrow-link" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8Z" fill="#5e6975"/></marker></defs><rect width="1600" height="800" fill="#f4f6f8"/><style>text{font-family:Geist,"Noto Sans CJK SC",sans-serif;fill:#20252c}.sub{fill:#5e6975;font-size:20px}.title{font-family:"Instrument Serif","Noto Serif CJK SC",serif;font-size:36px}.name{font-size:24px;font-weight:600}.small{font-size:16px;fill:#5e6975}</style><text x="48" y="56" class="title">报告生成 · 两条执行路径</text><text x="48" y="96" class="sub">已确认外部服务归属 presenton；助手与 AI 报告共享 rail-vllm 的部署配置</text><path d="M384 264H496" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#report-arrow)"/><path d="M816 248H928" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#report-arrow)"/><path d="M656 328V448" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#report-arrow)"/><path d="M1248 264H1312" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#report-arrow)"/><path d="M928 296H880Q872 296 872 304V524Q872 532 864 532H816" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#report-arrow)"/><path d="M496 532H384" fill="none" stroke="#5e6975" stroke-width="1.2" marker-end="url(#report-arrow)"/><rect x="48" y="192" width="336" height="144" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="72" y="232" class="name">平台报告 API</text><text x="72" y="268" class="sub">校验项目与图片资产</text><text x="72" y="296" class="sub">持久化 jobs + report 执行记录</text><rect x="496" y="192" width="320" height="136" rx="8" fill="#fff0f2" stroke="#b91c32" stroke-width="1.2"/><text x="520" y="232" class="name">Report Worker</text><text x="520" y="268" class="sub">领取租约 / 读取图片</text><text x="520" y="296" class="sub">按 generation_mode 分流</text><rect x="928" y="192" width="320" height="144" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="952" y="232" class="name">Presenton · AI</text><text x="952" y="268" class="sub">POST /api/v1/generate-file</text><text x="952" y="296" class="sub">接收 multipart 文字与图片</text><rect x="1312" y="192" width="240" height="144" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="1336" y="232" class="name">rail-vllm</text><text x="1336" y="268" class="sub">Qwen3-VL</text><text x="1336" y="296" class="sub">生成结构化内容</text><rect x="496" y="448" width="320" height="176" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="520" y="488" class="name">生成文件与校验</text><text x="520" y="524" class="sub">template：平台内置渲染</text><text x="520" y="552" class="sub">ai：接收上游文件字节</text><text x="520" y="580" class="sub">DOCX / PPTX / MD</text><rect x="48" y="448" width="336" height="176" rx="8" fill="#ffffff" stroke="#5e6975" stroke-width="1.2"/><text x="72" y="488" class="name">平台资产入库</text><text x="72" y="524" class="sub">写入 MinIO 私有桶</text><text x="72" y="552" class="sub">事务登记资产与 job_outputs</text><text x="72" y="580" class="sub">成功 / 失败 / 取消留痕</text><text x="952" y="404" class="name">Presenton 内部导出：</text><text x="952" y="444" class="sub">Word / MD：本地渲染</text><text x="952" y="480" class="sub">PPT：本地模板 + Next.js 导出</text><text x="952" y="556" class="small">上游同步请求不提供取消端点</text><path d="M48 676H1552" stroke="#dde2e7"/><text x="48" y="716" class="sub">契约差异：平台最多 24 张图片；Presenton 最多 8 张。AI 报告需对齐上限或设计拆分策略。</text><text x="48" y="756" class="small">取消语义：平台可阻止结果入库，但当前不能保证立即中断 Presenton 内部推理。</text></svg></section></main></html>
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>轨道客室智能设计平台架构</title
+  ><style>
+    body {
+      margin: 0;
+      background: #f4f6f8;
+      color: #20252c;
+      font-family: 'Noto Sans CJK SC', sans-serif;
+    }
+    main {
+      max-width: 1600px;
+      margin: auto;
+    }
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+    nav {
+      padding: 20px 48px;
+      border-bottom: 1px solid #dde2e7;
+    }
+    a {
+      color: #b91c32;
+      margin-right: 24px;
+    }
+    section {
+      margin-bottom: 32px;
+    }
+    @media print {
+      nav {
+        display: none;
+      }
+      section {
+        break-after: page;
+      }
+    }
+  </style>
+  <nav><a href="#overview">整体架构</a><a href="#report">报告链路</a></nav>
+  <main>
+    <section id="overview">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="1600"
+        height="1080"
+        viewBox="0 0 1600 1080"
+        role="img"
+        aria-labelledby="overview-title overview-desc"
+      >
+        <title id="overview-title">轨道客室智能设计平台 · 整体架构</title>
+        <desc id="overview-desc">
+          开发机上的平台、独立能力服务、共享模型与持久化边界；连接表示实现或配置关系，不代表当前在线。
+        </desc>
+        <defs>
+          <marker
+            id="arrow"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+          >
+            <path d="M0 0L8 4L0 8Z" fill="#5e6975" />
+          </marker>
+          <marker
+            id="arrow-accent"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+          >
+            <path d="M0 0L8 4L0 8Z" fill="#b91c32" />
+          </marker>
+          <marker
+            id="arrow-link"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+          >
+            <path d="M0 0L8 4L0 8Z" fill="#5e6975" />
+          </marker>
+        </defs>
+        <rect width="1600" height="1080" fill="#f4f6f8" />
+        <style>
+          text {
+            font-family: Geist, 'Noto Sans CJK SC', sans-serif;
+            fill: #20252c;
+          }
+          .sub {
+            fill: #5e6975;
+            font-size: 20px;
+          }
+          .title {
+            font-family: 'Instrument Serif', 'Noto Serif CJK SC', serif;
+            font-size: 36px;
+          }
+          .name {
+            font-size: 24px;
+            font-weight: 600;
+          }
+          .small {
+            font-size: 16px;
+            fill: #5e6975;
+          }
+        </style>
+        <text x="48" y="56" class="title">轨道客室智能设计平台 · 整体架构</text>
+        <text x="48" y="96" class="sub">
+          开发机单机多项目 / 2026-09-08 核对 /
+          实线为调用与读写；虚线为离线配置中的模型依赖
+        </text>
+        <path
+          d="M368 240H464"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#arrow)"
+        />
+        <path
+          d="M944 240H1040"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#arrow)"
+        />
+        <path
+          d="M944 512H1000Q1008 512 1008 504V428Q1008 420 1016 420H1040"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#arrow)"
+        />
+        <path
+          d="M944 600H1040"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#arrow)"
+        />
+        <path
+          d="M944 760H1040"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#arrow)"
+        />
+        <path
+          d="M464 540H368"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#arrow)"
+        />
+        <path
+          d="M464 736H368"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#arrow)"
+        />
+        <path
+          d="M1392 752H1464Q1472 752 1472 744V248Q1472 240 1464 240H1392"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          stroke-dasharray="8,4"
+          marker-end="url(#arrow)"
+        />
+        <rect
+          x="48"
+          y="160"
+          width="320"
+          height="176"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="72" y="200" class="name">平台 Web</text>
+        <text x="72" y="236" class="sub">Vue 3 / Ant Design Vue</text>
+        <text x="72" y="264" class="sub">身份、项目、设计、资产</text>
+        <text x="72" y="292" class="sub">训练、报告、全局助手</text>
+        <rect
+          x="48"
+          y="464"
+          width="320"
+          height="160"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="72" y="504" class="name">PostgreSQL</text>
+        <text x="72" y="540" class="sub">平台业务与权限真值</text>
+        <text x="72" y="568" class="sub">任务队列、租约、审计</text>
+        <text x="72" y="596" class="sub">会话、资产元数据</text>
+        <rect
+          x="48"
+          y="668"
+          width="320"
+          height="160"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="72" y="708" class="name">MinIO / S3</text>
+        <text x="72" y="744" class="sub">私有对象存储</text>
+        <text x="72" y="772" class="sub">输入素材、暂存结果</text>
+        <text x="72" y="800" class="sub">模型、报告、助手附件</text>
+        <rect
+          x="464"
+          y="160"
+          width="480"
+          height="640"
+          rx="8"
+          fill="#fff0f2"
+          stroke="#b91c32"
+          stroke-width="1.2"
+        />
+        <text x="488" y="200" class="name">vue-vben-admin · 平台后端</text>
+        <text x="488" y="236" class="sub">apps/platform-api · Nitro / H3</text>
+        <text x="488" y="264" class="sub">认证 / RBAC / 项目范围 / 审计</text>
+        <path d="M488 308H920M488 480H920" stroke="#dde2e7" />
+        <text x="488" y="352" class="name">API：同步请求与持久化任务</text>
+        <text x="488" y="392" class="sub">AI 助手 → 受控多模态转发</text>
+        <text x="488" y="432" class="sub">业务任务 → PostgreSQL 执行记录</text>
+        <text x="488" y="528" class="name">独立 Worker 进程</text>
+        <text x="488" y="568" class="sub">
+          ComfyUI / LoRA / Report 三个循环
+        </text>
+        <text x="488" y="608" class="sub">领取任务、轮询、取消、失败恢复</text>
+        <text x="488" y="648" class="sub">读取输入 → 调用能力 → 接收产物</text>
+        <text x="488" y="704" class="sub">报告 template：内置文件渲染</text>
+        <text x="488" y="744" class="sub">报告 ai：调用 Presenton</text>
+        <rect
+          x="1040"
+          y="160"
+          width="352"
+          height="160"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="1064" y="200" class="name">rail-vllm · Qwen3-VL</text>
+        <text x="1064" y="236" class="sub">Docker / 8B-Instruct</text>
+        <text x="1064" y="264" class="sub">OpenAI-compatible API</text>
+        <text x="1064" y="292" class="sub">共享多模态推理能力</text>
+        <rect
+          x="1040"
+          y="360"
+          width="352"
+          height="136"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="1064" y="400" class="name">ComfyUI</text>
+        <text x="1064" y="436" class="sub">工作流 JSON / 自定义节点</text>
+        <text x="1064" y="464" class="sub">GPU 推理 / 图片与三维等</text>
+        <rect
+          x="1040"
+          y="540"
+          width="352"
+          height="136"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="1064" y="580" class="name">AI Toolkit</text>
+        <text x="1064" y="616" class="sub">LoRA 数据集 / GPU 队列</text>
+        <text x="1064" y="644" class="sub">训练、Loss、checkpoint</text>
+        <rect
+          x="1040"
+          y="716"
+          width="352"
+          height="144"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="1064" y="756" class="name">Presenton</text>
+        <text x="1064" y="792" class="sub">FastAPI + Next.js 渲染</text>
+        <text x="1064" y="820" class="sub">文字 + 图片 → 结构化计划</text>
+        <text x="1064" y="848" class="sub">DOCX / PPTX / Markdown</text>
+        <text x="48" y="376" class="small">浏览器通过 API 获取预签名 URL</text>
+        <text x="48" y="404" class="small">再直传或读取 MinIO（连线省略）</text>
+        <text x="48" y="888" class="sub">
+          数据归属：平台保存业务真值；各执行服务保留自己的模型、工作目录及内部状态。
+        </text>
+        <path d="M48 920H1552" stroke="#dde2e7" />
+        <text x="48" y="956" class="sub">
+          资产回流：ComfyUI 结果先暂存，用户确认入库；LoRA
+          与报告成功后自动登记为项目资产。
+        </text>
+        <text x="48" y="992" class="small">
+          运行快照：PostgreSQL / MinIO / Mailpit 在线；rail-vllm
+          已停止；业务入口端口未监听。
+        </text>
+        <text x="48" y="1024" class="small">
+          辅助服务：Mailpit 为开发邮件服务，生产使用企业
+          SMTP。图中未展开页面、数据表和每个工作流节点。
+        </text>
+      </svg>
+    </section>
+    <section id="report">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="1600"
+        height="800"
+        viewBox="0 0 1600 800"
+        role="img"
+        aria-labelledby="report-title report-desc"
+      >
+        <title id="report-title">报告生成 · 两条执行路径</title>
+        <desc id="report-desc">
+          平台模板渲染与外部 Presenton AI 渲染共用任务和资产入库。
+        </desc>
+        <defs>
+          <marker
+            id="report-arrow"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+          >
+            <path d="M0 0L8 4L0 8Z" fill="#5e6975" />
+          </marker>
+          <marker
+            id="report-arrow-accent"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+          >
+            <path d="M0 0L8 4L0 8Z" fill="#b91c32" />
+          </marker>
+          <marker
+            id="report-arrow-link"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+          >
+            <path d="M0 0L8 4L0 8Z" fill="#5e6975" />
+          </marker>
+        </defs>
+        <rect width="1600" height="800" fill="#f4f6f8" />
+        <style>
+          text {
+            font-family: Geist, 'Noto Sans CJK SC', sans-serif;
+            fill: #20252c;
+          }
+          .sub {
+            fill: #5e6975;
+            font-size: 20px;
+          }
+          .title {
+            font-family: 'Instrument Serif', 'Noto Serif CJK SC', serif;
+            font-size: 36px;
+          }
+          .name {
+            font-size: 24px;
+            font-weight: 600;
+          }
+          .small {
+            font-size: 16px;
+            fill: #5e6975;
+          }
+        </style>
+        <text x="48" y="56" class="title">报告生成 · 两条执行路径</text>
+        <text x="48" y="96" class="sub">
+          已确认外部服务归属 presenton；助手与 AI 报告共享 rail-vllm 的部署配置
+        </text>
+        <path
+          d="M384 264H496"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#report-arrow)"
+        />
+        <path
+          d="M816 248H928"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#report-arrow)"
+        />
+        <path
+          d="M656 328V448"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#report-arrow)"
+        />
+        <path
+          d="M1248 264H1312"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#report-arrow)"
+        />
+        <path
+          d="M928 296H880Q872 296 872 304V524Q872 532 864 532H816"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#report-arrow)"
+        />
+        <path
+          d="M496 532H384"
+          fill="none"
+          stroke="#5e6975"
+          stroke-width="1.2"
+          marker-end="url(#report-arrow)"
+        />
+        <rect
+          x="48"
+          y="192"
+          width="336"
+          height="144"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="72" y="232" class="name">平台报告 API</text>
+        <text x="72" y="268" class="sub">校验项目与图片资产</text>
+        <text x="72" y="296" class="sub">持久化 jobs + report 执行记录</text>
+        <rect
+          x="496"
+          y="192"
+          width="320"
+          height="136"
+          rx="8"
+          fill="#fff0f2"
+          stroke="#b91c32"
+          stroke-width="1.2"
+        />
+        <text x="520" y="232" class="name">Report Worker</text>
+        <text x="520" y="268" class="sub">领取租约 / 读取图片</text>
+        <text x="520" y="296" class="sub">按 generation_mode 分流</text>
+        <rect
+          x="928"
+          y="192"
+          width="320"
+          height="144"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="952" y="232" class="name">Presenton · AI</text>
+        <text x="952" y="268" class="sub">POST /api/v1/generate-file</text>
+        <text x="952" y="296" class="sub">接收 multipart 文字与图片</text>
+        <rect
+          x="1312"
+          y="192"
+          width="240"
+          height="144"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="1336" y="232" class="name">rail-vllm</text>
+        <text x="1336" y="268" class="sub">Qwen3-VL</text>
+        <text x="1336" y="296" class="sub">生成结构化内容</text>
+        <rect
+          x="496"
+          y="448"
+          width="320"
+          height="176"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="520" y="488" class="name">生成文件与校验</text>
+        <text x="520" y="524" class="sub">template：平台内置渲染</text>
+        <text x="520" y="552" class="sub">ai：接收上游文件字节</text>
+        <text x="520" y="580" class="sub">DOCX / PPTX / MD</text>
+        <rect
+          x="48"
+          y="448"
+          width="336"
+          height="176"
+          rx="8"
+          fill="#ffffff"
+          stroke="#5e6975"
+          stroke-width="1.2"
+        />
+        <text x="72" y="488" class="name">平台资产入库</text>
+        <text x="72" y="524" class="sub">写入 MinIO 私有桶</text>
+        <text x="72" y="552" class="sub">事务登记资产与 job_outputs</text>
+        <text x="72" y="580" class="sub">成功 / 失败 / 取消留痕</text>
+        <text x="952" y="404" class="name">Presenton 内部导出：</text>
+        <text x="952" y="444" class="sub">Word / MD：本地渲染</text>
+        <text x="952" y="480" class="sub">PPT：本地模板 + Next.js 导出</text>
+        <text x="952" y="556" class="small">上游同步请求不提供取消端点</text>
+        <path d="M48 676H1552" stroke="#dde2e7" />
+        <text x="48" y="716" class="sub">
+          契约差异：平台最多 24 张图片；Presenton 最多 8 张。AI
+          报告需对齐上限或设计拆分策略。
+        </text>
+        <text x="48" y="756" class="small">
+          取消语义：平台可阻止结果入库，但当前不能保证立即中断 Presenton
+          内部推理。
+        </text>
+      </svg>
+    </section>
+  </main>
+</html>

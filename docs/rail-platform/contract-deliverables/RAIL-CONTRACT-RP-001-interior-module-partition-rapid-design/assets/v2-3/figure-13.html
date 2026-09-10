@@ -1,1 +1,355 @@
-<!DOCTYPE html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>平台研究与建设的三阶段计划</title><style>*{box-sizing:border-box}body{margin:0;background:white;color:#202020;font-family:Noto Sans CJK SC, Microsoft YaHei, sans-serif}svg{display:block}.frame{width:960px}h1{font-family:"Noto Serif CJK SC",serif;font-size:24px;font-weight:500;margin:24px 40px}@media print{h1{display:none}}</style></head><body><main class="frame"><h1>平台研究与建设的三阶段计划</h1><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 560" width="960" height="560" role="img" aria-labelledby="figure-13-title figure-13-desc" font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif"><title id="figure-13-title">平台研究与建设的三阶段计划</title><desc id="figure-13-desc">合同节点为2026年9月30日、12月31日及2027年3月31日，图示阶段内条带为建议工作安排。</desc><defs><marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#505050"/></marker><marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#202020"/></marker><marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#505050"/></marker></defs><rect width="960" height="560" fill="white"/><path d="M240 180 H912" stroke="#dddddd" stroke-width="1"/><path d="M240 244 H912" stroke="#dddddd" stroke-width="1"/><path d="M240 308 H912" stroke="#dddddd" stroke-width="1"/><path d="M240 372 H912" stroke="#dddddd" stroke-width="1"/><path d="M240 436 H912" stroke="#dddddd" stroke-width="1"/><path d="M336 112 V448" stroke="#505050" stroke-width="1.4" stroke-dasharray="8 4"/><path d="M624 112 V448" stroke="#505050" stroke-width="1.4" stroke-dasharray="8 4"/><path d="M912 112 V448" stroke="#505050" stroke-width="1.4" stroke-dasharray="8 4"/><path d="M40 504 H920" stroke="#b8b8b8" stroke-width="1"/><text x="40" y="56" font-size="24" font-weight="500" text-anchor="start" fill="#202020">建议工作安排</text><text x="288" y="96" font-size="20" font-weight="400" text-anchor="middle" fill="#202020">9月</text><text x="384" y="96" font-size="20" font-weight="400" text-anchor="middle" fill="#202020">10月</text><text x="480" y="96" font-size="20" font-weight="400" text-anchor="middle" fill="#202020">11月</text><text x="576" y="96" font-size="20" font-weight="400" text-anchor="middle" fill="#202020">12月</text><text x="672" y="96" font-size="20" font-weight="400" text-anchor="middle" fill="#202020">1月</text><text x="768" y="96" font-size="20" font-weight="400" text-anchor="middle" fill="#202020">2月</text><text x="864" y="96" font-size="20" font-weight="400" text-anchor="middle" fill="#202020">3月</text><text x="432" y="56" font-size="20" font-weight="500" text-anchor="middle" fill="#202020">2026 年</text><text x="768" y="56" font-size="20" font-weight="500" text-anchor="middle" fill="#202020">2027 年</text><text x="40" y="156" font-size="20" font-weight="400" text-anchor="start" fill="#202020">研究与总体设计</text><rect x="248" y="136" width="80" height="32" rx="0" fill="#ededed" stroke="#505050" stroke-width="1.2" /><text x="40" y="220" font-size="20" font-weight="400" text-anchor="start" fill="#202020">分区与快速设计完善</text><rect x="344" y="200" width="272" height="32" rx="0" fill="#ededed" stroke="#505050" stroke-width="1.2" /><text x="40" y="284" font-size="20" font-weight="400" text-anchor="start" fill="#202020">分层验证与系统检测</text><rect x="344" y="264" width="272" height="32" rx="0" fill="#ededed" stroke="#505050" stroke-width="1.2" /><text x="40" y="348" font-size="20" font-weight="400" text-anchor="start" fill="#202020">接口及最终功能验证</text><rect x="632" y="328" width="272" height="32" rx="0" fill="#ededed" stroke="#505050" stroke-width="1.2" /><text x="40" y="412" font-size="20" font-weight="400" text-anchor="start" fill="#202020">成果整理与交付</text><rect x="632" y="392" width="272" height="32" rx="0" fill="#ededed" stroke="#505050" stroke-width="1.2" /><text x="336" y="480" font-size="20" font-weight="500" text-anchor="middle" fill="#202020">09-30</text><text x="624" y="480" font-size="20" font-weight="500" text-anchor="middle" fill="#202020">12-31</text><text x="872" y="480" font-size="20" font-weight="500" text-anchor="middle" fill="#202020">03-31</text><text x="40" y="536" font-size="20" font-weight="400" text-anchor="start" fill="#202020">条带：建议阶段安排；虚线：合同截止节点，不表示实际完成进度。</text></svg></main></body></html>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>平台研究与建设的三阶段计划</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: white;
+        color: #202020;
+        font-family:
+          Noto Sans CJK SC,
+          Microsoft YaHei,
+          sans-serif;
+      }
+      svg {
+        display: block;
+      }
+      .frame {
+        width: 960px;
+      }
+      h1 {
+        font-family: 'Noto Serif CJK SC', serif;
+        font-size: 24px;
+        font-weight: 500;
+        margin: 24px 40px;
+      }
+      @media print {
+        h1 {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame">
+      <h1>平台研究与建设的三阶段计划</h1>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 960 560"
+        width="960"
+        height="560"
+        role="img"
+        aria-labelledby="figure-13-title figure-13-desc"
+        font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif"
+      >
+        <title id="figure-13-title">平台研究与建设的三阶段计划</title>
+        <desc id="figure-13-desc">
+          合同节点为2026年9月30日、12月31日及2027年3月31日，图示阶段内条带为建议工作安排。
+        </desc>
+        <defs>
+          <marker
+            id="arrow"
+            markerWidth="8"
+            markerHeight="6"
+            refX="7"
+            refY="3"
+            orient="auto"
+          >
+            <polygon points="0 0, 8 3, 0 6" fill="#505050" />
+          </marker>
+          <marker
+            id="arrow-accent"
+            markerWidth="8"
+            markerHeight="6"
+            refX="7"
+            refY="3"
+            orient="auto"
+          >
+            <polygon points="0 0, 8 3, 0 6" fill="#202020" />
+          </marker>
+          <marker
+            id="arrow-link"
+            markerWidth="8"
+            markerHeight="6"
+            refX="7"
+            refY="3"
+            orient="auto"
+          >
+            <polygon points="0 0, 8 3, 0 6" fill="#505050" />
+          </marker>
+        </defs>
+        <rect width="960" height="560" fill="white" />
+        <path d="M240 180 H912" stroke="#dddddd" stroke-width="1" />
+        <path d="M240 244 H912" stroke="#dddddd" stroke-width="1" />
+        <path d="M240 308 H912" stroke="#dddddd" stroke-width="1" />
+        <path d="M240 372 H912" stroke="#dddddd" stroke-width="1" />
+        <path d="M240 436 H912" stroke="#dddddd" stroke-width="1" />
+        <path
+          d="M336 112 V448"
+          stroke="#505050"
+          stroke-width="1.4"
+          stroke-dasharray="8 4"
+        />
+        <path
+          d="M624 112 V448"
+          stroke="#505050"
+          stroke-width="1.4"
+          stroke-dasharray="8 4"
+        />
+        <path
+          d="M912 112 V448"
+          stroke="#505050"
+          stroke-width="1.4"
+          stroke-dasharray="8 4"
+        />
+        <path d="M40 504 H920" stroke="#b8b8b8" stroke-width="1" />
+        <text
+          x="40"
+          y="56"
+          font-size="24"
+          font-weight="500"
+          text-anchor="start"
+          fill="#202020"
+        >
+          建议工作安排
+        </text>
+        <text
+          x="288"
+          y="96"
+          font-size="20"
+          font-weight="400"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          9月
+        </text>
+        <text
+          x="384"
+          y="96"
+          font-size="20"
+          font-weight="400"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          10月
+        </text>
+        <text
+          x="480"
+          y="96"
+          font-size="20"
+          font-weight="400"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          11月
+        </text>
+        <text
+          x="576"
+          y="96"
+          font-size="20"
+          font-weight="400"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          12月
+        </text>
+        <text
+          x="672"
+          y="96"
+          font-size="20"
+          font-weight="400"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          1月
+        </text>
+        <text
+          x="768"
+          y="96"
+          font-size="20"
+          font-weight="400"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          2月
+        </text>
+        <text
+          x="864"
+          y="96"
+          font-size="20"
+          font-weight="400"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          3月
+        </text>
+        <text
+          x="432"
+          y="56"
+          font-size="20"
+          font-weight="500"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          2026 年
+        </text>
+        <text
+          x="768"
+          y="56"
+          font-size="20"
+          font-weight="500"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          2027 年
+        </text>
+        <text
+          x="40"
+          y="156"
+          font-size="20"
+          font-weight="400"
+          text-anchor="start"
+          fill="#202020"
+        >
+          研究与总体设计
+        </text>
+        <rect
+          x="248"
+          y="136"
+          width="80"
+          height="32"
+          rx="0"
+          fill="#ededed"
+          stroke="#505050"
+          stroke-width="1.2"
+        />
+        <text
+          x="40"
+          y="220"
+          font-size="20"
+          font-weight="400"
+          text-anchor="start"
+          fill="#202020"
+        >
+          分区与快速设计完善
+        </text>
+        <rect
+          x="344"
+          y="200"
+          width="272"
+          height="32"
+          rx="0"
+          fill="#ededed"
+          stroke="#505050"
+          stroke-width="1.2"
+        />
+        <text
+          x="40"
+          y="284"
+          font-size="20"
+          font-weight="400"
+          text-anchor="start"
+          fill="#202020"
+        >
+          分层验证与系统检测
+        </text>
+        <rect
+          x="344"
+          y="264"
+          width="272"
+          height="32"
+          rx="0"
+          fill="#ededed"
+          stroke="#505050"
+          stroke-width="1.2"
+        />
+        <text
+          x="40"
+          y="348"
+          font-size="20"
+          font-weight="400"
+          text-anchor="start"
+          fill="#202020"
+        >
+          接口及最终功能验证
+        </text>
+        <rect
+          x="632"
+          y="328"
+          width="272"
+          height="32"
+          rx="0"
+          fill="#ededed"
+          stroke="#505050"
+          stroke-width="1.2"
+        />
+        <text
+          x="40"
+          y="412"
+          font-size="20"
+          font-weight="400"
+          text-anchor="start"
+          fill="#202020"
+        >
+          成果整理与交付
+        </text>
+        <rect
+          x="632"
+          y="392"
+          width="272"
+          height="32"
+          rx="0"
+          fill="#ededed"
+          stroke="#505050"
+          stroke-width="1.2"
+        />
+        <text
+          x="336"
+          y="480"
+          font-size="20"
+          font-weight="500"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          09-30
+        </text>
+        <text
+          x="624"
+          y="480"
+          font-size="20"
+          font-weight="500"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          12-31
+        </text>
+        <text
+          x="872"
+          y="480"
+          font-size="20"
+          font-weight="500"
+          text-anchor="middle"
+          fill="#202020"
+        >
+          03-31
+        </text>
+        <text
+          x="40"
+          y="536"
+          font-size="20"
+          font-weight="400"
+          text-anchor="start"
+          fill="#202020"
+        >
+          条带：建议阶段安排；虚线：合同截止节点，不表示实际完成进度。
+        </text>
+      </svg>
+    </main>
+  </body>
+</html>

@@ -50,8 +50,14 @@ const unreadNotificationCount = computed(
 const showProjectSwitcher = computed(
   () =>
     route.name !== 'PlatformProjects' &&
+    route.name !== 'PlatformProjectManagement' &&
     route.name !== 'LegacyPlatformOverview' &&
-    route.name !== 'PlatformDashboard',
+    route.name !== 'PlatformDashboard' &&
+    route.name !== 'PlatformDesign' &&
+    route.name !== 'PlatformAssets' &&
+    route.name !== 'PlatformModelTraining' &&
+    route.name !== 'PlatformReportGeneration' &&
+    route.name !== 'PlatformWorkflowManagement',
 );
 
 const menus = computed(() => [
@@ -206,7 +212,10 @@ watch(
     @logout="handleLogout"
   >
     <template #logo-text>
-      <span class="rail-header-brand" data-header-brand-title>
+      <span
+        class="rail-header-brand text-xl leading-7 font-medium"
+        data-header-brand-title
+      >
         客运装备内装模块化分区快速设计平台
       </span>
     </template>
@@ -336,15 +345,11 @@ watch(
 
 <style scoped>
 .rail-header-brand {
-  display: inline-block;
+  display: inline-flex;
   flex: 0 0 auto;
+  align-items: center;
   min-width: 0;
-  height: 32px;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 32px;
   color: hsl(var(--foreground));
-  letter-spacing: 0.05px;
   white-space: nowrap;
 }
 

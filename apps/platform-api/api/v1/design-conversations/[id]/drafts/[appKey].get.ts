@@ -9,7 +9,10 @@ import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseQuery } from '~/utils/validation';
 
-const querySchema = z.object({ projectId: z.string().uuid() });
+const querySchema = z.object({
+  projectId: z.string().uuid(),
+  designMode: z.enum(['cabin', 'cmf', 'component']).default('cabin'),
+});
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
@@ -22,7 +25,7 @@ export default apiHandler(async (event) => {
       '缺少设计会话或应用编号',
     );
   }
-  const { projectId } = parseQuery(event, querySchema);
+  const { projectId, designMode } = parseQuery(event, querySchema);
   await requireProjectAccess(identity, projectId);
   await requireDesignConversation({
     conversationId,
@@ -57,6 +60,7 @@ export default apiHandler(async (event) => {
     FROM design_conversation_drafts
     WHERE conversation_id = ${conversationId}
       AND app_key = ${appKey}
+      AND design_mode = ${designMode}
   `;
   if (!draft) {
     return { inputAssetIds: {}, parameterValues: {}, updatedAt: undefined };

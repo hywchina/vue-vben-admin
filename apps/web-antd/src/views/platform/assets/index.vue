@@ -1,11 +1,14 @@
 <script lang="ts" setup>
+import type { AssetListOptions } from '#/api/platform/assets';
+import type { AssetModuleKey } from '#/modules/platform/asset-browser';
 import type {
+  AssetGenerationCategory,
   AssetType,
   PlatformAsset,
   ProjectMember,
 } from '#/modules/platform/types';
 
-import { computed, reactive, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
@@ -17,21 +20,37 @@ import {
   Input,
   message,
   Modal,
+  Pagination,
   Select,
-  Tag,
   Textarea,
+  Tooltip,
 } from 'ant-design-vue';
 
 import {
+  batchAssetsApi,
+  createDesignConversationApi,
+  deleteAssetApi,
   getAssetApi,
   getAssetDownloadApi,
   getAssetPreviewApi,
+  getAssetsApi,
   getProjectMembersApi,
+  setAssetFavoriteApi,
 } from '#/api';
 import AssetModelPreview from '#/components/platform/asset-model-preview.vue';
 import AssetTextPreview from '#/components/platform/asset-text-preview.vue';
+import ComfyMaskIcon from '#/components/platform/comfy-mask-icon.vue';
 import ImageLightbox from '#/components/platform/image-lightbox.vue';
-import PageHeading from '#/components/platform/page-heading.vue';
+import {
+  assetCategoryLabel,
+  assetDateBoundary,
+  assetGenerationModules,
+  sortBrowserAssets,
+} from '#/modules/platform/asset-browser';
+import {
+  assetImageActions,
+  assetImageActionUnavailable,
+} from '#/modules/platform/asset-image-actions';
 import {
   assetTypeIcons,
   assetTypeLabels,
@@ -44,6 +63,81 @@ const platformStore = usePlatformStore();
 const route = useRoute();
 const router = useRouter();
 const keyword = ref('');
+const searchInput = ref('');
+const matchMode = ref<'exact' | 'fuzzy'>('fuzzy');
+const moduleKey = ref<AssetModuleKey>('all');
+const filterOpen = ref(false);
+const sourceJobFilter = ref('all');
+const createdFrom = ref('');
+const createdTo = ref('');
+const page = ref(1);
+const pageSize = ref(12);
+const loadError = ref('');
+const scopeAssets = ref<PlatformAsset[]>([]);
+const selectedGenerationCategory = computed<
+  AssetGenerationCategory | undefined
+>(() =>
+  ['cabin', 'cmf', 'component', 'report'].includes(moduleKey.value)
+    ? (moduleKey.value as AssetGenerationCategory)
+    : undefined,
+);
+const moduleLabel = computed(
+  () =>
+    assetGenerationModules.find((item) => item.key === moduleKey.value)
+      ?.label ?? '全部',
+);
+const activeFilterCount = computed(
+  () =>
+    [
+      typeFilter.value !== 'all',
+      ownerFilter.value !== 'all',
+      sourceJobFilter.value !== 'all',
+      Boolean(createdFrom.value || createdTo.value),
+    ].filter(Boolean).length,
+);
+const taskOptions = computed(() => [
+  { label: '全部任务', value: 'all' },
+  ...new Map(
+    scopeAssets.value
+      .filter((asset): asset is PlatformAsset & { sourceJobId: string } =>
+        Boolean(asset.sourceJobId),
+      )
+      .map((asset) => [
+        asset.sourceJobId,
+        {
+          label: asset.sourceJobPublicId ?? asset.sourceJobId,
+          value: asset.sourceJobId,
+        },
+      ]),
+  ).values(),
+]);
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer);
+  ++assetLoadGeneration;
+});
+function submitSearch() {
+  if (searchTimer) clearTimeout(searchTimer);
+  keyword.value = searchInput.value.trim();
+}
+watch(searchInput, () => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(submitSearch, 300);
+});
+function selectModule(key: AssetModuleKey) {
+  moduleKey.value = key;
+  currentFolderId.value = null;
+  selectedAssetIds.value = [];
+  page.value = 1;
+}
+function resetFilters() {
+  typeFilter.value = 'all';
+  ownerFilter.value = 'all';
+  sourceJobFilter.value = 'all';
+  createdFrom.value = '';
+  createdTo.value = '';
+}
+
 const typeFilter = ref<'all' | AssetType>('all');
 const sortValue = ref<
   | 'createdAt-asc'
@@ -52,10 +146,25 @@ const sortValue = ref<
   | 'name-desc'
   | 'owner-asc'
   | 'owner-desc'
+  | 'task-asc'
+  | 'task-desc'
   | 'type-asc'
   | 'type-desc'
 >('createdAt-desc');
 const ownerFilter = ref('all');
+const projectSwitching = ref(false);
+const projectFilter = ref('all');
+const allProjectAssets = ref<PlatformAsset[]>([]);
+const assetsLoading = ref(false);
+let assetLoadGeneration = 0;
+const visibleAssets = computed(() => allProjectAssets.value);
+const projectOptions = computed(() => [
+  { label: '全部项目', value: 'all' },
+  ...platformStore.projects.map((project) => ({
+    label: `${project.name}（${project.code}）`,
+    value: project.id,
+  })),
+]);
 const projectMembers = ref<ProjectMember[]>([]);
 const selectedAsset = ref<null | PlatformAsset>(null);
 const uploadOpen = ref(false);
@@ -123,13 +232,27 @@ const sortOptions = [
   { label: '创建人：Z–A', value: 'owner-desc' },
   { label: '类型：正序', value: 'type-asc' },
   { label: '类型：倒序', value: 'type-desc' },
+  { label: '任务编号：正序', value: 'task-asc' },
+  { label: '任务编号：倒序', value: 'task-desc' },
 ];
 const memberOptions = computed(() => [
   { label: '全部成员', value: 'all' },
-  ...projectMembers.value.map((member) => ({
-    label: `${member.name} · ${member.publicId}`,
-    value: member.userId,
-  })),
+  ...(projectFilter.value === 'all'
+    ? [
+        ...new Map(
+          scopeAssets.value.map((asset) => [
+            asset.ownerId,
+            {
+              label: `${asset.owner} · ${asset.ownerPublicId}`,
+              value: asset.ownerId,
+            },
+          ]),
+        ).values(),
+      ]
+    : projectMembers.value.map((member) => ({
+        label: `${member.name} · ${member.publicId}`,
+        value: member.userId,
+      }))),
 ]);
 
 const uploadTypeOptions = assetTypeOptions;
@@ -153,7 +276,7 @@ watch(
       selectedAsset.value = null;
       return;
     }
-    const listedAsset = platformStore.currentAssets.find(
+    const listedAsset = visibleAssets.value.find(
       (asset) => asset.id === assetId,
     );
     if (listedAsset) {
@@ -162,8 +285,11 @@ watch(
     }
     try {
       const asset = await getAssetApi(assetId);
-      if (asset.projectId !== platformStore.currentProjectId) {
-        await platformStore.switchProject(asset.projectId);
+      if (
+        projectFilter.value !== 'all' &&
+        asset.projectId !== projectFilter.value
+      ) {
+        await selectProject(asset.projectId);
       }
       if (route.query.assetId === assetId) selectedAsset.value = asset;
     } catch {
@@ -183,18 +309,18 @@ const uploadFileAccept = computed(() => {
     : assetUploadAccept[uploadType.value];
 });
 
-const filteredAssets = computed(() => {
-  const normalized = keyword.value.trim().toLowerCase();
-  return platformStore.currentAssets.filter((asset) => {
-    const matchesType =
-      typeFilter.value === 'all' || asset.type === typeFilter.value;
-    const matchesKeyword =
-      !normalized ||
-      `${asset.name}${asset.publicId}${asset.owner}${asset.ownerPublicId}${asset.tags.join('')}`
-        .toLowerCase()
-        .includes(normalized);
-    return matchesType && matchesKeyword;
-  });
+const filteredAssets = computed(() => visibleAssets.value);
+const pagedAssets = computed(() =>
+  filteredAssets.value.slice(
+    (page.value - 1) * pageSize.value,
+    page.value * pageSize.value,
+  ),
+);
+watch([filteredAssets, pageSize], () => {
+  page.value = Math.min(
+    page.value,
+    Math.max(1, Math.ceil(filteredAssets.value.length / pageSize.value)),
+  );
 });
 const currentFolder = computed(() =>
   platformStore.assetFolders.find(
@@ -202,13 +328,23 @@ const currentFolder = computed(() =>
   ),
 );
 const isFavoritesFolder = computed(
-  () => currentFolder.value?.kind === 'favorites',
+  () =>
+    moduleKey.value === 'favorites' ||
+    currentFolder.value?.kind === 'favorites',
 );
 const currentFolders = computed(() =>
-  isFavoritesFolder.value
+  projectFilter.value === 'all' || isFavoritesFolder.value
     ? []
     : platformStore.assetFolders
-        .filter((folder) => folder.parentId === currentFolderId.value)
+        .filter(
+          (folder) =>
+            folder.kind === 'normal' &&
+            folder.parentId === currentFolderId.value &&
+            (currentFolderId.value ||
+              moduleKey.value === 'all' ||
+              (folder.generationCategory ?? 'unclassified') ===
+                moduleKey.value),
+        )
         .toSorted((a, b) => a.name.localeCompare(b.name, 'zh-CN')),
 );
 const folderOptions = computed(() => [
@@ -216,13 +352,16 @@ const folderOptions = computed(() => [
   ...platformStore.assetFolders
     .filter((folder) => folder.kind === 'normal')
     .map((folder) => ({
-      label: folderPathLabel(folder.id),
+      label: `${assetCategoryLabel(folder.generationCategory)} / ${folderPathLabel(folder.id)}`,
       value: folder.id,
     })),
 ]);
 const breadcrumbs = computed(() => {
   const items: Array<{ id: null | string; name: string }> = [
-    { id: null, name: '全部资产' },
+    {
+      id: null,
+      name: moduleKey.value === 'all' ? '全部资产' : moduleLabel.value,
+    },
   ];
   const chain: Array<{ id: string; name: string }> = [];
   let folderId = currentFolderId.value;
@@ -383,41 +522,147 @@ watch(
   },
 );
 
-onBeforeRouteLeave(async () => {
-  await platformStore.refreshCurrentProjectAssets();
+onBeforeRouteLeave(() => {
+  ++assetLoadGeneration;
 });
+
+async function refreshScope() {
+  const scope = projectFilter.value;
+  const ids =
+    scope === 'all'
+      ? platformStore.projects.map((project) => project.id)
+      : [scope];
+  const results = await Promise.all(ids.map((id) => getAssetsApi(id)));
+  if (scope === projectFilter.value) scopeAssets.value = results.flat();
+}
+
+async function refreshFilteredAssets() {
+  const generation = ++assetLoadGeneration;
+  assetsLoading.value = true;
+  loadError.value = '';
+  selectedAssetIds.value = [];
+  const [sortBy, sortOrder] = sortValue.value.split('-') as [
+    NonNullable<AssetListOptions['sortBy']>,
+    'asc' | 'desc',
+  ];
+  const options: AssetListOptions = {
+    folderId: currentFolderId.value ?? undefined,
+    ownerId: ownerFilter.value === 'all' ? undefined : ownerFilter.value,
+    generationCategory:
+      selectedGenerationCategory.value ??
+      (moduleKey.value === 'unclassified' ? 'unclassified' : undefined),
+    favoriteOnly: moduleKey.value === 'favorites' ? 'true' : undefined,
+    kind: typeFilter.value === 'all' ? undefined : typeFilter.value,
+    keyword: keyword.value || undefined,
+    matchMode: matchMode.value,
+    sourceJobId:
+      sourceJobFilter.value === 'all' ? undefined : sourceJobFilter.value,
+    createdFrom: assetDateBoundary(createdFrom.value),
+    createdTo: assetDateBoundary(createdTo.value, true),
+    sortBy,
+    sortOrder,
+  };
+  try {
+    if (
+      createdFrom.value &&
+      createdTo.value &&
+      createdFrom.value > createdTo.value
+    )
+      throw new Error('开始日期不能晚于结束日期');
+    const ids =
+      projectFilter.value === 'all'
+        ? platformStore.projects.map((project) => project.id)
+        : [projectFilter.value];
+    const results = await Promise.all(
+      ids.map((id) => getAssetsApi(id, options)),
+    );
+    if (generation !== assetLoadGeneration) return;
+    allProjectAssets.value = sortBrowserAssets(
+      results.flat(),
+      sortBy,
+      sortOrder,
+    );
+  } catch (error) {
+    if (generation !== assetLoadGeneration) return;
+    allProjectAssets.value = [];
+    loadError.value =
+      error instanceof Error ? error.message : '资产加载失败，请重试';
+  } finally {
+    if (generation === assetLoadGeneration) assetsLoading.value = false;
+  }
+}
+
+async function reloadAssets() {
+  await Promise.all([
+    refreshFilteredAssets(),
+    refreshScope(),
+    platformStore.refreshAssetFolders(),
+  ]);
+}
+
+async function selectProject(projectId: string) {
+  if (projectId === projectFilter.value || projectSwitching.value) return;
+  projectSwitching.value = true;
+  try {
+    await closeAssetDetail();
+    lightboxAsset.value = null;
+    uploadOpen.value = false;
+    folderModalOpen.value = false;
+    batchModalOpen.value = false;
+    currentFolderId.value = null;
+    resetFilters();
+    selectedAssetIds.value = [];
+    projectMembers.value = [];
+    allProjectAssets.value = [];
+    ++assetLoadGeneration;
+    if (projectId !== 'all') await platformStore.switchProject(projectId);
+    projectFilter.value = projectId;
+    if (projectId !== 'all') {
+      const result = await getProjectMembersApi(projectId);
+      projectMembers.value = result.items;
+    }
+    await Promise.all([refreshFilteredAssets(), refreshScope()]);
+  } finally {
+    projectSwitching.value = false;
+  }
+}
 
 watch(
   [
     sortValue,
     ownerFilter,
     currentFolderId,
-    () => platformStore.currentProjectId,
+    moduleKey,
+    typeFilter,
+    sourceJobFilter,
+    createdFrom,
+    createdTo,
+    keyword,
+    matchMode,
   ],
-  async ([value, ownerId, folderId, projectId], previous) => {
-    if (!projectId) return;
-    if (previous?.[3] && previous[3] !== projectId) {
-      currentFolderId.value = null;
-      ownerFilter.value = 'all';
-      const result = await getProjectMembersApi(String(projectId));
-      projectMembers.value = result.items;
-    } else if (projectMembers.value.length === 0) {
-      const result = await getProjectMembersApi(String(projectId));
-      projectMembers.value = result.items;
-    }
-    const [sortBy, sortOrder] = value.split('-') as [
-      'createdAt' | 'name' | 'owner' | 'type',
-      'asc' | 'desc',
-    ];
-    selectedAssetIds.value = [];
-    await platformStore.refreshCurrentProjectAssets({
-      folderId: folderId || 'root',
-      ownerId: ownerId === 'all' ? undefined : String(ownerId),
-      sortBy,
-      sortOrder,
-    });
+  async () => {
+    page.value = 1;
+    if (!projectSwitching.value) await refreshFilteredAssets();
+  },
+);
+watch(
+  () => platformStore.projects.map((project) => project.id).join(','),
+  async () => {
+    if (!projectSwitching.value)
+      await Promise.all([refreshFilteredAssets(), refreshScope()]);
   },
   { immediate: true },
+);
+watch(
+  () => platformStore.currentProjectId,
+  async (id) => {
+    if (
+      !projectSwitching.value &&
+      projectFilter.value !== 'all' &&
+      id !== projectFilter.value
+    )
+      await selectProject(id);
+  },
 );
 
 watch(
@@ -429,15 +674,14 @@ watch(
 
 watch(
   () =>
-    platformStore.currentAssets
+    pagedAssets.value
       .map(
         (asset) =>
           `${asset.id}:${asset.version}:${asset.mimeType ?? ''}:${asset.status ?? ''}`,
       )
       .join('|'),
   () => {
-    const previewableAssets =
-      platformStore.currentAssets.filter(canPreviewAsset);
+    const previewableAssets = pagedAssets.value.filter(canPreviewAsset);
     const detailAsset = selectedAsset.value;
     if (
       detailAsset &&
@@ -517,6 +761,7 @@ async function registerAsset() {
       await platformStore.createTextAsset({
         content: uploadText.value,
         folderId: currentFolderId.value ?? undefined,
+        generationCategory: selectedGenerationCategory.value,
         name: uploadName.value.trim(),
         tags: ['文本'],
       });
@@ -524,11 +769,13 @@ async function registerAsset() {
       await platformStore.uploadAsset({
         file: uploadFile.value,
         folderId: currentFolderId.value ?? undefined,
+        generationCategory: selectedGenerationCategory.value,
         name: uploadName.value.trim(),
         tags: ['用户上传'],
         type: uploadType.value,
       });
     }
+    await reloadAssets();
     resetUploadForm();
     message.success('资产已保存到当前项目');
   } finally {
@@ -538,7 +785,43 @@ async function registerAsset() {
 
 function enterFolder(folderId: null | string) {
   currentFolderId.value = folderId;
+  const folder = platformStore.assetFolders.find(
+    (item) => item.id === folderId,
+  );
+  if (folder && moduleKey.value === 'all')
+    moduleKey.value = folder.generationCategory ?? 'unclassified';
 }
+
+// Workbench links carry their project and directory explicitly across tabs.
+watch(
+  () => [route.query.projectId, route.query.folderId, route.query.module],
+  async ([projectId, folderId, module]) => {
+    if (typeof projectId !== 'string') return;
+    try {
+      await platformStore.initialize();
+      await selectProject(projectId);
+      if (route.query.projectId !== projectId) return;
+      moduleKey.value = assetGenerationModules.some(
+        (entry) => entry.key === module,
+      )
+        ? (module as AssetModuleKey)
+        : 'all';
+      if (typeof folderId === 'string' && folderId !== 'root') {
+        if (
+          !platformStore.assetFolders.some((folder) => folder.id === folderId)
+        ) {
+          message.warning('目录不存在或已被删除');
+          return;
+        }
+        enterFolder(folderId);
+      } else enterFolder(null);
+      await refreshFilteredAssets();
+    } catch {
+      message.error('无法打开目标项目目录，请重试');
+    }
+  },
+  { immediate: true },
+);
 
 async function openAssetDetail(asset: PlatformAsset) {
   const previewPromise =
@@ -592,7 +875,11 @@ async function saveFolder() {
     await platformStore.renameAssetFolder(folderEditingId.value, name);
     message.success('文件夹名称已更新');
   } else {
-    await platformStore.createAssetFolder(name, currentFolderId.value);
+    await platformStore.createAssetFolder(
+      name,
+      currentFolderId.value,
+      selectedGenerationCategory.value,
+    );
     message.success('文件夹已创建');
   }
   folderModalOpen.value = false;
@@ -608,6 +895,7 @@ function confirmDeleteFolder(folderId: string, name: string) {
     async onOk() {
       const result = await platformStore.deleteAssetFolder(folderId);
       if (currentFolderId.value === folderId) currentFolderId.value = null;
+      await reloadAssets();
       message.success(
         `已删除 ${result.folderCount} 个文件夹和 ${result.assetCount} 项资产`,
       );
@@ -617,6 +905,10 @@ function confirmDeleteFolder(folderId: string, name: string) {
 }
 
 function toggleAssetSelection(assetId: string, checked: boolean) {
+  if (checked && selectedAssetIds.value.length >= 200) {
+    message.info('单次最多选择 200 项资产');
+    return;
+  }
   selectedAssetIds.value = checked
     ? [...new Set([...selectedAssetIds.value, assetId])]
     : selectedAssetIds.value.filter((id) => id !== assetId);
@@ -626,17 +918,9 @@ async function toggleAssetFavorite(asset: PlatformAsset) {
   const updating = new Set(favoriteUpdatingIds.value);
   updating.add(asset.id);
   favoriteUpdatingIds.value = updating;
-  const [sortBy, sortOrder] = sortValue.value.split('-') as [
-    'createdAt' | 'name' | 'owner' | 'type',
-    'asc' | 'desc',
-  ];
   try {
-    await platformStore.toggleAssetFavorite(asset.id, {
-      folderId: currentFolderId.value || 'root',
-      ownerId: ownerFilter.value === 'all' ? undefined : ownerFilter.value,
-      sortBy,
-      sortOrder,
-    });
+    await setAssetFavoriteApi(asset.id, !asset.favorite);
+    await reloadAssets();
     message.success(asset.favorite ? '已取消收藏' : '已添加到“收藏”文件夹');
   } finally {
     const nextUpdating = new Set(favoriteUpdatingIds.value);
@@ -647,9 +931,9 @@ async function toggleAssetFavorite(asset: PlatformAsset) {
 
 function toggleSelectAll() {
   selectedAssetIds.value =
-    selectedAssetIds.value.length === filteredAssets.value.length
+    selectedAssetIds.value.length === Math.min(filteredAssets.value.length, 200)
       ? []
-      : filteredAssets.value.map((asset) => asset.id);
+      : filteredAssets.value.slice(0, 200).map((asset) => asset.id);
 }
 
 function clearAssetSelection() {
@@ -671,6 +955,7 @@ async function submitBatch() {
       batchTargetFolderId.value,
       currentFolderId.value,
     );
+    await reloadAssets();
     selectedAssetIds.value = [];
     batchModalOpen.value = false;
     message.success(
@@ -688,13 +973,32 @@ function confirmBatchDelete() {
     okButtonProps: { danger: true },
     okText: '批量删除',
     async onOk() {
-      await platformStore.batchAssets(
-        selectedAssetIds.value,
-        'delete',
-        null,
-        currentFolderId.value,
-      );
+      if (projectFilter.value === 'all') {
+        const groups = new Map<string, string[]>();
+        for (const asset of visibleAssets.value) {
+          if (!selectedAssetIds.value.includes(asset.id)) continue;
+          groups.set(asset.projectId, [
+            ...(groups.get(asset.projectId) ?? []),
+            asset.id,
+          ]);
+        }
+        try {
+          for (const [projectId, assetIds] of groups) {
+            await batchAssetsApi({ projectId, assetIds, operation: 'delete' });
+          }
+        } finally {
+          selectedAssetIds.value = [];
+          await refreshFilteredAssets();
+        }
+      } else
+        await platformStore.batchAssets(
+          selectedAssetIds.value,
+          'delete',
+          null,
+          currentFolderId.value,
+        );
       selectedAssetIds.value = [];
+      await reloadAssets();
       message.success('所选资产已删除');
     },
     title: '批量删除资产',
@@ -715,6 +1019,42 @@ async function openAssetContent(asset: PlatformAsset) {
   });
 }
 
+const openingImageAction = ref(false);
+function imageActionUnavailable(key: string) {
+  return lightboxAsset.value
+    ? assetImageActionUnavailable(
+        lightboxAsset.value,
+        key,
+        platformStore.applications
+          .filter((app) => app.visible)
+          .map((app) => app.key),
+      )
+    : '图片不可用';
+}
+async function useImageAction(key: string) {
+  const asset = lightboxAsset.value;
+  if (!asset || openingImageAction.value || imageActionUnavailable(key)) return;
+  openingImageAction.value = true;
+  try {
+    const conversation = await createDesignConversationApi({
+      projectId: asset.projectId,
+    });
+    await router.push({
+      path: '/design',
+      query: {
+        conversationId: conversation.id,
+        sourceAssetId: asset.id,
+        assetAction: key,
+      },
+    });
+    lightboxAsset.value = null;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '无法进入图片编辑');
+  } finally {
+    openingImageAction.value = false;
+  }
+}
+
 function openImagePreview(asset: PlatformAsset) {
   if (!canPreviewAsset(asset) || !assetPreviewUrls.get(asset.id)) return;
   lightboxAsset.value = asset;
@@ -729,7 +1069,10 @@ function confirmDeleteAsset(asset: PlatformAsset) {
     onOk: async () => {
       deletingAssetId.value = asset.id;
       try {
-        await platformStore.deleteAsset(asset.id);
+        if (projectFilter.value === 'all') {
+          await deleteAssetApi(asset.id);
+          await refreshFilteredAssets();
+        } else await platformStore.deleteAsset(asset.id);
         await closeAssetDetail();
         lightboxAsset.value = null;
         message.success('资产已删除');
@@ -752,6 +1095,7 @@ async function saveAssetName() {
   detailNameSaving.value = true;
   try {
     selectedAsset.value = await platformStore.renameAsset(asset.id, name);
+    await reloadAssets();
     message.success('资产名称已更新');
   } finally {
     detailNameSaving.value = false;
@@ -761,25 +1105,155 @@ async function saveAssetName() {
 
 <template>
   <main class="platform-page assets-page">
-    <PageHeading
-      :description="`当前项目：${platformStore.currentProject?.name}。上传素材与应用输出在这里统一管理。`"
-      eyebrow="Shared asset registry"
-      title="资产中心"
-    >
-      <template #extra>
+    <header class="asset-page-header">
+      <h1>资产中心</h1>
+      <div class="asset-page-header__actions">
+        <Select
+          :value="projectFilter"
+          :options="projectOptions"
+          :loading="projectSwitching"
+          :disabled="projectSwitching"
+          aria-label="按项目筛选资产"
+          class="asset-project-filter"
+          show-search
+          option-filter-prop="label"
+          @change="(value) => selectProject(String(value))"
+        />
         <Button
-          :disabled="!platformStore.currentProjectId || isFavoritesFolder"
+          :disabled="
+            projectFilter === 'all' ||
+            !platformStore.currentProjectId ||
+            isFavoritesFolder
+          "
+          :title="projectFilter === 'all' ? '请先选择目标项目' : undefined"
           type="primary"
           @click="uploadOpen = true"
         >
-          <IconifyIcon class="mr-1" icon="lucide:upload" />
+          <IconifyIcon icon="lucide:upload" />
           登记资产
         </Button>
-      </template>
-    </PageHeading>
+      </div>
+    </header>
 
-    <div class="platform-content">
-      <section class="platform-panel">
+    <div class="platform-content asset-browser">
+      <nav class="asset-module-rail" aria-label="资产生成分类">
+        <button
+          v-for="item in assetGenerationModules"
+          :key="item.key"
+          type="button"
+          :class="{
+            active: moduleKey === item.key,
+            'asset-module-rail__secondary': item.key === 'all',
+          }"
+          :aria-pressed="moduleKey === item.key"
+          :data-asset-module="item.key"
+          @click="selectModule(item.key)"
+        >
+          <IconifyIcon :icon="item.icon" />
+          <span>{{ item.label }}</span>
+        </button>
+      </nav>
+      <section
+        class="asset-browser__content"
+        aria-label="资产文件浏览器"
+        :aria-busy="assetsLoading"
+      >
+        <div class="asset-command-bar">
+          <div class="asset-search-group">
+            <Select
+              v-model:value="matchMode"
+              aria-label="搜索匹配方式"
+              :options="[
+                { label: '模糊', value: 'fuzzy' },
+                { label: '精准', value: 'exact' },
+              ]"
+            />
+            <Input
+              v-model:value="searchInput"
+              allow-clear
+              :maxlength="200"
+              aria-label="搜索资产"
+              placeholder="搜索名称、编号或标签"
+              @press-enter="submitSearch"
+            >
+              <template #suffix>
+                <button
+                  class="asset-search-submit"
+                  type="button"
+                  aria-label="执行搜索"
+                  @click="submitSearch"
+                >
+                  <IconifyIcon icon="lucide:search" />
+                </button>
+              </template>
+            </Input>
+          </div>
+          <Button
+            :class="{ 'has-filters': activeFilterCount }"
+            @click="filterOpen = true"
+          >
+            <IconifyIcon icon="lucide:sliders-horizontal" />
+            筛选
+            <span v-if="activeFilterCount">{{ activeFilterCount }}</span>
+          </Button>
+          <Select
+            v-model:value="sortValue"
+            aria-label="资产排序"
+            :options="sortOptions"
+            class="asset-sort-filter"
+          />
+          <div class="asset-view-switch" aria-label="视图方式">
+            <button
+              :class="{ active: viewMode === 'grid' }"
+              :aria-pressed="viewMode === 'grid'"
+              aria-label="网格视图"
+              type="button"
+              @click="viewMode = 'grid'"
+            >
+              <IconifyIcon icon="lucide:grid-2x2" />
+            </button>
+            <button
+              :class="{ active: viewMode === 'list' }"
+              :aria-pressed="viewMode === 'list'"
+              aria-label="列表视图"
+              type="button"
+              @click="viewMode = 'list'"
+            >
+              <IconifyIcon icon="lucide:list" />
+            </button>
+          </div>
+        </div>
+        <div v-if="activeFilterCount || keyword" class="asset-active-filters">
+          <span v-if="keyword">
+            {{ matchMode === 'exact' ? '精准' : '模糊' }}：{{ keyword }}
+          </span>
+          <span v-if="typeFilter !== 'all'">
+            {{ assetTypeLabels[typeFilter] }}
+          </span>
+          <span v-if="ownerFilter !== 'all'">
+            {{
+              memberOptions.find((item) => item.value === ownerFilter)?.label
+            }}
+          </span>
+          <span v-if="sourceJobFilter !== 'all'">
+            {{
+              taskOptions.find((item) => item.value === sourceJobFilter)?.label
+            }}
+          </span>
+          <span v-if="createdFrom || createdTo">
+            {{ createdFrom || '不限' }} — {{ createdTo || '不限' }}
+          </span>
+          <button
+            type="button"
+            @click="
+              resetFilters();
+              searchInput = '';
+              submitSearch();
+            "
+          >
+            清除筛选
+          </button>
+        </div>
         <div class="asset-file-toolbar">
           <nav aria-label="资产文件夹路径" class="asset-breadcrumbs">
             <template
@@ -792,68 +1266,23 @@ async function saveAssetName() {
               </button>
             </template>
           </nav>
-          <div class="asset-file-actions">
-            <Button :disabled="isFavoritesFolder" @click="openCreateFolder">
-              <IconifyIcon icon="lucide:folder-plus" />
-              新建文件夹
-            </Button>
-            <Button @click="toggleSelectAll">
-              {{
-                selectedAssetIds.length === filteredAssets.length &&
-                filteredAssets.length
-                  ? '取消全选'
-                  : '全选'
-              }}
-            </Button>
-            <div class="asset-view-switch" aria-label="视图方式">
-              <button
-                :class="{ active: viewMode === 'grid' }"
-                aria-label="网格视图"
-                type="button"
-                @click="viewMode = 'grid'"
-              >
-                <IconifyIcon icon="lucide:grid-2x2" />
-              </button>
-              <button
-                :class="{ active: viewMode === 'list' }"
-                aria-label="列表视图"
-                type="button"
-                @click="viewMode = 'list'"
-              >
-                <IconifyIcon icon="lucide:list" />
-              </button>
-            </div>
-          </div>
+          <Button
+            :disabled="projectFilter === 'all' || isFavoritesFolder"
+            @click="openCreateFolder"
+          >
+            <IconifyIcon icon="lucide:folder-plus" />
+            新建文件夹
+          </Button>
         </div>
-        <div class="rail-toolbar">
-          <div class="asset-filters">
-            <Input
-              v-model:value="keyword"
-              allow-clear
-              class="asset-search"
-              placeholder="搜索名称、标签或创建人"
-            >
-              <template #prefix><IconifyIcon icon="lucide:search" /></template>
-            </Input>
-            <Select
-              v-model:value="typeFilter"
-              :options="typeOptions"
-              class="asset-type-filter"
-            />
-            <Select
-              v-model:value="ownerFilter"
-              aria-label="按项目成员筛选资产"
-              :options="memberOptions"
-              class="asset-owner-filter"
-            />
-            <Select
-              v-model:value="sortValue"
-              aria-label="资产排序"
-              :options="sortOptions"
-              class="asset-sort-filter"
-            />
-          </div>
-          <div class="asset-total">{{ filteredAssets.length }} 项资产</div>
+        <p v-if="projectFilter === 'all'" class="asset-scope-hint">
+          正在汇总可访问项目。选择项目后，可管理分类目录和登记资产。
+        </p>
+        <p v-if="assetsLoading" class="asset-scope-hint" role="status">
+          正在加载资产…
+        </p>
+        <div v-if="loadError" class="asset-load-error" role="alert">
+          {{ loadError }}
+          <Button size="small" @click="refreshFilteredAssets">重试</Button>
         </div>
 
         <div v-if="currentFolders.length" class="asset-folder-grid">
@@ -874,7 +1303,13 @@ async function saveAssetName() {
             />
             <span>
               <strong>{{ folder.name }}</strong>
-              <small>{{ folder.assetCount }} 项资产</small>
+              <small>
+                {{
+                  moduleKey === 'all'
+                    ? `${assetCategoryLabel(folder.generationCategory)} · `
+                    : ''
+                }}{{ folder.assetCount }} 项资产
+              </small>
             </span>
             <div v-if="folder.kind === 'normal'">
               <button
@@ -895,17 +1330,42 @@ async function saveAssetName() {
           </article>
         </div>
 
+        <div class="asset-results-heading">
+          <span>
+            {{ currentFolder?.name ?? moduleLabel }} ·
+            {{ filteredAssets.length }} 项资产
+          </span>
+          <Button
+            size="small"
+            type="text"
+            :disabled="!filteredAssets.length || assetsLoading"
+            @click="toggleSelectAll"
+          >
+            {{
+              selectedAssetIds.length ===
+                Math.min(filteredAssets.length, 200) && filteredAssets.length
+                ? '取消全选'
+                : '全选'
+            }}
+          </Button>
+        </div>
         <div v-if="selectedAssetIds.length" class="asset-batch-bar">
           <strong>已选择 {{ selectedAssetIds.length }} 项</strong>
           <Button @click="clearAssetSelection">
             <IconifyIcon icon="lucide:x" />
             取消选择
           </Button>
-          <Button :disabled="isFavoritesFolder" @click="openBatch('move')">
+          <Button
+            :disabled="projectFilter === 'all' || isFavoritesFolder"
+            @click="openBatch('move')"
+          >
             <IconifyIcon icon="lucide:folder-input" />
             移动到
           </Button>
-          <Button :disabled="isFavoritesFolder" @click="openBatch('copy')">
+          <Button
+            :disabled="projectFilter === 'all' || isFavoritesFolder"
+            @click="openBatch('copy')"
+          >
             <IconifyIcon icon="lucide:copy" />
             复制到
           </Button>
@@ -920,7 +1380,7 @@ async function saveAssetName() {
           :class="viewMode === 'list' ? 'asset-list' : 'asset-grid'"
         >
           <article
-            v-for="asset in filteredAssets"
+            v-for="asset in pagedAssets"
             :key="asset.id"
             :data-asset-id="asset.id"
             class="asset-card"
@@ -953,6 +1413,7 @@ async function saveAssetName() {
                 :alt="`${asset.name} 缩略图`"
                 :src="assetPreviewUrls.get(asset.id)"
                 class="asset-card__image"
+                title="点击查看完整图片"
                 decoding="async"
                 loading="lazy"
                 @error="handleAssetPreviewError(asset.id)"
@@ -998,32 +1459,118 @@ async function saveAssetName() {
               </button>
             </div>
             <div class="asset-card__body">
-              <div class="asset-card__type">
-                {{ assetTypeLabels[asset.type] }}
+              <h2 :title="asset.name">{{ asset.name }}</h2>
+              <div
+                class="asset-card__summary"
+                :title="`${asset.publicId} · ${asset.sourceJobPublicId ?? '用户上传'} · ${asset.owner}`"
+              >
+                <span>{{ assetCategoryLabel(asset.generationCategory) }}</span>
+                <span>
+                  {{ asset.sourceJobPublicId ?? assetTypeLabels[asset.type] }}
+                </span>
+                <time :datetime="asset.createdAt">
+                  {{ new Date(asset.createdAt).toLocaleDateString('zh-CN') }}
+                </time>
               </div>
-              <h2>{{ asset.name }}</h2>
-              <code>{{ asset.publicId }}</code>
-              <p>{{ asset.description }}</p>
-              <div class="asset-card__tags">
-                <Tag v-for="tag in asset.tags" :key="tag">{{ tag }}</Tag>
-              </div>
-              <div class="asset-card__meta">
-                <span>{{ asset.owner }} · {{ asset.ownerPublicId }}</span>
-                <span>V{{ asset.version }}</span>
-                <span>{{ asset.createdAt }}</span>
+              <small v-if="projectFilter === 'all'" class="asset-project-name">
+                {{
+                  platformStore.projects.find(
+                    (project) => project.id === asset.projectId,
+                  )?.name
+                }}
+              </small>
+              <div v-if="viewMode === 'list'" class="asset-list-extra">
+                <code>{{ asset.publicId }}</code>
+                <span>{{ asset.owner }}</span>
+                <span>{{ asset.size }}</span>
               </div>
             </div>
           </article>
         </div>
-        <div v-else class="rail-empty">
+        <div v-else-if="!assetsLoading && !loadError" class="rail-empty">
           <div>
             <IconifyIcon class="empty-icon" icon="lucide:package-open" />
             <p>没有符合条件的资产</p>
             <small>调整筛选条件，或者登记一项新资产。</small>
           </div>
         </div>
+        <footer v-if="filteredAssets.length" class="asset-pagination">
+          <Pagination
+            v-model:current="page"
+            v-model:page-size="pageSize"
+            :total="filteredAssets.length"
+            :page-size-options="['12', '24', '48']"
+            show-size-changer
+            :show-total="(total) => `共 ${total} 项`"
+          />
+        </footer>
       </section>
     </div>
+
+    <Drawer
+      v-model:open="filterOpen"
+      title="筛选资产"
+      :width="360"
+      class="asset-filter-drawer"
+    >
+      <div class="asset-filter-fields">
+        <label>
+          <span>文件类型</span>
+          <Select
+            v-model:value="typeFilter"
+            aria-label="按文件类型筛选"
+            :options="typeOptions"
+          />
+        </label>
+        <label>
+          <span>来源任务</span>
+          <Select
+            v-model:value="sourceJobFilter"
+            aria-label="按来源任务筛选"
+            :options="taskOptions"
+            show-search
+            option-filter-prop="label"
+          />
+        </label>
+        <label>
+          <span>创建人</span>
+          <Select
+            v-model:value="ownerFilter"
+            aria-label="按创建人筛选"
+            :options="memberOptions"
+            show-search
+            option-filter-prop="label"
+          />
+        </label>
+        <label>
+          <span>开始日期</span>
+          <Input
+            v-model:value="createdFrom"
+            type="date"
+            aria-label="开始日期"
+            :max="createdTo || undefined"
+          />
+        </label>
+        <label>
+          <span>结束日期</span>
+          <Input
+            v-model:value="createdTo"
+            type="date"
+            aria-label="结束日期"
+            :min="createdFrom || undefined"
+          />
+        </label>
+        <p>
+          时间范围包含开始及结束日期。精准搜索按完整名称、编号、创建人或单个标签匹配，不区分英文大小写。
+        </p>
+      </div>
+      <template #footer>
+        <div class="asset-filter-footer">
+          <Button @click="resetFilters">重置</Button>
+          <Button type="primary" @click="filterOpen = false">完成</Button>
+        </div>
+      </template>
+    </Drawer>
 
     <Modal
       v-model:open="folderModalOpen"
@@ -1254,7 +1801,32 @@ async function saveAssetName() {
       :title="lightboxAsset?.name"
       :url="lightboxAsset ? assetPreviewUrls.get(lightboxAsset.id) : undefined"
       @update:open="lightboxAsset = null"
-    />
+    >
+      <template #actions>
+        <div class="asset-image-actions" aria-label="图片操作">
+          <Tooltip
+            v-for="action in assetImageActions"
+            :key="action.key"
+            :title="imageActionUnavailable(action.key) || action.label"
+          >
+            <span>
+              <button
+                type="button"
+                :aria-label="action.label"
+                :disabled="
+                  openingImageAction ||
+                  Boolean(imageActionUnavailable(action.key))
+                "
+                @click="useImageAction(action.key)"
+              >
+                <ComfyMaskIcon v-if="action.key === 'mask'" :size="16" />
+                <IconifyIcon v-else :icon="action.icon" />
+              </button>
+            </span>
+          </Tooltip>
+        </div>
+      </template>
+    </ImageLightbox>
 
     <Modal
       v-model:open="uploadOpen"
@@ -1265,6 +1837,14 @@ async function saveAssetName() {
       @ok="registerAsset"
     >
       <div class="asset-upload-form">
+        <p>
+          保存至：{{
+            currentFolder
+              ? folderPathLabel(currentFolder.id)
+              : assetCategoryLabel(selectedGenerationCategory)
+          }}
+          · {{ platformStore.currentProject?.name }}
+        </p>
         <label>
           <span class="form-field-label">资产名称</span>
           <Input
@@ -1352,21 +1932,9 @@ async function saveAssetName() {
   align-items: center;
 }
 
-.asset-file-toolbar {
-  justify-content: space-between;
-  min-height: 58px;
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--rail-line);
-}
-
 .asset-file-actions,
 .asset-batch-bar {
   gap: 8px;
-}
-
-.asset-breadcrumbs {
-  gap: 5px;
-  color: #7a858c;
 }
 
 .asset-breadcrumbs button,
@@ -1382,52 +1950,24 @@ async function saveAssetName() {
 
 .asset-breadcrumbs button:last-child {
   font-weight: 700;
-  color: #273139;
+  color: var(--rail-theme-text, #273139);
 }
 
 .asset-view-switch {
   padding: 3px;
-  background: #f3f5f6;
+  background: var(--rail-theme-surface, #f3f5f6);
   border-radius: 8px;
 }
 
 .asset-view-switch button.active {
   color: var(--rail-red);
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   box-shadow: 0 1px 4px rgb(31 42 49 / 12%);
-}
-
-.asset-folder-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  padding: 14px 16px 0;
-}
-
-.asset-folder-card {
-  gap: 10px;
-  min-width: 0;
-  padding: 12px;
-  cursor: pointer;
-  border: 1px solid var(--rail-line);
-  border-radius: 10px;
 }
 
 .asset-folder-card:hover {
   border-color: #d69ba5;
   box-shadow: 0 5px 16px rgb(31 42 49 / 7%);
-}
-
-.asset-folder-card > svg {
-  flex: none;
-  font-size: 24px;
-  color: #c89242;
-}
-
-.asset-folder-card > span {
-  display: grid;
-  min-width: 0;
-  margin-right: auto;
 }
 
 .asset-folder-card strong,
@@ -1438,7 +1978,7 @@ async function saveAssetName() {
 }
 
 .asset-folder-card small {
-  color: #8a939c;
+  color: var(--rail-theme-secondary, #8a939c);
 }
 
 .asset-folder-card > div {
@@ -1449,15 +1989,6 @@ async function saveAssetName() {
 .asset-folder-card:hover > div,
 .asset-folder-card:focus-within > div {
   opacity: 1;
-}
-
-.asset-batch-bar {
-  position: sticky;
-  top: 0;
-  z-index: 4;
-  padding: 10px 16px;
-  color: #fff;
-  background: #283038;
 }
 
 .asset-batch-bar strong {
@@ -1502,15 +2033,15 @@ async function saveAssetName() {
 .asset-card__corner-action:focus-visible {
   color: var(--rail-red);
   outline: none;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   transform: translateY(-1px);
 }
 
 .asset-card__select :deep(.ant-checkbox-inner) {
   width: 16px;
   height: 16px;
-  background: #fff;
-  border: 1.5px solid #20262c;
+  background: var(--rail-theme-surface, #fff);
+  border: 1.5px solid var(--rail-theme-border, #20262c);
   border-radius: 50%;
 }
 
@@ -1528,44 +2059,16 @@ async function saveAssetName() {
 
 .asset-card__select:hover :deep(.ant-checkbox-inner),
 .asset-card__select :deep(.ant-checkbox:hover .ant-checkbox-inner) {
-  border-color: #20262c;
+  border-color: var(--rail-theme-border, #20262c);
 }
 
 .asset-card__select :deep(.ant-checkbox-checked .ant-checkbox-inner) {
-  background: var(--rail-red);
-  border-color: #20262c;
+  background: var(--rail-theme-solid-accent, var(--rail-red));
+  border-color: var(--rail-theme-border, #20262c);
 }
 
 .asset-card__select :deep(.ant-checkbox + span) {
   display: none;
-}
-
-.asset-list {
-  display: grid;
-  gap: 1px;
-  padding: 16px;
-  background: #edf0f2;
-}
-
-.asset-list .asset-card {
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  min-height: 132px;
-  border-radius: 0;
-}
-
-.asset-list .asset-card__preview {
-  height: auto;
-  min-height: 132px;
-  aspect-ratio: auto;
-  border-radius: 0;
-}
-
-.asset-list .asset-card__body {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(200px, 1fr) auto;
-  gap: 14px;
-  align-items: center;
 }
 
 .asset-list .asset-card__type,
@@ -1577,24 +2080,18 @@ async function saveAssetName() {
 }
 
 .asset-filters {
-  display: flex;
+  display: grid;
+  flex: 1;
+  grid-template-columns:
+    minmax(180px, 1.2fr) minmax(200px, 1.4fr) minmax(120px, 0.8fr)
+    minmax(150px, 1fr) minmax(170px, 1fr);
   gap: 10px;
+  min-width: 0;
 }
 
-.asset-search {
-  width: 320px;
-}
-
-.asset-type-filter {
-  width: 150px;
-}
-
-.asset-owner-filter {
-  width: 190px;
-}
-
-.asset-sort-filter {
-  width: 190px;
+.asset-filters > * {
+  width: 100%;
+  min-width: 0;
 }
 
 .asset-total {
@@ -1602,47 +2099,12 @@ async function saveAssetName() {
   color: var(--rail-steel);
 }
 
-.asset-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  padding: 16px;
-}
-
-.asset-card {
-  position: relative;
-  overflow: hidden;
-  cursor: pointer;
-  background: #fff;
-  border: 1px solid var(--rail-line);
-  border-radius: 12px;
-  transition:
-    border-color 160ms ease,
-    box-shadow 160ms ease,
-    transform 160ms ease;
-}
-
 .asset-card:hover,
 .asset-card:focus-visible {
   outline: none;
-  border-color: #cc9da5;
+  border-color: var(--rail-theme-border, #cc9da5);
   box-shadow: var(--rail-shadow);
   transform: translateY(-2px);
-}
-
-.asset-card__preview {
-  position: relative;
-  display: grid;
-  place-items: center;
-  min-height: 180px;
-  aspect-ratio: 4 / 3;
-  overflow: hidden;
-  font-size: 42px;
-  color: #fff;
-  background:
-    linear-gradient(145deg, rgb(255 255 255 / 42%), transparent 45%),
-    radial-gradient(circle at 75% 25%, rgb(255 255 255 / 20%), transparent 28%),
-    var(--asset-accent);
 }
 
 .asset-card__preview::after {
@@ -1658,7 +2120,7 @@ async function saveAssetName() {
 
 .asset-card__preview.has-image-preview {
   color: var(--rail-steel);
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .asset-card__preview.has-image-preview::after {
@@ -1670,7 +2132,7 @@ async function saveAssetName() {
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .asset-preview-state {
@@ -1705,7 +2167,7 @@ async function saveAssetName() {
 
 .asset-card__favorite.is-favorite {
   color: #fff;
-  background: var(--rail-red);
+  background: var(--rail-theme-solid-accent, var(--rail-red));
   border-color: var(--rail-red);
 }
 
@@ -1718,24 +2180,11 @@ async function saveAssetName() {
   opacity: 0.62;
 }
 
-.asset-card__body {
-  padding: 10px 12px;
-}
-
 .asset-card__type {
   font-size: var(--rail-font-caption);
   font-weight: 700;
   color: var(--rail-red);
   letter-spacing: 0.08em;
-}
-
-.asset-card h2 {
-  margin: 4px 0 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: var(--rail-font-card-title);
-  font-weight: 700;
-  white-space: nowrap;
 }
 
 .asset-card__body > code {
@@ -1779,7 +2228,7 @@ async function saveAssetName() {
   margin-top: 8px;
   overflow: hidden;
   font-size: var(--rail-font-caption);
-  color: #87909a;
+  color: var(--rail-theme-secondary, #87909a);
   border-top: 1px solid var(--rail-line);
 }
 
@@ -1791,10 +2240,8 @@ async function saveAssetName() {
 }
 
 .asset-grid .asset-card__body {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 4px 8px;
-  padding: 9px 12px 10px;
+  display: block;
+  padding: 12px 14px;
 }
 
 .asset-grid .asset-card__type,
@@ -1885,7 +2332,7 @@ async function saveAssetName() {
   height: min(56vh, 520px);
   overflow: hidden;
   color: var(--rail-ink);
-  background: #f4f6f7;
+  background: var(--rail-theme-surface, #f4f6f7);
   border: 1px solid var(--rail-line);
 }
 
@@ -1911,7 +2358,7 @@ async function saveAssetName() {
 
 .asset-detail-preview__media {
   object-fit: contain;
-  background: #11171b;
+  background: var(--rail-theme-surface, #11171b);
 }
 
 .asset-detail-preview__audio {
@@ -1921,7 +2368,7 @@ async function saveAssetName() {
 .asset-detail-preview.has-image-preview {
   overflow: hidden;
   color: var(--rail-steel);
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .asset-detail-preview__image {
@@ -2048,8 +2495,12 @@ async function saveAssetName() {
   min-height: 108px;
   padding: 18px;
   cursor: pointer;
-  background: linear-gradient(110deg, var(--rail-red-soft), #fff 58%);
-  border: 2px dashed #c9ced4;
+  background: linear-gradient(
+    110deg,
+    var(--rail-red-soft),
+    var(--rail-theme-surface, #fff) 58%
+  );
+  border: 2px dashed var(--rail-theme-border, #c9ced4);
   border-radius: 12px;
   box-shadow: inset 3px 0 var(--rail-red);
   transition:
@@ -2073,7 +2524,7 @@ async function saveAssetName() {
 }
 
 .upload-file-picker.is-selected {
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border-color: var(--rail-red);
   border-style: solid;
 }
@@ -2131,14 +2582,14 @@ async function saveAssetName() {
   font-weight: 650;
   color: #fff;
   white-space: nowrap;
-  background: var(--rail-red);
+  background: var(--rail-theme-solid-accent, var(--rail-red));
   border: 1px solid var(--rail-red);
   border-radius: 8px;
 }
 
 .is-selected .upload-file-action {
   color: var(--rail-red);
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .upload-placeholder {
@@ -2148,7 +2599,7 @@ async function saveAssetName() {
   padding: 16px;
   color: var(--rail-steel);
   background: var(--rail-mist);
-  border: 1px dashed #c9ced4;
+  border: 1px dashed var(--rail-theme-border, #c9ced4);
   border-radius: 10px;
 }
 
@@ -2167,6 +2618,10 @@ async function saveAssetName() {
 }
 
 @media (max-width: 1240px) {
+  .asset-filters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .asset-grid {
     grid-template-columns: repeat(3, 1fr);
   }
@@ -2184,14 +2639,8 @@ async function saveAssetName() {
   }
 
   .asset-filters {
-    flex-direction: column;
-    width: 100%;
-  }
-
-  .asset-search,
-  .asset-owner-filter,
-  .asset-sort-filter,
-  .asset-type-filter {
+    flex-basis: 100%;
+    grid-template-columns: 1fr;
     width: 100%;
   }
 
@@ -2209,5 +2658,587 @@ async function saveAssetName() {
     grid-column: 1 / -1;
     text-align: center;
   }
+}
+
+/* C 版：固定模块栏、单行工具条、轻量文件卡。 */
+.assets-page {
+  padding: 24px;
+  background: var(--rail-mist);
+}
+
+.asset-page-header {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 1680px;
+  margin: 0 auto 22px;
+}
+
+.asset-page-header h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.5px;
+}
+
+.asset-page-header__actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+}
+
+.asset-page-header .asset-project-filter {
+  width: 280px;
+}
+
+.asset-browser {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  max-width: 1680px;
+  min-height: calc(100vh - 220px);
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-line);
+  border-radius: 10px;
+}
+
+.asset-module-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 10px;
+  border-right: 1px solid var(--rail-theme-border, #edf0f2);
+}
+
+.asset-module-rail button {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  align-items: center;
+  justify-content: center;
+  min-height: 76px;
+  padding: 10px 4px;
+  font-size: 13px;
+  color: var(--rail-steel);
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.asset-module-rail button svg {
+  width: 23px;
+  height: 23px;
+}
+
+.asset-module-rail button:hover {
+  background: var(--rail-theme-surface, #f6f7f8);
+}
+
+.asset-module-rail button.active {
+  font-weight: 600;
+  color: var(--rail-red);
+  background: var(--rail-red-soft);
+}
+
+.asset-module-rail button.asset-module-rail__secondary {
+  margin-top: 28px;
+}
+
+.asset-module-rail button:focus-visible,
+.asset-search-submit:focus-visible {
+  outline: 2px solid var(--rail-red);
+  outline-offset: 2px;
+}
+
+.asset-browser__content {
+  min-width: 0;
+  padding: 20px 24px;
+}
+
+.asset-command-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.asset-search-group {
+  display: flex;
+  flex: 1;
+  min-width: 180px;
+}
+
+.asset-search-group > .ant-select {
+  flex: 0 0 82px;
+}
+
+.asset-search-group > .ant-input-affix-wrapper {
+  min-width: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.asset-search-group :deep(.ant-select-selector) {
+  border-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.asset-search-submit {
+  display: grid;
+  place-items: center;
+  color: var(--rail-steel);
+  cursor: pointer;
+}
+
+.asset-command-bar .asset-sort-filter {
+  flex-shrink: 0;
+  width: 185px;
+}
+
+.asset-command-bar .has-filters {
+  color: var(--rail-red);
+  border-color: var(--rail-red);
+}
+
+.asset-file-toolbar {
+  justify-content: space-between;
+  min-height: 58px;
+  padding: 20px 0 12px;
+  border: 0;
+  border-bottom: 1px solid var(--rail-line);
+}
+
+.asset-breadcrumbs {
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+  color: var(--rail-theme-secondary, #7a858c);
+}
+
+.asset-breadcrumbs button {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 12px;
+}
+
+.asset-active-filters span {
+  max-width: 240px;
+  padding: 3px 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: var(--rail-theme-surface, #f4f5f6);
+  border-radius: 4px;
+}
+
+.asset-active-filters button {
+  color: var(--rail-red);
+  cursor: pointer;
+}
+
+.asset-folder-grid {
+  display: flex;
+  flex-wrap: wrap;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 0 16px;
+  border: 0;
+}
+
+.asset-folder-card {
+  flex: 0 1 230px;
+  gap: 10px;
+  min-width: 170px;
+  padding: 12px;
+  cursor: pointer;
+  border: 1px solid var(--rail-line);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.asset-folder-card > span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.asset-folder-card strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-folder-card > svg {
+  flex: none;
+  font-size: 24px;
+  color: var(--rail-steel);
+}
+
+.asset-results-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--rail-steel);
+}
+
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  padding: 0;
+}
+
+.asset-card {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-line);
+  border-radius: 8px;
+  box-shadow: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.asset-card:hover {
+  box-shadow: 0 3px 12px rgb(28 35 43 / 6%);
+  transform: none;
+}
+
+.asset-card__preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  font-size: 42px;
+  color: var(--rail-theme-secondary, #8d97a2);
+  background: var(--rail-theme-surface, #f3f5f7);
+}
+
+.asset-card__body {
+  padding: 12px 14px;
+}
+
+.asset-card h2 {
+  margin: 0 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.asset-card__summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--rail-theme-secondary, #858e99);
+  white-space: nowrap;
+}
+
+.asset-card__summary span + span::before,
+.asset-card__summary time::before {
+  margin-right: 8px;
+  content: '·';
+}
+
+.asset-card__summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asset-project-name {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--rail-steel);
+  white-space: nowrap;
+}
+
+.asset-list {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  background: transparent;
+}
+
+.asset-list .asset-card {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  min-height: 92px;
+  border-radius: 8px;
+}
+
+.asset-list .asset-card__preview {
+  height: auto;
+  min-height: 92px;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.asset-list .asset-card__body {
+  display: block;
+  grid-template-columns: minmax(180px, 1fr) minmax(200px, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+}
+
+.asset-list-extra {
+  display: flex;
+  gap: 18px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--rail-steel);
+}
+
+.asset-list-extra code {
+  margin: 0;
+}
+
+.asset-batch-bar {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px;
+  margin-bottom: 14px;
+  color: var(--rail-ink);
+  background: var(--rail-theme-surface, #f8f1f2);
+  border: 1px solid var(--rail-theme-border, #efd9dd);
+  border-radius: 6px;
+}
+
+.asset-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.asset-scope-hint {
+  padding: 4px 0 12px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--rail-steel);
+}
+
+.asset-load-error {
+  padding: 16px 0;
+  color: var(--rail-red);
+}
+
+.asset-filter-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.asset-filter-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.asset-filter-fields label > span {
+  font-size: 13px;
+}
+
+.asset-filter-fields p {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--rail-steel);
+}
+
+.asset-filter-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1200px) {
+  .asset-command-bar {
+    flex-wrap: wrap;
+  }
+
+  .asset-search-group {
+    flex-basis: calc(100% - 100px);
+  }
+
+  .asset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+
+  .asset-browser__content {
+    padding: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .assets-page {
+    padding: 12px;
+  }
+
+  .asset-page-header {
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .asset-page-header h1 {
+    font-size: 24px;
+  }
+
+  .asset-page-header__actions {
+    width: 100%;
+  }
+
+  .asset-page-header .asset-project-filter {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
+  .asset-browser {
+    display: block;
+  }
+
+  .asset-module-rail {
+    flex-direction: row;
+    gap: 2px;
+    padding: 6px;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--rail-line);
+  }
+
+  .asset-module-rail button {
+    flex: 0 0 54px;
+    gap: 5px;
+    min-height: 60px;
+    padding: 6px 2px;
+    font-size: 12px;
+  }
+
+  .asset-module-rail button.asset-module-rail__secondary {
+    margin-top: 0;
+  }
+
+  .asset-module-rail button svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  .asset-browser__content {
+    padding: 12px;
+  }
+
+  .asset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .asset-card__body {
+    padding: 8px;
+  }
+
+  .asset-card h2 {
+    font-size: 12px;
+  }
+
+  .asset-card__summary {
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 10px;
+    white-space: normal;
+  }
+
+  .asset-card__summary time {
+    display: none;
+  }
+
+  .asset-file-toolbar {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .asset-folder-card {
+    flex-basis: 100%;
+  }
+
+  .asset-pagination {
+    justify-content: center;
+  }
+
+  .asset-pagination :deep(.ant-pagination) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: center;
+  }
+
+  .asset-list-extra {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .asset-card__corner-action {
+    opacity: 1;
+  }
+}
+</style>
+
+<style scoped>
+.asset-image-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.asset-image-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  color: var(--rail-theme-secondary, #78838e);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.asset-image-actions button:hover {
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff1f3);
+}
+
+.asset-image-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 </style>

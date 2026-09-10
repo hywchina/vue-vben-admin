@@ -64,3 +64,13 @@ export function bindCapabilityWorkflowApi(
     workflowVersionId,
   });
 }
+
+export function saveCapabilityPresentationApi(
+  code: string,
+  input: { quickFieldKeys: string[]; workflowVersionId: string },
+) {
+  return requestClient.put(
+    `/capabilities/${encodeURIComponent(code)}/presentation`,
+    input,
+  );
+}

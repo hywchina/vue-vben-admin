@@ -17,6 +17,7 @@ import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
 
 const schema = z.object({
+  designMode: z.enum(['cabin', 'cmf', 'component']).default('cabin'),
   inputAssetIds: z
     .record(z.string(), z.string().uuid())
     .refine(
@@ -103,14 +104,15 @@ export default apiHandler(async (event) => {
   }
   const [draft] = await sql<{ updatedAt: Date }[]>`
     INSERT INTO design_conversation_drafts (
-      conversation_id, app_key, parameter_values, input_asset_ids
+      conversation_id, app_key, design_mode, parameter_values, input_asset_ids
     ) VALUES (
       ${conversationId},
       ${appKey},
+      ${input.designMode},
       ${sql.json(JSON.parse(JSON.stringify(input.parameterValues)))},
       ${sql.json(inputAssetIds)}
     )
-    ON CONFLICT (conversation_id, app_key) DO UPDATE SET
+    ON CONFLICT (conversation_id, app_key, design_mode) DO UPDATE SET
       parameter_values = EXCLUDED.parameter_values,
       input_asset_ids = EXCLUDED.input_asset_ids,
       updated_at = now()

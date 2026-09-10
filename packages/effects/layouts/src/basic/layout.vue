@@ -322,6 +322,7 @@ const headerSlots = computed(() => {
       <VbenLogo
         v-if="preferences.logo.enable"
         :fit="preferences.logo.fit"
+        :logo-size="preferences.theme.fontSize * 1.75"
         :class="logoClass"
         :collapsed="logoCollapsed"
         :src="preferences.logo.source"
@@ -420,6 +421,7 @@ const headerSlots = computed(() => {
       <VbenLogo
         v-if="preferences.logo.enable"
         :fit="preferences.logo.fit"
+        :logo-size="preferences.theme.fontSize * 1.75"
         :show-text="preferences.logo.showText"
         :text="preferences.app.name"
         :theme="sidebarThemeSub"

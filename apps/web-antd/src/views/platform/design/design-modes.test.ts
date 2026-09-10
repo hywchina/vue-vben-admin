@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applicationsForDesignMode,
+  designModeDefaults,
   designModeForApplication,
   designModes,
   getDesignMode,
@@ -69,6 +70,39 @@ describe('design mode catalog', () => {
     ]);
   });
 
+  it('shares the backend function catalog across all image modes, including newly added workflows', () => {
+    const catalog = [
+      application('text-to-image'),
+      application('future-workflow'),
+      application('multiview-to-3d'),
+      application('hidden', { visible: false }),
+      application('unbound', { capabilityCode: undefined }),
+    ];
+    const expected = applicationsForDesignMode(
+      catalog,
+      getDesignMode('cabin'),
+    ).map((item) => item.key);
+    for (const mode of ['component', 'cmf', 'cabin'] as const) {
+      expect(
+        applicationsForDesignMode(catalog, getDesignMode(mode)).map(
+          (item) => item.key,
+        ),
+      ).toEqual(expected);
+      expect(getDesignMode(mode).defaultApplicationKey).toBe('text-to-image');
+    }
+    expect(expected).toContain('future-workflow');
+    expect(expected).not.toContain('hidden');
+  });
+  it('uses distinct prompt presets without inventing fields for unrelated workflows', () => {
+    expect(designModeDefaults('cmf', 'text-to-image').prompt).toContain(
+      '四方连续',
+    );
+    expect(designModeDefaults('component', 'text-to-image').prompt).toContain(
+      '座椅',
+    );
+    expect(designModeDefaults('cabin', 'image-upscale')).toEqual({});
+  });
+
   it('keeps each image mode quick-tool order and placeholder stable', () => {
     expect(
       getDesignMode('component').primaryTools?.map((tool) => tool.label),
@@ -111,7 +145,7 @@ describe('design mode catalog', () => {
   it('keeps shared applications in the selected mode', () => {
     expect(designModeForApplication('text-to-image', 'cmf').key).toBe('cmf');
     expect(designModeForApplication('multiview-to-3d', 'cabin').key).toBe(
-      'component',
+      'cabin',
     );
   });
 

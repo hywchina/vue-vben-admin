@@ -1,7 +1,12 @@
 :root {
-  --rail-red: #b91c32;
-  --rail-red-dark: #8f1426;
-  --rail-red-soft: #fff0f2;
+  --rail-accent: #52606d;
+  --rail-accent-dark: #374151;
+  --rail-accent-soft: #f1f3f5;
+
+  /* 兼容现有页面的强调色引用，品牌 Logo 与告警色独立保留。 */
+  --rail-red: var(--rail-accent);
+  --rail-red-dark: var(--rail-accent-dark);
+  --rail-red-soft: var(--rail-accent-soft);
   --rail-ink: #20252c;
   --rail-steel: #5e6975;
   --rail-mist: #f4f6f8;
@@ -27,7 +32,7 @@
   padding: 24px;
   color: var(--rail-ink);
   background:
-    linear-gradient(90deg, rgb(185 28 50 / 2%) 1px, transparent 1px) 0 0 / 72px
+    linear-gradient(90deg, rgb(82 96 109 / 2%) 1px, transparent 1px) 0 0 / 72px
       72px,
     var(--rail-mist);
 }

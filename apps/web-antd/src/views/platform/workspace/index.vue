@@ -1408,9 +1408,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .capability-studio {
-  --studio-ink: #172027;
-  --studio-steel: #65737d;
-  --studio-line: #d9dfe2;
+  --studio-ink: var(--rail-theme-text, #172027);
+  --studio-steel: var(--rail-theme-secondary, #65737d);
+  --studio-line: var(--rail-theme-border, #d9dfe2);
   --studio-font-caption: 12px;
   --studio-font-body: 14px;
   --studio-font-label: 13px;
@@ -1423,7 +1423,7 @@ onBeforeUnmount(() => {
       color-mix(in srgb, var(--cap-accent) 9%, transparent),
       transparent 31rem
     ),
-    #eef1f2;
+    var(--rail-theme-surface, #eef1f2);
 }
 
 .studio-hero {
@@ -1525,8 +1525,8 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 11px 14px;
   margin-top: 2px;
-  background: #f7f8f8;
-  border: 1px solid #e1e5e7;
+  background: var(--rail-theme-surface, #f7f8f8);
+  border: 1px solid var(--rail-theme-border, #e1e5e7);
   border-radius: 14px;
 }
 
@@ -1540,9 +1540,9 @@ onBeforeUnmount(() => {
   place-items: center;
   width: 28px;
   height: 28px;
-  color: #68757e;
-  background: #fff;
-  border: 1px solid #d9dfe2;
+  color: var(--rail-theme-secondary, #68757e);
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #d9dfe2);
   border-radius: 50%;
 }
 
@@ -1567,7 +1567,7 @@ onBeforeUnmount(() => {
   min-width: 30px;
   height: 1px;
   overflow: hidden;
-  background: #cbd2d6;
+  background: var(--rail-theme-surface, #cbd2d6);
 }
 
 .capability-line em {
@@ -1665,7 +1665,7 @@ onBeforeUnmount(() => {
 .studio-field :deep(.ant-input),
 .studio-field :deep(.ant-input-number),
 .studio-field :deep(.ant-select-selector) {
-  border-color: #d5dbde;
+  border-color: var(--rail-theme-border, #d5dbde);
   border-radius: 10px;
 }
 
@@ -1682,8 +1682,8 @@ onBeforeUnmount(() => {
 .advanced-deck {
   padding: 12px;
   margin: 8px 0 18px;
-  background: #f5f7f7;
-  border: 1px solid #dfe4e6;
+  background: var(--rail-theme-surface, #f5f7f7);
+  border: 1px solid var(--rail-theme-border, #dfe4e6);
   border-radius: 13px;
 }
 
@@ -1697,7 +1697,7 @@ onBeforeUnmount(() => {
 
 .advanced-deck[open] summary {
   padding-bottom: 10px;
-  border-bottom: 1px solid #dfe4e6;
+  border-bottom: 1px solid var(--rail-theme-border, #dfe4e6);
 }
 
 .advanced-deck summary small {
@@ -1729,8 +1729,8 @@ onBeforeUnmount(() => {
   margin-bottom: 18px;
   color: var(--studio-steel);
   text-align: center;
-  background: #f6f8f8;
-  border: 1px dashed #cfd6d9;
+  background: var(--rail-theme-surface, #f6f8f8);
+  border: 1px dashed var(--rail-theme-border, #cfd6d9);
   border-radius: 14px;
 }
 
@@ -1786,7 +1786,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   padding: 15px;
-  background: #f6f8f8;
+  background: var(--rail-theme-surface, #f6f8f8);
 }
 
 .stage-meta {
@@ -1818,9 +1818,17 @@ onBeforeUnmount(() => {
   overflow: hidden;
   background:
     linear-gradient(rgb(255 255 255 / 88%), rgb(255 255 255 / 96%)),
-    repeating-linear-gradient(0deg, #dfe4e6 0 1px, transparent 1px 32px),
-    repeating-linear-gradient(90deg, #dfe4e6 0 1px, transparent 1px 32px);
-  border: 1px solid #d7dde0;
+    repeating-linear-gradient(
+      0deg,
+      var(--rail-theme-surface, #dfe4e6) 0 1px,
+      transparent 1px 32px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      var(--rail-theme-surface, #dfe4e6) 0 1px,
+      transparent 1px 32px
+    );
+  border: 1px solid var(--rail-theme-border, #d7dde0);
   border-radius: 16px;
 }
 
@@ -1890,7 +1898,7 @@ onBeforeUnmount(() => {
   width: 124px;
   height: 124px;
   margin: 0 auto 20px;
-  border: 1px solid #d4dade;
+  border: 1px solid var(--rail-theme-border, #d4dade);
   border-radius: 50%;
 }
 
@@ -1898,7 +1906,8 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 13px;
   content: '';
-  border: 1px dashed color-mix(in srgb, var(--cap-accent) 55%, #ccd3d6);
+  border: 1px dashed
+    color-mix(in srgb, var(--cap-accent) 55%, var(--rail-theme-border, #ccd3d6));
   border-radius: 50%;
   animation: orbit 18s linear infinite;
 }
@@ -1917,7 +1926,7 @@ onBeforeUnmount(() => {
   top: 50%;
   width: 42px;
   height: 1px;
-  background: #bcc6ca;
+  background: var(--rail-theme-surface, #bcc6ca);
 }
 
 .ready-orbit span:first-child {
@@ -1959,14 +1968,14 @@ onBeforeUnmount(() => {
   display: block;
   margin: 0 auto 14px;
   font-size: 45px;
-  color: #b91c32;
+  color: var(--rail-theme-accent, #b91c32);
 }
 
 .error-state code {
   display: block;
   margin: 0 0 18px;
   font-size: var(--studio-font-caption);
-  color: #b91c32;
+  color: var(--rail-theme-accent, #b91c32);
 }
 
 .stage-output {
@@ -1992,10 +2001,10 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 6px 10px;
   font-size: var(--studio-font-caption);
-  color: #66737b;
+  color: var(--rail-theme-secondary, #66737b);
   white-space: nowrap;
-  background: #fff;
-  border: 1px solid #d8dfe2;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #d8dfe2);
   border-radius: 999px;
 }
 
@@ -2012,7 +2021,7 @@ onBeforeUnmount(() => {
   min-height: 280px;
   overflow: hidden;
   color: #fff;
-  background: #1d272d;
+  background: var(--rail-theme-surface, #1d272d);
   border-radius: 14px;
 }
 
@@ -2105,13 +2114,13 @@ onBeforeUnmount(() => {
 
 .flow-description {
   margin-bottom: 14px;
-  color: #6d7981;
+  color: var(--rail-theme-secondary, #6d7981);
 }
 
 .flow-hint {
   margin: 10px 0 0;
   font-size: var(--studio-font-label);
-  color: #b45309;
+  color: var(--rail-theme-accent, #b45309);
 }
 
 .security-strip {
@@ -2120,8 +2129,8 @@ onBeforeUnmount(() => {
   margin-top: 12px;
   font-size: var(--studio-font-caption);
   color: var(--studio-steel);
-  background: #fff;
-  border: 1px solid #dce2e5;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #dce2e5);
   border-radius: 12px;
 }
 
@@ -2139,19 +2148,19 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 13px;
   align-content: start;
-  background: #f5f7f7;
+  background: var(--rail-theme-surface, #f5f7f7);
 }
 
 .asset-contract {
   padding: 14px;
-  background: #172027;
+  background: var(--rail-theme-surface, #172027);
   border-radius: 15px;
 }
 
 .asset-contract > span {
   font-family: 'IBM Plex Mono', monospace;
   font-size: var(--studio-font-caption);
-  color: #9ba7ae;
+  color: var(--rail-theme-muted, #9ba7ae);
   letter-spacing: 0.16em;
 }
 
@@ -2170,7 +2179,7 @@ onBeforeUnmount(() => {
 }
 
 .asset-contract p {
-  color: #b7c0c5;
+  color: var(--rail-theme-muted, #b7c0c5);
 }
 
 .asset-contract > svg {

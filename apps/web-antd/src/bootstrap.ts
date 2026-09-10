@@ -19,6 +19,7 @@ import App from './app.vue';
 import { router } from './router';
 
 import './styles/platform.css';
+import './styles/platform-dark.css';
 
 async function bootstrap(namespace: string) {
   // 平台图标必须随 Web 产物本地发布，不能依赖浏览器访问 Iconify 公网 API。

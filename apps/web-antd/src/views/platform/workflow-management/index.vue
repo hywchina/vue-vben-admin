@@ -35,6 +35,11 @@ import {
   updateWorkflowApi,
 } from '#/api/platform';
 
+import ParameterPresentationEditor from './parameter-presentation-editor.vue';
+
+const presentationEditor =
+  ref<InstanceType<typeof ParameterPresentationEditor>>();
+
 type EditorMode = 'create' | 'version';
 
 const loading = ref(false);
@@ -212,6 +217,7 @@ onMounted(loadOverview);
 </script>
 
 <template>
+  <ParameterPresentationEditor ref="presentationEditor" />
   <Page
     title="工作流管理"
     description="注册 ComfyUI API 工作流、发布不可变版本，并将版本绑定到平台能力。"
@@ -250,6 +256,13 @@ onMounted(loadOverview);
                 <div class="muted">{{ capability.code }}</div>
               </div>
               <div class="capability-status">
+                <Button
+                  :disabled="!capability.ready"
+                  size="small"
+                  @click="presentationEditor?.show(capability.code)"
+                >
+                  参数展示
+                </Button>
                 <Tag :color="capability.ready ? 'success' : 'warning'">
                   {{ capability.ready ? '可执行' : '未就绪' }}
                 </Tag>

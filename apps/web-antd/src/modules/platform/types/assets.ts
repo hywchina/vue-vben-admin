@@ -1,3 +1,5 @@
+export type AssetGenerationCategory = 'cabin' | 'cmf' | 'component' | 'report';
+
 export type AssetType =
   | 'archive'
   | 'audio'
@@ -9,6 +11,7 @@ export type AssetType =
   | 'video';
 
 export interface PlatformAsset {
+  generationCategory?: AssetGenerationCategory;
   accent: string;
   createdAt: string;
   derivedFromAssetId?: string;
@@ -37,6 +40,7 @@ export interface PlatformAsset {
 }
 
 export interface AssetFolder {
+  generationCategory?: AssetGenerationCategory | null;
   assetCount: number;
   createdAt: string;
   id: string;

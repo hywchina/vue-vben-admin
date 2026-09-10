@@ -236,6 +236,11 @@ assert_ports_available() {
 
 start_service() {
   local pid attempt run_log
+  local services_only="${1:-}"
+  if [[ -n "$services_only" && "$services_only" != "--services-only" ]]; then
+    fail 'start 仅支持 --services-only 参数'
+    return 2
+  fi
 
   activate_node
   check_env
@@ -255,10 +260,17 @@ start_service() {
   mkdir -p "$RUNTIME_DIR"
   run_log="$(create_start_log)"
 
-  info '正在后台启动基础设施、迁移、种子、API、Worker 和 Web……'
+  if [[ "$services_only" == "--services-only" ]]; then
+    info '仅启动 API、Worker 和 Web；不执行迁移、种子或操作基础设施'
+  else
+    info '正在后台启动基础设施、迁移、种子、API、Worker 和 Web……'
+  fi
   info "本次启动日志：${run_log}"
   (
     cd "$SCRIPT_DIR"
+    if [[ "$services_only" == "--services-only" ]]; then
+      exec setsid pnpm dev:rail:services
+    fi
     exec setsid pnpm dev:rail
   ) >>"$run_log" 2>&1 </dev/null &
   pid=$!
@@ -391,6 +403,11 @@ stop_service() {
 }
 
 restart_service() {
+  if [[ "${1:-}" == "--services-only" ]]; then
+    stop_service --keep-infra
+    start_service --services-only
+    return
+  fi
   stop_service "${1:-}"
   start_service
 }
@@ -419,6 +436,8 @@ show_help() {
   stop                   停止开发进程和 Compose；保留数据库/MinIO 数据卷
   stop --keep-infra      只停止 Web、API 和 Worker，保留基础设施容器运行
   restart                完整停止后重新启动
+  start --services-only  仅启动 Web/API/Worker；依赖须已经就绪
+  restart --services-only  仅重启 Web/API/Worker；不操作数据库迁移和基础设施
   logs [行数]            持续查看本次启动日志，默认先显示最后 80 行
   help                   显示本帮助
 

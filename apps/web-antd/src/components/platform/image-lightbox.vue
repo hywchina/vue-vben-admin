@@ -1,5 +1,6 @@
 <script lang="ts" setup>
 import {
+  computed,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -10,6 +11,7 @@ import {
 
 import { IconifyIcon } from '@vben/icons';
 
+import { useWindowSize } from '@vueuse/core';
 import { Button, Modal, Tooltip } from 'ant-design-vue';
 
 const props = defineProps<{
@@ -28,6 +30,25 @@ const emit = defineEmits<{
 const viewportRef = ref<HTMLElement>();
 const imageRef = ref<HTMLImageElement>();
 const zoom = ref(1);
+const naturalSize = reactive({ width: 1, height: 1 });
+const { width: windowWidth, height: windowHeight } = useWindowSize();
+const fittedSize = computed(() => {
+  const scale = Math.min(
+    Math.max(1, windowWidth.value * 0.96 - 40) / naturalSize.width,
+    Math.max(1, windowHeight.value * 0.96 - 150) / naturalSize.height,
+  );
+  return {
+    width: naturalSize.width * scale,
+    height: naturalSize.height * scale,
+  };
+});
+function handleImageLoad() {
+  const image = imageRef.value;
+  if (!image?.naturalWidth) return;
+  naturalSize.width = image.naturalWidth;
+  naturalSize.height = image.naturalHeight;
+  void nextTick(clampPan);
+}
 const pan = reactive({ x: 0, y: 0 });
 const dragging = ref(false);
 let dragStart = { panX: 0, panY: 0, pointerX: 0, pointerY: 0 };
@@ -128,7 +149,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
     :open="open"
     :title="title || '图片预览'"
     :z-index="2200"
-    width="min(1180px, 94vw)"
+    :width="Math.min(windowWidth * 0.96, Math.max(320, fittedSize.width + 40))"
     wrap-class-name="platform-image-lightbox"
     @cancel="emit('update:open', false)"
   >
@@ -156,6 +177,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
       ref="viewportRef"
       :class="{ 'is-dragging': dragging, 'is-pannable': zoom > 1 }"
       class="lightbox-viewport"
+      :style="{ height: `${fittedSize.height}px` }"
       @pointercancel="handlePointerUp"
       @pointerdown="handlePointerDown"
       @pointermove="handlePointerMove"
@@ -180,7 +202,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
         :style="{
           transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
         }"
-        @load="clampPan"
+        @load="handleImageLoad"
       />
       <Button
         v-if="hasNext"
@@ -192,10 +214,40 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
         <IconifyIcon icon="lucide:chevron-right" />
       </Button>
     </div>
+    <div v-if="$slots.actions" class="lightbox-actions">
+      <slot name="actions"></slot>
+    </div>
   </Modal>
 </template>
 
 <style scoped>
+:global(.platform-image-lightbox .ant-modal) {
+  top: 2dvh;
+  max-width: 96vw;
+  padding-bottom: 0;
+}
+
+:global(.platform-image-lightbox .ant-modal-content) {
+  display: flex;
+  flex-direction: column;
+  max-height: 96dvh;
+  padding: 16px 20px;
+}
+
+:global(.platform-image-lightbox .ant-modal-body) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.lightbox-actions {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-top: 10px;
+}
+
 .lightbox-toolbar {
   display: flex;
   gap: 8px;
@@ -215,10 +267,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
   width: 28px;
   height: 24px;
   margin-left: 2px;
-  color: #8a949c;
+  color: var(--rail-theme-secondary, #8a949c);
   cursor: help;
-  background: #f3f4f5;
-  border: 1px solid #d9dfe3;
+  background: var(--rail-theme-surface, #f3f4f5);
+  border: 1px solid var(--rail-theme-border, #d9dfe3);
   border-radius: 6px;
 }
 
@@ -231,13 +283,14 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
 .lightbox-viewport {
   position: relative;
   display: grid;
+  flex: 0 0 auto;
   place-items: center;
-  height: min(72vh, 780px);
+  min-height: 0;
   overflow: hidden;
   touch-action: none;
   cursor: default;
   user-select: none;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border-radius: 12px;
 }
 
@@ -279,8 +332,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
 }
 
 .lightbox-viewport img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   pointer-events: none;
   user-select: none;
   object-fit: contain;

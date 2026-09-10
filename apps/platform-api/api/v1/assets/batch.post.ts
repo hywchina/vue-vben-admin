@@ -18,6 +18,7 @@ const schema = z.object({
 });
 
 interface SourceAsset {
+  generationCategory: null | string;
   description: string;
   id: string;
   kind: string;
@@ -71,6 +72,7 @@ export default apiHandler(async (event) => {
       asset.name,
       asset.description,
       asset.kind,
+      asset.generation_category AS "generationCategory",
       asset.source,
       asset.source_app_key AS "sourceAppKey",
       asset.source_job_id AS "sourceJobId",
@@ -163,10 +165,10 @@ export default apiHandler(async (event) => {
         for (const copy of copies) {
           await transaction`
             INSERT INTO assets (
-              id, project_id, folder_id, name, description, kind, source,
+              id, project_id, folder_id, generation_category, name, description, kind, source,
               source_app_key, source_job_id, owner_id, status, saved_at
             ) VALUES (
-              ${copy.assetId}, ${input.projectId}, ${input.targetFolderId ?? null},
+              ${copy.assetId}, ${input.projectId}, ${input.targetFolderId ?? null}, ${copy.generationCategory},
               ${`${copy.name} - 副本`}, ${copy.description}, ${copy.kind}, ${copy.source},
               ${copy.sourceAppKey}, ${copy.sourceJobId}, ${identity.id}, 'available', now()
             )

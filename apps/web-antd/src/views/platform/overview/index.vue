@@ -2,7 +2,7 @@
 import type { PlatformProject, ProjectMember } from '#/modules/platform/types';
 
 import { computed, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -30,12 +30,28 @@ import { copyTextToClipboard } from '#/utils/copy-text';
 
 import { getWorkbenchTools } from './workbench-tools';
 
+const props = withDefaults(
+  defineProps<{ embedded?: boolean; initialCreate?: boolean }>(),
+  { embedded: false, initialCreate: false },
+);
 const router = useRouter();
+const route = useRoute();
 const platformStore = usePlatformStore();
 const userStore = useUserStore();
 const keyword = ref('');
 const sortValue = ref('updatedAt-desc');
-const createOpen = ref(false);
+const createOpen = ref(props.initialCreate);
+watch(
+  () => route.fullPath,
+  () => {
+    if (
+      route.name === 'PlatformProjectManagement' &&
+      route.query.create === 'true'
+    )
+      createOpen.value = true;
+  },
+  { immediate: true },
+);
 const projectName = ref('');
 const projectDescription = ref('');
 const editOpen = ref(false);
@@ -348,10 +364,14 @@ function confirmDeleteProject(project: PlatformProject) {
 </script>
 
 <template>
-  <main class="platform-page projects-overview-page">
+  <main
+    class="platform-page projects-overview-page"
+    :class="{ 'projects-overview--embedded': embedded }"
+  >
     <PageHeading
+      v-if="!embedded"
       :description="`集中管理当前账号可访问的 ${platformStore.projects.length} 个项目、协作关系与平台记录，共 ${totalAssets} 项资产，${totalActiveJobs} 个任务正在运行。`"
-      title="设计工作台"
+      title="项目管理"
     >
       <template #extra>
         <Button
@@ -365,8 +385,13 @@ function confirmDeleteProject(project: PlatformProject) {
       </template>
     </PageHeading>
 
+    <div v-if="embedded" class="embedded-project-actions">
+      <Button type="primary" :disabled="submitting" @click="createOpen = true">
+        新建项目
+      </Button>
+    </div>
     <div class="platform-content project-overview-content">
-      <section class="project-summary" aria-label="项目汇总">
+      <section v-if="!embedded" class="project-summary" aria-label="项目汇总">
         <article class="project-summary-card project-summary-card--projects">
           <span class="project-summary-card__icon">
             <IconifyIcon :icon="platformSemanticIcons.projects" />
@@ -421,6 +446,7 @@ function confirmDeleteProject(project: PlatformProject) {
       </section>
 
       <section
+        v-if="!embedded"
         :class="{ 'has-single-tool': workbenchTools.length === 1 }"
         class="platform-panel workbench-tools"
         aria-label="设计工作台管理入口"
@@ -920,6 +946,16 @@ function confirmDeleteProject(project: PlatformProject) {
 </template>
 
 <style scoped>
+.projects-overview--embedded {
+  padding: 0;
+}
+
+.embedded-project-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 16px;
+}
+
 .project-form {
   display: grid;
   gap: 16px;
@@ -949,7 +985,7 @@ function confirmDeleteProject(project: PlatformProject) {
   gap: 10px;
   padding: 14px;
   margin-bottom: 14px;
-  background: #f7f8f9;
+  background: var(--rail-theme-surface, #f7f8f9);
   border: 1px solid var(--rail-line);
   border-radius: 10px;
 }
@@ -971,7 +1007,7 @@ function confirmDeleteProject(project: PlatformProject) {
   display: flex;
   gap: 7px;
   align-items: center;
-  color: #273244;
+  color: var(--rail-theme-text, #273244);
   white-space: nowrap;
 }
 
@@ -1061,13 +1097,13 @@ function confirmDeleteProject(project: PlatformProject) {
 }
 
 .member-remove:hover:not(:disabled) {
-  color: #991229;
+  color: var(--rail-theme-accent, #991229);
   text-decoration: underline;
 }
 
 .member-remove--disabled,
 .member-remove:disabled {
-  color: #aeb5ba;
+  color: var(--rail-theme-muted, #aeb5ba);
   cursor: not-allowed;
 }
 
@@ -1114,11 +1150,11 @@ function confirmDeleteProject(project: PlatformProject) {
 .projects-overview-page {
   --workbench-accent: #c71938;
   --workbench-accent-soft: #fff1f3;
-  --workbench-border: #e4e7ec;
+  --workbench-border: var(--rail-theme-border, #e4e7ec);
   --workbench-running: #f07800;
   --workbench-running-soft: #fff5e9;
 
-  background: #f7f8fa;
+  background: var(--rail-theme-surface, #f7f8fa);
 }
 
 .projects-overview-page :deep(.platform-page-heading) {
@@ -1132,7 +1168,7 @@ function confirmDeleteProject(project: PlatformProject) {
 
 .projects-overview-page :deep(.platform-page-heading p) {
   margin-top: 6px;
-  color: #758194;
+  color: var(--rail-theme-secondary, #758194);
 }
 
 .projects-overview-page :deep(.platform-page-heading__extra .ant-btn) {
@@ -1176,7 +1212,7 @@ function confirmDeleteProject(project: PlatformProject) {
   min-height: 98px;
   padding: 18px;
   overflow: hidden;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 1px solid var(--workbench-border);
   border-radius: 10px;
   box-shadow: 0 1px 3px rgb(21 32 45 / 3%);
@@ -1206,7 +1242,7 @@ function confirmDeleteProject(project: PlatformProject) {
   font-size: 13px;
   font-weight: 600;
   line-height: 1.2;
-  color: #697589;
+  color: var(--rail-theme-secondary, #697589);
 }
 
 .project-summary-card__value {
@@ -1219,13 +1255,13 @@ function confirmDeleteProject(project: PlatformProject) {
   font-size: 28px;
   font-weight: 760;
   line-height: 1;
-  color: #111827;
+  color: var(--rail-theme-text, #111827);
 }
 
 .project-summary-card small {
   font-size: 12px;
   line-height: 1.3;
-  color: #778398;
+  color: var(--rail-theme-secondary, #778398);
   white-space: nowrap;
 }
 
@@ -1261,12 +1297,12 @@ function confirmDeleteProject(project: PlatformProject) {
 
 .workbench-tools__header strong {
   font-size: var(--rail-font-section-title);
-  color: #222a35;
+  color: var(--rail-theme-text, #222a35);
 }
 
 .workbench-tools__header span:not(.workbench-tools__badge) {
   font-size: 12px;
-  color: #778398;
+  color: var(--rail-theme-secondary, #778398);
 }
 
 .workbench-tools__badge {
@@ -1299,7 +1335,7 @@ function confirmDeleteProject(project: PlatformProject) {
   color: inherit;
   text-align: left;
   cursor: pointer;
-  background: #fafbfc;
+  background: var(--rail-theme-surface, #fafbfc);
   border: 1px solid var(--workbench-border);
   border-radius: 9px;
   transition:
@@ -1311,8 +1347,8 @@ function confirmDeleteProject(project: PlatformProject) {
 .workbench-tools__grid > button:hover,
 .workbench-tools__grid > button:focus-visible {
   outline: 0;
-  background: #fff8fa;
-  border-color: #e4b5bf;
+  background: var(--rail-theme-surface, #fff8fa);
+  border-color: var(--rail-theme-border, #e4b5bf);
   box-shadow: 0 5px 14px rgb(21 32 45 / 6%);
 }
 
@@ -1335,19 +1371,19 @@ function confirmDeleteProject(project: PlatformProject) {
 
 .workbench-tools__copy strong {
   font-size: 13px;
-  color: #253043;
+  color: var(--rail-theme-text, #253043);
 }
 
 .workbench-tools__copy small {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 11px;
-  color: #7a8595;
+  color: var(--rail-theme-secondary, #7a8595);
   white-space: nowrap;
 }
 
 .workbench-tools__arrow {
-  color: #9aa3af;
+  color: var(--rail-theme-muted, #9aa3af);
   transition: transform 160ms ease;
 }
 
@@ -1379,7 +1415,7 @@ function confirmDeleteProject(project: PlatformProject) {
 .project-overview-toolbar {
   min-height: 56px;
   padding: 10px 16px 0;
-  border-bottom: 1px solid #e5e8ec;
+  border-bottom: 1px solid var(--rail-theme-border, #e5e8ec);
   border-radius: 0;
 }
 
@@ -1392,12 +1428,12 @@ function confirmDeleteProject(project: PlatformProject) {
 
 .project-list-title strong {
   font-size: var(--rail-font-section-title);
-  color: #222a35;
+  color: var(--rail-theme-text, #222a35);
 }
 
 .project-list-title span {
   font-size: 12px;
-  color: #566276;
+  color: var(--rail-theme-secondary, #566276);
 }
 
 .project-toolbar-controls {
@@ -1414,7 +1450,7 @@ function confirmDeleteProject(project: PlatformProject) {
 
 .project-sort-label > span {
   font-size: 13px;
-  color: #6f7a8d;
+  color: var(--rail-theme-secondary, #6f7a8d);
 }
 
 .project-sort {
@@ -1433,8 +1469,8 @@ function confirmDeleteProject(project: PlatformProject) {
 .project-view-switch {
   flex-shrink: 0;
   padding: 2px;
-  background: #f1f3f6;
-  border: 1px solid #e0e4e9;
+  background: var(--rail-theme-surface, #f1f3f6);
+  border: 1px solid var(--rail-theme-border, #e0e4e9);
   border-radius: 7px;
 }
 
@@ -1442,7 +1478,7 @@ function confirmDeleteProject(project: PlatformProject) {
 .project-pagination-controls button {
   display: grid;
   place-items: center;
-  color: #475569;
+  color: var(--rail-theme-text, #475569);
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -1466,7 +1502,7 @@ function confirmDeleteProject(project: PlatformProject) {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
   padding: 16px;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .project-card-grid--list {
@@ -1480,7 +1516,7 @@ function confirmDeleteProject(project: PlatformProject) {
   position: relative;
   overflow: hidden;
   cursor: pointer;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 1px solid var(--workbench-border);
   border-radius: 10px;
   box-shadow: 0 2px 7px rgb(21 32 45 / 6%);
@@ -1493,7 +1529,7 @@ function confirmDeleteProject(project: PlatformProject) {
 .project-dashboard:hover,
 .project-dashboard:focus-visible {
   outline: 0;
-  border-color: #cdd3da;
+  border-color: var(--rail-theme-border, #cdd3da);
   box-shadow: 0 10px 24px rgb(21 32 45 / 10%);
   transform: translateY(-2px);
 }
@@ -1501,8 +1537,8 @@ function confirmDeleteProject(project: PlatformProject) {
 .project-dashboard__hero {
   position: relative;
   min-height: 152px;
-  color: #17202d;
-  background: #fff;
+  color: var(--rail-theme-text, #17202d);
+  background: var(--rail-theme-surface, #fff);
   border: 0;
 }
 
@@ -1534,7 +1570,7 @@ function confirmDeleteProject(project: PlatformProject) {
   font-size: 20px;
   font-weight: 720;
   line-height: 1.35;
-  color: #17202d;
+  color: var(--rail-theme-text, #17202d);
   white-space: nowrap;
 }
 
@@ -1542,13 +1578,13 @@ function confirmDeleteProject(project: PlatformProject) {
   display: flex;
   gap: 5px;
   align-items: center;
-  color: #778398;
+  color: var(--rail-theme-secondary, #778398);
 }
 
 .project-dashboard__code code {
   font-family: inherit;
   font-size: 12px;
-  color: #778398;
+  color: var(--rail-theme-secondary, #778398);
 }
 
 .project-dashboard__code svg {
@@ -1580,7 +1616,7 @@ function confirmDeleteProject(project: PlatformProject) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 13px;
-  color: #4f5b6d;
+  color: var(--rail-theme-secondary, #4f5b6d);
   white-space: nowrap;
 }
 
@@ -1607,7 +1643,7 @@ function confirmDeleteProject(project: PlatformProject) {
   width: 33px;
   height: 33px;
   font-size: var(--rail-icon-sm);
-  color: #667386;
+  color: var(--rail-theme-secondary, #667386);
   background: transparent;
   border: 0;
   border-radius: 6px;
@@ -1630,7 +1666,7 @@ function confirmDeleteProject(project: PlatformProject) {
   height: 20px;
   margin-left: -17px;
   content: '';
-  background: #e3e6ea;
+  background: var(--rail-theme-surface, #e3e6ea);
 }
 
 .project-dashboard__actions button.danger:hover {
@@ -1657,7 +1693,7 @@ function confirmDeleteProject(project: PlatformProject) {
   font-weight: 650;
   color: var(--project-accent);
   background: var(--project-soft);
-  border: 2px solid #fff;
+  border: 2px solid var(--rail-theme-border, #fff);
   border-radius: 50%;
 }
 
@@ -1676,10 +1712,10 @@ function confirmDeleteProject(project: PlatformProject) {
   font-size: 12px;
   font-weight: 650;
   line-height: 1;
-  color: #556276;
+  color: var(--rail-theme-secondary, #556276);
   cursor: pointer;
-  background: #fff;
-  border: 2px solid #d0d5dd;
+  background: var(--rail-theme-surface, #fff);
+  border: 2px solid var(--rail-theme-border, #d0d5dd);
   border-radius: 50%;
   box-shadow: 0 0 0 2px #fff;
 }
@@ -1701,7 +1737,7 @@ function confirmDeleteProject(project: PlatformProject) {
 
 .member-preview-popover header {
   padding-bottom: 9px;
-  border-bottom: 1px solid #e7eaf0;
+  border-bottom: 1px solid var(--rail-theme-border, #e7eaf0);
 }
 
 .member-preview-popover header strong {
@@ -1709,7 +1745,7 @@ function confirmDeleteProject(project: PlatformProject) {
   gap: 7px;
   align-items: center;
   font-size: 14px;
-  color: #263246;
+  color: var(--rail-theme-text, #263246);
 }
 
 .member-preview-list {
@@ -1730,7 +1766,7 @@ function confirmDeleteProject(project: PlatformProject) {
 }
 
 .member-preview-list article:hover {
-  background: #f5f7fa;
+  background: var(--rail-theme-surface, #f5f7fa);
 }
 
 .member-preview-list article > strong,
@@ -1743,12 +1779,12 @@ function confirmDeleteProject(project: PlatformProject) {
 .member-preview-list article > strong {
   font-size: 13px;
   font-weight: 600;
-  color: #344054;
+  color: var(--rail-theme-text, #344054);
 }
 
 .member-preview-list article > span:last-child {
   font-size: 12px;
-  color: #8a94a5;
+  color: var(--rail-theme-secondary, #8a94a5);
 }
 
 .member-preview-avatar {
@@ -1772,7 +1808,7 @@ function confirmDeleteProject(project: PlatformProject) {
 .member-preview-state {
   padding: 20px 8px;
   font-size: 12px;
-  color: #7b8798;
+  color: var(--rail-theme-secondary, #7b8798);
   text-align: center;
 }
 
@@ -1790,7 +1826,7 @@ function confirmDeleteProject(project: PlatformProject) {
   gap: 6px;
   align-items: center;
   font-size: 11px;
-  color: #778398;
+  color: var(--rail-theme-secondary, #778398);
 }
 
 .project-dashboard__metrics {
@@ -1798,7 +1834,7 @@ function confirmDeleteProject(project: PlatformProject) {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 0;
   padding: 0 16px 10px;
-  border-top: 1px solid #edf0f2;
+  border-top: 1px solid var(--rail-theme-border, #edf0f2);
 }
 
 .project-dashboard__metrics > button {
@@ -1812,7 +1848,7 @@ function confirmDeleteProject(project: PlatformProject) {
   cursor: pointer;
   background: transparent;
   border: 0;
-  border-right: 1px solid #edf0f2;
+  border-right: 1px solid var(--rail-theme-border, #edf0f2);
   border-radius: 0;
 }
 
@@ -1821,7 +1857,7 @@ function confirmDeleteProject(project: PlatformProject) {
 }
 
 .project-dashboard__metrics > button:hover {
-  background: #fff9fa;
+  background: var(--rail-theme-surface, #fff9fa);
   box-shadow: inset 0 -2px var(--workbench-accent);
 }
 
@@ -1829,7 +1865,7 @@ function confirmDeleteProject(project: PlatformProject) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 11px;
-  color: #6f7a8c;
+  color: var(--rail-theme-secondary, #6f7a8c);
   white-space: nowrap;
 }
 
@@ -1837,7 +1873,7 @@ function confirmDeleteProject(project: PlatformProject) {
   font-size: 20px;
   font-weight: 760;
   line-height: 1.15;
-  color: #17202d;
+  color: var(--rail-theme-text, #17202d);
 }
 
 .project-dashboard__metrics strong.active {
@@ -1848,7 +1884,7 @@ function confirmDeleteProject(project: PlatformProject) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: var(--rail-font-caption);
-  color: #8a94a3;
+  color: var(--rail-theme-secondary, #8a94a3);
   white-space: nowrap;
 }
 
@@ -1859,7 +1895,7 @@ function confirmDeleteProject(project: PlatformProject) {
   justify-content: flex-start;
   min-height: 55px;
   padding: 8px 16px 13px;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 0;
 }
 
@@ -1868,8 +1904,8 @@ function confirmDeleteProject(project: PlatformProject) {
   padding-inline: 14px;
   font-weight: 600;
   color: var(--workbench-accent);
-  background: #fff;
-  border-color: #e4b5bf;
+  background: var(--rail-theme-surface, #fff);
+  border-color: var(--rail-theme-border, #e4b5bf);
   border-radius: 5px;
   box-shadow: none;
 }
@@ -1888,7 +1924,7 @@ function confirmDeleteProject(project: PlatformProject) {
   padding: 80px 24px;
   margin: 16px;
   text-align: center;
-  border: 1px dashed #d8dde1;
+  border: 1px dashed var(--rail-theme-border, #d8dde1);
   border-radius: 10px;
   box-shadow: none;
 }
@@ -1896,20 +1932,20 @@ function confirmDeleteProject(project: PlatformProject) {
 .project-empty > svg {
   padding: 18px;
   font-size: 72px;
-  color: #98a2a9;
-  background: #f4f6f7;
+  color: var(--rail-theme-muted, #98a2a9);
+  background: var(--rail-theme-surface, #f4f6f7);
   border-radius: 50%;
 }
 
 .project-empty h2 {
   margin: 18px 0 0;
   font-size: 22px;
-  color: #253039;
+  color: var(--rail-theme-text, #253039);
 }
 
 .project-empty p {
   margin: 0 0 18px;
-  color: #7a858d;
+  color: var(--rail-theme-secondary, #7a858d);
 }
 
 .project-list-pagination {
@@ -1917,7 +1953,7 @@ function confirmDeleteProject(project: PlatformProject) {
   justify-content: center;
   min-height: 51px;
   padding: 8px 16px;
-  border-top: 1px solid #e5e8ec;
+  border-top: 1px solid var(--rail-theme-border, #e5e8ec);
 }
 
 .project-pagination-controls {
@@ -1927,7 +1963,7 @@ function confirmDeleteProject(project: PlatformProject) {
 .project-pagination-controls button {
   width: 30px;
   height: 30px;
-  border: 1px solid #e0e4e8;
+  border: 1px solid var(--rail-theme-border, #e0e4e8);
 }
 
 .project-pagination-controls button.active {
@@ -1937,16 +1973,16 @@ function confirmDeleteProject(project: PlatformProject) {
 }
 
 .project-pagination-controls button:disabled {
-  color: #b1b8c1;
+  color: var(--rail-theme-muted, #b1b8c1);
   cursor: not-allowed;
-  background: #fafbfc;
+  background: var(--rail-theme-surface, #fafbfc);
 }
 
 .project-pagination-controls span,
 .project-page-size > span {
   margin-left: 10px;
   font-size: 12px;
-  color: #647085;
+  color: var(--rail-theme-secondary, #647085);
 }
 
 .project-page-size {

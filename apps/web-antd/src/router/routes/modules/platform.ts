@@ -46,15 +46,30 @@ const routes: RouteRecordRaw[] = [
     path: '/report-generation',
   },
   {
-    component: () => import('#/views/platform/overview/index.vue'),
+    component: () => import('#/views/platform/workbench/index.vue'),
     meta: {
       affixTab: true,
+      fullPathKey: false,
       icon: platformSemanticIcons.workbench,
       order: -70,
       title: '设计工作台',
     },
     name: 'PlatformProjects',
     path: '/projects',
+  },
+  {
+    redirect: (to) => ({
+      path: '/projects',
+      query: { ...to.query, panel: 'projects' },
+    }),
+    meta: {
+      hideInMenu: true,
+      hideInTab: true,
+      title: '我的项目',
+      activePath: '/projects',
+    },
+    name: 'PlatformProjectManagement',
+    path: '/projects/manage',
   },
   {
     meta: {
@@ -81,6 +96,7 @@ const routes: RouteRecordRaw[] = [
   {
     component: () => import('#/views/platform/assets/index.vue'),
     meta: {
+      fullPathKey: false,
       icon: platformSemanticIcons.assets,
       order: -90,
       title: '资产中心',

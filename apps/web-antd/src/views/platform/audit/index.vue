@@ -231,7 +231,7 @@ onMounted(loadEvents);
   font-weight: 700;
   color: var(--rail-steel);
   text-transform: uppercase;
-  background: #fafbfc;
+  background: var(--rail-theme-surface, #fafbfc);
 }
 
 .audit-row {

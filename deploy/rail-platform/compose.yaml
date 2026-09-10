@@ -21,10 +21,10 @@ services:
   minio:
     image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
     command: server /data --console-address ":9001"
-    environment:
-      MINIO_API_CORS_ALLOW_ORIGIN: http://localhost:5666
-      MINIO_ROOT_PASSWORD: railminio-dev-secret
-      MINIO_ROOT_USER: railminio
+    env_file:
+      - path: minio.defaults.env
+      - path: .env.minio.local
+        required: false
     healthcheck:
       test: [CMD, curl, -f, 'http://localhost:9000/minio/health/live']
       interval: 3s

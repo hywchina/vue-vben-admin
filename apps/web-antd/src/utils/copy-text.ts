@@ -17,12 +17,10 @@ export async function copyTextToClipboard(
   content: string,
   options: CopyTextOptions = {},
 ) {
+  const nativeClipboard =
+    typeof navigator === 'undefined' ? null : navigator.clipboard;
   const clipboard =
-    options.clipboard === undefined
-      ? typeof navigator === 'undefined'
-        ? null
-        : navigator.clipboard
-      : options.clipboard;
+    options.clipboard === undefined ? nativeClipboard : options.clipboard;
 
   if (clipboard?.writeText) {
     try {
@@ -33,12 +31,9 @@ export async function copyTextToClipboard(
     }
   }
 
+  const nativeDocument = typeof document === 'undefined' ? null : document;
   const targetDocument =
-    options.document === undefined
-      ? typeof document === 'undefined'
-        ? null
-        : document
-      : options.document;
+    options.document === undefined ? nativeDocument : options.document;
   if (!targetDocument?.body) return false;
 
   const activeElement = targetDocument.activeElement;

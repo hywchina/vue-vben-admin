@@ -1,6 +1,8 @@
 <script lang="ts" setup>
 import type { Material, Object3D } from 'three';
 
+import type { ModelExportFormat } from './model3d-export';
+
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
@@ -31,6 +33,8 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
+import { exportModel, modelExportFormats } from './model3d-export';
+
 const props = withDefaults(
   defineProps<{
     compact?: boolean;
@@ -40,6 +44,8 @@ const props = withDefaults(
   }>(),
   { compact: false, format: undefined },
 );
+const exporting = ref(false);
+const exportError = ref('');
 
 type Panel = 'camera' | 'control' | 'export' | 'light' | 'model' | 'scene';
 type ViewerStatus = 'error' | 'loading' | 'ready';
@@ -192,6 +198,7 @@ function loadModel() {
   const generation = ++loadGeneration;
   status.value = 'loading';
   errorMessage.value = '';
+  exportError.value = '';
   clearModel();
   const onError = (error: unknown) => {
     if (generation !== loadGeneration) return;
@@ -353,6 +360,34 @@ async function toggleFullscreen() {
     : root.value.requestFullscreen());
 }
 
+async function downloadFormat(targetFormat: ModelExportFormat) {
+  if (!modelRoot || exporting.value || status.value !== 'ready') return;
+  exporting.value = true;
+  exportError.value = '';
+  const generation = loadGeneration;
+  const name = props.name.replace(
+    /\.(glb|gltf|obj|fbx|stl|ply|step|stp)$/i,
+    '',
+  );
+  try {
+    const blob = await exportModel(modelRoot, targetFormat);
+    if (destroyed || generation !== loadGeneration) return;
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${name}.${targetFormat}`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (error) {
+    if (generation === loadGeneration) {
+      exportError.value =
+        error instanceof Error ? error.message : '模型导出失败，请重试';
+    }
+  } finally {
+    exporting.value = false;
+  }
+}
+
 function downloadOriginal() {
   const anchor = document.createElement('a');
   anchor.href = props.url;
@@ -507,8 +542,25 @@ onBeforeUnmount(() => {
         <small>保留工作流生成的原始 {{ format.toUpperCase() }} 文件。</small>
         <button type="button" @click="downloadOriginal">
           <IconifyIcon icon="lucide:download" />
-          下载原始模型
+          下载原始模型（{{ format.toUpperCase() }}）
         </button>
+        <div class="model3d-export-formats" aria-label="模型下载格式">
+          <button
+            v-for="targetFormat in modelExportFormats"
+            :key="targetFormat"
+            :disabled="exporting || status !== 'ready'"
+            type="button"
+            @click="downloadFormat(targetFormat)"
+          >
+            {{ targetFormat.toUpperCase() }}
+          </button>
+        </div>
+        <small>
+          GLB 支持材质；OBJ、STL、FBX 为静态网格转换，不包含完整材质与动画。FBX
+          使用 ASCII 格式。
+        </small>
+        <small v-if="exporting" role="status">正在导出…</small>
+        <small v-if="exportError" role="alert">{{ exportError }}</small>
       </template>
     </aside>
 
@@ -679,6 +731,17 @@ onBeforeUnmount(() => {
   background: #bd1835;
   border: 0;
   border-radius: 7px;
+}
+
+.model3d-export-formats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.model3d-panel button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .model3d-axis {

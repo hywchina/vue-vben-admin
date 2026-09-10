@@ -90,8 +90,8 @@ function containsZipEntry(bytes: Uint8Array, entry: string) {
 
 function isExpectedOoxml(bytes: Uint8Array, format: 'docx' | 'pptx') {
   return (
-    bytes[0] === 0x50 &&
-    bytes[1] === 0x4b &&
+    bytes[0] === 80 &&
+    bytes[1] === 75 &&
     containsZipEntry(bytes, '[Content_Types].xml') &&
     containsZipEntry(
       bytes,

@@ -25,7 +25,26 @@ const tokenTheme = computed(() => {
 
   return {
     algorithm,
-    token: tokens,
+    token: {
+      ...tokens,
+      ...(isDark.value
+        ? {
+            colorBgBase: '#191c20',
+            colorBgContainer: '#191c20',
+            colorBgLayout: '#191c20',
+            colorBgElevated: '#242a31',
+            colorText: '#e8ebef',
+            colorTextSecondary: '#adb5c0',
+            colorTextPlaceholder: '#929da9',
+            colorTextDisabled: '#78838e',
+            colorBgContainerDisabled: '#22272e',
+            colorBorder: '#363b42',
+            colorPrimary: '#c93655',
+            colorPrimaryText: '#ff879b',
+            colorLink: '#ff879b',
+          }
+        : {}),
+    },
   };
 });
 </script>

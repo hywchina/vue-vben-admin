@@ -41,6 +41,7 @@
     "db:rail:seed": "pnpm --filter @rail/platform-api db:seed",
     "dev:rail": "pnpm --filter @vben/vite-config stub && pnpm infra:rail:up && pnpm db:rail:migrate && pnpm db:rail:seed && pnpm --parallel --stream --filter @rail/platform-api --filter @rail/web dev",
     "dev:rail:web": "pnpm --filter @vben/vite-config stub && pnpm --filter @rail/web dev",
+    "dev:rail:services": "pnpm --parallel --stream --filter @rail/platform-api --filter @rail/web dev",
     "format": "vsh lint --format",
     "infra:rail:down": "docker compose -f deploy/rail-platform/compose.yaml down",
     "infra:rail:logs": "docker compose -f deploy/rail-platform/compose.yaml logs -f",

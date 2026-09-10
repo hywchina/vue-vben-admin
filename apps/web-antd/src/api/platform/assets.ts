@@ -1,5 +1,6 @@
 import type {
   AssetFolder,
+  AssetGenerationCategory,
   AssetType,
   PlatformAsset,
 } from '#/modules/platform/types';
@@ -13,6 +14,7 @@ export interface PrepareAssetUploadInput {
   derivedFromAssetId?: string;
   file: File;
   folderId?: string;
+  generationCategory?: AssetGenerationCategory;
   kind: AssetType;
   name: string;
   projectId: string;
@@ -31,14 +33,24 @@ interface PreparedAssetUpload {
 }
 
 export interface AssetSortOptions {
-  sortBy: 'createdAt' | 'name' | 'owner' | 'type';
+  sortBy: 'createdAt' | 'name' | 'owner' | 'task' | 'type';
   sortOrder: 'asc' | 'desc';
 }
 
-export function getAssetsApi(
-  projectId: string,
-  options?: Partial<AssetSortOptions> & { folderId?: string; ownerId?: string },
-) {
+export interface AssetListOptions extends Partial<AssetSortOptions> {
+  folderId?: string;
+  ownerId?: string;
+  generationCategory?: 'unclassified' | AssetGenerationCategory;
+  favoriteOnly?: 'false' | 'true';
+  kind?: AssetType;
+  keyword?: string;
+  matchMode?: 'exact' | 'fuzzy';
+  sourceJobId?: string;
+  createdFrom?: string;
+  createdTo?: string;
+}
+
+export function getAssetsApi(projectId: string, options?: AssetListOptions) {
   return requestClient.get<PlatformAsset[]>('/assets', {
     params: { projectId, ...options },
   });
@@ -63,6 +75,7 @@ export async function uploadAssetApi(input: PrepareAssetUploadInput) {
       derivedFromAssetId: input.derivedFromAssetId,
       filename: input.file.name,
       folderId: input.folderId,
+      generationCategory: input.generationCategory,
       kind: input.kind,
       mimeType: input.file.type || 'application/octet-stream',
       name: input.name,
@@ -81,6 +94,7 @@ export function createTextAssetApi(input: {
   content: string;
   description: string;
   folderId?: string;
+  generationCategory?: AssetGenerationCategory;
   mimeType?: 'application/json' | 'text/markdown' | 'text/plain';
   name: string;
   projectId: string;
@@ -96,6 +110,7 @@ export function getAssetFoldersApi(projectId: string) {
 }
 
 export function createAssetFolderApi(input: {
+  generationCategory?: AssetGenerationCategory;
   name: string;
   parentId?: null | string;
   projectId: string;

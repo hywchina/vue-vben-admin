@@ -24,6 +24,7 @@ import { copyTextToClipboard } from '#/utils/copy-text';
 import ComfyMaskIcon from './comfy-mask-icon.vue';
 import ImageComparisonSlider from './image-comparison-slider.vue';
 import ImageLightbox from './image-lightbox.vue';
+import ImageResultGallery from './image-result-gallery.vue';
 import Model3dViewer from './model3d-viewer.vue';
 import PlatformMarkdown from './platform-markdown.vue';
 import StatusPill from './status-pill.vue';
@@ -31,6 +32,7 @@ import StatusPill from './status-pill.vue';
 const props = defineProps<{
   accent: string;
   availableApplicationKeys?: string[];
+  conversationLayout?: boolean;
   fields: CapabilityField[];
   flowLabel?: string;
   job: PlatformJob;
@@ -187,11 +189,17 @@ function resultActionDisabled(action: DesignImageResultActionKey) {
   );
 }
 
+function requestSaveOutput(output: PlatformJobOutput) {
+  outputLightboxOpen.value = false;
+  emit('save', output);
+}
+
 function triggerResultAction(action: DesignImageResultActionKey) {
   const output = activeOutput.value;
   if (!output || resultActionDisabled(action)) return;
+  if (action !== 'download') outputLightboxOpen.value = false;
   if (action === 'download') return emit('download', output);
-  if (action === 'save') return emit('save', output);
+  if (action === 'save') return requestSaveOutput(output);
   if (action === 'rerun') return emit('rerun', props.job);
   if (action === 'mask') {
     const previewUrl = previewUrls[output.assetId];
@@ -364,11 +372,14 @@ onMounted(() => void loadPreviews());
 <template>
   <article
     class="workflow-round"
-    :class="{ 'workflow-round--active': isActive }"
+    :class="{
+      'workflow-round--active': isActive,
+      'workflow-round--conversation': conversationLayout,
+    }"
     :data-job-id="job.id"
     :style="{ '--round-accent': accent }"
   >
-    <header class="round-heading">
+    <header v-if="!conversationLayout" class="round-heading">
       <span>第 {{ round }} 轮</span>
       <time :datetime="job.createdAt">{{ formatDate(job.createdAt) }}</time>
       <StatusPill :status="job.status" />
@@ -632,8 +643,25 @@ onMounted(() => void loadPreviews());
           </span>
         </div>
 
+        <ImageResultGallery
+          v-if="conversationLayout && imageOutputs.length > 1"
+          :active-id="activeOutput.assetId"
+          :completed-at="job.completedAt || undefined"
+          :images="
+            imageOutputs.map((output) => ({
+              id: output.assetId,
+              name: output.name,
+              url: previewUrls[output.assetId]!,
+            }))
+          "
+          @select="activeOutputAssetId = $event"
+          @open="
+            activeOutputAssetId = $event;
+            outputLightboxOpen = true;
+          "
+        />
         <div
-          v-if="
+          v-else-if="
             comparisonAvailable &&
             comparisonMode &&
             comparisonSourceAssetId &&
@@ -737,118 +765,150 @@ onMounted(() => void loadPreviews());
           </button>
         </div>
 
-        <footer class="round-output__footer">
-          <div
-            v-if="isBusinessImageResult"
-            class="round-output-actions round-output-actions--business"
-            :data-testid="`${businessResultMode}-result-actions`"
-          >
-            <button
-              v-for="action in resultActions"
-              :key="action.key"
-              :aria-label="
-                action.key === 'save' && activeOutput.saved
-                  ? '已添加至资产中心'
-                  : action.label
-              "
-              class="round-action-button"
-              :disabled="resultActionDisabled(action.key)"
-              :title="
-                resultActionDisabled(action.key) && action.key !== 'save'
-                  ? `${action.label}能力未配置或不可用`
-                  : action.label
-              "
-              type="button"
-              @click="triggerResultAction(action.key)"
+        <footer
+          v-if="!conversationLayout || imageOutputs.length <= 1"
+          class="round-output__footer"
+        >
+          <template v-if="!conversationLayout || imageOutputs.length <= 1">
+            <div
+              v-if="isBusinessImageResult"
+              class="round-output-actions round-output-actions--business"
+              :data-testid="`${businessResultMode}-result-actions`"
             >
-              <ComfyMaskIcon v-if="action.key === 'mask'" :size="16" />
-              <IconifyIcon
-                v-else
-                :icon="
+              <Tooltip
+                v-for="action in resultActions"
+                :key="action.key"
+                :title="
                   action.key === 'save' && activeOutput.saved
-                    ? 'lucide:check'
-                    : action.icon
-                "
-              />
-              <span>{{ action.label }}</span>
-            </button>
-          </div>
-          <div v-else class="round-output-actions">
-            <Tooltip
-              v-if="
-                activeOutput.kind === 'image' &&
-                previewUrls[activeOutput.assetId]
-              "
-              title="局部重绘"
-            >
-              <button
-                aria-label="局部重绘"
-                class="round-action-button"
-                type="button"
-                @click="
-                  emit('mask', activeOutput, previewUrls[activeOutput.assetId]!)
+                    ? '已添加至资产中心'
+                    : resultActionDisabled(action.key)
+                      ? `${action.label}能力未配置或不可用`
+                      : action.label
                 "
               >
-                <ComfyMaskIcon :size="16" />
-              </button>
-            </Tooltip>
-            <Tooltip v-if="activeOutput.kind === 'text'" title="复制 Markdown">
-              <button
-                aria-label="复制 Markdown"
-                class="round-action-button"
-                :disabled="!textContents[activeOutput.assetId]"
-                type="button"
-                @click="copyOutput(activeOutput)"
+                <span class="round-action-tooltip">
+                  <button
+                    :aria-label="
+                      action.key === 'save' && activeOutput.saved
+                        ? '已添加至资产中心'
+                        : action.label
+                    "
+                    class="round-action-button"
+                    :disabled="resultActionDisabled(action.key)"
+                    :title="
+                      resultActionDisabled(action.key) && action.key !== 'save'
+                        ? `${action.label}能力未配置或不可用`
+                        : action.label
+                    "
+                    type="button"
+                    @click="triggerResultAction(action.key)"
+                  >
+                    <ComfyMaskIcon v-if="action.key === 'mask'" :size="16" />
+                    <IconifyIcon
+                      v-else
+                      :icon="
+                        action.key === 'save' && activeOutput.saved
+                          ? 'lucide:check'
+                          : action.icon
+                      "
+                    />
+                    <span v-if="!conversationLayout">{{ action.label }}</span>
+                  </button>
+                </span>
+              </Tooltip>
+            </div>
+            <div v-else class="round-output-actions">
+              <Tooltip
+                v-if="
+                  activeOutput.kind === 'image' &&
+                  previewUrls[activeOutput.assetId]
+                "
+                title="局部重绘"
               >
-                <IconifyIcon icon="lucide:copy" />
-              </button>
-            </Tooltip>
-            <Tooltip title="下载或查看结果">
-              <button
-                aria-label="下载或查看结果"
-                class="round-action-button"
-                type="button"
-                @click="emit('download', activeOutput)"
-              >
-                <IconifyIcon icon="lucide:download" />
-              </button>
-            </Tooltip>
-            <Tooltip :title="activeOutput.saved ? '已加入资产' : '加入资产'">
-              <button
-                :aria-label="activeOutput.saved ? '已加入资产' : '加入资产'"
-                class="round-action-button"
-                :disabled="activeOutput.saved"
-                type="button"
-                @click="emit('save', activeOutput)"
-              >
-                <IconifyIcon
-                  :icon="
-                    activeOutput.saved ? 'lucide:check' : 'lucide:folder-plus'
+                <button
+                  aria-label="局部重绘"
+                  class="round-action-button"
+                  type="button"
+                  @click="
+                    emit(
+                      'mask',
+                      activeOutput,
+                      previewUrls[activeOutput.assetId]!,
+                    )
                   "
-                />
-              </button>
-            </Tooltip>
-            <Tooltip :title="flowLabel ?? '流转到工作流'">
-              <button
-                :aria-label="flowLabel ?? '流转到工作流'"
-                class="round-action-button"
-                type="button"
-                @click="emit('flow', activeOutput)"
+                >
+                  <ComfyMaskIcon :size="16" />
+                </button>
+              </Tooltip>
+              <Tooltip
+                v-if="activeOutput.kind === 'text'"
+                title="复制 Markdown"
               >
-                <IconifyIcon icon="lucide:send" />
-              </button>
-            </Tooltip>
-            <Tooltip title="复用本轮再运行">
-              <button
-                aria-label="复用本轮再运行"
-                class="round-action-button round-action-button--accent"
-                type="button"
-                @click="emit('rerun', job)"
-              >
-                <IconifyIcon icon="lucide:refresh-cw" />
-              </button>
-            </Tooltip>
-          </div>
+                <button
+                  aria-label="复制 Markdown"
+                  class="round-action-button"
+                  :disabled="!textContents[activeOutput.assetId]"
+                  type="button"
+                  @click="copyOutput(activeOutput)"
+                >
+                  <IconifyIcon icon="lucide:copy" />
+                </button>
+              </Tooltip>
+              <Tooltip title="下载或查看结果">
+                <button
+                  aria-label="下载或查看结果"
+                  class="round-action-button"
+                  type="button"
+                  @click="emit('download', activeOutput)"
+                >
+                  <IconifyIcon icon="lucide:download" />
+                </button>
+              </Tooltip>
+              <Tooltip :title="activeOutput.saved ? '已加入资产' : '加入资产'">
+                <button
+                  :aria-label="activeOutput.saved ? '已加入资产' : '加入资产'"
+                  class="round-action-button"
+                  :disabled="activeOutput.saved"
+                  type="button"
+                  @click="requestSaveOutput(activeOutput)"
+                >
+                  <IconifyIcon
+                    :icon="
+                      activeOutput.saved ? 'lucide:check' : 'lucide:folder-plus'
+                    "
+                  />
+                </button>
+              </Tooltip>
+              <Tooltip :title="flowLabel ?? '流转到工作流'">
+                <button
+                  :aria-label="flowLabel ?? '流转到工作流'"
+                  class="round-action-button"
+                  type="button"
+                  @click="emit('flow', activeOutput)"
+                >
+                  <IconifyIcon icon="lucide:send" />
+                </button>
+              </Tooltip>
+              <Tooltip title="复用本轮再运行">
+                <button
+                  aria-label="复用本轮再运行"
+                  class="round-action-button round-action-button--accent"
+                  type="button"
+                  @click="emit('rerun', job)"
+                >
+                  <IconifyIcon icon="lucide:refresh-cw" />
+                </button>
+              </Tooltip>
+            </div>
+          </template>
+          <time
+            v-if="conversationLayout && job.completedAt"
+            class="round-generated-time"
+            :datetime="job.completedAt"
+            :title="`生成时间：${new Date(job.completedAt).toLocaleString('zh-CN')}`"
+          >
+            {{ formatDate(job.completedAt) }}
+          </time>
         </footer>
       </div>
 
@@ -876,7 +936,135 @@ onMounted(() => void loadPreviews());
       "
       @next="moveOutputImage(1)"
       @previous="moveOutputImage(-1)"
-    />
+    >
+      <template
+        v-if="conversationLayout && imageOutputs.length > 1 && activeOutput"
+        #actions
+      >
+        <div
+          v-if="isBusinessImageResult"
+          class="round-output-actions round-output-actions--business"
+          :data-testid="`${businessResultMode}-result-actions`"
+        >
+          <Tooltip
+            v-for="action in resultActions"
+            :key="action.key"
+            :title="
+              action.key === 'save' && activeOutput.saved
+                ? '已添加至资产中心'
+                : resultActionDisabled(action.key)
+                  ? `${action.label}能力未配置或不可用`
+                  : action.label
+            "
+          >
+            <span class="round-action-tooltip">
+              <button
+                :aria-label="
+                  action.key === 'save' && activeOutput.saved
+                    ? '已添加至资产中心'
+                    : action.label
+                "
+                class="round-action-button"
+                :disabled="resultActionDisabled(action.key)"
+                :title="
+                  resultActionDisabled(action.key) && action.key !== 'save'
+                    ? `${action.label}能力未配置或不可用`
+                    : action.label
+                "
+                type="button"
+                @click="triggerResultAction(action.key)"
+              >
+                <ComfyMaskIcon v-if="action.key === 'mask'" :size="16" />
+                <IconifyIcon
+                  v-else
+                  :icon="
+                    action.key === 'save' && activeOutput.saved
+                      ? 'lucide:check'
+                      : action.icon
+                  "
+                />
+                <span v-if="!conversationLayout">{{ action.label }}</span>
+              </button>
+            </span>
+          </Tooltip>
+        </div>
+        <div v-else class="round-output-actions">
+          <Tooltip
+            v-if="
+              activeOutput.kind === 'image' && previewUrls[activeOutput.assetId]
+            "
+            title="局部重绘"
+          >
+            <button
+              aria-label="局部重绘"
+              class="round-action-button"
+              type="button"
+              @click="
+                emit('mask', activeOutput, previewUrls[activeOutput.assetId]!)
+              "
+            >
+              <ComfyMaskIcon :size="16" />
+            </button>
+          </Tooltip>
+          <Tooltip v-if="activeOutput.kind === 'text'" title="复制 Markdown">
+            <button
+              aria-label="复制 Markdown"
+              class="round-action-button"
+              :disabled="!textContents[activeOutput.assetId]"
+              type="button"
+              @click="copyOutput(activeOutput)"
+            >
+              <IconifyIcon icon="lucide:copy" />
+            </button>
+          </Tooltip>
+          <Tooltip title="下载或查看结果">
+            <button
+              aria-label="下载或查看结果"
+              class="round-action-button"
+              type="button"
+              @click="emit('download', activeOutput)"
+            >
+              <IconifyIcon icon="lucide:download" />
+            </button>
+          </Tooltip>
+          <Tooltip :title="activeOutput.saved ? '已加入资产' : '加入资产'">
+            <button
+              :aria-label="activeOutput.saved ? '已加入资产' : '加入资产'"
+              class="round-action-button"
+              :disabled="activeOutput.saved"
+              type="button"
+              @click="requestSaveOutput(activeOutput)"
+            >
+              <IconifyIcon
+                :icon="
+                  activeOutput.saved ? 'lucide:check' : 'lucide:folder-plus'
+                "
+              />
+            </button>
+          </Tooltip>
+          <Tooltip :title="flowLabel ?? '流转到工作流'">
+            <button
+              :aria-label="flowLabel ?? '流转到工作流'"
+              class="round-action-button"
+              type="button"
+              @click="emit('flow', activeOutput)"
+            >
+              <IconifyIcon icon="lucide:send" />
+            </button>
+          </Tooltip>
+          <Tooltip title="复用本轮再运行">
+            <button
+              aria-label="复用本轮再运行"
+              class="round-action-button round-action-button--accent"
+              type="button"
+              @click="emit('rerun', job)"
+            >
+              <IconifyIcon icon="lucide:refresh-cw" />
+            </button>
+          </Tooltip>
+        </div>
+      </template>
+    </ImageLightbox>
   </article>
 </template>
 
@@ -886,13 +1074,17 @@ onMounted(() => void loadPreviews());
   gap: 15px;
   padding: 18px;
   background: rgb(255 255 255 / 94%);
-  border: 1px solid #d9e0e3;
+  border: 1px solid var(--rail-theme-border, #d9e0e3);
   border-radius: 15px;
   box-shadow: 0 8px 26px rgb(33 46 54 / 5%);
 }
 
 .workflow-round--active {
-  border-color: color-mix(in srgb, var(--round-accent) 46%, #d9e0e3);
+  border-color: color-mix(
+    in srgb,
+    var(--round-accent) 46%,
+    var(--rail-theme-border, #d9e0e3)
+  );
   box-shadow: 0 10px 28px
     color-mix(in srgb, var(--round-accent) 9%, transparent);
 }
@@ -911,7 +1103,7 @@ onMounted(() => void loadPreviews());
 .round-heading {
   gap: 9px;
   font-size: 12px;
-  color: #748087;
+  color: var(--rail-theme-secondary, #748087);
 }
 
 .round-heading > span {
@@ -953,8 +1145,8 @@ onMounted(() => void loadPreviews());
   align-items: center;
   min-width: 210px;
   padding: 7px;
-  background: #f7f4f4;
-  border: 1px solid #eadde0;
+  background: var(--rail-theme-surface, #f7f4f4);
+  border: 1px solid var(--rail-theme-border, #eadde0);
   border-radius: 13px;
 }
 
@@ -1006,7 +1198,7 @@ onMounted(() => void loadPreviews());
   display: block;
   width: 176px;
   height: 176px;
-  border: 1px solid #eadde0;
+  border: 1px solid var(--rail-theme-border, #eadde0);
   border-radius: 16px;
 }
 
@@ -1069,8 +1261,8 @@ onMounted(() => void loadPreviews());
   gap: 3px;
   place-items: center;
   font-size: 11px;
-  color: #7a858c;
-  background: #fff;
+  color: var(--rail-theme-secondary, #7a858c);
+  background: var(--rail-theme-surface, #fff);
 }
 
 .round-input__visible-assets small,
@@ -1082,7 +1274,7 @@ onMounted(() => void loadPreviews());
 
 .round-input__visible-assets small {
   font-size: 12px;
-  color: #8a6269;
+  color: var(--rail-theme-secondary, #8a6269);
 }
 
 .round-input__visible-assets strong {
@@ -1092,7 +1284,7 @@ onMounted(() => void loadPreviews());
 .round-input__bubble {
   max-width: 680px;
   padding: 12px 15px;
-  background: #f0f2f3;
+  background: var(--rail-theme-surface, #f0f2f3);
   border-radius: 15px 15px 4px;
 }
 
@@ -1108,8 +1300,13 @@ onMounted(() => void loadPreviews());
   gap: 10px;
   width: min(680px, 72vw);
   padding: 12px;
-  background: #f0f2f3;
-  border: 1px solid color-mix(in srgb, var(--round-accent) 32%, #d9e0e3);
+  background: var(--rail-theme-surface, #f0f2f3);
+  border: 1px solid
+    color-mix(
+      in srgb,
+      var(--round-accent) 32%,
+      var(--rail-theme-border, #d9e0e3)
+    );
   border-radius: 15px 15px 4px;
 }
 
@@ -1147,7 +1344,7 @@ onMounted(() => void loadPreviews());
   height: 30px;
   padding: 0;
   font-size: 16px;
-  color: #6f7a80;
+  color: var(--rail-theme-secondary, #6f7a80);
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -1163,7 +1360,11 @@ onMounted(() => void loadPreviews());
 .round-action-button:focus-visible {
   color: var(--round-accent);
   outline: none;
-  background: color-mix(in srgb, var(--round-accent) 9%, #fff);
+  background: color-mix(
+    in srgb,
+    var(--round-accent) 9%,
+    var(--rail-theme-surface, #fff)
+  );
 }
 
 .round-action-button:disabled {
@@ -1173,7 +1374,11 @@ onMounted(() => void loadPreviews());
 
 .round-action-button--accent {
   color: var(--round-accent);
-  background: color-mix(in srgb, var(--round-accent) 8%, #fff);
+  background: color-mix(
+    in srgb,
+    var(--round-accent) 8%,
+    var(--rail-theme-surface, #fff)
+  );
 }
 
 .round-input-details__body {
@@ -1199,7 +1404,7 @@ onMounted(() => void loadPreviews());
   align-items: center;
   min-width: 0;
   padding: 7px;
-  background: #f6f8f8;
+  background: var(--rail-theme-surface, #f6f8f8);
   border-radius: 9px;
 }
 
@@ -1214,13 +1419,13 @@ onMounted(() => void loadPreviews());
 
 .round-input-assets > div > svg {
   padding: 11px;
-  color: #7b878e;
-  background: #e8edef;
+  color: var(--rail-theme-secondary, #7b878e);
+  background: var(--rail-theme-surface, #e8edef);
 }
 
 .round-input-assets span {
   font-size: 12px;
-  color: #7a868d;
+  color: var(--rail-theme-secondary, #7a868d);
 }
 
 .round-input-assets strong {
@@ -1236,20 +1441,20 @@ onMounted(() => void loadPreviews());
   gap: 1px;
   margin: 0;
   overflow: hidden;
-  background: #e1e6e8;
-  border: 1px solid #e1e6e8;
+  background: var(--rail-theme-surface, #e1e6e8);
+  border: 1px solid var(--rail-theme-border, #e1e6e8);
   border-radius: 8px;
 }
 
 .round-parameters div {
   min-width: 0;
   padding: 7px 9px;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .round-parameters dt {
   font-size: 12px;
-  color: #7b878e;
+  color: var(--rail-theme-secondary, #7b878e);
 }
 
 .round-parameters dd {
@@ -1272,8 +1477,8 @@ onMounted(() => void loadPreviews());
   gap: 14px;
   align-items: center;
   padding: 16px;
-  background: #f6f8f8;
-  border: 1px solid #e0e5e7;
+  background: var(--rail-theme-surface, #f6f8f8);
+  border: 1px solid var(--rail-theme-border, #e0e5e7);
   border-radius: 12px;
 }
 
@@ -1281,7 +1486,7 @@ onMounted(() => void loadPreviews());
   justify-content: center;
   min-height: 54px;
   padding: 10px;
-  color: #707980;
+  color: var(--rail-theme-secondary, #707980);
   background: transparent;
   border: 0;
 }
@@ -1321,14 +1526,14 @@ onMounted(() => void loadPreviews());
   margin: 4px 0 0;
   overflow: auto;
   font-size: 12px;
-  color: #727f86;
+  color: var(--rail-theme-secondary, #727f86);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 
 .round-error > svg {
   font-size: 26px;
-  color: #b91c32;
+  color: var(--rail-theme-accent, #b91c32);
 }
 
 .round-error > div {
@@ -1337,7 +1542,7 @@ onMounted(() => void loadPreviews());
 }
 
 .round-error code {
-  color: #b91c32;
+  color: var(--rail-theme-accent, #b91c32);
 }
 
 .round-output {
@@ -1362,9 +1567,9 @@ onMounted(() => void loadPreviews());
   align-items: center;
   padding: 5px 9px;
   font-size: 12px;
-  color: #68757d;
-  background: #fff;
-  border: 1px solid #d8dfe2;
+  color: var(--rail-theme-secondary, #68757d);
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #d8dfe2);
   border-radius: 999px;
 }
 
@@ -1381,7 +1586,7 @@ onMounted(() => void loadPreviews());
 .round-comparison-unavailable {
   margin-left: auto;
   font-size: 12px;
-  color: #8a7478;
+  color: var(--rail-theme-secondary, #8a7478);
 }
 
 .round-output-gallery {
@@ -1406,7 +1611,7 @@ onMounted(() => void loadPreviews());
   padding: 0;
   overflow: hidden;
   cursor: zoom-in;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 2px solid transparent;
   border-radius: 12px;
 }
@@ -1454,7 +1659,7 @@ onMounted(() => void loadPreviews());
   margin: 0 auto;
   overflow: hidden;
   color: #fff;
-  background: #1d272d;
+  background: var(--rail-theme-surface, #1d272d);
   border-radius: 14px;
   box-shadow: 0 10px 34px rgb(24 34 40 / 14%);
 }
@@ -1464,7 +1669,7 @@ onMounted(() => void loadPreviews());
   width: 100%;
   min-height: 0;
   padding: 0;
-  color: #20282d;
+  color: var(--rail-theme-text, #20282d);
   background: transparent;
   border: 0;
   border-radius: 0;
@@ -1569,7 +1774,7 @@ onMounted(() => void loadPreviews());
 .round-empty-output {
   justify-content: center;
   font-size: 12px;
-  color: #758188;
+  color: var(--rail-theme-secondary, #758188);
 }
 
 @keyframes round-pulse {
@@ -1603,5 +1808,95 @@ onMounted(() => void loadPreviews());
   .round-parameters {
     grid-template-columns: 1fr;
   }
+}
+</style>
+
+<style scoped>
+.workflow-round--conversation {
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.workflow-round--conversation .round-output__footer,
+.workflow-round--conversation .round-output-actions {
+  justify-content: flex-start;
+}
+
+.workflow-round--conversation .round-response {
+  text-align: left;
+}
+
+.workflow-round--conversation .round-output-visual,
+.workflow-round--conversation .round-comparison-shell {
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.workflow-round--conversation .round-running {
+  justify-content: flex-start;
+  padding-left: 0;
+}
+
+.workflow-round--conversation .round-output-gallery button,
+.workflow-round--conversation .round-output-image-open,
+.workflow-round--conversation
+  .round-input__visible-assets
+  article.is-image
+  img {
+  border: 0;
+  box-shadow: none;
+}
+
+.workflow-round--conversation .round-output-gallery {
+  width: 100%;
+  min-height: 0;
+}
+
+.round-generated-time {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: var(--rail-theme-secondary, #9299a1);
+  white-space: nowrap;
+}
+
+.round-action-tooltip {
+  display: inline-flex;
+}
+
+.workflow-round--conversation
+  .round-output-actions--business
+  .round-action-button {
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
+</style>
+
+<style scoped>
+.workflow-round--conversation .round-output-gallery {
+  grid-template-rows: auto auto;
+  aspect-ratio: auto;
+}
+
+.workflow-round--conversation .round-output-gallery button {
+  justify-self: center;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.workflow-round--conversation .round-output-gallery img {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 180px;
+}
+
+.workflow-round--conversation .round-output-gallery button:first-child img {
+  max-height: min(52vh, 500px);
 }
 </style>

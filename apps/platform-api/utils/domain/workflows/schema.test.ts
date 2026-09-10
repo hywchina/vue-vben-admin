@@ -38,6 +38,68 @@ const parameterSchema = [
 ];
 
 describe('comfyUI workflow schema', () => {
+  it('enforces the same 1–8 generation quantity for old and new workflow schemas', () => {
+    for (const previousMax of [4, 8, 4096]) {
+      const fields = [
+        {
+          key: 'batchSize',
+          label: '生成数量',
+          type: 'number',
+          nodeId: '1',
+          inputName: 'batch_size',
+          min: 1,
+          max: previousMax,
+          defaultValue: 1,
+        },
+      ];
+      const workflow = {
+        '1': { class_type: 'EmptyLatentImage', inputs: { batch_size: 1 } },
+      };
+      expect(publicParameterSchema(fields)[0]).toMatchObject({
+        min: 1,
+        max: 8,
+        integer: true,
+      });
+      expect(publicParameterSchema(fields)[0]?.help).toContain('最多 8');
+      expect(
+        materializeWorkflow(workflow, fields, { batchSize: 8 })['1']?.inputs
+          .batch_size,
+      ).toBe(8);
+      for (const invalid of [0, 9, 4096, 1.5]) {
+        expect(() =>
+          materializeWorkflow(workflow, fields, { batchSize: invalid }),
+        ).toThrow(/不能小于|不能大于|安全整数/);
+      }
+      expect(fields[0]?.max).toBe(previousMax);
+    }
+  });
+  it('recognizes generated batch keys while leaving unrelated dimensions unchanged', () => {
+    const fields = [
+      {
+        key: 'auto_batch',
+        label: '生成数量',
+        type: 'number',
+        nodeId: '1',
+        inputName: 'batch_size',
+        max: 4096,
+        defaultValue: 20,
+      },
+      {
+        key: 'width',
+        label: '图片宽度',
+        type: 'number',
+        nodeId: '1',
+        inputName: 'width',
+        max: 4096,
+      },
+    ];
+    expect(publicParameterSchema(fields)[0]).toMatchObject({
+      max: 8,
+      defaultValue: 8,
+    });
+    expect(publicParameterSchema(fields)[1]?.max).toBe(4096);
+  });
+
   it('materializes only published parameters without mutating the template', () => {
     const result = materializeWorkflow(apiJson, parameterSchema, {
       prompt: '客室方案',

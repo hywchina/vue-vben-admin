@@ -160,14 +160,6 @@ defineExpose({
       >
         {{ $t('ui.widgets.search.title') }}
       </span>
-      <span
-        v-if="enableShortcutKey"
-        class="relative hidden rounded-sm rounded-r-xl border-foreground/60 bg-background px-1.5 py-1 text-xs leading-none text-muted-foreground group-hover:text-foreground group-hover:opacity-100 md:block"
-      >
-        {{ isWindowsOs() ? 'Ctrl' : '⌘' }}
-        <kbd>K</kbd>
-      </span>
-      <span v-else></span>
     </div>
   </div>
 </template>

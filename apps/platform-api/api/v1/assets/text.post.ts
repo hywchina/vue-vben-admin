@@ -6,6 +6,7 @@ import { getAssetView } from '~/utils/asset-repository';
 import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
+import { ASSET_GENERATION_CATEGORIES } from '~/utils/domain/assets/query';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -15,6 +16,7 @@ const textSchema = z.object({
   content: z.string().min(1),
   description: z.string().trim().max(2000).optional().default(''),
   folderId: z.string().uuid().optional(),
+  generationCategory: z.enum(ASSET_GENERATION_CATEGORIES).optional(),
   mimeType: z
     .enum(['application/json', 'text/markdown', 'text/plain'])
     .optional()
@@ -66,9 +68,9 @@ export default apiHandler(async (event) => {
   await sql.begin(async (transaction) => {
     await transaction`
       INSERT INTO assets (
-        id, project_id, folder_id, name, description, kind, owner_id, status
+        id, project_id, folder_id, generation_category, name, description, kind, owner_id, status
       ) VALUES (
-        ${assetId}, ${input.projectId}, ${input.folderId ?? null},
+        ${assetId}, ${input.projectId}, ${input.folderId ?? null}, ${input.generationCategory ?? null},
         ${input.name}, ${input.description},
         'text', ${identity.id}, 'available'
       )

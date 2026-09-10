@@ -696,12 +696,12 @@ async function renderPptx(input: RenderReportInput) {
 export async function renderReportArtifact(
   input: RenderReportInput,
 ): Promise<ReportArtifact> {
-  const bytes =
-    input.parameters.format === 'docx'
-      ? await renderDocx(input)
-      : input.parameters.format === 'pptx'
-        ? await renderPptx(input)
-        : renderMarkdown(input);
+  const renderer = {
+    docx: renderDocx,
+    pptx: renderPptx,
+    md: renderMarkdown,
+  };
+  const bytes = await renderer[input.parameters.format](input);
   return {
     bytes,
     filename: safeReportFilename(

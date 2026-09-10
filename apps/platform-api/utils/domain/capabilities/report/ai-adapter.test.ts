@@ -25,7 +25,7 @@ const parameters: CreateReportInput = {
   title: '示范项目客室设计报告',
 };
 const image: ReportImageAsset = {
-  bytes: Uint8Array.from([0x89, 0x50, 0x4e, 0x47]),
+  bytes: Uint8Array.from([137, 80, 78, 71]),
   filename: 'cabin.png',
   id: imageId,
   mimeType: 'image/png',
@@ -144,7 +144,7 @@ describe('aI report adapter', () => {
         assets: new Map([[imageId, image]]),
         fetchImplementation: vi.fn(
           async () =>
-            new Response(Uint8Array.from([0x50, 0x4b, 1, 2]), {
+            new Response(Uint8Array.from([80, 75, 1, 2]), {
               headers: { 'x-generated-file-type': 'docx' },
             }),
         ) as typeof fetch,

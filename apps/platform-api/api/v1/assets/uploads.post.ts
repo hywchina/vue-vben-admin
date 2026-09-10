@@ -7,6 +7,7 @@ import { ASSET_KINDS, validateFileForKind } from '~/utils/assets';
 import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
+import { ASSET_GENERATION_CATEGORIES } from '~/utils/domain/assets/query';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -18,6 +19,7 @@ const uploadSchema = z.object({
   derivedFromAssetId: z.string().uuid().optional(),
   filename: z.string().trim().min(1).max(255),
   folderId: z.string().uuid().optional(),
+  generationCategory: z.enum(ASSET_GENERATION_CATEGORIES).optional(),
   kind: z.enum(ASSET_KINDS),
   mimeType: z.string().trim().min(1).max(255),
   name: z.string().trim().min(1).max(200),
@@ -102,9 +104,9 @@ export default apiHandler(async (event) => {
   await sql.begin(async (transaction) => {
     await transaction`
       INSERT INTO assets (
-        id, project_id, folder_id, name, description, kind, owner_id
+        id, project_id, folder_id, generation_category, name, description, kind, owner_id
       ) VALUES (
-        ${assetId}, ${input.projectId}, ${input.folderId ?? null},
+        ${assetId}, ${input.projectId}, ${input.folderId ?? null}, ${input.generationCategory ?? null},
         ${input.name}, ${input.description},
         ${input.kind}, ${identity.id}
       )

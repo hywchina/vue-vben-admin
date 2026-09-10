@@ -260,6 +260,34 @@ export function validateWorkflowMappings(
   }
 }
 
+// 平台统一批次数量策略独立于不可变的已发布工作流版本。
+function applyGenerationQuantityPolicy(
+  definition: WorkflowParameterDefinition,
+) {
+  if (
+    definition.type !== 'number' ||
+    (definition.inputName !== 'batch_size' && definition.key !== 'batchSize')
+  )
+    return definition;
+  let hint = '单次生成图片数量为 1–8，最多 8 张。';
+  if (definition.label.includes('HYPIR'))
+    hint = '批处理数量为 1–8；这是修复节点的处理批次，不代表最终输出图片张数。';
+  else if (definition.label.includes('Hunyuan3D'))
+    hint = '单次生成数量为 1–8，最多 8 个。';
+  return {
+    ...definition,
+    defaultValue:
+      typeof definition.defaultValue === 'number'
+        ? Math.min(8, Math.max(1, Math.floor(definition.defaultValue)))
+        : 1,
+    help: [definition.help, hint].filter(Boolean).join(' '),
+    integer: true,
+    min: 1,
+    max: 8,
+    step: 1,
+  };
+}
+
 function normalizeParameterValue(
   definition: WorkflowParameterDefinition,
   value: unknown,
@@ -338,7 +366,10 @@ export function materializeWorkflow(
     throw new Error(`包含未公开的工作流参数：${unknownKeys.join('、')}`);
   }
   for (const definition of scalarDefinitions) {
-    let value = normalizeParameterValue(definition, parameters[definition.key]);
+    let value = normalizeParameterValue(
+      applyGenerationQuantityPolicy(definition),
+      parameters[definition.key],
+    );
     if (
       value !== undefined &&
       typeof value === 'string' &&
@@ -427,6 +458,7 @@ export function publicParameterSchema(value: unknown) {
   return z
     .array(workflowParameterSchema)
     .parse(value)
+    .map((definition) => applyGenerationQuantityPolicy(definition))
     .map((definition) => {
       const {
         inputName: _inputName,

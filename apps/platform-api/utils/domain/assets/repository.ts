@@ -9,6 +9,7 @@ interface AssetViewRow {
   description: string;
   favorite: boolean;
   folderId: null | string;
+  generationCategory: 'cabin' | 'cmf' | 'component' | 'report' | null;
   id: string;
   kind: AssetKind;
   mimeType: string;
@@ -29,7 +30,7 @@ interface AssetViewRow {
   version: number;
 }
 
-export type AssetSortBy = 'createdAt' | 'name' | 'owner' | 'type';
+export type AssetSortBy = 'createdAt' | 'name' | 'owner' | 'task' | 'type';
 export type AssetSortOrder = 'asc' | 'desc';
 
 function mapAsset(row: AssetViewRow) {
@@ -40,6 +41,7 @@ function mapAsset(row: AssetViewRow) {
     description: row.description,
     favorite: row.favorite,
     folderId: row.folderId ?? undefined,
+    generationCategory: row.generationCategory ?? undefined,
     format: assetFormat(row.originalFilename, row.mimeType),
     id: row.id,
     mimeType: row.mimeType,
@@ -69,6 +71,7 @@ const selectAssetColumns = `
   a.name,
   a.description,
   a.folder_id AS "folderId",
+  a.generation_category AS "generationCategory",
   a.kind,
   a.source,
   a.source_app_key AS "sourceAppKey",
@@ -114,10 +117,23 @@ export async function listAssetViews(
   projectId: string,
   userId: string,
   options: {
+    createdFrom?: string;
+    createdTo?: string;
+    favoriteOnly?: 'false' | 'true';
     folderId?: string;
+    generationCategory?:
+      | 'cabin'
+      | 'cmf'
+      | 'component'
+      | 'report'
+      | 'unclassified';
+    keyword?: string;
+    kind?: string;
+    matchMode?: 'exact' | 'fuzzy';
     ownerId?: string;
     sortBy?: AssetSortBy;
     sortOrder?: AssetSortOrder;
+    sourceJobId?: string;
   } = {},
 ) {
   const sql = useDatabase();
@@ -126,6 +142,7 @@ export async function listAssetViews(
     name: 'lower(a.name)',
     owner: 'lower(u.real_name)',
     type: 'a.kind',
+    task: 'source_job.public_id',
   };
   const sortColumn = sortColumns[options.sortBy ?? 'createdAt'];
   const sortOrder = options.sortOrder === 'asc' ? 'ASC' : 'DESC';
@@ -173,9 +190,40 @@ export async function listAssetViews(
       AND a.deleted_at IS NULL
       AND a.saved_at IS NOT NULL
       AND ($4::uuid IS NULL OR a.owner_id = $4::uuid)
+      AND ($5::text IS NULL OR COALESCE(a.generation_category, 'unclassified') = $5)
+      AND ($6::text IS NULL OR a.kind = $6)
+      AND ($7::text IS NULL OR EXISTS (
+        SELECT 1 FROM (
+          SELECT a.name AS value UNION ALL SELECT a.public_id
+          UNION ALL SELECT u.real_name UNION ALL SELECT u.public_id
+          UNION ALL SELECT source_job.public_id
+          UNION ALL SELECT search_tag.tag FROM asset_tags search_tag WHERE search_tag.asset_id = a.id
+        ) search_values WHERE CASE WHEN $8 = 'exact'
+          THEN lower(search_values.value) = lower($7)
+          ELSE strpos(lower(search_values.value), lower($7)) > 0 END
+      ))
+      AND ($9::uuid IS NULL OR a.source_job_id = $9)
+      AND ($10::timestamptz IS NULL OR a.created_at >= $10)
+      AND ($11::timestamptz IS NULL OR a.created_at < $11)
+      AND ($12::boolean = false OR EXISTS (
+        SELECT 1 FROM asset_favorites favorite WHERE favorite.asset_id = a.id AND favorite.user_id = $2
+      ))
     GROUP BY a.id, u.id, u.real_name, u.public_id, source_job.public_id, av.id
     ORDER BY ${sortColumn} ${sortOrder}, a.id ASC`,
-    [projectId, userId, options.folderId ?? null, options.ownerId ?? null],
+    [
+      projectId,
+      userId,
+      options.folderId ?? null,
+      options.ownerId ?? null,
+      options.generationCategory ?? null,
+      options.kind ?? null,
+      options.keyword?.trim() || null,
+      options.matchMode ?? 'fuzzy',
+      options.sourceJobId ?? null,
+      options.createdFrom ?? null,
+      options.createdTo ?? null,
+      options.favoriteOnly === 'true',
+    ],
   );
   return rows.map((row) => mapAsset(row));
 }

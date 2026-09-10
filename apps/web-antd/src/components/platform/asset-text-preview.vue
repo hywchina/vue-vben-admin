@@ -62,11 +62,11 @@ watch(
   font-family: inherit;
   font-size: 14px;
   line-height: 1.75;
-  color: #26323d;
+  color: var(--rail-theme-text, #26323d);
   text-align: left;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border-radius: 10px;
 }
 
@@ -76,7 +76,7 @@ watch(
   align-items: center;
   justify-content: center;
   min-height: 160px;
-  color: #788590;
+  color: var(--rail-theme-secondary, #788590);
 }
 
 .is-loading {

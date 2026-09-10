@@ -22,10 +22,15 @@ export default apiHandler(async (event) => {
 
   const sql = useDatabase();
   const [catalog] = await sql<
-    { categories: unknown; updatedAt: Date; updatedBy: null | string }[]
+    {
+      categories: unknown;
+      revision: number;
+      updatedAt: Date;
+      updatedBy: null | string;
+    }[]
   >`
     SELECT
-      categories,
+      categories, revision,
       updated_by AS "updatedBy",
       updated_at AS "updatedAt"
     FROM design_prompt_template_catalogs
@@ -45,6 +50,7 @@ export default apiHandler(async (event) => {
   }).categories;
   return {
     categories,
+    revision: catalog.revision,
     designMode: parsedMode.data,
     updatedAt: catalog.updatedAt.toISOString(),
     updatedBy: catalog.updatedBy,

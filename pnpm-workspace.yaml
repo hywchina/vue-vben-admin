@@ -139,8 +139,8 @@ catalog:
   postcss: ^8.5.22
   postcss-html: ^1.8.1
   postcss-scss: ^4.0.9
-  pptxgenjs: ^4.0.1
   postgres: ^3.4.9
+  pptxgenjs: ^4.0.1
   publint: ^0.3.22
   qrcode: ^1.5.4
   qs: ^6.15.3

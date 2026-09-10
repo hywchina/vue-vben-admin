@@ -441,7 +441,11 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   color: #e9f6fa;
   background:
     radial-gradient(circle at 50% 25%, rgb(42 91 111 / 55%), transparent 46%),
-    linear-gradient(155deg, #172731, #071119 70%);
+    linear-gradient(
+      155deg,
+      var(--rail-theme-surface, #172731),
+      var(--rail-theme-surface, #071119) 70%
+    );
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 15px;
   box-shadow: 0 14px 28px rgb(7 17 25 / 18%);
@@ -506,7 +510,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
 
 .camera-group > summary small {
   font-size: 12px;
-  color: #8da7b2;
+  color: var(--rail-theme-muted, #8da7b2);
 }
 
 .camera-visual {
@@ -514,7 +518,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   margin: 0 8px 8px;
   overflow: hidden;
   touch-action: none;
-  background: #05070d;
+  background: var(--rail-theme-surface, #05070d);
   border: 1px solid rgb(74 221 206 / 22%);
   border-radius: 10px;
 }
@@ -656,7 +660,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   gap: 4px;
   align-items: center;
   font-size: var(--rail-font-caption);
-  color: #8da7b2;
+  color: var(--rail-theme-muted, #8da7b2);
   pointer-events: none;
 }
 
@@ -706,8 +710,8 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   color: #edf4f6;
   cursor: pointer;
   outline: none;
-  background: #0a1118;
-  border: 1px solid #40515c;
+  background: var(--rail-theme-surface, #0a1118);
+  border: 1px solid var(--rail-theme-border, #40515c);
   border-radius: 5px;
 }
 
@@ -738,7 +742,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   height: 25px;
   padding: 0;
   color: #f35c8c;
-  background: #0a1118;
+  background: var(--rail-theme-surface, #0a1118);
   border-color: rgb(243 92 140 / 48%);
 }
 
@@ -750,7 +754,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
 .camera-precision > summary {
   padding: 7px 0 4px;
   font-size: 11px;
-  color: #9bb0ba;
+  color: var(--rail-theme-muted, #9bb0ba);
   cursor: pointer;
   list-style-position: inside;
 }
@@ -784,8 +788,8 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
   min-width: 26px;
   padding: 0;
   color: #d9edf1;
-  background: #20343e;
-  border-color: #36505a;
+  background: var(--rail-theme-surface, #20343e);
+  border-color: var(--rail-theme-border, #36505a);
 }
 
 .camera-slider :deep(.ant-input-number) {

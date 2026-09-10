@@ -1,8 +1,6 @@
 <script lang="ts" setup>
-import type {
-  DesignModeKey,
-  DesignModeToolDefinition,
-} from '#/modules/platform/design-modes';
+import type { DesignModeKey } from '#/modules/platform/design-modes';
+import type { TemplateSize } from '#/modules/platform/image-dimensions';
 import type {
   CapabilityField,
   DesignConversation,
@@ -26,6 +24,7 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
+import { useMediaQuery } from '@vueuse/core';
 import {
   Button,
   Drawer,
@@ -49,17 +48,31 @@ import {
   getCapabilityApi,
   getDesignConversationDraftApi,
   getDesignConversationsApi,
+  getJobsApi,
   renameDesignConversationApi,
   saveDesignConversationDraftApi,
 } from '#/api';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
+import { assetCategoryLabel } from '#/modules/platform/asset-browser';
+import {
+  assetImageAction,
+  assetImageActionUnavailable,
+  assetImageOutput,
+} from '#/modules/platform/asset-image-actions';
 import {
   applicationsForDesignMode,
+  designModeDefaults,
   designModeForApplication,
   designModes,
   getDesignMode,
 } from '#/modules/platform/design-modes';
+import {
+  imageDimensionFields,
+  resolveTemplateSize,
+  syncPromptRatio,
+  validDimension,
+} from '#/modules/platform/image-dimensions';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { usePlatformStore } from '#/store';
 import { selectDesignConversationJobs } from '#/store/platform/helpers';
@@ -74,11 +87,12 @@ import {
   moveMediaAsset,
   orderedImageMediaFields,
 } from './design-composer-media';
+import DesignImageSize from './design-image-size.vue';
 import { appendTextInput, markdownTextContent } from './design-input-utils';
 import DesignPromptTemplatePopover from './design-prompt-template-popover.vue';
 import DesignQuickField from './design-quick-field.vue';
 
-const DEFAULT_APP_KEY = 'text-chat';
+const DEFAULT_APP_KEY = 'text-to-image';
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 type BusinessResultAction =
   | 'environment'
@@ -94,10 +108,19 @@ const platformStore = usePlatformStore();
 
 const loading = ref(false);
 const sidebarCollapsed = ref(false);
+const narrowScreen = useMediaQuery('(max-width: 640px)');
+watch(
+  narrowScreen,
+  (narrow) => {
+    sidebarCollapsed.value = narrow;
+  },
+  { immediate: true },
+);
 const conversations = ref<DesignConversation[]>([]);
 const conversationSearch = ref('');
 const activeConversationId = ref('');
-const selectedAppKey = ref('');
+const selectedAppKey = ref(DEFAULT_APP_KEY);
+const functionMenuOpen = ref(false);
 const selectedModeKey = ref<DesignModeKey>('cabin');
 const selectedModeCardKey = ref<DesignModeKey | null>(null);
 const selectedBusinessToolKey = ref('');
@@ -240,9 +263,6 @@ const application = computed(() =>
     (item) => item.key === effectiveApplicationKey.value,
   ),
 );
-const availableApplicationKeys = computed(() =>
-  availableApplications.value.map((item) => item.key),
-);
 const allAvailableApplicationKeys = computed(() =>
   platformStore.applications
     .filter((item) => item.visible && item.capabilityCode)
@@ -250,14 +270,6 @@ const allAvailableApplicationKeys = computed(() =>
 );
 const activeModePrimaryTools = computed(
   () => activeDesignMode.value.primaryTools ?? [],
-);
-const primaryApplicationKeySet = computed(
-  () => new Set(activeModePrimaryTools.value.map((tool) => tool.appKey)),
-);
-const modeOverflowApplications = computed(() =>
-  availableApplications.value.filter(
-    (item) => !primaryApplicationKeySet.value.has(item.key),
-  ),
 );
 const selectedBusinessTool = computed(() =>
   activeModePrimaryTools.value.find(
@@ -310,13 +322,20 @@ const promptField = computed(() =>
       (field.type === 'text' && field.required),
   ),
 );
-const compactFields = computed(() =>
-  scalarFields.value.filter(
-    (field) =>
-      field.key !== promptField.value?.key &&
-      !field.advanced &&
-      ['boolean', 'number', 'select', 'text'].includes(field.type),
-  ),
+const compactFields = computed(() => {
+  const fields = capability.value?.fields ?? [];
+  const keys = capability.value?.presentation?.quickFieldKeys;
+  return keys
+    ? keys.flatMap((key) => fields.find((field) => field.key === key) ?? [])
+    : scalarFields.value.filter(
+        (field) =>
+          field.key !== promptField.value?.key &&
+          !field.advanced &&
+          ['boolean', 'number', 'select', 'text'].includes(field.type),
+      );
+});
+const draftMode = computed(() =>
+  selectedModeKey.value === 'report' ? 'cabin' : selectedModeKey.value,
 );
 const markdownAssets = computed(() =>
   platformStore.currentAssets.filter(
@@ -386,12 +405,6 @@ const continueInputOptions = computed(() => {
       : [],
   );
 });
-const welcomeSuggestions = [
-  '梳理一份轨道客室空间设计方案',
-  '分析当前项目资产可以支持哪些设计方向',
-  '给出客室色彩、材料与照明的组合建议',
-];
-
 function formatConversationTime(value: string) {
   const date = new Date(value);
   const now = new Date();
@@ -415,7 +428,10 @@ function assetFolderPath(folderId: string) {
       ? platformStore.assetFolders.find((item) => item.id === current?.parentId)
       : undefined;
   }
-  return names.join(' / ');
+  const folder = platformStore.assetFolders.find(
+    (item) => item.id === folderId,
+  );
+  return `${assetCategoryLabel(folder?.generationCategory)} / ${names.join(' / ')}`;
 }
 
 function fieldTextValue(field: CapabilityField) {
@@ -692,13 +708,14 @@ function draftPayload() {
     !appKey ||
     !projectId ||
     !capability.value ||
-    draftReadyKey.value !== `${conversationId}:${appKey}`
+    draftReadyKey.value !== `${conversationId}:${appKey}:${draftMode.value}`
   ) {
     return;
   }
   return {
     appKey,
     conversationId,
+    designMode: draftMode.value,
     inputAssetIds: Object.fromEntries(
       Object.entries(selectedAssets).filter(([, id]) => Boolean(id)),
     ),
@@ -725,6 +742,7 @@ function scheduleDraftSave() {
 
 async function loadCapability(appKey = effectiveApplicationKey.value) {
   const generation = ++loadGeneration;
+  const mode = draftMode.value;
   if (draftTimer) clearTimeout(draftTimer);
   draftTimer = undefined;
   draftReadyKey.value = '';
@@ -735,16 +753,17 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
   if (!app?.capabilityCode || !conversationId || !projectId) return;
   capabilityLoading.value = true;
   try {
-    const nextCapability =
-      capabilityCache[appKey] ?? (await getCapabilityApi(app.capabilityCode));
+    const nextCapability = await getCapabilityApi(app.capabilityCode);
     capabilityCache[appKey] = nextCapability;
     const draft = await getDesignConversationDraftApi(
       conversationId,
       projectId,
       appKey,
+      mode,
     );
     if (
       generation !== loadGeneration ||
+      draftMode.value !== mode ||
       effectiveApplicationKey.value !== appKey ||
       activeConversationId.value !== conversationId
     ) {
@@ -760,13 +779,16 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
         )
         .map((field) => field.key),
     );
-    for (const [key, value] of Object.entries(draft.parameterValues)) {
+    const values = draft.updatedAt
+      ? draft.parameterValues
+      : designModeDefaults(mode, appKey);
+    for (const [key, value] of Object.entries(values)) {
       if (scalarKeys.has(key)) parameterValues[key] = value;
     }
     for (const [index, assetId] of Object.entries(draft.inputAssetIds)) {
       selectedAssets[Number(index)] = assetId;
     }
-    draftReadyKey.value = `${conversationId}:${appKey}`;
+    draftReadyKey.value = `${conversationId}:${appKey}:${draftMode.value}`;
   } finally {
     if (generation === loadGeneration) {
       hydratingDraft = false;
@@ -878,14 +900,20 @@ async function selectConversation(
       selectedModeKey.value,
     ).key;
   }
-  selectedAppKey.value = availablePreferredApp ?? '';
-  await router.replace({ query: { conversationId } });
+  selectedAppKey.value = availablePreferredApp ?? DEFAULT_APP_KEY;
+  await router.replace({
+    query: { ...(importingAsset ? route.query : {}), conversationId },
+  });
   await loadCapability();
   void hydrateTimelineCapabilities();
   await scrollToLatestRound();
 }
 
 async function chooseApplication(appKey: string, businessToolKey = '') {
+  functionMenuOpen.value = false;
+  appSearch.value = '';
+  parameterDrawerOpen.value = false;
+  mediaPickerOpen.value = false;
   if (appKey === selectedAppKey.value && capability.value) {
     selectedBusinessToolKey.value = businessToolKey;
     return;
@@ -898,14 +926,6 @@ async function chooseApplication(appKey: string, businessToolKey = '') {
   selectedBusinessToolKey.value = businessToolKey;
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
-}
-
-async function choosePrimaryTool(tool: DesignModeToolDefinition) {
-  if (!availableApplicationKeys.value.includes(tool.appKey)) {
-    message.info(`${tool.label}能力未配置或当前账号不可用`);
-    return;
-  }
-  await chooseApplication(tool.appKey, tool.key);
 }
 
 async function chooseDesignMode(modeKey: DesignModeKey) {
@@ -923,41 +943,140 @@ async function chooseDesignMode(modeKey: DesignModeKey) {
     return;
   }
   selectedModeCardKey.value = modeKey;
-  if (modeKey === selectedModeKey.value && !selectedAppKey.value) return;
+  if (modeKey === selectedModeKey.value) return;
   await saveDraftNow();
   selectedModeKey.value = modeKey;
   selectedBusinessToolKey.value = '';
-  const preferredKey = mode.defaultApplicationKey ?? DEFAULT_APP_KEY;
+  const preferredKey =
+    selectedAppKey.value || mode.defaultApplicationKey || DEFAULT_APP_KEY;
   const nextKey =
     applications.find((item) => item.key === preferredKey)?.key ??
     applications[0]?.key;
   if (!nextKey) return;
-  selectedAppKey.value = '';
+  selectedAppKey.value = nextKey;
   await loadCapability(nextKey);
 }
 
-function applyPromptTemplate(values: string[]) {
+const dimensionFields = computed(() =>
+  imageDimensionFields(scalarFields.value),
+);
+const sizeRevision = ref(0);
+const imageSize = computed(() => ({
+  width: Number(
+    dimensionFields.value
+      ? (parameterValues[dimensionFields.value.width.key] ??
+          dimensionFields.value.width.defaultValue)
+      : 0,
+  ),
+  height: Number(
+    dimensionFields.value
+      ? (parameterValues[dimensionFields.value.height.key] ??
+          dimensionFields.value.height.defaultValue)
+      : 0,
+  ),
+}));
+const sizeChipVisible = computed(() =>
+  Boolean(
+    dimensionFields.value &&
+    compactFields.value.some(
+      (field) =>
+        field.key === dimensionFields.value?.width.key ||
+        field.key === dimensionFields.value?.height.key,
+    ),
+  ),
+);
+const compactDisplayFields = computed(() =>
+  sizeChipVisible.value
+    ? compactFields.value.filter(
+        (field) =>
+          field.key !== dimensionFields.value?.width.key &&
+          field.key !== dimensionFields.value?.height.key,
+      )
+    : compactFields.value,
+);
+function applyImageSize(size: { height: number; width: number }) {
+  const fields = dimensionFields.value;
+  if (
+    !fields ||
+    !validDimension(size.width, fields.width) ||
+    !validDimension(size.height, fields.height)
+  )
+    throw new Error('图片尺寸不符合当前工作流限制');
+  parameterValues[fields.width.key] = size.width;
+  parameterValues[fields.height.key] = size.height;
+  scheduleDraftSave();
+}
+const promptTemplateContext = computed(() => ({
+  workflowKey: selectedAppKey.value,
+  editing: mediaFields.value.length > 0,
+  maxLength: promptField.value?.maxLength ?? 10_000,
+  defaultWidth: Number(dimensionFields.value?.width.defaultValue),
+  defaultHeight: Number(dimensionFields.value?.height.defaultValue),
+  width: dimensionFields.value ? imageSize.value.width : undefined,
+  height: dimensionFields.value ? imageSize.value.height : undefined,
+  widthLimit: dimensionFields.value
+    ? {
+        min: dimensionFields.value.width.min,
+        max: dimensionFields.value.width.max,
+        step: dimensionFields.value.width.step,
+      }
+    : undefined,
+  heightLimit: dimensionFields.value
+    ? {
+        min: dimensionFields.value.height.min,
+        max: dimensionFields.value.height.max,
+        step: dimensionFields.value.height.step,
+      }
+    : undefined,
+}));
+function applyPromptTemplate(text: string, size?: TemplateSize) {
   const field = promptField.value;
-  if (!field) {
+  if (text && !field) {
     message.warning('当前应用没有可填写的提示词');
     return;
   }
-  const next = appendTextInput(
-    parameterValues[field.key],
-    values.join('，'),
-    field.maxLength,
-  );
-  setFieldValue(field, next.value);
-  if (next.truncated) message.warning('部分模板内容因长度限制已截断');
+  try {
+    let resolved = imageSize.value;
+    if (size) {
+      const fields = dimensionFields.value;
+      if (!fields) throw new Error('当前工作流不支持设置图片宽高');
+      resolved = resolveTemplateSize(
+        size,
+        imageSize.value,
+        fields.width,
+        fields.height,
+      );
+    }
+    const ratioOnly = size && text === syncPromptRatio('', resolved, true);
+    const content =
+      text && !ratioOnly
+        ? text
+        : String(field ? (parameterValues[field.key] ?? '') : '');
+    const finalText = size ? syncPromptRatio(content, resolved, true) : content;
+    if (field?.maxLength && finalText.length > field.maxLength) {
+      throw new Error('提示词超出长度限制，请调整后重新应用');
+    }
+    // Validate the final text before changing either the prompt or dimensions.
+    if (size) {
+      applyImageSize(resolved);
+      sizeRevision.value++;
+    }
+    if (field && (text || size)) setFieldValue(field, finalText);
+  } catch (error) {
+    message.warning(error instanceof Error ? error.message : '模板尺寸不可用');
+  }
 }
 
-async function clearApplicationSelection() {
-  if (!selectedAppKey.value) return;
-  await saveDraftNow();
-  selectedAppKey.value = '';
-  selectedBusinessToolKey.value = '';
-  await loadCapability();
-}
+watch(
+  () => [imageSize.value.width, imageSize.value.height],
+  () => {
+    const field = promptField.value;
+    if (!field || !dimensionFields.value) return;
+    const text = String(parameterValues[field.key] ?? '');
+    const synced = syncPromptRatio(text, imageSize.value);
+    if (synced !== text) setFieldValue(field, synced);
+  },
+);
 
 function openRename() {
   if (!activeConversation.value) return;
@@ -1751,27 +1870,15 @@ function handleBusinessResultAction(
 ) {
   if (action === 'multi-image') return openMultiImage(output, mode);
   if (action === 'upscale') return openUpscale(output, mode);
-  if (action === 'understand') return void understandOutput(output, mode);
-  if (action === 'mark' && mode !== 'cmf') return void markOutput(output, mode);
+  if (action === 'understand') return understandOutput(output, mode);
+  if (action === 'mark' && mode !== 'cmf') return markOutput(output, mode);
   if (action === 'environment' && mode === 'cabin') {
-    return void changeEnvironment(output);
+    return changeEnvironment(output);
   }
   if (action === 'multi-angle' && mode !== 'cmf') {
     return openMultiAngle(output, mode);
   }
   if (action === 'three-d' && mode === 'component') return openThreeD(output);
-}
-
-async function useWelcomeSuggestion(value: string) {
-  const textApp = availableApplications.value.find(
-    (item) => item.key === DEFAULT_APP_KEY,
-  );
-  if (textApp && effectiveApplicationKey.value !== textApp.key) {
-    await chooseApplication(textApp.key);
-  }
-  const field = promptField.value;
-  if (!field) return;
-  setFieldValue(field, value);
 }
 
 async function switchProject(projectId: string) {
@@ -1801,11 +1908,98 @@ function stopPolling() {
   pollTimer = undefined;
 }
 
+let importingAsset = false;
+async function importAssetAction() {
+  const assetId = route.query.sourceAssetId;
+  const action = assetImageAction(route.query.assetAction);
+  if (typeof assetId !== 'string' || importingAsset) return;
+  importingAsset = true;
+  pageReady = false;
+  loading.value = true;
+  try {
+    if (!action) throw new Error('不支持的图片操作');
+    const asset = await getAssetApi(assetId);
+    const unavailable = assetImageActionUnavailable(
+      asset,
+      action.key,
+      platformStore.applications
+        .filter((app) => app.visible)
+        .map((app) => app.key),
+    );
+    if (unavailable) throw new Error(unavailable);
+    // Resolve project from the authorized API asset, never from a caller-supplied project id.
+    await saveDraftNow();
+    await platformStore.switchProject(asset.projectId);
+    if (platformStore.currentProjectId !== asset.projectId)
+      throw new Error('无法访问图片所属项目');
+    const sourceJobs =
+      action.key === 'rerun' ? await getJobsApi(asset.projectId) : [];
+    const sourceJob = sourceJobs.find((job) => job.id === asset.sourceJobId);
+    if (
+      action.key === 'rerun' &&
+      (!sourceJob ||
+        !sourceJob.outputs.some((output) => output.assetId === asset.id))
+    )
+      throw new Error('图片的来源任务已不可用');
+    await refreshConversations();
+    const conversation = regularConversations.value.find(
+      (item) => item.id === route.query.conversationId,
+    );
+    if (!conversation) throw new Error('图片编辑会话不属于当前项目或已不可用');
+    activeConversationId.value = '';
+    await selectConversation(conversation.id);
+    selectedModeKey.value = 'cabin';
+    const output = assetImageOutput(asset);
+    if (sourceJob) {
+      if (sourceJob.designMode && sourceJob.designMode !== 'report') {
+        selectedModeKey.value = sourceJob.designMode;
+        selectedModeCardKey.value = sourceJob.designMode;
+      }
+      await chooseApplication(sourceJob.appKey);
+      for (const [key, value] of Object.entries(sourceJob.parameters))
+        parameterValues[key] = value;
+      for (const input of sourceJob.inputs)
+        selectedAssets[input.position] = input.assetId;
+      await saveDraftNow();
+      message.success('已复用来源任务的参数和输入，请确认后发送');
+    } else if (action.key === 'mask') {
+      const preview = await getAssetPreviewApi(asset.id);
+      if (preview.mode !== 'url') throw new Error('无法读取图片');
+      await openOutputMask(output, preview.url);
+    } else if (
+      action.key !== 'rerun' &&
+      action.key !== 'save' &&
+      action.key !== 'download'
+    ) {
+      await handleBusinessResultAction(action.key, output, 'cabin');
+    }
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '无法打开图片操作');
+    await router.replace({
+      query: activeConversationId.value
+        ? { conversationId: activeConversationId.value }
+        : {},
+    });
+  } finally {
+    importingAsset = false;
+    pageReady = true;
+    loading.value = false;
+  }
+}
+watch(
+  () => route.query.sourceAssetId,
+  () => {
+    if (pageReady && route.query.sourceAssetId) void importAssetAction();
+  },
+);
+
 onMounted(async () => {
   loading.value = true;
   try {
     await platformStore.initialize();
-    await ensureConversation();
+    await (route.query.sourceAssetId
+      ? importAssetAction()
+      : ensureConversation());
     pageReady = true;
   } finally {
     loading.value = false;
@@ -1848,7 +2042,18 @@ onBeforeUnmount(() => {
 
 <template>
   <main :class="{ 'sidebar-collapsed': sidebarCollapsed }" class="design-page">
-    <aside class="conversation-sidebar">
+    <button
+      v-if="narrowScreen && !sidebarCollapsed"
+      class="conversation-sidebar-backdrop"
+      aria-label="关闭任务栏"
+      type="button"
+      @click="sidebarCollapsed = true"
+    ></button>
+    <aside
+      class="conversation-sidebar"
+      :inert="sidebarCollapsed"
+      :aria-hidden="sidebarCollapsed"
+    >
       <div class="conversation-sidebar__heading">
         <span>任务栏</span>
         <small>{{ activeConversation?.title ?? '新设计会话' }}</small>
@@ -1965,6 +2170,7 @@ onBeforeUnmount(() => {
               :accent="jobApplication(job)?.color ?? '#b91c32'"
               :available-application-keys="allAvailableApplicationKeys"
               :fields="jobCapability(job)?.fields ?? []"
+              conversation-layout
               flow-label="深化设计"
               :job="job"
               :round="index + 1"
@@ -1982,26 +2188,8 @@ onBeforeUnmount(() => {
             />
           </div>
           <div v-else class="thread-welcome">
-            <div class="welcome-mark">
-              <IconifyIcon icon="lucide:sparkles" />
-            </div>
-            <span>RAIL DESIGN COPILOT</span>
-            <h2>从一个设计问题开始</h2>
-            <p>
-              {{ activeDesignMode.description }}
-              选择下方真实可用的设计能力后，结果会登记到当前项目并保留完整任务血缘。
-            </p>
-            <div class="welcome-suggestions">
-              <button
-                v-for="suggestion in welcomeSuggestions"
-                :key="suggestion"
-                type="button"
-                @click="useWelcomeSuggestion(suggestion)"
-              >
-                {{ suggestion }}
-                <IconifyIcon icon="lucide:arrow-up-right" />
-              </button>
-            </div>
+            <h2>今天想设计什么？</h2>
+            <p>在下方输入想法，开始设计</p>
           </div>
         </Spin>
       </div>
@@ -2149,177 +2337,104 @@ onBeforeUnmount(() => {
           </div>
           <div class="composer-bottom">
             <div class="composer-toolbar">
-              <template v-if="selectedAppKey">
-                <span
-                  class="selected-application-chip"
-                  data-testid="active-design-application"
-                >
-                  <span>
-                    <IconifyIcon
-                      :icon="application?.icon ?? 'lucide:message-circle'"
-                    />
-                    {{
-                      selectedBusinessTool?.label ??
-                      application?.shortName ??
-                      application?.name ??
-                      '选择应用'
-                    }}
-                  </span>
-                  <button
-                    aria-label="取消选择当前应用"
-                    title="取消选择当前应用"
-                    type="button"
-                    @click="clearApplicationSelection"
-                  >
-                    <IconifyIcon icon="lucide:x" />
-                  </button>
-                </span>
-                <DesignPromptTemplatePopover
-                  v-if="selectedBusinessTool?.templateCategoryIds"
-                  :category-ids="selectedBusinessTool.templateCategoryIds"
-                  :mode="promptTemplateMode"
-                  @apply="applyPromptTemplate"
-                />
-                <div class="parameter-chips">
-                  <div class="parameter-chips__scroll">
-                    <DesignQuickField
-                      v-for="field in compactFields"
-                      :key="field.key"
-                      :field="field"
-                      :value="parameterValues[field.key]"
-                      @change="setQuickFieldValue(field, $event)"
-                    />
-                    <button
-                      v-if="mediaFields.length"
-                      class="composer-media-summary"
-                      type="button"
-                      @click="openMediaPicker"
-                    >
-                      <IconifyIcon icon="lucide:paperclip" />
-                      素材
-                      <strong>
-                        {{ selectedAssetIds.length }}/{{ mediaFields.length }}
-                      </strong>
-                    </button>
-                  </div>
-                  <button
-                    class="composer-more-button"
-                    data-testid="open-design-parameters"
-                    type="button"
-                    @click="parameterDrawerOpen = true"
-                  >
-                    <IconifyIcon icon="lucide:ellipsis" />
-                    更多
-                  </button>
-                </div>
-              </template>
-
-              <div
-                v-else
-                aria-label="设计应用"
-                class="composer-application-shortcuts"
-                :class="{
-                  'composer-application-shortcuts--business':
-                    activeModePrimaryTools.length > 0,
-                }"
-                :data-application-count="availableApplications.length"
+              <Popover
+                v-model:open="functionMenuOpen"
+                placement="topLeft"
+                trigger="click"
               >
-                <template v-if="activeModePrimaryTools.length">
-                  <div class="primary-tool-scroll">
-                    <button
-                      v-for="tool in activeModePrimaryTools"
-                      :key="tool.key"
-                      :data-app-key="tool.appKey"
-                      :data-tool-key="tool.key"
-                      :disabled="
-                        !availableApplicationKeys.includes(tool.appKey)
-                      "
-                      :title="
-                        availableApplicationKeys.includes(tool.appKey)
-                          ? tool.label
-                          : `${tool.label}能力未配置或不可用`
-                      "
-                      type="button"
-                      @click="choosePrimaryTool(tool)"
-                    >
-                      <IconifyIcon :icon="tool.icon" />
-                      {{ tool.label }}
-                    </button>
-                  </div>
-                  <div class="primary-tool-fixed">
-                    <DesignPromptTemplatePopover
-                      :mode="promptTemplateMode"
-                      @apply="applyPromptTemplate"
+                <template #content>
+                  <div class="design-function-menu" aria-label="工作流功能列表">
+                    <Input
+                      v-model:value="appSearch"
+                      placeholder="搜索功能"
+                      allow-clear
                     />
-                    <Popover placement="topLeft" trigger="click">
-                      <template #content>
-                        <div class="more-applications-grid">
-                          <button
-                            v-for="item in modeOverflowApplications"
-                            :key="item.key"
-                            :data-app-key="item.key"
-                            type="button"
-                            @click="chooseApplication(item.key)"
-                          >
-                            <IconifyIcon :icon="item.icon" />
-                            <span>
-                              <strong>{{ item.shortName }}</strong>
-                              <small>{{ item.description }}</small>
-                            </span>
-                          </button>
-                          <span
-                            v-if="modeOverflowApplications.length === 0"
-                            class="more-applications-empty"
-                          >
-                            暂无更多能力
-                          </span>
-                        </div>
-                      </template>
+                    <div class="design-function-options">
                       <button
-                        data-testid="more-design-applications"
-                        title="查看更多应用"
-                        type="button"
-                      >
-                        <IconifyIcon icon="lucide:grid-2x2" />
-                        更多
-                      </button>
-                    </Popover>
-                  </div>
-                </template>
-                <Popover
-                  v-if="
-                    !activeModePrimaryTools.length &&
-                    modeOverflowApplications.length
-                  "
-                  placement="topLeft"
-                  trigger="click"
-                >
-                  <template #content>
-                    <div class="more-applications-grid">
-                      <button
-                        v-for="item in modeOverflowApplications"
+                        v-for="item in availableApplications"
                         :key="item.key"
                         :data-app-key="item.key"
+                        :aria-pressed="item.key === selectedAppKey"
                         type="button"
                         @click="chooseApplication(item.key)"
                       >
                         <IconifyIcon :icon="item.icon" />
-                        <span>
-                          <strong>{{ item.shortName }}</strong>
-                          <small>{{ item.description }}</small>
-                        </span>
+                        <span>{{ item.name || item.shortName }}</span>
+                        <IconifyIcon
+                          v-if="item.key === selectedAppKey"
+                          icon="lucide:check"
+                        />
                       </button>
+                      <small v-if="!availableApplications.length">
+                        暂无可用功能
+                      </small>
                     </div>
-                  </template>
+                  </div>
+                </template>
+                <button
+                  class="design-function-trigger"
+                  data-testid="active-design-application"
+                  aria-label="切换功能"
+                  type="button"
+                >
+                  <IconifyIcon
+                    :icon="application?.icon ?? 'lucide:image-plus'"
+                  />
+                  <span>
+                    {{
+                      application?.name || application?.shortName || '文生图'
+                    }}
+                  </span>
+                  <IconifyIcon icon="lucide:chevron-down" />
+                </button>
+              </Popover>
+              <div class="parameter-chips">
+                <div class="parameter-chips__scroll">
+                  <DesignQuickField
+                    v-for="field in compactDisplayFields"
+                    :key="field.key"
+                    :field="field"
+                    :value="parameterValues[field.key]"
+                    @change="setQuickFieldValue(field, $event)"
+                  />
+                  <DesignImageSize
+                    v-if="sizeChipVisible && dimensionFields"
+                    :key="`${selectedAppKey}-${activeConversationId}-${draftMode}-${sizeRevision}`"
+                    :width="imageSize.width"
+                    :height="imageSize.height"
+                    :width-field="dimensionFields.width"
+                    :height-field="dimensionFields.height"
+                    @change="applyImageSize"
+                  />
                   <button
-                    data-testid="more-design-applications"
-                    title="查看更多应用"
+                    v-if="mediaFields.length"
+                    class="composer-media-summary"
                     type="button"
+                    @click="openMediaPicker"
                   >
-                    <IconifyIcon icon="lucide:grid-2x2" />
-                    更多
+                    <IconifyIcon icon="lucide:paperclip" />
+                    素材
+                    <strong>
+                      {{ selectedAssetIds.length }}/{{ mediaFields.length }}
+                    </strong>
                   </button>
-                </Popover>
+                  <DesignPromptTemplatePopover
+                    :mode="promptTemplateMode"
+                    :context="promptTemplateContext"
+                    @apply="applyPromptTemplate"
+                    @size-change="applyImageSize"
+                  />
+                </div>
+                <button
+                  class="composer-more-button"
+                  data-testid="open-design-parameters"
+                  type="button"
+                  :disabled="!capability || capabilityLoading"
+                  @click="parameterDrawerOpen = true"
+                >
+                  <IconifyIcon icon="lucide:sliders-horizontal" />
+                  更多
+                </button>
               </div>
             </div>
             <Button
@@ -2854,17 +2969,17 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .design-page {
-  --design-border: #e3e6e8;
+  --design-border: var(--rail-theme-border, #e3e6e8);
   --design-content-width: 1120px;
-  --design-muted: #68747d;
+  --design-muted: var(--rail-theme-secondary, #68747d);
 
   display: grid;
   grid-template-columns: 250px minmax(0, 1fr);
   height: calc(100vh - 106px);
   min-height: 640px;
   overflow: hidden;
-  color: #172027;
-  background: #f5f6f7;
+  color: var(--rail-theme-text, #172027);
+  background: var(--rail-theme-surface, #f5f6f7);
 }
 
 .conversation-sidebar {
@@ -2872,7 +2987,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-width: 0;
   padding: 20px 14px;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border-right: 1px solid var(--design-border);
 }
 
@@ -2930,11 +3045,11 @@ onBeforeUnmount(() => {
 
 .conversation-item:hover,
 .conversation-item.active {
-  background: #f3f4f5;
+  background: var(--rail-theme-surface, #f3f4f5);
 }
 
 .conversation-item.active {
-  box-shadow: inset 3px 0 var(--rail-red);
+  box-shadow: inset 3px 0 #bd1934;
 }
 
 .conversation-item__icon {
@@ -2943,7 +3058,7 @@ onBeforeUnmount(() => {
   width: 30px;
   height: 30px;
   color: var(--rail-red);
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 1px solid var(--design-border);
   border-radius: 9px;
 }
@@ -3001,7 +3116,7 @@ onBeforeUnmount(() => {
   height: 25px;
   color: var(--design-muted);
   cursor: pointer;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 1px solid var(--design-border);
   border-radius: 7px;
 }
@@ -3047,7 +3162,7 @@ onBeforeUnmount(() => {
 .thread-status i {
   width: 8px;
   height: 8px;
-  background: #91a09a;
+  background: var(--rail-theme-surface, #91a09a);
   border-radius: 50%;
 }
 
@@ -3069,38 +3184,19 @@ onBeforeUnmount(() => {
 }
 
 .thread-welcome {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   max-width: 620px;
-  min-height: 48vh;
   margin: auto;
   text-align: center;
 }
 
-.welcome-mark {
-  display: grid;
-  place-items: center;
-  width: 56px;
-  height: 56px;
-  margin-bottom: 14px;
-  font-size: 25px;
-  color: #fff;
-  background: var(--rail-red);
-  border-radius: 18px 7px;
-  box-shadow: 0 14px 32px rgb(185 28 50 / 20%);
-}
-
-.thread-welcome > span {
-  font:
-    700 11px/1.2 'IBM Plex Mono',
-    monospace;
-  color: var(--rail-red);
-  letter-spacing: 0.16em;
-}
-
 .thread-welcome h2 {
-  margin: 8px 0 6px;
-  font-size: 26px;
+  margin: 0 0 12px;
+  font-size: clamp(20px, 2vw, 24px);
+  font-weight: 500;
 }
 
 .thread-welcome p {
@@ -3112,7 +3208,10 @@ onBeforeUnmount(() => {
 
 .design-composer {
   padding: 0 clamp(18px, 5vw, 72px) 20px;
-  background: linear-gradient(transparent, #f5f6f7 24%);
+  background: linear-gradient(
+    transparent,
+    var(--rail-theme-surface, #f5f6f7) 24%
+  );
 }
 
 .composer-toolbar,
@@ -3141,7 +3240,7 @@ onBeforeUnmount(() => {
   padding: 4px 8px;
   font-size: 15px;
   font-weight: 600;
-  color: #17191c;
+  color: var(--rail-theme-text, #17191c);
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -3153,7 +3252,7 @@ onBeforeUnmount(() => {
   max-width: var(--design-content-width);
   padding: 12px 14px;
   margin: 0 auto;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 1px solid
     color-mix(in srgb, var(--app-accent) 35%, var(--design-border));
   border-radius: 20px;
@@ -3195,7 +3294,7 @@ onBeforeUnmount(() => {
   max-width: 86px;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: #1f2b32;
+  color: var(--rail-theme-text, #1f2b32);
   white-space: nowrap;
 }
 
@@ -3228,13 +3327,13 @@ onBeforeUnmount(() => {
   font-size: 11px;
   font-style: normal;
   color: var(--rail-red);
-  background: #fff0f2;
+  background: var(--rail-theme-surface, #fff0f2);
   border-radius: 5px;
 }
 
 .drawer-field em {
-  color: #65737d;
-  background: #f0f2f3;
+  color: var(--rail-theme-secondary, #65737d);
+  background: var(--rail-theme-surface, #f0f2f3);
 }
 
 .drawer-field small,
@@ -3257,25 +3356,25 @@ onBeforeUnmount(() => {
   align-items: center;
   min-height: 112px;
   padding: 16px;
-  color: #26323a;
+  color: var(--rail-theme-text, #26323a);
   text-align: left;
   cursor: pointer;
-  background: #f7f8f9;
-  border: 1px solid #e2e6e9;
+  background: var(--rail-theme-surface, #f7f8f9);
+  border: 1px solid var(--rail-theme-border, #e2e6e9);
   border-radius: 12px;
 }
 
 .cmf-action-choices > button:hover {
-  color: #b91c32;
-  background: #fff4f5;
-  border-color: #df8e9d;
+  color: var(--rail-theme-accent, #b91c32);
+  background: var(--rail-theme-surface, #fff4f5);
+  border-color: var(--rail-theme-border, #d8dde3);
 }
 
 .cmf-action-choices > button > svg:first-child {
   width: 34px;
   height: 34px;
   padding: 8px;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border-radius: 10px;
 }
 
@@ -3291,7 +3390,7 @@ onBeforeUnmount(() => {
 .cmf-action-choices small {
   font-size: 12px;
   line-height: 1.55;
-  color: #74808a;
+  color: var(--rail-theme-secondary, #74808a);
 }
 
 .cmf-multi-dialog {
@@ -3305,8 +3404,8 @@ onBeforeUnmount(() => {
   align-items: center;
   padding: 16px;
   cursor: pointer;
-  background: #f7f8f9;
-  border: 1px dashed #cbd2d7;
+  background: var(--rail-theme-surface, #f7f8f9);
+  border: 1px dashed var(--rail-theme-border, #cbd2d7);
   border-radius: 10px;
 }
 
@@ -3321,7 +3420,7 @@ onBeforeUnmount(() => {
 .cmf-file-picker > svg {
   width: 28px;
   height: 28px;
-  color: #b91c32;
+  color: var(--rail-theme-accent, #b91c32);
 }
 
 .cmf-file-picker span {
@@ -3330,7 +3429,7 @@ onBeforeUnmount(() => {
 }
 
 .cmf-file-picker small {
-  color: #74808a;
+  color: var(--rail-theme-secondary, #74808a);
 }
 
 .cmf-file-list {
@@ -3349,7 +3448,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   font-size: 12px;
   white-space: nowrap;
-  background: #f2f4f5;
+  background: var(--rail-theme-surface, #f2f4f5);
   border-radius: 7px;
 }
 
@@ -3387,14 +3486,14 @@ onBeforeUnmount(() => {
 
 /* 0820 工作区骨架：平台壳层提供功能侧栏与顶部栏，页面内部只承载任务栏和设计区。 */
 main.design-page {
-  --design-sidebar-width: 276px;
+  --design-sidebar-width: 248px;
 
   position: relative;
   grid-template-columns: var(--design-sidebar-width) minmax(0, 1fr);
   width: 100%;
   height: var(--vben-content-height, calc(100dvh - 106px));
   min-height: 0;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   transition: grid-template-columns 180ms ease;
 }
 
@@ -3402,8 +3501,8 @@ main.design-page {
   width: var(--design-sidebar-width);
   padding: 14px 12px 12px;
   overflow: hidden;
-  background: #f7f7f8;
-  border-color: #e6e6e8;
+  background: var(--rail-theme-surface, #f7f7f8);
+  border-color: var(--rail-theme-border, #e6e6e8);
   transition:
     opacity 140ms ease,
     transform 180ms ease;
@@ -3428,7 +3527,7 @@ main.design-page {
   place-items: center;
   width: 28px;
   height: 48px;
-  color: #9da2aa;
+  color: var(--rail-theme-muted, #9da2aa);
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -3443,13 +3542,13 @@ main.design-page {
 }
 
 .conversation-sidebar-toggle:hover {
-  color: #646a73;
+  color: var(--rail-theme-secondary, #646a73);
   background: rgb(17 24 39 / 5%);
   opacity: 1;
 }
 
 .conversation-sidebar-toggle:focus-visible {
-  color: #646a73;
+  color: var(--rail-theme-secondary, #646a73);
   outline: 2px solid rgb(194 24 54 / 45%);
   outline-offset: -2px;
   background: rgb(17 24 39 / 5%);
@@ -3474,7 +3573,7 @@ main.design-page {
 .conversation-sidebar__heading span {
   font-size: 15px;
   font-weight: 750;
-  color: #2c3338;
+  color: var(--rail-theme-text, #2c3338);
 }
 
 .conversation-sidebar__heading small {
@@ -3495,7 +3594,7 @@ main.design-page {
 }
 
 .conversation-search :deep(.ant-input-affix-wrapper) {
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border-color: transparent;
   border-radius: 10px;
   box-shadow: none;
@@ -3529,19 +3628,20 @@ main.design-page {
 
 .design-page .conversation-item:hover,
 .design-page .conversation-item.active {
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .design-page .conversation-item.active {
   box-shadow:
-    inset 3px 0 var(--rail-red),
+    inset 3px 0 #bd1934,
     0 3px 12px rgb(25 31 35 / 5%);
 }
 
 .design-page .conversation-item__icon {
   width: 28px;
   height: 28px;
-  background: #fff7f8;
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff1f3);
   border: 0;
 }
 
@@ -3562,7 +3662,7 @@ main.design-page {
   gap: 8px;
   padding-top: 10px;
   margin-top: auto;
-  border-top: 1px solid #e6e6e8;
+  border-top: 1px solid var(--rail-theme-border, #e6e6e8);
 }
 
 .sidebar-user {
@@ -3571,7 +3671,7 @@ main.design-page {
   gap: 9px;
   align-items: center;
   padding: 8px;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border-radius: 11px;
 }
 
@@ -3584,7 +3684,7 @@ main.design-page {
   font-size: 13px;
   font-weight: 700;
   color: #fff;
-  background: var(--rail-red);
+  background: var(--rail-theme-solid-accent, var(--rail-red));
   border-radius: 50%;
 }
 
@@ -3636,14 +3736,15 @@ main.design-page {
 .design-page .design-thread {
   grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .design-page .thread-scroll {
   min-width: 0;
   min-height: 0;
-  padding: 26px clamp(20px, 6vw, 88px) 18px;
-  background: #fff;
+  padding: 26px 18px 18px;
+  scrollbar-gutter: stable;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .thread-scroll > :deep(.ant-spin-nested-loading),
@@ -3661,38 +3762,12 @@ main.design-page {
   box-sizing: border-box;
   width: 100%;
   max-width: 720px;
-  min-height: 100%;
-  padding: 48px 20px;
+  min-height: clamp(180px, 35vh, 360px);
+  padding: 32px 20px;
 }
 
 .design-page .thread-welcome p {
   max-width: 620px;
-}
-
-.welcome-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 22px;
-}
-
-.welcome-suggestions button {
-  display: inline-flex;
-  gap: 7px;
-  align-items: center;
-  padding: 8px 12px;
-  font-size: 12px;
-  color: #536069;
-  cursor: pointer;
-  background: #fff;
-  border: 1px solid var(--design-border);
-  border-radius: 999px;
-}
-
-.welcome-suggestions button:hover {
-  color: var(--rail-red);
-  border-color: #d9a1aa;
 }
 
 .design-page .design-composer {
@@ -3700,7 +3775,12 @@ main.design-page {
   z-index: 4;
   min-width: 0;
   padding: 10px 18px 18px;
-  background: linear-gradient(rgb(255 255 255 / 10%), #fff 20%);
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+  background: linear-gradient(
+    rgb(255 255 255 / 10%),
+    var(--rail-theme-surface, #fff) 20%
+  );
 }
 
 .design-mode-switcher {
@@ -3734,7 +3814,7 @@ main.design-page {
   color: #fff;
   text-align: left;
   cursor: pointer;
-  background-color: #111c23;
+  background-color: var(--rail-theme-surface, #111c23);
   background-repeat: no-repeat;
   background-position: center;
   background-size: cover;
@@ -3756,7 +3836,7 @@ main.design-page {
 
 .design-mode-switcher button.active {
   color: #fff;
-  border-color: #d4203c;
+  border-color: var(--rail-theme-accent, #d4203c);
   box-shadow:
     0 0 0 2px rgb(212 32 60 / 18%),
     0 7px 16px rgb(15 23 42 / 20%);
@@ -3801,16 +3881,16 @@ main.design-page {
   box-sizing: border-box;
   max-width: var(--design-content-width);
   padding: 10px 12px 9px;
-  border-color: #df8e9d;
+  border-color: var(--rail-theme-border, #d8dde3);
   border-radius: 22px;
-  box-shadow: 0 10px 30px rgb(185 28 50 / 10%);
+  box-shadow: 0 10px 30px rgb(30 41 59 / 4%);
 }
 
 .composer-box:focus-within {
-  border-color: #c51f3a;
+  border-color: var(--rail-theme-border, #4b5563);
   box-shadow:
-    0 0 0 3px rgb(185 28 50 / 8%),
-    0 14px 36px rgb(185 28 50 / 12%);
+    0 0 0 3px rgb(30 41 59 / 5%),
+    0 14px 36px rgb(30 41 59 / 6%);
 }
 
 .design-page .composer-box :deep(textarea.ant-input) {
@@ -3829,7 +3909,7 @@ main.design-page {
 }
 
 .design-page .composer-box :deep(textarea.ant-input::-webkit-scrollbar-thumb) {
-  background: #c8cdd1;
+  background: var(--rail-theme-surface, #c8cdd1);
   border-radius: 999px;
 }
 
@@ -3851,8 +3931,8 @@ main.design-page {
 
 .composer-application-shortcuts button:hover,
 .parameter-chips button:hover {
-  color: #bd1934;
-  background: #fff1f3;
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff1f3);
 }
 
 .composer-application-shortcuts {
@@ -3902,7 +3982,7 @@ main.design-page {
   position: relative;
   z-index: 2;
   flex: 0 0 auto;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   box-shadow: -10px 0 10px #fff;
 }
 
@@ -3910,9 +3990,9 @@ main.design-page {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
-  color: #bd1934;
-  background: #fff1f3;
-  border: 1px solid #df8e9d;
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff1f3);
+  border: 1px solid var(--rail-theme-border, #d8dde3);
   border-radius: 6px;
 }
 
@@ -3956,7 +4036,7 @@ main.design-page {
 .composer-more-button {
   flex: 0 0 auto;
   color: #bd1934 !important;
-  background: #fff1f3 !important;
+  background: var(--rail-theme-surface, #fff1f3) !important;
 }
 
 .design-page .parameter-chips button {
@@ -3975,7 +4055,7 @@ main.design-page {
   padding: 0;
   color: #fff;
   background: #c51f3a;
-  border-color: #c51f3a;
+  border-color: var(--rail-theme-accent, #c51f3a);
   box-shadow: none;
 }
 
@@ -3987,14 +4067,14 @@ main.design-page {
 
 .composer-submit.ant-btn:not(:disabled):hover {
   background: #a9142d;
-  border-color: #a9142d;
+  border-color: var(--rail-theme-accent, #a9142d);
 }
 
 .composer-submit--stop.ant-btn,
 .composer-submit--stop.ant-btn:not(:disabled):hover {
-  color: #1f2428;
-  background: #f2f3f4;
-  border-color: #e5e7e9;
+  color: var(--rail-theme-text, #1f2428);
+  background: var(--rail-theme-surface, #f2f3f4);
+  border-color: var(--rail-theme-border, #e5e7e9);
 }
 
 .composer-stop-mark {
@@ -4040,17 +4120,19 @@ main.design-page {
   height: 78px;
   padding: 0;
   overflow: hidden;
-  color: #bd1934;
+  color: var(--rail-theme-secondary, #52606d);
   cursor: pointer;
-  background: #fff;
-  border: 1px solid #e5d8da;
+  background: var(--rail-theme-surface, #fff);
+  border: 0;
   border-radius: 11px;
 }
 
 .composer-input-asset__preview img {
+  display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
+  object-position: center;
 }
 
 .composer-input-asset__move-actions {
@@ -4096,14 +4178,14 @@ main.design-page {
   z-index: 3;
   width: 21px;
   height: 21px;
-  background: #343a3f;
-  border: 2px solid #fff;
+  background: var(--rail-theme-surface, #343a3f);
+  border: 2px solid var(--rail-theme-border, #fff);
   border-radius: 50%;
 }
 
 .composer-input-asset__remove:hover {
   color: #fff;
-  background: #bd1934;
+  background: var(--rail-theme-surface, #52606d);
 }
 
 .composer-input-asset__add {
@@ -4116,10 +4198,10 @@ main.design-page {
   height: 78px;
   padding: 0;
   font-size: 22px;
-  color: #6c777e;
+  color: var(--rail-theme-secondary, #6c777e);
   cursor: pointer;
-  background: #f3f4f5;
-  border: 1px dashed #cfd5d8;
+  background: var(--rail-theme-surface, #f3f4f5);
+  border: 1px dashed var(--rail-theme-border, #cfd5d8);
   border-radius: 11px;
 }
 
@@ -4129,8 +4211,8 @@ main.design-page {
 }
 
 .composer-input-asset__add:hover {
-  color: #bd1934;
-  background: #fff5f6;
+  color: var(--rail-theme-secondary, #52606d);
+  background: var(--rail-theme-surface, #fff5f6);
   border-color: #cf6476;
 }
 
@@ -4151,7 +4233,7 @@ main.design-page {
   gap: 9px;
   align-items: center;
   padding: 9px;
-  color: #20272c;
+  color: var(--rail-theme-text, #20272c);
   text-align: left;
   background: transparent;
   border: 0;
@@ -4159,8 +4241,8 @@ main.design-page {
 }
 
 :global(.composer-media-source-menu > button:hover) {
-  color: #bd1934;
-  background: #fff1f3;
+  color: var(--rail-theme-secondary, #52606d);
+  background: var(--rail-theme-surface, #f2f4f6);
 }
 
 :global(.composer-media-source-menu > button > svg) {
@@ -4182,17 +4264,17 @@ main.design-page {
 :global(.composer-media-source-menu small) {
   margin-top: 2px;
   font-size: 11px;
-  color: #758087;
+  color: var(--rail-theme-secondary, #758087);
 }
 
 .composer-media-summary strong {
-  color: #bd1934;
+  color: var(--rail-theme-secondary, #52606d);
 }
 
 .media-picker-description {
   margin: 0 0 16px;
   font-size: 14px;
-  color: #66727a;
+  color: var(--rail-theme-secondary, #66727a);
 }
 
 .markdown-asset-entry {
@@ -4205,8 +4287,8 @@ main.design-page {
   margin-bottom: 16px;
   text-align: left;
   cursor: pointer;
-  background: #fff7f8;
-  border: 1px solid #efd2d7;
+  background: var(--rail-theme-surface, #f5f6f8);
+  border: 1px solid var(--rail-theme-border, #dde2e7);
   border-radius: 12px;
 }
 
@@ -4214,8 +4296,8 @@ main.design-page {
   width: 38px;
   height: 38px;
   padding: 9px;
-  color: #bd1934;
-  background: #fff;
+  color: var(--rail-theme-secondary, #52606d);
+  background: var(--rail-theme-surface, #fff);
   border-radius: 10px;
 }
 
@@ -4236,7 +4318,7 @@ main.design-page {
 }
 
 .markdown-asset-entry:hover {
-  border-color: #d98291;
+  border-color: var(--rail-theme-border, #a4aeb9);
 }
 
 .media-picker-fields {
@@ -4253,7 +4335,7 @@ main.design-page {
 }
 
 .media-picker-footer :deep(.ant-btn-primary) {
-  background: #c51f3a;
+  background: var(--rail-theme-surface, #4b5563);
 }
 
 :global(.more-applications-grid) {
@@ -4271,7 +4353,7 @@ main.design-page {
   align-items: center;
   min-width: 0;
   padding: 9px;
-  color: #20262b;
+  color: var(--rail-theme-text, #20262b);
   text-align: left;
   cursor: pointer;
   background: transparent;
@@ -4280,13 +4362,13 @@ main.design-page {
 }
 
 :global(.more-applications-grid > button:hover) {
-  background: #fff1f3;
+  background: var(--rail-theme-surface, #f2f4f6);
 }
 
 :global(.more-applications-grid > button > svg) {
   flex: 0 0 auto;
   font-size: 18px;
-  color: #bd1934;
+  color: var(--rail-theme-secondary, #52606d);
 }
 
 :global(.more-applications-grid > button > span) {
@@ -4307,7 +4389,7 @@ main.design-page {
 
 :global(.more-applications-grid small) {
   font-size: 11px;
-  color: #73808a;
+  color: var(--rail-theme-secondary, #73808a);
 }
 
 @media (max-width: 900px) {
@@ -4322,5 +4404,126 @@ main.design-page {
   .thread-status {
     display: none;
   }
+}
+</style>
+
+<style scoped>
+.design-function-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  max-width: 220px;
+  padding: 6px 9px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--rail-theme-accent, #bd1934);
+  cursor: pointer;
+  background: var(--rail-theme-surface, #fff1f3);
+  border: 0;
+  border-radius: 8px;
+}
+
+.design-function-trigger span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.design-function-menu {
+  width: min(300px, 75vw);
+}
+
+.design-function-options {
+  display: grid;
+  gap: 4px;
+  max-height: min(400px, 55vh);
+  margin-top: 8px;
+  overflow-y: auto;
+}
+
+.design-function-options button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.design-function-options button span {
+  flex: 1;
+}
+
+.design-function-options button:hover,
+.design-function-options button[aria-pressed='true'] {
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff1f3);
+}
+
+@media (max-width: 640px) {
+  .design-thread {
+    grid-column: 2;
+  }
+
+  main.design-page {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  .design-page .conversation-sidebar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 1009;
+    height: 100%;
+  }
+
+  .conversation-sidebar-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 1008;
+    background: rgb(0 0 0 / 18%);
+  }
+
+  .composer-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .design-page .parameter-chips {
+    flex-basis: 100%;
+  }
+
+  .design-function-trigger {
+    max-width: 100%;
+  }
+}
+</style>
+
+<style scoped>
+.conversation-sidebar-toggle {
+  left: calc(var(--design-sidebar-width) - 12px);
+  width: 24px;
+  height: 34px;
+  color: var(--rail-theme-secondary, #6b7280);
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #e0e4e8);
+  border-radius: 9px;
+  box-shadow: 0 2px 7px rgb(15 23 42 / 6%);
+  opacity: 1;
+}
+
+.conversation-sidebar-toggle:hover {
+  color: var(--rail-theme-text, #303b47);
+  background: var(--rail-theme-surface, #f5f6f8);
+  border-color: var(--rail-theme-border, #b8c1ca);
+}
+
+.design-page.sidebar-collapsed .conversation-sidebar-toggle {
+  left: 6px;
+}
+
+.conversation-sidebar-toggle:focus-visible {
+  outline: 2px solid var(--rail-theme-border, #94a3b8);
+  outline-offset: 2px;
 }
 </style>

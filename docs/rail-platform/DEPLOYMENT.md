@@ -318,6 +318,82 @@ pnpm dev:rail:web
 - 验收至少覆盖 HTTPS 登录页、入口脚本、静态资源、`/api/v1/health`，以及未登录 API 返回 401、未授权 Host 返回 403。
 - 开发服务器会对外提供开发资源，只适合受控联调。长期公开使用应改用生产构建并检查账号安全；登录后的上传/下载可能使用独立对象存储地址，需要单独规划并验证 HTTPS 外部地址，不能因为 5666 可达就认定所有功能已完成外网适配。
 
+### 4.8 网页和私有图片共用同一 HTTPS 子域名
+
+网页映射不会自动转换 API 返回的绝对图片地址。若下载链接仍是 `http://localhost:9000`，外部浏览器访问的是访问者自己的电脑。以下以 `https://rail.example.com` 为示例，实际部署替换为自有域名。
+
+| 请求 | 云端回环端口 | 本地目标 |
+| --- | --- | --- |
+| 网页、`/api/**` | `127.0.0.1:15666` | Web `127.0.0.1:5666`（已有 `/api` 代理） |
+| `/rail-platform-assets/**` | `127.0.0.1:19000` | MinIO `127.0.0.1:9000` |
+
+无需新增 DNS。为 FRP 增加 TCP 代理，云端 `proxyBindAddr` 继续为 `127.0.0.1`，不要在腾讯云防火墙放行 19000、9000 或管理台 9001。使用 DomainRelay 时，运行 `domain-relay add rail-files 127.0.0.1 9000 19000`、`domain-relay apply`；这里 `rail-files` 只是隧道名，不创建该名称对应的独立域名。工具的 `list` 输出是默认域名约定，实际入口以 Caddy 为准；**不要用 `domain-relay caddy` 输出覆盖已有官网和手工路径路由**。
+
+保留 Caddy 中其他站点，仅调整目标站点：
+
+```caddyfile
+rail.example.com {
+    encode zstd gzip
+    @assets path /rail-platform-assets /rail-platform-assets/*
+    handle @assets {
+        @unsupported not method GET HEAD PUT OPTIONS
+        respond @unsupported 405
+        header {
+            Content-Security-Policy "sandbox; default-src 'none'; frame-ancestors 'self'"
+            X-Content-Type-Options "nosniff"
+            Referrer-Policy "no-referrer"
+        }
+        reverse_proxy 127.0.0.1:19000
+    }
+    handle {
+        reverse_proxy 127.0.0.1:15666
+    }
+}
+```
+
+路径、查询参数和原始 `Host` 必须原样转发；不要使用 `handle_path` 去掉桶名，或把 Host 改成上游 IP。签名校验在 MinIO 执行，桶继续私有，平台 API 负责签发前的身份与项目校验。仅开放业务桶路径，不转发管理 API/控制台；对象响应增加沙箱和 `nosniff`，避免上传的主动内容以应用站点权限执行。新增桶名时须同步路由。独立文件域名也是可选方案，但需要额外 DNS、证书和跨域验证。
+
+API 的本机 `.env`：
+
+```dotenv
+S3_ENDPOINT=http://127.0.0.1:9000
+S3_PUBLIC_ENDPOINT=https://rail.example.com
+S3_FORCE_PATH_STYLE=true
+S3_ACCESS_KEY=<随机存储用户名>
+S3_SECRET_KEY=<高熵随机存储密码>
+S3_CORS_ORIGINS=http://localhost:5666,http://127.0.0.1:5666,https://rail.example.com
+```
+
+开发 Compose 先读取 `minio.defaults.env`，再读取可选、Git 忽略的 `deploy/rail-platform/.env.minio.local`。公网使用前必须创建后者覆盖默认凭据，不能只修改 API：
+
+```dotenv
+MINIO_ROOT_USER=<与 S3_ACCESS_KEY 相同>
+MINIO_ROOT_PASSWORD=<与 S3_SECRET_KEY 相同>
+MINIO_API_CORS_ALLOW_ORIGIN=http://localhost:5666,http://127.0.0.1:5666,https://rail.example.com
+```
+
+两份文件仅允许所属用户读取（Linux 使用 `chmod 600`），密钥不可提交 Git、截图或写入日志。API 的 `CORS_ALLOWED_ORIGINS` 和 Web `allowedHosts` 也须保留实际域名。切换凭据前确认没有活动生成任务并备份配置；所有使用旧凭据的存储客户端，包括 API 和 Worker，须同步更新。
+
+```bash
+./rail-platform.sh stop --keep-infra
+docker compose -f deploy/rail-platform/compose.yaml up -d --no-deps --wait minio
+./rail-platform.sh start --services-only
+```
+
+这里保留命名卷，不执行迁移、种子或删除数据卷。`start/restart --services-only` 仅运行 Web、API 和 Worker，适用于依赖已就绪时的配置重载；完整启动仍使用原有 `start`。普通重建 MinIO 会继续读取 `.env.minio.local`，不要丢弃此文件或回退到开发默认凭据。云端先 `caddy validate` 再 reload，FRP 由后台服务管理。
+
+从仓库根目录验证公网链路：
+
+```bash
+RAIL_API_URL=https://rail.example.com/api/v1 \
+  node scripts/run-with-env.mjs apps/platform-api/.env -- \
+  pnpm exec tsx apps/platform-api/scripts/relay-storage-smoke-test.ts
+```
+
+专项测试创建两个唯一临时普通账号与一个项目，验证真实登录、签名上传/预览/下载、CORS、Range、无签名与错误签名拒绝、跨项目拒绝，最后仅清理本轮数据。可选 `RAIL_VERIFY_OBJECT_KEY` 用于只读核对操作者指定的已有 PNG 文件，不打印对象键、签名 URL 或文件正文。不调用真实 GPU 生成服务。
+
+修改后刷新页面重新申请签名，旧 localhost 链接不会自动转换；凭据轮换也会使旧签名失效。无需重新上传已有图片。速度仍受云带宽和本地上行限制；测试通过不代表完成生产化、负载或 GPU 验收。回退时先移除 Caddy 对象路径转发，再移除新增隧道；保留新随机凭据，不恢复开发默认密码。配置备份不包含数据库/对象卷，不能替代完整数据备份。
+
 ## 5. 方式 B：Docker 单机内网部署
 
 ### 5.1 准备正式配置
@@ -622,7 +698,7 @@ Intel/AMD (`amd64`) 构建的镜像不能直接用于 ARM (`arm64`) 机器。App
 
 ### 页面能打开但图片上传失败
 
-从用户电脑直接打开 `S3_PUBLIC_ENDPOINT/minio/health/live`。若无法访问，检查 9000 防火墙、公开 IP、端口映射和 CORS；`S3_PUBLIC_ENDPOINT` 不能填写 Docker 内部主机名 `minio`。
+直接连接对象存储时，可从用户电脑打开 `S3_PUBLIC_ENDPOINT/minio/health/live`。采用第 4.8 节同源桶路径转发时，健康/管理路径不会转发给 MinIO，应运行专项签名上传/下载验收，不要额外公开管理路径。检查实际签名地址、HTTPS、隧道、Host 和 CORS；公开地址不能填写 Docker 主机名 `minio` 或远程访问者不可达的 localhost。
 
 ### 忘记密码邮件发送失败
 

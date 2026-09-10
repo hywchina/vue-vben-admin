@@ -41,6 +41,7 @@ export interface CapabilityField {
 }
 
 export interface PlatformCapability {
+  presentation?: { quickFieldKeys: string[]; workflowVersionId: string };
   appKey: string;
   code: string;
   description: string;

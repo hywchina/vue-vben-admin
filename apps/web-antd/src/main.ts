@@ -21,6 +21,7 @@ async function initApplication() {
   // 固定平台发布外壳，避免旧的本地偏好恢复黑色独立侧栏。
   updatePreferences({
     app: {
+      enablePreferences: false,
       layout: 'header-sidebar-nav',
       name: import.meta.env.VITE_APP_TITLE,
     },
@@ -31,7 +32,14 @@ async function initApplication() {
     logo: { enable: true, showText: true },
     navigation: { split: false },
     sidebar: { draggable: false, width: 184 },
-    theme: { semiDarkSidebar: false, semiDarkSidebarSub: false },
+    tabbar: { showMaximize: false, showMore: false, showRefresh: false },
+    theme: {
+      builtinType: 'pink',
+      colorPrimary: 'hsl(347 77% 60%)',
+      semiDarkSidebar: false,
+      semiDarkSidebarSub: false,
+    },
+    widget: { fullscreen: false, fullscreenButtonPosition: 'none' },
   });
 
   // 启动应用并挂载

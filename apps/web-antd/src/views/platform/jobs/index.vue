@@ -431,7 +431,7 @@ async function openConversation(job: PlatformJob) {
   padding: 10px 18px;
   color: var(--rail-red);
   background: var(--rail-red-soft);
-  border-bottom: 1px solid #efc7ce;
+  border-bottom: 1px solid var(--rail-theme-border, #efc7ce);
 }
 
 .job-table-head,
@@ -455,7 +455,7 @@ async function openConversation(job: PlatformJob) {
   color: var(--rail-steel);
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  background: #fafbfc;
+  background: var(--rail-theme-surface, #fafbfc);
   border-bottom: 1px solid var(--rail-line);
 }
 
@@ -534,7 +534,7 @@ async function openConversation(job: PlatformJob) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 12px;
-  color: #b91c32;
+  color: var(--rail-theme-accent, #b91c32);
   text-align: left;
   white-space: nowrap;
   cursor: pointer;

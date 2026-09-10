@@ -5,7 +5,7 @@ import { computed } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Input, InputNumber, Popover, Switch } from 'ant-design-vue';
+import { Input, InputNumber, Popover, Switch, Textarea } from 'ant-design-vue';
 
 const props = defineProps<{
   field: CapabilityField;
@@ -52,7 +52,15 @@ function randomizeSeed() {
     trigger="click"
   >
     <template #content>
-      <section class="quick-field-panel" :data-quick-field-key="field.key">
+      <section
+        class="quick-field-panel"
+        :class="{
+          'quick-field-panel--compact': ['number', 'boolean'].includes(
+            field.type,
+          ),
+        }"
+        :data-quick-field-key="field.key"
+      >
         <header>
           <strong>{{ field.label }}</strong>
           <small v-if="field.help">{{ field.help }}</small>
@@ -97,6 +105,17 @@ function randomizeSeed() {
           />
         </div>
 
+        <Textarea
+          v-else-if="['textarea', 'json'].includes(field.type)"
+          :rows="5"
+          :maxlength="field.maxLength"
+          :value="
+            typeof value === 'string'
+              ? value
+              : JSON.stringify(value ?? null, null, 2)
+          "
+          @update:value="emit('change', $event)"
+        />
         <Input
           v-else
           :maxlength="field.maxLength"
@@ -139,7 +158,7 @@ function randomizeSeed() {
   min-height: 32px;
   padding: 4px 7px;
   font-size: 14px;
-  color: #262a2f;
+  color: var(--rail-theme-text, #262a2f);
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -147,8 +166,8 @@ function randomizeSeed() {
 }
 
 .quick-field-trigger:hover {
-  color: #bd1934;
-  background: #fff1f3;
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff1f3);
 }
 
 .quick-field-trigger strong {
@@ -156,24 +175,28 @@ function randomizeSeed() {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 650;
-  color: #111418;
+  color: var(--rail-theme-text, #111418);
   white-space: nowrap;
 }
 
 :global(.design-quick-popover .ant-popover-inner) {
   padding: 0;
-  border: 1px solid #e4e6e8;
+  border: 1px solid var(--rail-theme-border, #e4e6e8);
   border-radius: 13px;
   box-shadow: 0 14px 38px rgb(29 38 44 / 14%);
 }
 
 :global(.design-quick-popover .ant-popover-arrow::before) {
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
 }
 
 .quick-field-panel {
-  width: min(360px, 76vw);
+  width: min(280px, 76vw);
   padding: 14px;
+}
+
+.quick-field-panel--compact {
+  width: min(220px, 76vw);
 }
 
 .quick-field-panel header {
@@ -190,12 +213,12 @@ function randomizeSeed() {
   max-width: 330px;
   font-size: 12px;
   line-height: 1.5;
-  color: #7a858c;
+  color: var(--rail-theme-secondary, #7a858c);
 }
 
 .quick-option-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(62px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
   gap: 8px;
   max-height: min(360px, 45vh);
   overflow-y: auto;
@@ -208,18 +231,18 @@ function randomizeSeed() {
   min-height: 64px;
   padding: 8px 5px;
   font-size: 12px;
-  color: #30363b;
+  color: var(--rail-theme-text, #30363b);
   cursor: pointer;
-  background: #f7f7f8;
+  background: var(--rail-theme-surface, #f7f7f8);
   border: 1px solid transparent;
   border-radius: 10px;
 }
 
 .quick-option-grid button:hover,
 .quick-option-grid button.active {
-  color: #bd1934;
-  background: #fff3f5;
-  border-color: #d9324d;
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff1f3);
+  border-color: #e8a3af;
 }
 
 .quick-option-grid i {
@@ -249,16 +272,16 @@ function randomizeSeed() {
   align-items: center;
   min-height: 32px;
   padding: 4px 10px;
-  color: #bd1934;
+  color: var(--rail-theme-accent, #bd1934);
   cursor: pointer;
-  background: #fff1f3;
-  border: 1px solid #efbac3;
+  background: var(--rail-theme-surface, #fff1f3);
+  border: 1px solid var(--rail-theme-border, #d8dde3);
   border-radius: 7px;
 }
 
 .quick-switch-field span {
   font-size: 13px;
-  color: #606b72;
+  color: var(--rail-theme-secondary, #606b72);
 }
 
 .quick-field-panel :deep(.ant-switch-checked) {

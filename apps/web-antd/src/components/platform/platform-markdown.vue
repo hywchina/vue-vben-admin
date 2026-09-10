@@ -155,7 +155,7 @@ function parseMarkdown(content: string): MarkdownBlock[] {
   padding: 8px 0;
   font-size: 15px;
   line-height: 1.85;
-  color: #20282d;
+  color: var(--rail-theme-text, #20282d);
 }
 
 .platform-markdown :is(p, blockquote, ul, ol, pre) {
@@ -170,7 +170,7 @@ function parseMarkdown(content: string): MarkdownBlock[] {
   margin: 6px 0 12px;
   font-weight: 760;
   line-height: 1.4;
-  color: #151b1f;
+  color: var(--rail-theme-text, #151b1f);
 }
 
 .platform-markdown h1 {
@@ -207,8 +207,8 @@ function parseMarkdown(content: string): MarkdownBlock[] {
 
 .platform-markdown blockquote {
   padding: 8px 13px;
-  color: #58656c;
-  background: #f5f6f6;
+  color: var(--rail-theme-secondary, #58656c);
+  background: var(--rail-theme-surface, #f5f6f6);
   border-left: 3px solid var(--round-accent, #c51635);
 }
 
@@ -218,15 +218,15 @@ function parseMarkdown(content: string): MarkdownBlock[] {
   font-size: 13px;
   line-height: 1.65;
   color: #edf2f4;
-  background: #202a30;
+  background: var(--rail-theme-surface, #202a30);
   border-radius: 10px;
 }
 
 .thinking-block {
   padding: 10px 13px;
   margin-bottom: 14px;
-  color: #606d74;
-  background: #f5f6f6;
+  color: var(--rail-theme-secondary, #606d74);
+  background: var(--rail-theme-surface, #f5f6f6);
   border-radius: 10px;
 }
 

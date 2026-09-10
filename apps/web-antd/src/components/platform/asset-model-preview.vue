@@ -57,7 +57,7 @@ watch(
   justify-content: center;
   width: 100%;
   min-height: 460px;
-  color: #788590;
+  color: var(--rail-theme-secondary, #788590);
 }
 
 .is-loading {

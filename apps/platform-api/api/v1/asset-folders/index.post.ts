@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { ASSET_GENERATION_CATEGORIES } from '~/utils/domain/assets/query';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
 
 const schema = z.object({
+  generationCategory: z.enum(ASSET_GENERATION_CATEGORIES).optional(),
   name: z.string().trim().min(1).max(120),
   parentId: z.string().uuid().nullable().optional(),
   projectId: z.string().uuid(),
@@ -55,10 +57,10 @@ export default apiHandler(async (event) => {
       };
   try {
     [folder] = await sql`
-      INSERT INTO asset_folders (project_id, parent_id, name, created_by)
-      VALUES (${input.projectId}, ${input.parentId ?? null}, ${input.name}, ${identity.id})
+      INSERT INTO asset_folders (project_id, parent_id, name, created_by, generation_category)
+      VALUES (${input.projectId}, ${input.parentId ?? null}, ${input.name}, ${identity.id}, ${input.generationCategory ?? null})
       RETURNING
-        id, parent_id AS "parentId", name,
+        id, parent_id AS "parentId", name, generation_category AS "generationCategory",
         kind,
         created_at AS "createdAt", updated_at AS "updatedAt"
     `;
@@ -78,6 +80,7 @@ export default apiHandler(async (event) => {
     actor: identity,
     details: {
       name: folder.name,
+      generationCategory: input.generationCategory,
       parentId: folder.parentId,
       projectId: input.projectId,
     },

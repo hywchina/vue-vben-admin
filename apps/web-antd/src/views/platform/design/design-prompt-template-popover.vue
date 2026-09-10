@@ -3,6 +3,8 @@ import type {
   DesignPromptTemplateCategory,
   DesignPromptTemplateMode,
   DesignPromptTemplateOption,
+  PromptTemplateContext,
+  PromptTemplatePreview,
 } from '#/modules/platform/types';
 
 import { computed, ref, watch } from 'vue';
@@ -10,221 +12,232 @@ import { computed, ref, watch } from 'vue';
 import { IconifyIcon } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
 
-import { Button, Input, message, Modal, Popover, Spin } from 'ant-design-vue';
+import { Button, message, Popover, Spin } from 'ant-design-vue';
 
 import {
   getDesignPromptTemplateCatalogApi,
-  updateDesignPromptTemplateCatalogApi,
+  previewDesignPromptTemplateApi,
 } from '#/api';
+import {
+  imageRatios,
+  linkedSize,
+  sizeRatio,
+  syncPromptRatio,
+  validDimension,
+} from '#/modules/platform/image-dimensions';
+
+import TemplateEditor from './prompt-template-editor.vue';
 
 const props = withDefaults(
   defineProps<{
     categoryIds?: readonly string[];
+    context?: PromptTemplateContext;
     mode: DesignPromptTemplateMode;
   }>(),
-  { categoryIds: undefined },
+  { categoryIds: undefined, context: undefined },
 );
 const emit = defineEmits<{
-  apply: [values: string[]];
+  apply: [
+    text: string,
+    size?: { aspectRatio?: string; height?: number; width?: number },
+  ];
+  sizeChange: [size: { height: number; width: number }];
 }>();
 const userStore = useUserStore();
 const loading = ref(false);
-const saving = ref(false);
 const open = ref(false);
 const manageOpen = ref(false);
+const previewing = ref(false);
 const categories = ref<DesignPromptTemplateCategory[]>([]);
-const editableCategories = ref<DesignPromptTemplateCategory[]>([]);
 const activeCategoryId = ref('');
-const selectedOptionIds = ref<Record<string, string>>({});
-
-const isPlatformAdmin = computed(() => userStore.userRoles.includes('admin'));
-const modeLabel = computed(
-  () =>
-    ({ cabin: '客室效果', cmf: 'CMF', component: '客室零部件' })[props.mode],
+const revision = ref(0);
+const selected = ref<string[]>([]);
+const ratioSelected = ref(false);
+const currentSize = computed(() => ({
+  width: context.value.width ?? 0,
+  height: context.value.height ?? 0,
+}));
+const currentRatio = computed(() =>
+  sizeRatio(currentSize.value.width, currentSize.value.height),
 );
-const visibleCategories = computed(() => {
-  const categoryIds = props.categoryIds;
-  if (!categoryIds?.length) return categories.value;
-  const allowed = new Set(categoryIds);
-  return categories.value.filter((category) => allowed.has(category.id));
-});
+const canSize = computed(
+  () => currentSize.value.width > 0 && currentSize.value.height > 0,
+);
+function isSizeCategory(category: DesignPromptTemplateCategory) {
+  return (
+    category.section === 'parameters' ||
+    (!category.section && /(^|-)(size|ratio)(-|$)/.test(category.id))
+  );
+}
+function chooseRatio(ratio: string) {
+  try {
+    const size =
+      ratio === 'auto'
+        ? {
+            width: context.value.defaultWidth ?? 0,
+            height: context.value.defaultHeight ?? 0,
+          }
+        : linkedSize(
+            ratio,
+            currentSize.value.width,
+            'width',
+            context.value.widthLimit,
+            context.value.heightLimit,
+          );
+    if (
+      !validDimension(size.width, context.value.widthLimit) ||
+      !validDimension(size.height, context.value.heightLimit)
+    )
+      throw new Error('当前工作流未提供有效默认尺寸');
+    ratioSelected.value = true;
+    emit('sizeChange', size);
+  } catch (error) {
+    message.warning(error instanceof Error ? error.message : '比例不可用');
+  }
+}
+const preview = ref<PromptTemplatePreview>();
+const isPlatformAdmin = computed(() => userStore.userRoles.includes('admin'));
+const context = computed(
+  () => props.context ?? { workflowKey: '', editing: false, maxLength: 10_000 },
+);
+const visibleCategories = computed(() =>
+  categories.value
+    .filter(
+      (category) =>
+        !props.categoryIds?.length || props.categoryIds.includes(category.id),
+    )
+    .map((category) => ({
+      ...category,
+      options: category.options.filter(
+        (option) =>
+          option.enabled !== false &&
+          (!option.workflows?.length ||
+            option.workflows.includes(context.value.workflowKey)),
+      ),
+    }))
+    .filter((category) =>
+      isSizeCategory(category) ? canSize.value : category.options.length,
+    ),
+);
 const activeCategory = computed(() =>
   visibleCategories.value.find(
     (category) => category.id === activeCategoryId.value,
   ),
 );
-const selectedValues = computed(() =>
-  visibleCategories.value.flatMap((category) => {
-    const selectedId = selectedOptionIds.value[category.id];
-    const option = category.options.find((item) => item.id === selectedId);
-    return option ? [option.value] : [];
-  }),
-);
 const selectedItems = computed(() =>
-  visibleCategories.value.flatMap((category) => {
-    const selectedId = selectedOptionIds.value[category.id];
-    const option = category.options.find((item) => item.id === selectedId);
-    return option
-      ? [
-          {
-            categoryId: category.id,
-            label: `${category.name}：${option.label}`,
-            optionId: option.id,
-            value: option.value,
-          },
-        ]
-      : [];
-  }),
+  categories.value.flatMap((category) =>
+    category.options
+      .filter((option) =>
+        selected.value.includes(`${category.id}/${option.id}`),
+      )
+      .map((option) => ({
+        id: `${category.id}/${option.id}`,
+        label: `${category.name}：${option.label}`,
+      })),
+  ),
 );
-
-function createIdentifier(prefix: 'category' | 'option') {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 7)}`;
-}
-
-function cloneCategories(value: DesignPromptTemplateCategory[]) {
-  return value.map((category) => ({
-    ...category,
-    options: category.options.map((option) => ({ ...option })),
-  }));
-}
-
+let loadSequence = 0;
+let previewSequence = 0;
 async function loadCatalog() {
+  const sequence = ++loadSequence;
   loading.value = true;
   try {
     const catalog = await getDesignPromptTemplateCatalogApi(props.mode);
-    categories.value = cloneCategories(catalog.categories);
-    activeCategoryId.value =
-      visibleCategories.value.find((item) => item.id === activeCategoryId.value)
-        ?.id ??
-      visibleCategories.value[0]?.id ??
-      '';
-    selectedOptionIds.value = {};
+    if (sequence !== loadSequence) return;
+    categories.value = catalog.categories;
+    revision.value = catalog.revision;
+    selected.value = [];
+    ratioSelected.value = false;
+    activeCategoryId.value = visibleCategories.value[0]?.id ?? '';
   } catch (error) {
-    message.error(
-      error instanceof Error ? error.message : '加载提示词模板失败',
-    );
+    message.error(error instanceof Error ? error.message : '加载模板失败');
   } finally {
-    loading.value = false;
+    if (sequence === loadSequence) loading.value = false;
   }
 }
-
 function selectOption(
   category: DesignPromptTemplateCategory,
   option: DesignPromptTemplateOption,
 ) {
-  if (selectedOptionIds.value[category.id] === option.id) {
-    Reflect.deleteProperty(selectedOptionIds.value, category.id);
+  const id = `${category.id}/${option.id}`;
+  if (selected.value.includes(id))
+    selected.value = selected.value.filter((item) => item !== id);
+  else {
+    if (category.selection !== 'multiple')
+      selected.value = selected.value.filter(
+        (item) => !item.startsWith(`${category.id}/`),
+      );
+    selected.value.push(id);
+  }
+}
+async function refreshPreview() {
+  const sequence = ++previewSequence;
+  preview.value = undefined;
+  if (selected.value.length === 0 && !ratioSelected.value) {
+    previewing.value = false;
     return;
   }
-  selectedOptionIds.value[category.id] = option.id;
+  previewing.value = true;
+  try {
+    const result: PromptTemplatePreview =
+      selected.value.length > 0
+        ? await previewDesignPromptTemplateApi(
+            props.mode,
+            context.value,
+            selected.value,
+          )
+        : {
+            text: '',
+            errors: [],
+            expanded: [],
+            length: 0,
+            revision: revision.value,
+          };
+    // Current workflow dimensions are the single source of truth, including changes outside the template.
+    if (ratioSelected.value && canSize.value) {
+      result.size = { ...currentSize.value };
+      result.text = syncPromptRatio(result.text, currentSize.value, true);
+      result.length = result.text.length;
+      if (result.length > context.value.maxLength)
+        result.errors.push('提示词超出长度限制');
+    }
+    if (sequence === previewSequence) preview.value = result;
+  } catch (error) {
+    if (sequence === previewSequence)
+      message.error(error instanceof Error ? error.message : '预览失败');
+  } finally {
+    if (sequence === previewSequence) previewing.value = false;
+  }
 }
-
-function removeSelection(categoryId: string) {
-  Reflect.deleteProperty(selectedOptionIds.value, categoryId);
-}
-
-function applySelection() {
-  if (selectedValues.value.length === 0) {
-    message.info('请至少选择一个提示词参数');
+async function applySelection() {
+  await refreshPreview();
+  const result = preview.value;
+  if (!result || result.errors.length > 0) return;
+  if (result.revision !== revision.value) {
+    message.warning('模板已更新，请重新选择后预览');
+    await loadCatalog();
     return;
   }
-  emit('apply', selectedValues.value);
+  emit('apply', result.text, result.size);
   open.value = false;
 }
-
-function openManager() {
-  editableCategories.value = cloneCategories(categories.value);
-  manageOpen.value = true;
-}
-
-function addCategory() {
-  editableCategories.value.push({
-    id: createIdentifier('category'),
-    name: '新分类',
-    options: [
-      {
-        id: createIdentifier('option'),
-        label: '新选项',
-        value: '新选项',
-      },
-    ],
-  });
-}
-
-function addOption(category: DesignPromptTemplateCategory) {
-  category.options.push({
-    id: createIdentifier('option'),
-    label: '新选项',
-    value: '新选项',
-  });
-}
-
-function removeCategory(index: number) {
-  editableCategories.value.splice(index, 1);
-}
-
-function removeOption(category: DesignPromptTemplateCategory, index: number) {
-  category.options.splice(index, 1);
-}
-
-function moveItem<T>(items: T[], index: number, direction: -1 | 1) {
-  const targetIndex = index + direction;
-  if (targetIndex < 0 || targetIndex >= items.length) return;
-  const [item] = items.splice(index, 1);
-  if (item) items.splice(targetIndex, 0, item);
-}
-
-async function saveCatalog() {
-  const invalidCategory = editableCategories.value.find(
-    (category) => !category.name.trim() || category.options.length === 0,
-  );
-  const invalidOption = editableCategories.value
-    .flatMap((category) => category.options)
-    .find((option) => !option.label.trim() || !option.value.trim());
-  if (
-    editableCategories.value.length === 0 ||
-    invalidCategory ||
-    invalidOption
-  ) {
-    message.warning('每个分类至少需要一个名称、一个选项及有效提示词');
-    return;
-  }
-  saving.value = true;
-  try {
-    const normalized = editableCategories.value.map((category) => ({
-      ...category,
-      name: category.name.trim(),
-      options: category.options.map((option) => ({
-        ...option,
-        label: option.label.trim(),
-        value: option.value.trim(),
-      })),
-    }));
-    const result = await updateDesignPromptTemplateCatalogApi(
-      props.mode,
-      normalized,
-    );
-    categories.value = cloneCategories(result.categories);
-    activeCategoryId.value = visibleCategories.value[0]?.id ?? '';
-    selectedOptionIds.value = {};
-    manageOpen.value = false;
-    message.success(`${modeLabel.value}提示词模板已保存`);
-  } catch (error) {
-    message.error(
-      error instanceof Error ? error.message : '保存提示词模板失败',
-    );
-  } finally {
-    saving.value = false;
-  }
-}
-
 watch(
   () => [props.mode, ...(props.categoryIds ?? [])],
   () => void loadCatalog(),
   { immediate: true },
 );
+watch(
+  () => JSON.stringify([selected.value, context.value, ratioSelected.value]),
+  () => void refreshPreview(),
+);
+watch(visibleCategories, () => {
+  if (
+    !visibleCategories.value.some(
+      (category) => category.id === activeCategoryId.value,
+    )
+  )
+    activeCategoryId.value = visibleCategories.value[0]?.id ?? '';
+});
 </script>
 
 <template>
@@ -242,14 +255,17 @@ watch(
         <header>
           <div>
             <strong>提示词模板</strong>
-            <small>每个分类可选择一项，组合后填入编辑框</small>
+            <small>按分类选择需求，预览后替换输入框内容</small>
           </div>
           <button
             v-if="isPlatformAdmin"
             :data-testid="`manage-${mode}-prompt-templates`"
             title="维护提示词模板"
             type="button"
-            @click="openManager"
+            @click="
+              open = false;
+              manageOpen = true;
+            "
           >
             <IconifyIcon icon="lucide:settings-2" />
             维护
@@ -271,14 +287,42 @@ watch(
             </nav>
             <section v-if="activeCategory">
               <h4>{{ activeCategory.name }}</h4>
-              <div class="prompt-template-options">
+              <div
+                v-if="isSizeCategory(activeCategory)"
+                class="prompt-template-options template-ratios"
+              >
+                <button
+                  v-for="ratio in ['auto', ...imageRatios]"
+                  :key="ratio"
+                  type="button"
+                  :aria-label="`模板比例 ${ratio === 'auto' ? '自动' : ratio}`"
+                  :class="{ selected: ratio === currentRatio }"
+                  @click="chooseRatio(ratio)"
+                >
+                  <span
+                    class="template-ratio-icon"
+                    :style="{
+                      aspectRatio:
+                        ratio === 'auto' ? '1' : ratio.replace(':', '/'),
+                      height: '24px',
+                    }"
+                  ></span>
+                  {{ ratio === 'auto' ? '自动' : ratio }}
+                </button>
+                <small class="template-current-size">
+                  {{ currentSize.width }}×{{ currentSize.height }}
+                </small>
+              </div>
+              <div v-else class="prompt-template-options">
                 <button
                   v-for="option in activeCategory.options"
                   :key="option.id"
                   :class="{
-                    selected:
-                      selectedOptionIds[activeCategory.id] === option.id,
+                    selected: selected.includes(
+                      `${activeCategory.id}/${option.id}`,
+                    ),
                   }"
+                  :title="option.description || option.value"
                   type="button"
                   @click="selectOption(activeCategory, option)"
                 >
@@ -297,18 +341,45 @@ watch(
           <span>已选</span>
           <button
             v-for="item in selectedItems"
-            :key="`${item.categoryId}:${item.optionId}`"
+            :key="item.id"
             :aria-label="`删除已选标签：${item.label}`"
             type="button"
-            @click="removeSelection(item.categoryId)"
+            @click="selected = selected.filter((id) => id !== item.id)"
           >
             {{ item.label }}
             <IconifyIcon icon="lucide:x" />
           </button>
         </div>
+        <section
+          v-if="selected.length || ratioSelected"
+          class="template-preview"
+          aria-label="提示词预览"
+        >
+          <strong>最终提示词预览（替换当前输入）</strong>
+          <pre>{{ previewing ? '正在组织提示词…' : preview?.text }}</pre>
+          <p v-if="preview?.size">
+            当前图片尺寸：{{
+              preview.size.width && preview.size.height
+                ? `${preview.size.width}×${preview.size.height}`
+                : `比例 ${preview.size.aspectRatio}`
+            }}
+          </p>
+          <p v-for="error in preview?.errors" :key="error" role="alert">
+            {{ error }}
+          </p>
+          <small v-if="preview">
+            {{ preview.length }} / {{ context.maxLength }} 字 · 展开
+            {{ preview.expanded.length }} 项
+          </small>
+        </section>
         <footer>
-          <span>已选 {{ selectedValues.length }} 项</span>
-          <Button size="small" type="primary" @click="applySelection">
+          <span>已选 {{ selected.length + (ratioSelected ? 1 : 0) }} 项</span>
+          <Button
+            size="small"
+            type="primary"
+            :disabled="!preview || previewing || !!preview.errors.length"
+            @click="applySelection"
+          >
             应用到提示词
           </Button>
         </footer>
@@ -325,101 +396,13 @@ watch(
     </button>
   </Popover>
 
-  <Modal
-    v-model:open="manageOpen"
-    :confirm-loading="saving"
-    ok-text="保存模板"
-    :title="`维护${modeLabel}提示词模板`"
-    width="min(900px, 94vw)"
-    @ok="saveCatalog"
-  >
-    <p class="template-manager-description">
-      分类与选项将按当前顺序展示。选项名称用于界面显示，提示词内容会填入设计输入框。
-    </p>
-    <div class="template-manager-list">
-      <article
-        v-for="(category, categoryIndex) in editableCategories"
-        :key="category.id"
-      >
-        <header>
-          <Input v-model:value="category.name" :maxlength="40" />
-          <Button
-            :disabled="categoryIndex === 0"
-            title="上移分类"
-            type="text"
-            @click="moveItem(editableCategories, categoryIndex, -1)"
-          >
-            <IconifyIcon icon="lucide:arrow-up" />
-          </Button>
-          <Button
-            :disabled="categoryIndex === editableCategories.length - 1"
-            title="下移分类"
-            type="text"
-            @click="moveItem(editableCategories, categoryIndex, 1)"
-          >
-            <IconifyIcon icon="lucide:arrow-down" />
-          </Button>
-          <Button
-            danger
-            title="删除分类"
-            type="text"
-            @click="removeCategory(categoryIndex)"
-          >
-            <IconifyIcon icon="lucide:trash-2" />
-          </Button>
-        </header>
-        <div class="template-manager-options">
-          <div
-            v-for="(option, optionIndex) in category.options"
-            :key="option.id"
-          >
-            <Input
-              v-model:value="option.label"
-              :maxlength="60"
-              placeholder="选项名称"
-            />
-            <Input
-              v-model:value="option.value"
-              :maxlength="240"
-              placeholder="填入提示词的内容"
-            />
-            <Button
-              :disabled="optionIndex === 0"
-              title="上移选项"
-              type="text"
-              @click="moveItem(category.options, optionIndex, -1)"
-            >
-              <IconifyIcon icon="lucide:arrow-up" />
-            </Button>
-            <Button
-              :disabled="optionIndex === category.options.length - 1"
-              title="下移选项"
-              type="text"
-              @click="moveItem(category.options, optionIndex, 1)"
-            >
-              <IconifyIcon icon="lucide:arrow-down" />
-            </Button>
-            <Button
-              danger
-              title="删除选项"
-              type="text"
-              @click="removeOption(category, optionIndex)"
-            >
-              <IconifyIcon icon="lucide:x" />
-            </Button>
-          </div>
-          <Button block type="dashed" @click="addOption(category)">
-            <IconifyIcon icon="lucide:plus" />
-            添加选项
-          </Button>
-        </div>
-      </article>
-    </div>
-    <Button block type="dashed" @click="addCategory">
-      <IconifyIcon icon="lucide:plus" />
-      添加分类
-    </Button>
-  </Modal>
+  <TemplateEditor
+    v-if="manageOpen"
+    :mode="mode"
+    :context="context"
+    @close="manageOpen = false"
+    @saved="loadCatalog"
+  />
 </template>
 
 <style scoped>
@@ -433,7 +416,7 @@ watch(
   padding: 4px 8px;
   font-size: 15px;
   font-weight: 600;
-  color: #17191c;
+  color: var(--rail-theme-text, #17191c);
   cursor: pointer;
   background: transparent;
   border: 0;
@@ -441,8 +424,8 @@ watch(
 }
 
 .cmf-template-trigger:hover {
-  color: #bd1934;
-  background: #fff1f3;
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff1f3);
 }
 
 .prompt-template-panel {
@@ -458,7 +441,7 @@ watch(
 
 .prompt-template-panel > header {
   padding-bottom: 12px;
-  border-bottom: 1px solid #eceef0;
+  border-bottom: 1px solid var(--rail-theme-border, #eceef0);
 }
 
 .prompt-template-panel > header > div {
@@ -475,7 +458,7 @@ watch(
 .prompt-template-empty,
 .template-manager-description {
   font-size: 12px;
-  color: #74808a;
+  color: var(--rail-theme-secondary, #74808a);
 }
 
 .prompt-template-panel > header button {
@@ -484,9 +467,9 @@ watch(
   align-items: center;
   padding: 6px 9px;
   font-size: 12px;
-  color: #b91c32;
+  color: var(--rail-theme-accent, #b91c32);
   cursor: pointer;
-  background: #fff2f4;
+  background: var(--rail-theme-surface, #fff2f4);
   border: 0;
   border-radius: 7px;
 }
@@ -496,14 +479,14 @@ watch(
   grid-template-columns: 150px minmax(0, 1fr);
   min-height: 260px;
   margin: 10px 0;
-  border: 1px solid #eceef0;
+  border: 1px solid var(--rail-theme-border, #eceef0);
   border-radius: 10px;
 }
 
 .prompt-template-browser nav {
   padding: 8px;
-  background: #f6f7f8;
-  border-right: 1px solid #eceef0;
+  background: var(--rail-theme-surface, #f6f7f8);
+  border-right: 1px solid var(--rail-theme-border, #eceef0);
   border-radius: 10px 0 0 10px;
 }
 
@@ -522,8 +505,8 @@ watch(
 }
 
 .prompt-template-browser nav button.active {
-  color: #b91c32;
-  background: #fff;
+  color: var(--rail-theme-accent, #b91c32);
+  background: var(--rail-theme-surface, #fff);
   box-shadow: 0 2px 8px rgb(20 28 34 / 7%);
 }
 
@@ -546,16 +529,16 @@ watch(
   min-height: 34px;
   padding: 6px 8px;
   font-size: 12px;
-  color: #52606a;
+  color: var(--rail-theme-secondary, #52606a);
   cursor: pointer;
-  background: #f7f8f9;
-  border: 1px solid #eceef0;
+  background: var(--rail-theme-surface, #f7f8f9);
+  border: 1px solid var(--rail-theme-border, #eceef0);
   border-radius: 7px;
 }
 
 .prompt-template-options button.selected {
-  color: #b91c32;
-  background: #fff1f3;
+  color: var(--rail-theme-accent, #b91c32);
+  background: var(--rail-theme-surface, #fff1f3);
   border-color: #df8e9d;
 }
 
@@ -578,7 +561,7 @@ watch(
   flex: 0 0 auto;
   font-size: 12px;
   font-weight: 650;
-  color: #5f6b73;
+  color: var(--rail-theme-secondary, #5f6b73);
 }
 
 .prompt-template-selected > button {
@@ -589,9 +572,9 @@ watch(
   padding: 4px 8px;
   font-size: 12px;
   line-height: 1.35;
-  color: #a5162e;
+  color: var(--rail-theme-accent, #a5162e);
   cursor: pointer;
-  background: #fff1f3;
+  background: var(--rail-theme-surface, #fff1f3);
   border: 1px solid #efb6c0;
   border-radius: 999px;
 }
@@ -601,7 +584,7 @@ watch(
   color: #fff;
   outline: 0;
   background: #bd1934;
-  border-color: #bd1934;
+  border-color: var(--rail-theme-accent, #bd1934);
 }
 
 .prompt-template-selected svg {
@@ -628,8 +611,8 @@ watch(
 
 .template-manager-list > article {
   padding: 12px;
-  background: #f7f8f9;
-  border: 1px solid #eceef0;
+  background: var(--rail-theme-surface, #f7f8f9);
+  border: 1px solid var(--rail-theme-border, #eceef0);
   border-radius: 10px;
 }
 
@@ -666,5 +649,51 @@ watch(
   .template-manager-options > div {
     grid-template-columns: 1fr 1fr;
   }
+}
+</style>
+
+<style scoped>
+.template-preview {
+  max-height: 220px;
+  padding: 12px;
+  overflow: auto;
+  background: var(--rail-theme-surface, #f7f8fa);
+  border-radius: 8px;
+}
+
+.template-preview pre {
+  margin: 8px 0;
+  font: inherit;
+  white-space: pre-wrap;
+}
+
+.template-preview p {
+  margin: 4px 0;
+  color: var(--rail-theme-accent, #b91c32);
+}
+</style>
+
+<style scoped>
+.template-ratios {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.template-ratios button {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+}
+
+.template-ratio-icon {
+  display: block;
+  border: 1px solid currentcolor;
+  border-radius: 2px;
+}
+
+.template-current-size {
+  grid-column: 1 / -1;
 }
 </style>

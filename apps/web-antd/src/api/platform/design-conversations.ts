@@ -46,16 +46,18 @@ export function getDesignConversationDraftApi(
   conversationId: string,
   projectId: string,
   appKey: string,
+  designMode: 'cabin' | 'cmf' | 'component' = 'cabin',
 ) {
   return requestClient.get<WorkflowWorkspaceDraft>(
     `/design-conversations/${conversationId}/drafts/${encodeURIComponent(appKey)}`,
-    { params: { projectId } },
+    { params: { projectId, designMode } },
   );
 }
 
 export function saveDesignConversationDraftApi(input: {
   appKey: string;
   conversationId: string;
+  designMode?: 'cabin' | 'cmf' | 'component';
   inputAssetIds: Record<string, string>;
   parameterValues: Record<string, unknown>;
   projectId: string;
@@ -63,6 +65,7 @@ export function saveDesignConversationDraftApi(input: {
   return requestClient.put<WorkflowWorkspaceDraft>(
     `/design-conversations/${input.conversationId}/drafts/${encodeURIComponent(input.appKey)}`,
     {
+      designMode: input.designMode,
       inputAssetIds: input.inputAssetIds,
       parameterValues: input.parameterValues,
       projectId: input.projectId,

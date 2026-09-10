@@ -193,7 +193,7 @@ async function createProject() {
   min-height: 286px;
   padding: 20px;
   overflow: hidden;
-  background: #fff;
+  background: var(--rail-theme-surface, #fff);
   border: 1px solid var(--rail-line);
   border-radius: 12px;
   transition:
@@ -203,7 +203,7 @@ async function createProject() {
 }
 
 .project-card:hover {
-  border-color: #cbb7ba;
+  border-color: var(--rail-theme-border, #cbb7ba);
   box-shadow: var(--rail-shadow);
   transform: translateY(-2px);
 }
@@ -242,8 +242,8 @@ async function createProject() {
 }
 
 .project-stage {
-  color: #55616d;
-  background: #f0f2f4;
+  color: var(--rail-theme-secondary, #55616d);
+  background: var(--rail-theme-surface, #f0f2f4);
 }
 
 .current-badge {
@@ -278,7 +278,7 @@ async function createProject() {
   gap: 18px;
   padding: 14px 0;
   font-size: 11px;
-  color: #535e68;
+  color: var(--rail-theme-secondary, #535e68);
   border-top: 1px solid var(--rail-line);
 }
 
@@ -293,7 +293,7 @@ async function createProject() {
   align-items: center;
   justify-content: space-between;
   font-size: var(--rail-font-caption);
-  color: #8a939c;
+  color: var(--rail-theme-secondary, #8a939c);
 }
 
 .project-card__footer :deep(.ant-btn) {

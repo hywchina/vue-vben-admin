@@ -1,0 +1,196 @@
+/* Application-only dark palette. Fallbacks in component CSS preserve light mode. */
+:root.dark,
+:root.dark .dark {
+  --rail-theme-surface: #191c20;
+  --rail-theme-text: #e8ebef;
+  --rail-theme-secondary: #adb5c0;
+  --rail-theme-muted: #929da9;
+  --rail-theme-border: #363b42;
+  --rail-theme-accent: #ff879b;
+  --rail-theme-solid-accent: #bc2947;
+  --rail-ink: var(--rail-theme-text);
+  --rail-steel: var(--rail-theme-secondary);
+  --rail-mist: var(--rail-theme-surface);
+  --rail-white: var(--rail-theme-surface);
+  --rail-line: var(--rail-theme-border);
+  --rail-accent: #ff879b;
+  --rail-accent-dark: #f26f86;
+  --rail-accent-soft: #42222b;
+  --rail-success: #83d6ad;
+  --rail-warning: #e7bd78;
+  --rail-shadow: none;
+
+  /* Vben shell and its menus use the exact same canvas as the business views. */
+  --background: 214.286 12.281% 11.176%;
+  --background-deep: var(--background);
+  --card: var(--background);
+  --sidebar: var(--background);
+  --sidebar-deep: var(--background);
+  --menu: var(--background);
+  --header: var(--background);
+  --foreground: 214.286 17.073% 92.157%;
+  --card-foreground: var(--foreground);
+  --popover: 215 13% 16%;
+  --popover-foreground: var(--foreground);
+  --muted-foreground: 216 13% 71%;
+  --border: 215 10% 24%;
+  --input-background: var(--background);
+  --input-placeholder: 213 12% 61%;
+}
+
+:root.dark .platform-page,
+:root.dark .home-page,
+:root.dark .workbench-page,
+:root.dark .home-hero {
+  color: var(--rail-ink);
+  background: var(--rail-theme-surface);
+}
+
+:root.dark .home-hero::before {
+  background-image: none;
+}
+
+:root.dark .home-hero,
+:root.dark .platform-panel,
+:root.dark .wb-panel {
+  box-shadow: none;
+}
+
+/* 1 / 2 / 3 merge into one canvas; spacing carries the hierarchy. */
+:root.dark .assets-page .asset-browser,
+:root.dark .assets-page .asset-module-rail,
+:root.dark .assets-page .asset-browser__content,
+:root.dark .assets-page .asset-card {
+  background: var(--rail-theme-surface);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+:root.dark .assets-page .asset-module-rail {
+  border: 0;
+}
+
+:root.dark .assets-page .asset-card__body {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+:root.dark .assets-page .asset-card__preview {
+  border-radius: 6px;
+}
+
+:root.dark .assets-page .asset-card:hover,
+:root.dark .assets-page .asset-card.is-selected {
+  border-color: var(--rail-accent);
+}
+
+:root.dark .assets-page .asset-module-rail button:hover {
+  background: #252b33;
+}
+
+:root.dark .assets-page .asset-module-rail button.active {
+  color: var(--rail-accent);
+  background: var(--rail-accent-soft);
+}
+
+:root.dark .asset-batch-bar,
+:root.dark .asset-image-actions button:hover {
+  color: var(--rail-accent);
+  background: var(--rail-accent-soft);
+  border-color: #70404b;
+}
+
+:root.dark .status-pill--available,
+:root.dark .status-pill--enabled,
+:root.dark .status-pill--success,
+:root.dark .status-pill--succeeded {
+  background: #20382e;
+  border-color: #355e49;
+}
+
+:root.dark .status-pill--queued,
+:root.dark .status-pill--planned {
+  background: #3a3022;
+  border-color: #625039;
+}
+
+:root.dark .status-pill--failed {
+  color: #ffaaa9;
+  background: #40282b;
+  border-color: #70404b;
+}
+
+:root.dark .status-pill--disabled,
+:root.dark .status-pill--cancelled {
+  color: var(--rail-steel);
+  background: #252b33;
+  border-color: var(--rail-line);
+}
+
+:root.dark .status-pill--running,
+:root.dark .status-pill--testing {
+  border-color: #70404b;
+}
+
+/* Portalled dialogs retain their own edge, without bright white content blocks. */
+:root.dark .rail-ai-assistant {
+  --assistant-ink: var(--rail-ink);
+  --assistant-steel: var(--rail-steel);
+  --assistant-mist: var(--rail-mist);
+  --assistant-line: var(--rail-line);
+
+  box-shadow: 0 16px 48px rgb(0 0 0 / 35%);
+}
+
+:root.dark .vben-menu.is-dark {
+  --menu-item-active-color: var(--rail-accent);
+  --menu-item-active-background-color: var(--rail-accent-soft);
+  --menu-item-hover-background-color: #252b33;
+}
+
+:root.dark .thread-header {
+  background: var(--rail-theme-surface);
+}
+
+:root.dark .design-page .design-composer {
+  background: var(--rail-theme-surface);
+}
+
+:root.dark .tabs-chrome__item.is-active .tabs-chrome__background-content {
+  background: var(--rail-accent-soft);
+}
+
+:root.dark .tabs-chrome__item.is-active .tabs-chrome__background-before,
+:root.dark .tabs-chrome__item.is-active .tabs-chrome__background-after {
+  fill: var(--rail-accent-soft);
+}
+
+:root.dark .tabs-chrome__item.is-active {
+  color: var(--rail-accent);
+}
+
+:root.dark .wb-save-badge,
+:root.dark .rail-ai-service-note,
+:root.dark .rail-ai-message.is-failed .rail-ai-message__body {
+  color: var(--rail-warning);
+  background: #3a3022;
+}
+
+:root.dark .wb-save-badge.saved {
+  color: var(--rail-success);
+  background: #20382e;
+}
+
+:root.dark .rail-ai-attachment {
+  background: #252b33;
+  border-color: var(--rail-line);
+}
+
+:root.dark .assets-page .asset-card:has(.is-selected) {
+  border-color: var(--rail-accent);
+}
+
+:root.dark .assets-page .asset-card:focus-visible {
+  outline: 2px solid var(--rail-accent);
+  outline-offset: 3px;
+}

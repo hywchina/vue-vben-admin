@@ -943,12 +943,24 @@ async function runBrowserAcceptance() {
         logoSource: logo?.getAttribute('src') ?? '',
         text: (element.textContent ?? '').replaceAll(/\s+/g, ''),
         titleHeight: titleRect.height,
+        fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+        rootFontSize: Number.parseFloat(
+          getComputedStyle(document.documentElement).fontSize,
+        ),
+        fontWeight: getComputedStyle(element).fontWeight,
         whiteSpace: getComputedStyle(element).whiteSpace,
       };
     });
     assert(
       headerBrandLayout.text === '客运装备内装模块化分区快速设计平台' &&
         headerBrandLayout.whiteSpace === 'nowrap' &&
+        Math.abs(
+          headerBrandLayout.fontSize - headerBrandLayout.rootFontSize * 1.25,
+        ) <= 0.5 &&
+        headerBrandLayout.fontWeight === '500' &&
+        Math.abs(
+          headerBrandLayout.logoHeight - headerBrandLayout.rootFontSize * 1.75,
+        ) <= 0.5 &&
         Math.abs(
           headerBrandLayout.logoHeight - headerBrandLayout.titleHeight,
         ) <= 0.5 &&
@@ -1085,6 +1097,8 @@ async function runBrowserAcceptance() {
           : '',
         columnCount:
           gridStyle?.gridTemplateColumns.split(' ').filter(Boolean).length ?? 0,
+        rowCount:
+          gridStyle?.gridTemplateRows.split(' ').filter(Boolean).length ?? 0,
         gridWidth: grid?.getBoundingClientRect().width ?? 0,
         heroBackground: hero ? getComputedStyle(hero).backgroundImage : '',
         heroHeight: hero?.getBoundingClientRect().height ?? 0,
@@ -1096,13 +1110,14 @@ async function runBrowserAcceptance() {
       };
     });
     assert(
-      homeLayout.columnCount === 6 &&
+      homeLayout.columnCount === 3 &&
+        homeLayout.rowCount === 2 &&
         homeLayout.heroHeight >= 300 &&
         homeLayout.gridWidth >= 1200 &&
         homeLayout.heroBackground !== 'none' &&
         homeLayout.buttonBackground === 'rgb(255, 255, 255)' &&
-        homeLayout.panelCount === 2,
-      `首页主视觉、六入口或最近工作区没有按新版布局渲染：${JSON.stringify(homeLayout)}`,
+        homeLayout.panelCount === 0,
+      `首页主视觉、两行三列入口或最近工作区移除不符合要求：${JSON.stringify(homeLayout)}`,
     );
     assert(
       homeLayout.uniqueIconColors.length === 1 &&
@@ -1117,13 +1132,6 @@ async function runBrowserAcceptance() {
         (homeLayout.metricValues[3] ?? 0) >= 1,
       `首页没有展示真实 Dashboard API 汇总数据：${JSON.stringify(homeLayout.metricValues)}`,
     );
-    await page.locator('.home-task-list > button').first().waitFor();
-    await page.locator('.home-asset-list > button').first().waitFor();
-    assert(
-      (await page.locator('.home-task-list > button').count()) >= 1 &&
-        (await page.locator('.home-asset-list > button').count()) >= 1,
-      '首页没有使用真实最近任务和生成资产记录',
-    );
     assert(
       (await page.locator('.home-hero__status').count()) === 0 &&
         (await page
@@ -1133,9 +1141,8 @@ async function runBrowserAcceptance() {
             (element) =>
               getComputedStyle(element).backgroundColor !== 'rgba(0, 0, 0, 0)',
           )) &&
-        (await page.locator('.home-asset-list__preview img').count()) >= 1 &&
-        (await page.locator('.home-task-list img').count()) === 0,
-      '首页仍显示已移除状态卡、快捷按钮背景不醒目，或最近任务/资产展示方式不正确',
+        (await page.locator('.home-work-grid').count()) === 0,
+      '首页仍显示已移除区域或快捷按钮背景不醒目',
     );
 
     const newDesignEntry = page.locator(
@@ -1853,8 +1860,18 @@ async function runBrowserAcceptance() {
     await page.waitForURL((url) => url.pathname === '/assets');
     await page.locator('.assets-page').waitFor();
     assert(
-      (await page.getByLabel('按项目成员筛选资产').count()) === 1,
-      '资产中心没有提供项目成员筛选',
+      (await page.getByLabel('按项目成员筛选资产').count()) === 1 &&
+        (await page.getByLabel('按项目筛选资产', { exact: true }).count()) ===
+          1 &&
+        (await page.locator('.rail-project-switcher').count()) === 0,
+      '资产中心应在筛选区提供项目和成员选择，顶栏不再重复显示项目',
+    );
+    const projectFilterText = await page
+      .locator('.asset-project-filter')
+      .textContent();
+    assert(
+      projectFilterText?.includes('全部项目'),
+      '资产中心默认应汇总全部可访问项目',
     );
     await page.goto(`${webUrl}/jobs?status=active`);
     await page.locator('.jobs-page').waitFor();
@@ -2052,58 +2069,44 @@ async function runBrowserAcceptance() {
     await modelRound.screenshot({ path: model3dScreenshotPath });
     const historyImageRound = page.locator(`[data-job-id="${historyJobId}"]`);
     const historyImageGallery = historyImageRound.locator(
-      '.round-output-gallery',
+      '.image-result-gallery',
     );
     await historyImageGallery.waitFor();
+    const thumbnails = historyImageGallery.locator(
+      '.gallery-thumbnails button',
+    );
+    assert((await thumbnails.count()) === 3, '三图结果没有展示三张缩略图');
     assert(
-      (await historyImageGallery.locator('button').count()) === 3,
-      '同一轮次的三张生成图片没有以网格展示',
+      (await historyImageRound.locator('.round-output__footer').count()) === 0,
+      '多图结果下方仍显示旧操作栏',
+    );
+    const thumbnailBoxes = await thumbnails.evaluateAll((buttons) =>
+      buttons.map((button) => {
+        const box = button.getBoundingClientRect();
+        return {
+          width: box.width,
+          height: box.height,
+          left: box.left,
+          top: box.top,
+        };
+      }),
     );
     assert(
-      (await historyImageGallery
-        .locator('.round-output-gallery__index')
-        .count()) === 0 &&
-        (await historyImageGallery
-          .locator('button')
-          .evaluateAll((buttons) =>
-            buttons.every(
-              (button) =>
-                getComputedStyle(button).backgroundColor ===
-                'rgb(255, 255, 255)',
-            ),
-          )),
-      '多图结果仍显示数字角标或使用深色图片背景',
-    );
-    const historyGalleryBoxes = await historyImageGallery
-      .locator('button')
-      .evaluateAll((buttons) =>
-        buttons.map((button) => {
-          const box = button.getBoundingClientRect();
-          return {
-            bottom: box.bottom,
-            left: box.left,
-            right: box.right,
-            top: box.top,
-            width: box.width,
-          };
-        }),
-      );
-    const mainGalleryBox = historyGalleryBoxes[0];
-    const secondGalleryBox = historyGalleryBoxes[1];
-    const thirdGalleryBox = historyGalleryBoxes[2];
-    assert(
-      Boolean(
-        mainGalleryBox &&
-        secondGalleryBox &&
-        thirdGalleryBox &&
-        mainGalleryBox.width > secondGalleryBox.width * 1.9 &&
-        secondGalleryBox.top > mainGalleryBox.top &&
-        Math.abs(secondGalleryBox.top - thirdGalleryBox.top) < 2 &&
-        secondGalleryBox.left < thirdGalleryBox.left,
+      thumbnailBoxes.every(
+        (box) =>
+          Math.abs(box.width - box.height) < 1 &&
+          Math.abs(box.top - (thumbnailBoxes[0]?.top ?? Number.NaN)) < 1,
       ),
-      `三图结果没有按上方主图、下方双图排列：${JSON.stringify(historyGalleryBoxes)}`,
+      '缩略图不是等大方形单行排列',
     );
-    await historyImageGallery.locator('button').first().click();
+    await thumbnails.nth(1).click();
+    await historyImageGallery.getByText('2 / 3', { exact: true }).waitFor();
+    assert(
+      (await thumbnails.nth(1).getAttribute('aria-pressed')) === 'true',
+      '缩略图未更新选中状态',
+    );
+    await thumbnails.first().click();
+    await historyImageGallery.locator('.gallery-main').click();
     const resultLightbox = page.locator('.platform-image-lightbox:visible');
     await resultLightbox.waitFor();
     assert(
@@ -2331,10 +2334,22 @@ async function runBrowserAcceptance() {
       .locator('.ant-modal-close')
       .click();
     await regionComparisonRound.locator('[data-image-comparison]').waitFor();
+    assert(
+      (await regionComparisonRound.locator('.round-heading').count()) === 0,
+      '设计会话仍显示轮次、时间与状态栏',
+    );
+    assert(
+      (await regionComparisonRound
+        .locator('.round-output-actions button > span')
+        .count()) === 0,
+      '图片操作仍显示文字标签',
+    );
     const cmfResultActionLabels = await regionComparisonRound
       .getByTestId('cmf-result-actions')
       .locator('button')
-      .allTextContents();
+      .evaluateAll((buttons) =>
+        buttons.map((button) => button.getAttribute('aria-label') ?? ''),
+      );
     assert(
       JSON.stringify(cmfResultActionLabels.map((label) => label.trim())) ===
         JSON.stringify([
@@ -2466,38 +2481,18 @@ async function runBrowserAcceptance() {
     `;
     await page.reload();
     await page.getByRole('button', { name: '停止生成' }).waitFor();
-    const applicationCount = Number(
-      await page
-        .locator('.composer-application-shortcuts')
-        .getAttribute('data-application-count'),
-    );
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    const sharedFunctionKeys = await page
+      .locator('.design-function-options button')
+      .evaluateAll((buttons) => buttons.map((button) => button.dataset.appKey));
     assert(
-      applicationCount === 15,
-      `客室效果模式没有完整接入目录中的 15 项能力：${applicationCount}`,
+      sharedFunctionKeys.includes('text-to-image') &&
+        sharedFunctionKeys.includes('text-chat') &&
+        sharedFunctionKeys.length >= 18,
+      '功能列表未覆盖已发布的工作流',
     );
-    assert(
-      (await page.locator('.composer-application-shortcuts button').count()) ===
-        10,
-      '未选择应用时没有完整展示客室效果固定工具、提示词模板与“更多”',
-    );
-    await page.getByTestId('more-design-applications').waitFor();
-    const quickToolLabels = await page
-      .locator('.composer-application-shortcuts button[data-app-key]')
-      .allTextContents();
-    assert(
-      JSON.stringify(quickToolLabels.map((item) => item.trim())) ===
-        JSON.stringify([
-          '文生图',
-          '标记生成',
-          '局部重绘',
-          '部件/材质融合',
-          '平面图填色',
-          '环境更改',
-          '图像放大',
-          '图像理解',
-        ]),
-      `客室效果快捷工具没有按产品定义排序：${JSON.stringify(quickToolLabels)}`,
-    );
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    await page.getByTestId('open-design-parameters').waitFor();
     assert(
       (await page.locator('.rail-ai-float-button').count()) === 1,
       '设计生成页面没有保留唯一的全局 AI 助手',
@@ -2601,22 +2596,15 @@ async function runBrowserAcceptance() {
         '描述你的设计需求，如生成二方连续/四方连续、颜色、面料材质、图案形式、风格、图像尺寸的纹样……',
       'CMF 输入框没有使用专属预设提示词',
     );
-    const cmfQuickToolLabels = await page
-      .locator('.composer-application-shortcuts button')
-      .allTextContents();
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    const cmfFunctionKeys = await page
+      .locator('.design-function-options:visible button')
+      .evaluateAll((buttons) => buttons.map((button) => button.dataset.appKey));
     assert(
-      JSON.stringify(cmfQuickToolLabels.map((label) => label.trim())) ===
-        JSON.stringify([
-          '文生图',
-          '局部重绘',
-          '多图融合',
-          '图像放大',
-          '图片理解',
-          '提示词模板',
-          '更多',
-        ]),
-      `CMF 工具栏没有按七项固定顺序显示：${JSON.stringify(cmfQuickToolLabels)}`,
+      JSON.stringify(cmfFunctionKeys) === JSON.stringify(sharedFunctionKeys),
+      'cmf 模式改变了工作流功能列表',
     );
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
     await page.getByTestId('cmf-prompt-template-trigger').click();
     const cmfTemplatePanel = page.getByTestId('cmf-prompt-template-panel');
     await cmfTemplatePanel
@@ -2686,25 +2674,16 @@ async function runBrowserAcceptance() {
         '描述你的设计需求，如生成部件类型、角度、颜色、表面材质、图像尺寸等……',
       '客室零部件输入框没有使用专属预设提示词',
     );
-    const componentQuickToolLabels = await page
-      .locator('.composer-application-shortcuts button')
-      .allTextContents();
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    const componentFunctionKeys = await page
+      .locator('.design-function-options:visible button')
+      .evaluateAll((buttons) => buttons.map((button) => button.dataset.appKey));
     assert(
-      JSON.stringify(componentQuickToolLabels.map((label) => label.trim())) ===
-        JSON.stringify([
-          '文生图',
-          '局部重绘',
-          '标记修改',
-          '多图融合',
-          '多角度生成',
-          '三维生成',
-          '图像放大',
-          '图片理解',
-          '提示词模板',
-          '更多',
-        ]),
-      `客室零部件工具栏顺序错误：${JSON.stringify(componentQuickToolLabels)}`,
+      JSON.stringify(componentFunctionKeys) ===
+        JSON.stringify(sharedFunctionKeys),
+      'component 模式改变了工作流功能列表',
     );
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
     await page.getByTestId('component-prompt-template-trigger').click();
     const componentTemplatePanel = page.getByTestId(
       'component-prompt-template-panel',
@@ -2732,38 +2711,21 @@ async function runBrowserAcceptance() {
         '描述你的设计需求，如生成客室类型、画面角度、部件颜色、材质、图像尺寸等……',
       '客室效果输入框没有使用专属预设提示词',
     );
-    const cabinQuickToolLabels = await page
-      .locator('.composer-application-shortcuts button')
-      .allTextContents();
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    const cabinFunctionKeys = await page
+      .locator('.design-function-options:visible button')
+      .evaluateAll((buttons) => buttons.map((button) => button.dataset.appKey));
     assert(
-      JSON.stringify(cabinQuickToolLabels.map((label) => label.trim())) ===
-        JSON.stringify([
-          '文生图',
-          '标记生成',
-          '局部重绘',
-          '部件/材质融合',
-          '平面图填色',
-          '环境更改',
-          '图像放大',
-          '图像理解',
-          '提示词模板',
-          '更多',
-        ]),
-      `客室效果工具栏顺序错误：${JSON.stringify(cabinQuickToolLabels)}`,
+      JSON.stringify(cabinFunctionKeys) === JSON.stringify(sharedFunctionKeys),
+      'cabin 模式改变了工作流功能列表',
     );
-    await page.locator('[data-tool-key="environment-change"]').click();
-    await page.waitForFunction(
-      (placeholder) =>
-        document
-          .querySelector('[data-testid="design-prompt-input"]')
-          ?.getAttribute('placeholder') === placeholder,
-      '描述需要调整的光环境与窗外环境，如白天、夜晚、森林或城市等……',
-    );
-    assert(
-      (await cabinPrompt.getAttribute('placeholder')) ===
-        '描述需要调整的光环境与窗外环境，如白天、夜晚、森林或城市等……',
-      '环境更改没有切换专用输入提示',
-    );
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    await page
+      .locator(
+        '.design-function-options:visible [data-app-key="single-image-edit"]',
+      )
+      .click();
     await page.getByTestId('cabin-prompt-template-trigger').click();
     const cabinTemplatePanel = page.getByTestId('cabin-prompt-template-panel');
     await cabinTemplatePanel
@@ -2775,8 +2737,8 @@ async function runBrowserAcceptance() {
         .count()) === 1 &&
         (await cabinTemplatePanel
           .getByRole('button', { exact: true, name: '客室类型' })
-          .count()) === 0,
-      '环境更改没有只展示环境专用提示词分类',
+          .count()) === 1,
+      '客室模式提示词分类未保留',
     );
     await page.getByTestId('cabin-prompt-template-trigger').click();
     const reportModeButton = page.getByRole('button', {
@@ -2820,7 +2782,8 @@ async function runBrowserAcceptance() {
         composerPanelBox.x >= threadPanelBox.x &&
         composerPanelBox.x + composerPanelBox.width <=
           threadPanelBox.x + threadPanelBox.width &&
-        composerPanelBox.width >= timelinePanelBox.width,
+        Math.abs(composerPanelBox.width - timelinePanelBox.width) <= 1 &&
+        Math.abs(composerPanelBox.x - timelinePanelBox.x) <= 1,
       ),
       '输入框没有保持在主工作区内，或宽度小于会话显示框',
     );
@@ -2860,16 +2823,16 @@ async function runBrowserAcceptance() {
       () => document.querySelectorAll('.design-page').length === 1,
     );
     assert(
-      (await page.getByTestId('active-design-application').count()) === 0,
-      '新会话不应在用户未选择时显示已选应用标签',
+      (await page.getByTestId('active-design-application').count()) === 1,
+      '新会话没有显示默认选中的文生图功能',
     );
     assert(
       (await page
         .locator('.composer-box:visible')
-        .getAttribute('data-effective-app-key')) === 'text-chat',
-      '未选择应用时没有在后台默认使用文生文能力',
+        .getAttribute('data-effective-app-key')) === 'text-to-image',
+      '默认执行目标不是文生图工作流',
     );
-    await page.locator('.composer-application-shortcuts:visible').waitFor();
+    await page.getByTestId('active-design-application').waitFor();
     await page.waitForFunction(
       () =>
         document.querySelectorAll('.ant-spin-spinning, .ant-spin-blur')
@@ -2879,9 +2842,7 @@ async function runBrowserAcceptance() {
     const composerStyle = await page.evaluate(() => {
       const box = document.querySelector('.composer-box');
       const send = document.querySelector('.composer-submit');
-      const shortcut = document.querySelector(
-        '.composer-application-shortcuts button',
-      );
+      const shortcut = document.querySelector('.design-function-trigger');
       const textarea = document.querySelector('.composer-box textarea');
       const sendIcon = document.querySelector('.composer-submit svg');
       return {
@@ -2906,9 +2867,9 @@ async function runBrowserAcceptance() {
       };
     });
     assert(
-      composerStyle.border === 'rgb(223, 142, 157)' &&
-        composerStyle.send === 'rgb(197, 31, 58)',
-      `设计输入器没有使用平台红色主题：${JSON.stringify(composerStyle)}`,
+      composerStyle.border === 'rgb(216, 221, 227)' &&
+        composerStyle.send === 'rgb(75, 85, 99)',
+      `设计输入器没有使用中性灰主题：${JSON.stringify(composerStyle)}`,
     );
     assert(
       composerStyle.shortcutFont >= 15 &&
@@ -3068,7 +3029,10 @@ async function runBrowserAcceptance() {
       .first()
       .waitFor();
 
-    await page.locator('[data-app-key="text-chat"]').click();
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    await page
+      .locator('.design-function-options:visible [data-app-key="text-chat"]')
+      .click();
     const parameterDrawer = page.locator('.design-parameter-drawer');
     await page.getByTestId('open-design-parameters').click();
     await parameterDrawer.waitFor();
@@ -3077,15 +3041,18 @@ async function runBrowserAcceptance() {
       .first()
       .waitFor();
     await page.locator('.ant-drawer:visible .ant-drawer-extra button').click();
-    await page.getByRole('button', { name: '取消选择当前应用' }).click();
-    await page.locator('.composer-application-shortcuts').waitFor();
-    await page.locator('[data-app-key="text-to-image"]').click();
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    await page
+      .locator(
+        '.design-function-options:visible [data-app-key="text-to-image"]',
+      )
+      .click();
     await page.getByTestId('active-design-application').waitFor();
     assert(
       (await page.locator('.composer-application-shortcuts').count()) === 0,
       '选择应用后其他应用入口没有隐藏',
     );
-    await page.getByRole('button', { name: '取消选择当前应用' }).waitFor();
+    await page.getByRole('button', { name: '切换功能', exact: true }).waitFor();
     const moreParameterButton = page.getByTestId('open-design-parameters');
     const parameterBarBox = await page
       .locator('.parameter-chips')
@@ -3120,9 +3087,12 @@ async function runBrowserAcceptance() {
     await page.locator('.ant-drawer:visible .ant-drawer-extra button').click();
     await page.waitForTimeout(500);
     await page.screenshot({ fullPage: true, path: designScreenshotPath });
-    await page.getByRole('button', { name: '取消选择当前应用' }).click();
-    await page.locator('.composer-application-shortcuts').waitFor();
-    await page.locator('[data-app-key="text-to-image"]').click();
+    await page.getByRole('button', { name: '切换功能', exact: true }).click();
+    await page
+      .locator(
+        '.design-function-options:visible [data-app-key="text-to-image"]',
+      )
+      .click();
 
     await page.getByRole('button', { name: '新建会话' }).click();
     await page.waitForFunction(
