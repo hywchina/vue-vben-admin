@@ -1580,7 +1580,7 @@ onMounted(() => void loadPreviews());
 }
 
 .round-view-switch {
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .round-comparison-unavailable {

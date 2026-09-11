@@ -2056,7 +2056,6 @@ onBeforeUnmount(() => {
     >
       <div class="conversation-sidebar__heading">
         <span>任务栏</span>
-        <small>{{ activeConversation?.title ?? '新设计会话' }}</small>
       </div>
       <Select
         :options="projectOptions"
@@ -2086,7 +2085,6 @@ onBeforeUnmount(() => {
       </Input>
       <div class="conversation-list-heading">
         <span>历史会话</span>
-        <small>{{ regularConversations.length }}</small>
       </div>
       <div class="conversation-list">
         <div
@@ -2101,11 +2099,8 @@ onBeforeUnmount(() => {
           @keydown.enter="selectConversation(item.id)"
           @keydown.space.prevent="selectConversation(item.id)"
         >
-          <span class="conversation-item__icon">
-            <IconifyIcon icon="lucide:message-circle" />
-          </span>
           <span class="conversation-item__body">
-            <strong>{{ item.title }}</strong>
+            <strong :title="item.title">{{ item.title }}</strong>
             <small>
               {{ item.roundCount }} 轮 ·
               {{ formatConversationTime(item.updatedAt) }}
@@ -3030,8 +3025,8 @@ onBeforeUnmount(() => {
 .conversation-item {
   position: relative;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0;
   align-items: center;
   width: 100%;
   padding: 9px 8px;
@@ -3050,17 +3045,6 @@ onBeforeUnmount(() => {
 
 .conversation-item.active {
   box-shadow: inset 3px 0 #bd1934;
-}
-
-.conversation-item__icon {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  color: var(--rail-red);
-  background: var(--rail-theme-surface, #fff);
-  border: 1px solid var(--design-border);
-  border-radius: 9px;
 }
 
 .conversation-item__body {
@@ -3085,14 +3069,14 @@ onBeforeUnmount(() => {
   gap: 4px;
   align-items: center;
   justify-content: flex-end;
-  width: 64px;
-  min-width: 64px;
+  min-width: 0;
 }
 
 .conversation-item__tail > i {
   flex: 0 0 auto;
   width: 7px;
   height: 7px;
+  margin-left: 8px;
   background: #2f9e62;
   border-radius: 50%;
   box-shadow: 0 0 0 4px rgb(47 158 98 / 12%);
@@ -3102,10 +3086,11 @@ onBeforeUnmount(() => {
   display: none;
   flex: 0 0 auto;
   gap: 2px;
+  margin-left: 8px;
 }
 
 .conversation-item:hover .conversation-actions,
-.conversation-item.active:hover .conversation-actions {
+.conversation-item:focus-within .conversation-actions {
   display: flex;
 }
 
@@ -3576,14 +3561,6 @@ main.design-page {
   color: var(--rail-theme-text, #2c3338);
 }
 
-.conversation-sidebar__heading small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 11px;
-  color: var(--design-muted);
-  white-space: nowrap;
-}
-
 .project-select {
   width: 100%;
   margin-bottom: 9px;
@@ -3605,11 +3582,6 @@ main.design-page {
   align-items: center;
   justify-content: space-between;
   padding: 18px 7px 7px;
-}
-
-.conversation-list-heading small {
-  font-size: 11px;
-  font-weight: 500;
 }
 
 .design-page .conversation-list {
@@ -3635,14 +3607,6 @@ main.design-page {
   box-shadow:
     inset 3px 0 #bd1934,
     0 3px 12px rgb(25 31 35 / 5%);
-}
-
-.design-page .conversation-item__icon {
-  width: 28px;
-  height: 28px;
-  color: var(--rail-theme-accent, #bd1934);
-  background: var(--rail-theme-surface, #fff1f3);
-  border: 0;
 }
 
 .design-page .conversation-item__body strong {
