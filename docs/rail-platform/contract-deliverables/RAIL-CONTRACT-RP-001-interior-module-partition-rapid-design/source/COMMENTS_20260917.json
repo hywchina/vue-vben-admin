@@ -1,0 +1,213 @@
+{
+  "file": "source/review-inputs/20260917_annotated.docx",
+  "comment_count": 9,
+  "comments": [
+    {
+      "id": "1",
+      "author": "Hui Li",
+      "date": "2026-09-14T11:26:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "标题改为“概述”。\n概述中主要摘要本报告的内容，包含既有现状、模块识别技术方法、系统平台构建、实现设计加速等。\n不需要关键词",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "摘要"
+            },
+            {
+              "where": "end",
+              "text": "关键词：轨道交通客运装备；客室内装；模块分区；交互式设计；快速设计平台"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "author": "Hui Li",
+      "date": "2026-09-14T11:27:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "第一章的研究内容可以不要",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "一、研究依据与任务界定"
+            },
+            {
+              "where": "end",
+              "text": "一、研究依据与任务界定"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "9",
+      "author": "Hui Li",
+      "date": "2026-09-14T11:29:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "问题方法需要补充并修改一下文章结构。\n1.需要点出一些客室内装现状（按合同名称，应该在这里写一些出口产品平台的内容，可由甲方提供一些支撑材料）、设计流程环节的现状、问题与快速设计的需要，因此引出通过人工智能提升设计效率的必要性；\n2.研究方法选择\n3.人工智能在多模态、识别能力等方面的技术水平和现状能力",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "二、问题分析与研究方法"
+            },
+            {
+              "where": "end",
+              "text": "二、问题分析与研究方法"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "14",
+      "author": "Hui Li",
+      "date": "2026-09-14T11:30:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "平台构建需要往后放，章节顺序应该是：先讲内装模块化分与分区设计、快速设计与跨区域优化的设计方法和流程，最后才是平台构建、功能模块、数据资源、接口集成等内容。\n平台构建方案需要一张总图，包含基础层、数据层、应用层、用户层等，然后按小结分别介绍一下具体的构建思路和方案。",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "三、平台总体构建方案"
+            },
+            {
+              "where": "end",
+              "text": "三、平台总体构建方案"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "23",
+      "author": "Hui Li",
+      "date": "2026-09-14T11:38:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "分区方法不光是AI识别的这种，先讲一下传统机械设计与模块化的划分形式（第三节），然后再提出通过AI技术能够实现哪些交互方法（第四节）；最终结合咱们项目的一些需求，选用怎样的方法。并如何和平台进行结合与集成（第五节）",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "（三）现有分区交互方法"
+            },
+            {
+              "where": "end",
+              "text": "（三）现有分区交互方法"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "25",
+      "author": "Hui Li",
+      "date": "2026-09-14T11:41:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "不光是遮罩与区域保持技术，需要再介绍一些AI识别的其他方法。该部分的技术介绍可以相对学术一些，更偏向技术原理性的描述。\n并确定我们选用哪种方法。",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "（四）遮罩编辑与区域保持"
+            },
+            {
+              "where": "end",
+              "text": "（四）遮罩编辑与区域保持"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "29",
+      "author": "Hui Li",
+      "date": "2026-09-17T09:39:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "这一章可以结合comfy中我们应用的一些标记工具，进行设计流程的阐述，并配一些标记过程和生成结果的图片，体现出该技术流实现了多模态辨识与生成能力；",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "五、快速设计与跨区域优化研究"
+            },
+            {
+              "where": "end",
+              "text": "五、快速设计与跨区域优化研究"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "66",
+      "author": "Hui Li",
+      "date": "2026-09-17T10:01:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "结论部分应该是涵盖几个方面：\n调研了既有客运装备内装的现状、模块化情况、分区识别技术，搭建了基于分区识别能力的快速设计技术路线与工作流程，构建了平台技术方案和架构，实现了具备构建应用的前期基础。",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "十三、研究结论"
+            },
+            {
+              "where": "end",
+              "text": "十三、研究结论"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "68",
+      "author": "Hui Li",
+      "date": "2026-09-17T10:03:00Z",
+      "initials": "HL",
+      "resolved": false,
+      "text": "两个附录可以不要",
+      "anchors": [
+        {
+          "part": "word/document.xml",
+          "paragraphs": [
+            {
+              "where": "start",
+              "text": "附录 A 合同技术要求追踪表"
+            },
+            {
+              "where": "end",
+              "text": "附录 A 合同技术要求追踪表"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

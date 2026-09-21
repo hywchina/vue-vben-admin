@@ -1,0 +1,60 @@
+{
+  "document_id": "RAIL-CONTRACT-RP-001",
+  "version": "V2.4",
+  "date": "2026-09-18",
+  "status": "批注修订评审稿，真实案例与企业实证资料待补",
+  "code_baseline": "6b047f2e7c29a8184a11678f3419cd5e4f193b32",
+  "docx_sha256": "958752118f49a18056bb2e72df0d048b53db61050b2cbe5d250e2c2d2bc5407a",
+  "source_review_sha256": "f28cc39fba9f015ba456f8c145da46b92e4494b04d103a712ea6c5a22e26791f",
+  "previous_v23_docx_sha256": "85fa9a1af2a45584e814614a5b6ca689d165ec88ad4803abca6a7d1d51168215",
+  "checks": {
+    "pages": 40,
+    "source_chinese_characters": 20730,
+    "body_and_table_chinese_characters": 20947,
+    "assistant_section_chinese_characters": 274,
+    "figures": 15,
+    "tables": 13,
+    "heading_bookmarks": 59,
+    "toc_entries": 14,
+    "toc_links": 28,
+    "toc_page_map_matches_render": true,
+    "pricing_and_code_detail_matches": 0,
+    "page_geometry_and_font_declarations": "pass",
+    "zip_integrity": "pass",
+    "native_revision_comments": 9,
+    "technical_references": 7,
+    "removed_abstract_keywords_and_appendices": true,
+    "accessibility": {
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "new_or_adjusted_diagrams": 3,
+    "diagram_self_checks": "pass",
+    "diagram_browser_text_overflows": 0
+  },
+  "visual_review": {
+    "status": "pass",
+    "pages_covered": 40,
+    "method": "先逐页查看40页渲染；最终版重新查看第2页及第8—40页，第1、3—7页经像素比较与已查看版本完全一致。",
+    "render_directory": "/tmp/rail-report-v24-OhHo4I/render-release",
+    "observations": "未见文字截断、图形越界、异常连线或图表编号错乱；保留图表整体分页所需留白。"
+  },
+  "limitations": [
+    "目录为可点击内部书签链接，不是 Word 自动目录域；正文变更后须重新生成和核验页码。",
+    "DOCX 已声明指定字体、字号与页面参数；本机渲染可能使用字体替代，目标 Word/WPS 环境仍需复核分页。",
+    "R03 企业现状实证、R07 同源客室原图—标记—生成结果及评价尚缺，仅部分响应。",
+    "BOM、装配接口、算法标注集及对照试验记录待补，最终签认技术响应版本待确认。",
+    "本轮未启动 GPU 推理、业务测试或验收测试；静态代码和资料核对不代表性能实测。",
+    "新增9条Word批注为修订说明，不代表原评审人已接受或关闭原意见。"
+  ],
+  "version_management": {
+    "previous_versions_retained": true,
+    "original_review_archived": true,
+    "source_and_build_tools_versioned_by_filename": true,
+    "git_commit_created": false,
+    "business_code_modified": false
+  },
+  "evidence": "EVIDENCE_V2.4.md",
+  "review_response": "REVIEW_RESPONSE_V2.4.md"
+}
