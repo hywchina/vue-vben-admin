@@ -344,15 +344,14 @@ export function getConfig(): PlatformConfig {
     ),
     loraModelPath:
       process.env.LORA_MODEL_PATH?.trim() ||
-      '/data_hdd/data/models/Flux2Klein/unet/flux-2-klein-9b.safetensors',
+      'models/unet/flux-2-klein-9b.safetensors',
     loraPollIntervalMs: positiveInteger(
       process.env.LORA_POLL_INTERVAL_MS,
       5000,
     ),
     loraTimeoutMs: positiveInteger(process.env.LORA_API_TIMEOUT_MS, 120_000),
     loraVaePath:
-      process.env.LORA_VAE_PATH?.trim() ||
-      '/data_hdd/data/models/flux2-klein-9B/split_files/vae/flux2-vae.safetensors',
+      process.env.LORA_VAE_PATH?.trim() || 'models/vae/flux2-vae.safetensors',
     loraWorkerLeaseSeconds: positiveInteger(
       process.env.LORA_WORKER_LEASE_SECONDS,
       180,
