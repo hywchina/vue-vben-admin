@@ -104,4 +104,3 @@ python <diagram-design-skill>/scripts/self_check.py assets/v2-4/*.html
 ```
 
 浏览器可用 `REPORT_CHROME_PATH` 指定，包解析可用 `NODE_PATH` 指定。首次渲染或内容变化后先从 PDF 标题导航提取真实页码，更新 `TOC_V2.4.json` 再生成、渲染并核验；不可只改目录数字而不核对跳转目标。
-
