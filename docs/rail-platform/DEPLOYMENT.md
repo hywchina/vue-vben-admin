@@ -1,5 +1,7 @@
 # 跨平台部署手册
 
+> 2026-09-21 新增企业内网单镜像方式：见 [deploy/single-image/README.md](../../deploy/single-image/README.md)。该方式使用一个 Web/API/Worker 业务镜像，支持 `config.env` 配置、一键 Compose 启动、模型外置和离线镜像导出。以下原多镜像方案继续保留；两种方式不要连接同一个测试库同时运行 Worker。
+
 > 适用系统：Linux、macOS、Windows 10/11。
 >
 > 目标：另一台电脑只拿到代码和本文档，即可完成安装、启动、验证、重启、升级和备份。项目基线：Node.js 24.16.0、pnpm 11.16.0、PostgreSQL 17.6、MinIO、Nitro、Vue 3。

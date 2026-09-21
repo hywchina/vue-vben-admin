@@ -1,5 +1,7 @@
 # 客运装备内装模块化分区快速设计平台：开发与复现指南
 
+2026-09-21 单镜像交付：一个 Web/API/Worker 业务镜像，运行配置、一键 Compose 与离线导出见 [部署说明](../../deploy/single-image/README.md)；已执行的源码/容器 API、18 项工作流、模板报告和浏览器验收及限制见 [验收记录](SINGLE_IMAGE_VALIDATION.md)。
+
 本目录是二次开发项目的交接入口。当前交付不是前端 Demo：登录、用户、权限、项目、资产、任务、通知、审计和 AI 助手的本地会话层均使用真实平台 API 与持久化存储。ComfyUI、大模型和 LoRA 训练通过外部服务适配器接入，报告生成支持可替换的内置 OOXML 与外部 AI 双适配器；现有多视图三维工作流属于 18 项 ComfyUI 能力之一。
 
 报告生成现支持 DOCX、PPTX 和自包含 Markdown 三种交付格式，三种格式均可选择模板生成或 AI 生成。DOCX/PPTX 回流为 `document` 项目资产，Markdown 回流为 `text` 项目资产；外部 AI 未配置或返回无效文件时明确失败，不回退为模板产物。

@@ -2,6 +2,13 @@
 
 每项以唯一英文提交标题关联 Git 提交，中文记录动机、范围、注意事项和测试证据。镜像、模型、环境密钥、运行日志及业务数据不提交 Git。
 
+## docs(deploy): record image validation and offline delivery
+
+- 动机：将实现与实际验证边界落到交付文档，避免把 API 健康或模板报告成功解释成所有外部模型服务已验证。
+- 范围：同步架构、部署、质量门禁、项目入口和开发记录；新增完整验收表、21 项容器任务/25 份产物、最终镜像 ID、离线归档校验和复现命令，明确 ComfyUI 缓存/低参数测试的限制。
+- 验证：浏览器桌面及窄屏人工复核；PNG/GLB/UTF-8/OOXML 结构检查通过；重启后再次执行三种报告通过；ESLint/Oxlint/Stylelint 全量通过。
+- 注意：全仓 `pnpm lint` 仍被另一项研究报告的 8 个文件格式问题阻断，未修改或提交其内容；vLLM 助手、Presenton AI 报告和真实 LoRA 训练本轮未启用，不列为已验收。沿用用户现有功能分支提交，不把其既有业务提交强行合入 dev。
+
 ## feat(deploy): package platform services in one image
 
 - 动机：按子项目交付一个平台业务镜像，在企业内网通过配置和 Compose 启动；不把开发机依赖、模型或账号密钥固化到镜像。

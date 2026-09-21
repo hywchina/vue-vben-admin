@@ -1,5 +1,7 @@
 # 当前系统架构说明
 
+> 2026-09-21 单镜像部署：`deploy/single-image/` 将 Web、API、Worker 合入一个业务镜像，以非 root 用户通过 Supervisor 运行；PostgreSQL、MinIO 和邮件沙箱为独立基础设施容器。推理/训练服务仍独立，平台无需 CUDA 或模型挂载。地址和资源限制在运行配置中设置。见 [部署说明](../../deploy/single-image/README.md)。
+
 > 2026-09-08 跨项目现状核对：见 [开发机整体架构梳理](SYSTEM_ARCHITECTURE_OVERVIEW.md)。该文档补充 Presenton 与共享 vLLM 的实现归属、运行状态以及已知报告契约差异；以下历史验收与能力描述不代表当前服务全部在线。
 
 > 更新时间：2026-08-08。本文以当前仓库代码、数据库迁移和部署配置为准，不把模拟协议测试描述成真实 GPU 推理已验证。
