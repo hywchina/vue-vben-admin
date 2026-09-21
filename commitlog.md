@@ -2,6 +2,13 @@
 
 每项以唯一英文提交标题关联 Git 提交，中文记录动机、范围、注意事项和测试证据。镜像、模型、环境密钥、运行日志及业务数据不提交 Git。
 
+## fix(@rail/web): share router instances in production builds
+
+- 动机：容器外 API 正常但生产登录后页面空白，控制台报 `Cannot read properties of undefined (reading 'beforeEach')`；取证发现 Web 与共享布局使用了两个不同 peer context 的 vue-router，依赖注入键不一致。
+- 范围：Web Vite 配置对 Vue、Router、Pinia 统一去重，保持共享布局与入口使用同一实例；新增独立浏览器部署烟测，检查登录、刷新、主页面、加载遮罩消失、桌面/窄屏截图、浏览器异常及外部请求。
+- 验证：实际生产镜像在 Chrome 中通过上述检查；桌面 1600×1000、窄屏 390×844 截图人工复核，页面内容及布局可见，错误和外部请求均为零。类型检查通过。
+- 注意：没有通过捕获异常或跳过布局掩盖问题；浏览器测试使用隔离验收环境的管理员，凭据只由环境变量传入，不写结果文件。
+
 ## fix(@rail/web): remove external production analytics
 
 - 动机：真实生产浏览器验收发现 HTML 在加载生产配置后注入百度统计，企业内网部署仍会尝试访问公网。
