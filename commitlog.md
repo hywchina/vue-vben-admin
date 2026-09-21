@@ -2,6 +2,15 @@
 
 每项以唯一英文提交标题关联 Git 提交，中文记录动机、范围、注意事项和测试证据。镜像、模型、环境密钥、运行日志及业务数据不提交 Git。
 
+## feat(deploy): package platform services in one image
+
+- 动机：按子项目交付一个平台业务镜像，在企业内网通过配置和 Compose 启动；不把开发机依赖、模型或账号密钥固化到镜像。
+- 范围：多阶段 Node 24 镜像构建一次 Web/API，再携带 Worker、迁移和种子运行依赖；非 root Supervisor 管理三进程，Nginx 同源代理，健康检查覆盖三进程和数据库/对象存储。专用 Docker ignore 排除模型、运行目录、私有环境和文档素材。
+- 部署：新增四服务 Compose（平台业务镜像加 PostgreSQL/MinIO/Mailpit 基础设施）、配置模板、私有配置忽略规则、初始化/构建/禁止拉取启动/停止/导出脚本。仅初始化缺失配置，密码随机生成；数据使用独立命名卷，停止不删除卷。
+- 离线：导出平台镜像和基础设施镜像两个归档及 SHA-256/镜像 ID 清单；内网机器 load 后直接 up，无需 Node、pnpm、Python、CUDA 或联网构建。导出端清单解析使用 Python 3。
+- 验证：构建成功；容器外核心集成、18 个串行真实工作流、三种模板报告成功；Worker 停止时健康检查失败、恢复后通过；无效配置在开放 HTTP 前失败；重启后管理员标识不变。平台归档重新导入通过，两个归档校验通过。
+- 注意：平台不负责外部 GPU 服务资源调度；正式远程访问配置 HTTPS。镜像导出不包含 PostgreSQL/MinIO 数据和模型，完整业务迁移需另行备份恢复；模板报告不等于 Presenton AI 生成验证。
+
 ## fix(@rail/web): share router instances in production builds
 
 - 动机：容器外 API 正常但生产登录后页面空白，控制台报 `Cannot read properties of undefined (reading 'beforeEach')`；取证发现 Web 与共享布局使用了两个不同 peer context 的 vue-router，依赖注入键不一致。

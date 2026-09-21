@@ -62,3 +62,4 @@ skills-lock.json
 datalog
 .playwright-mcp
 .rail-platform-runtime/
+deploy/single-image/config.env
