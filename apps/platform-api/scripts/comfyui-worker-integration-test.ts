@@ -83,33 +83,37 @@ async function main() {
     import('../utils/domain/capabilities/comfyui/worker'),
   ]);
   const sql = useDatabase();
-  const [scope] = await sql<
-    { projectId: string; userId: string; workflowVersionId: string }[]
-  >`
-    SELECT
-      (SELECT id FROM projects ORDER BY created_at LIMIT 1) AS "projectId",
-      (SELECT id FROM users ORDER BY created_at LIMIT 1) AS "userId",
-      cw.workflow_version_id AS "workflowVersionId"
-    FROM capability_workflows cw
-    WHERE cw.capability_code = 'text-to-image' AND cw.active = true
-    LIMIT 1
-  `;
-  if (!scope?.projectId || !scope.userId || !scope.workflowVersionId) {
-    throw new Error('模拟 Worker 集成测试需要已完成迁移、种子和项目初始化');
-  }
-
   const testMarker = randomUUID();
+  const projectId = randomUUID();
   const workerId = `integration-${testMarker}`;
   let assetId: null | string = null;
   let jobId: null | string = null;
   let objectKey: null | string = null;
   const workspaceInstanceId = randomUUID();
   try {
+    const [scope] = await sql<{ userId: string; workflowVersionId: string }[]>`
+      SELECT
+        (SELECT id FROM users ORDER BY created_at LIMIT 1) AS "userId",
+        cw.workflow_version_id AS "workflowVersionId"
+      FROM capability_workflows cw
+      WHERE cw.capability_code = 'text-to-image' AND cw.active = true
+      LIMIT 1
+    `;
+    if (!scope?.userId || !scope.workflowVersionId) {
+      throw new Error('模拟 Worker 集成测试需要已完成迁移和种子初始化');
+    }
+    await sql`
+      INSERT INTO projects (id, code, name, owner_id)
+      VALUES (
+        ${projectId}, ${`IT-${testMarker.slice(0, 16)}`},
+        ${`Worker 集成项目 ${testMarker}`}, ${scope.userId}
+      )
+    `;
     await sql`
       INSERT INTO workflow_workspace_instances (
         id, user_id, project_id, app_key, title
       ) VALUES (
-        ${workspaceInstanceId}, ${scope.userId}, ${scope.projectId},
+        ${workspaceInstanceId}, ${scope.userId}, ${projectId},
         'text-to-image', ${`Worker 集成会话 ${testMarker}`}
       )
     `;
@@ -118,7 +122,7 @@ async function main() {
         project_id, app_key, name, parameters, created_by, status, stage,
         workflow_version_id, workspace_instance_id
       ) VALUES (
-        ${scope.projectId},
+        ${projectId},
         'text-to-image',
         ${`ComfyUI Worker 集成验收 ${testMarker}`},
         ${sql.json({
@@ -224,6 +228,7 @@ async function main() {
       WHERE id = ${workspaceInstanceId}
     `;
     await sql`DELETE FROM worker_heartbeats WHERE instance_id = ${workerId}`;
+    await sql`DELETE FROM projects WHERE id = ${projectId}`;
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
