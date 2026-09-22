@@ -2,6 +2,12 @@
 
 每项以唯一英文提交标题关联 Git 提交，中文记录动机、范围、注意事项和测试证据。镜像、模型、环境密钥、运行日志及业务数据不提交 Git。
 
+## docs(project): clarify report service boundary
+
+- 动机：整合目录已经移除未接入平台的 `private-office-AI`，原架构文档仍把它描述为开发机现存项目，容易误解报告生成服务归属。
+- 范围：明确平台 AI 报告只调用 Presenton，`private-office-AI` 不属于系统源码、模型、镜像或部署范围。
+- 验证：文档关键词复核通过；未修改业务代码、接口配置或运行服务。
+
 ## docs(deploy): record image validation and offline delivery
 
 - 动机：将实现与实际验证边界落到交付文档，避免把 API 健康或模板报告成功解释成所有外部模型服务已验证。

@@ -28,7 +28,7 @@
 | `rail-vllm` 容器 | OpenAI 兼容多模态推理，模型实际为 `Qwen3-VL-8B-Instruct`，服务名 `qwen3-vl-8b-instruct` | 助手适配器；Presenton 离线配置 | 模型权重与缓存挂载；不是平台会话数据库 |
 | `presenton` | FastAPI 的统一文件生成入口；Word/MD 本地渲染，PPTX 使用 Presenton 模板和 Next.js 导出链路 | Report Worker 的 AI 适配器 | 自身生成计划、导出文件及内部状态；正式项目报告仍回流平台 |
 
-没有证据表明平台报告适配器调用 `private-office-AI`。该项目也存在于开发机，但本次匹配到的 `generate-file` 路由实现属于 `presenton`。
+平台报告适配器不调用 `private-office-AI`；该项目已从整合目录移除，不属于系统交付范围。当前 `generate-file` 路由实现和 AI 报告服务均属于 `presenton`。
 
 ## 3. 接口与开发机部署关系
 
