@@ -2,12 +2,12 @@ name: ${PLATFORM_PROJECT_NAME:-rail-platform-validation}
 
 services:
   platform:
-    image: ${PLATFORM_IMAGE:-rail-platform:single-image}
+    image: ${PLATFORM_IMAGE:-rail-platform:1.0.0}
     build:
       context: ../..
       dockerfile: deploy/single-image/Dockerfile
       args:
-        NODE_IMAGE: ${NODE_IMAGE:-m.daocloud.io/docker.io/library/node:24.16.0-bookworm-slim}
+        NODE_IMAGE: ${NODE_IMAGE:-node:24.16.0-bookworm-slim}
         NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmmirror.com}
         BUILD_NODE_OPTIONS: ${BUILD_NODE_OPTIONS:---max-old-space-size=8192}
     env_file:
@@ -37,7 +37,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: ${POSTGRES_IMAGE:-m.daocloud.io/docker.io/library/postgres:17.6-alpine}
+    image: ${POSTGRES_IMAGE:-postgres:17.6-alpine}
     environment:
       POSTGRES_DB: rail_platform
       POSTGRES_USER: rail_platform
@@ -72,7 +72,7 @@ services:
     restart: unless-stopped
 
   mailpit:
-    image: ${MAILPIT_IMAGE:-m.daocloud.io/docker.io/axllent/mailpit:v1.30.0}
+    image: ${MAILPIT_IMAGE:-axllent/mailpit:v1.30.0}
     ports:
       - '127.0.0.1:${SMTP_HOST_PORT:-11025}:1025'
       - '127.0.0.1:${MAILPIT_WEB_PORT:-18025}:8025'

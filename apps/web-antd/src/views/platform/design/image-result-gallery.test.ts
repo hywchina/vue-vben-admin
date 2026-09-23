@@ -7,7 +7,7 @@ import ImageResultGallery from '#/components/platform/image-result-gallery.vue';
 const cleanup: (() => void)[] = [];
 afterEach(() => cleanup.splice(0).forEach((dispose) => dispose()));
 
-function renderGallery(count: number) {
+function renderGallery(count: number, withCamera = false) {
   const root = document.createElement('div');
   document.body.append(root);
   const selected = ref('image-0');
@@ -18,6 +18,21 @@ function renderGallery(count: number) {
         activeId: selected.value,
         completedAt: '2026-09-10T08:41:00Z',
         images: Array.from({ length: count }, (_, index) => ({
+          ...(withCamera
+            ? {
+                camera: {
+                  distanceLabel: '中景',
+                  horizontal: index === count - 1 ? 180 : 45,
+                  horizontalLabel:
+                    index === count - 1 ? '背面视角' : '右前方视角',
+                  id: `镜头 ${index + 1}`,
+                  index,
+                  vertical: 0,
+                  verticalLabel: '平视',
+                  zoom: 5,
+                },
+              }
+            : {}),
           id: `image-${index}`,
           name: `图片 ${index + 1}`,
           url: `/gallery-${index}.png`,
@@ -94,6 +109,34 @@ describe('image result gallery', () => {
       expect(gallery.getAttribute('style')).toBe(initialStyle);
     },
   );
+  it('shows the selected camera description and labels every thumbnail', async () => {
+    const { root } = renderGallery(5, true);
+    const buttons = root.querySelectorAll<HTMLButtonElement>(
+      '.gallery-thumbnails button',
+    );
+    buttons[4]?.click();
+    await nextTick();
+    expect(root.querySelector('.gallery-camera-badge')?.textContent).toContain(
+      '镜头 5 · 背面视角',
+    );
+    expect(root.querySelector('.gallery-camera-badge')?.textContent).toContain(
+      '平视',
+    );
+    expect(root.querySelector('.gallery-camera-badge')?.textContent).toContain(
+      '中景',
+    );
+    expect(
+      [...root.querySelectorAll('.gallery-thumbnail-label')].map((item) =>
+        item.textContent?.trim(),
+      ),
+    ).toEqual([
+      '右前方视角',
+      '右前方视角',
+      '右前方视角',
+      '右前方视角',
+      '背面视角',
+    ]);
+  });
 });
 
 function required<T>(value: null | T | undefined): T {

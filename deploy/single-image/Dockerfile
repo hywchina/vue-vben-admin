@@ -1,4 +1,4 @@
-ARG NODE_IMAGE=m.daocloud.io/docker.io/library/node:24.16.0-bookworm-slim
+ARG NODE_IMAGE=node:24.16.0-bookworm-slim
 FROM ${NODE_IMAGE} AS builder
 
 ARG NPM_REGISTRY=https://registry.npmmirror.com

@@ -1,5 +1,7 @@
 # 平台单镜像验收记录
 
+> 2026-09-23 发布状态：根 Compose 已从本目录权威 Dockerfile 构建并使用 `rail-platform:1.0.0`，容器名为 `rail-platform-1`。本文以下的 `rail-platform:single-image`、旧镜像 ID 和隔离端口是 2026-09-21 原始验收证据，不应当作当前启动配置。
+
 日期：2026-09-21。范围为 `vue-vben-admin` 子项目，一个 Web/API/Worker 业务镜像；不包含其他四个业务子项目的重新打包与整套系统迁移验收。
 
 ## 环境与版本

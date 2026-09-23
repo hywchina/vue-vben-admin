@@ -2,6 +2,8 @@
 
 一个 `rail-platform` 业务镜像内运行 Nginx/Web、Nitro API、能力任务 Worker，使用 Node 24.16，均以非 root 用户运行。PostgreSQL、MinIO、Mailpit 使用独立基础设施镜像。ComfyUI、AI Toolkit、vLLM、Presenton 是外部能力服务，本 Compose 不启动或重新打包这些项目。
 
+当前整套系统的权威入口是 `rail-system` 根目录 Compose，镜像标签为 `rail-platform:1.0.0`，容器名为 `rail-platform-1`。本目录 Compose 保留用于平台子项目隔离验收，项目名为 `rail-platform-validation`，不要与整套部署同时作为同一份业务数据的入口。
+
 平台不直接加载模型，不挂载 GPU，也不包含 Python 环境或模型权重。4090、3090、RTX 6000D 对本镜像没有差异。显卡分配、CUDA/PyTorch/vLLM 兼容性应在各推理/训练项目配置；平台只配置服务 URL。当前构建目标为 Linux amd64，其他 CPU 架构需要重建及重新验收。
 
 ## 本机首次部署

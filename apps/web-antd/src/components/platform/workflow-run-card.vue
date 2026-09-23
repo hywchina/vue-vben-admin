@@ -15,6 +15,7 @@ import { Button, message, Modal, Textarea, Tooltip } from 'ant-design-vue';
 
 import { getAssetDownloadApi, getAssetPreviewApi } from '#/api';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
+import { cameraViewDescriptors } from '#/modules/platform/camera-angles';
 import {
   designImageResultActions,
   designResultActionApplicationKeys,
@@ -86,6 +87,29 @@ const imageOutputs = computed(() =>
     (output) => output.kind === 'image' && previewUrls[output.assetId],
   ),
 );
+const cameraViews = computed(() => {
+  if (
+    props.job.appKey !== 'camera-control-multi' &&
+    props.job.appKey !== 'camera-control-single'
+  ) {
+    return [];
+  }
+  return cameraViewDescriptors(props.fields, props.job.parameters);
+});
+const imageGalleryItems = computed(() =>
+  imageOutputs.value.map((output, index) => ({
+    camera: cameraViews.value[index],
+    id: output.assetId,
+    name: output.name,
+    url: previewUrls[output.assetId] ?? '',
+  })),
+);
+const showConversationImageGallery = computed(
+  () =>
+    props.conversationLayout &&
+    imageOutputs.value.length > 0 &&
+    (imageOutputs.value.length > 1 || cameraViews.value.length > 0),
+);
 const visibleImageOutputs = computed(() => imageOutputs.value.slice(0, 3));
 const activeImageOutputIndex = computed(() =>
   imageOutputs.value.findIndex(
@@ -138,6 +162,7 @@ const comparisonAvailable = computed(
     ),
 );
 const promptEntry = computed(() => {
+  if (cameraViews.value.length > 0) return undefined;
   const preferred = props.fields.find(
     (field) =>
       (field.key === 'prompt' || field.type === 'textarea') &&
@@ -148,6 +173,19 @@ const promptEntry = computed(() => {
     key: preferred.key,
     value: String(props.job.parameters[preferred.key]),
   };
+});
+const roundInputText = computed(() => {
+  const firstCameraView = cameraViews.value[0];
+  if (cameraViews.value.length === 1 && firstCameraView) {
+    const view = firstCameraView;
+    return `单视角镜头 · ${view.horizontalLabel} / ${view.verticalLabel} / ${view.distanceLabel}`;
+  }
+  if (cameraViews.value.length > 1) {
+    return `多视角镜头 · ${cameraViews.value.length} 个镜头：${cameraViews.value
+      .map((view) => view.horizontalLabel)
+      .join('、')}`;
+  }
+  return promptEntry.value?.value ?? '使用当前参数和输入素材执行工作流。';
 });
 const parameterEntries = computed(() => {
   const labels = new Map(props.fields.map((field) => [field.key, field.label]));
@@ -269,9 +307,7 @@ async function copyText(content: string, successMessage: string) {
 }
 
 async function copyInput() {
-  const content =
-    promptEntry.value?.value ?? JSON.stringify(props.job.parameters, null, 2);
-  await copyText(content, '本轮输入已复制');
+  await copyText(roundInputText.value, '本轮输入已复制');
 }
 
 async function copyOutput(output: PlatformJobOutput) {
@@ -464,7 +500,7 @@ onMounted(() => void loadPreviews());
           </div>
           <div v-if="!editingPrompt" class="round-input__bubble">
             <p>
-              {{ promptEntry?.value ?? '使用当前参数和输入素材执行工作流。' }}
+              {{ roundInputText }}
             </p>
           </div>
           <div v-else class="round-input__editor">
@@ -644,16 +680,10 @@ onMounted(() => void loadPreviews());
         </div>
 
         <ImageResultGallery
-          v-if="conversationLayout && imageOutputs.length > 1"
+          v-if="showConversationImageGallery"
           :active-id="activeOutput.assetId"
           :completed-at="job.completedAt || undefined"
-          :images="
-            imageOutputs.map((output) => ({
-              id: output.assetId,
-              name: output.name,
-              url: previewUrls[output.assetId]!,
-            }))
-          "
+          :images="imageGalleryItems"
           @select="activeOutputAssetId = $event"
           @open="
             activeOutputAssetId = $event;
@@ -902,7 +932,11 @@ onMounted(() => void loadPreviews());
             </div>
           </template>
           <time
-            v-if="conversationLayout && job.completedAt"
+            v-if="
+              conversationLayout &&
+              job.completedAt &&
+              !showConversationImageGallery
+            "
             class="round-generated-time"
             :datetime="job.completedAt"
             :title="`生成时间：${new Date(job.completedAt).toLocaleString('zh-CN')}`"
