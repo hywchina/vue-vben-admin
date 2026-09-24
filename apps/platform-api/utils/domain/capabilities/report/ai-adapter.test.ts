@@ -62,7 +62,11 @@ describe('aI report adapter', () => {
       const form = init?.body as FormData;
       expect(form.get('type')).toBe('word');
       expect(form.get('language')).toBe('Chinese');
-      expect(form.get('n_slides')).toBe('3');
+      expect(form.get('n_slides')).toBe('2');
+      expect(form.get('project_name')).toBe('示范项目');
+      expect(form.get('report_type')).toBe('客室设计方案报告');
+      expect(form.get('requested_by')).toBe('测试用户');
+      expect(form.get('generated_date')).toBe('2026/8/25');
       expect(form.getAll('images')).toHaveLength(1);
       return new Response(
         new Blob([Uint8Array.from(validDocument.bytes).buffer]),
@@ -79,10 +83,12 @@ describe('aI report adapter', () => {
     const artifact = await generateAiReportArtifact({
       apiUrl: 'http://report.local/api/v1/generate-file',
       assets: new Map([[imageId, image]]),
+      createdAt: new Date('2026-08-25T00:00:00.000Z'),
       fetchImplementation: fetchImplementation as typeof fetch,
       maxOutputBytes: 1024 * 1024,
       parameters,
       projectName: '示范项目',
+      requestedBy: '测试用户',
       template: 'general',
       timeoutMs: 1000,
     });
@@ -97,6 +103,7 @@ describe('aI report adapter', () => {
       generateAiReportArtifact({
         apiUrl: 'http://report.local/api/v1/generate-file',
         assets: new Map([[imageId, image]]),
+        createdAt: new Date('2026-08-25T00:00:00.000Z'),
         fetchImplementation: vi.fn(
           async () => new Response('not an office file'),
         ) as typeof fetch,
@@ -124,6 +131,7 @@ describe('aI report adapter', () => {
     const artifact = await generateAiReportArtifact({
       apiUrl: 'http://report.local/api/v1/generate-file',
       assets: new Map([[imageId, image]]),
+      createdAt: new Date('2026-08-25T00:00:00.000Z'),
       fetchImplementation: fetchImplementation as typeof fetch,
       maxOutputBytes: 1024 * 1024,
       parameters: { ...parameters, format: 'md' },
@@ -142,6 +150,7 @@ describe('aI report adapter', () => {
       generateAiReportArtifact({
         apiUrl: 'http://report.local/api/v1/generate-file',
         assets: new Map([[imageId, image]]),
+        createdAt: new Date('2026-08-25T00:00:00.000Z'),
         fetchImplementation: vi.fn(
           async () =>
             new Response(Uint8Array.from([80, 75, 1, 2]), {

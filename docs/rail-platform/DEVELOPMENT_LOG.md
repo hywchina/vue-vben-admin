@@ -1,5 +1,12 @@
 # 二次开发记录
 
+## 2026-09-24：报告生成质量与模板架构优化
+
+- 以事实忠实度、结构完整度、图文证据关系、原生可编辑性、版式稳定性和来源追踪作为模板/AI 报告的统一质量基线；AI 提示明确禁止虚构尺寸、性能、合规、收益和完成状态，图片最多使用一次。
+- 模板 Word 增加独立封面、报告信息表、执行摘要和章节导航，调整章节分页及图注；模板 PPT 改为受控图文/编号要点版式；Markdown 同步元数据、导航和编号图注。
+- 平台向 Presenton 传递项目、报告类型、编制人和日期，PPT 页数按封面加章节控制在 2–12 页。移除 Presenton PPT 后续不受控的通用二次生成，改为结构化内容计划后直接渲染确定性原生 Office 图文版式，从机制上阻止库存配图、装饰图标和无输入数据的图表。记录行业通行的“结构化内容模型 + Office 模板/母版 + 受控布局 + 渲染验收”路线，详见 `REPORT_GENERATION_INTEGRATION.md`。
+- 报告渲染器和 AI 适配器 8 项单测、平台 API 类型检查及目标 ESLint 通过；三种模板样例重新生成，最终 DOCX 4 页、PPTX 5 页已逐页渲染检查。AI Word、PPT、Markdown 均通过本地 Qwen-VL 与 Presenton 真实接口生成；最终 AI Word 3 页、AI PPT 4 页逐页检查，无越界、重复图片、库存配图或虚构图表。Presenton 正式镜像重建因 Docker Hub 基础镜像元数据请求超时未完成，当前运行容器已加载并验证新版源码，网络恢复后仍需从仓库源码重建镜像。
+
 ## 2026-09-23：根 Compose 采用 1.0.0 单平台容器
 
 - 根 Compose 改由本项目 `deploy/single-image/Dockerfile` 构建 `rail-platform:1.0.0`，Compose 项目统一为 `rail`；基础模式只有一个平台业务容器 `rail-platform-1`，内部的 Nginx/Web、Nitro API、Worker 均由 Supervisor 管理，PostgreSQL、MinIO、Mailpit 仍独立。

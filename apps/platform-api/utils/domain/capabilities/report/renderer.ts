@@ -14,7 +14,12 @@ import {
   PageBreak,
   PageNumber,
   Paragraph,
+  Table,
+  TableCell,
+  TableRow,
   TextRun,
+  VerticalAlign,
+  WidthType,
 } from 'docx';
 import { imageSize } from 'image-size';
 import pptxgen from 'pptxgenjs';
@@ -25,6 +30,7 @@ const ACCENT = 'B5121B';
 const DARK = '1F2937';
 const MUTED = '667085';
 const LIGHT = 'F3F4F6';
+const BORDER = 'D0D5DD';
 const CJK_FONT = 'Microsoft YaHei';
 
 export interface ReportImageAsset {
@@ -88,6 +94,24 @@ function presentationBodyChunks(body: string, maximumCharacters = 420) {
   return chunks;
 }
 
+function bodySentences(body: string) {
+  return bodyParagraphs(body)
+    .flatMap((paragraph) =>
+      paragraph
+        .split(/(?<=[。！？；])/u)
+        .map((sentence) => sentence.trim())
+        .filter(Boolean),
+    )
+    .flatMap((sentence) => {
+      if (sentence.length <= 72) return [sentence];
+      const clauses = sentence
+        .split(/[，、]/u)
+        .map((clause) => clause.trim())
+        .filter((clause) => clause.length >= 8);
+      return clauses.length >= 2 ? clauses : [sentence];
+    });
+}
+
 function containedImageSize(
   bytes: Uint8Array,
   maxWidth: number,
@@ -120,22 +144,31 @@ function renderMarkdown(input: RenderReportInput) {
   const lines = [
     `# ${escapeMarkdownInline(parameters.title)}`,
     '',
-    `> ${escapeMarkdownInline(reportTypeLabels[parameters.reportType])}`,
+    `**${escapeMarkdownInline(reportTypeLabels[parameters.reportType])}**`,
     '',
-    `- 项目：${escapeMarkdownInline(input.projectName)}`,
-    `- 生成日期：${formatDate(input.createdAt)}`,
+    '## 报告信息',
+    '',
+    `| 项目 | ${escapeMarkdownInline(input.projectName)} |`,
+    '| --- | --- |',
+    `| 报告类型 | ${escapeMarkdownInline(reportTypeLabels[parameters.reportType])} |`,
+    `| 生成日期 | ${formatDate(input.createdAt)} |`,
   ];
   if (input.requestedBy) {
-    lines.push(`- 编制人：${escapeMarkdownInline(input.requestedBy)}`);
+    lines.push(`| 编制人 | ${escapeMarkdownInline(input.requestedBy)} |`);
   }
 
   if (parameters.summary) {
-    lines.push('', '## 报告摘要', '', parameters.summary.trim());
+    lines.push('', '## 执行摘要', '', parameters.summary.trim());
   }
 
-  lines.push('', '## 目录', '');
+  lines.push('', '## 章节导航', '');
   parameters.sections.forEach((section, sectionIndex) => {
-    lines.push(`${sectionIndex + 1}. ${escapeMarkdownInline(section.title)}`);
+    const anchor = `${sectionIndex + 1}-${section.title}`
+      .toLocaleLowerCase('zh-CN')
+      .replaceAll(/\s+/gu, '-');
+    lines.push(
+      `${sectionIndex + 1}. [${escapeMarkdownInline(section.title)}](#${escapeMarkdownInline(anchor)})`,
+    );
   });
 
   parameters.sections.forEach((section, sectionIndex) => {
@@ -209,16 +242,58 @@ function createFooter() {
 
 async function renderDocx(input: RenderReportInput) {
   const { parameters } = input;
-  const children: Paragraph[] = [
-    new Paragraph({ spacing: { before: 2100 } }),
+  const metadataTable = new Table({
+    borders: {
+      bottom: { color: BORDER, size: 4, style: BorderStyle.SINGLE },
+      insideHorizontal: { color: BORDER, size: 4, style: BorderStyle.SINGLE },
+      insideVertical: { color: BORDER, size: 4, style: BorderStyle.SINGLE },
+      left: { color: BORDER, size: 4, style: BorderStyle.SINGLE },
+      right: { color: BORDER, size: 4, style: BorderStyle.SINGLE },
+      top: { color: BORDER, size: 4, style: BorderStyle.SINGLE },
+    },
+    columnWidths: [1700, 6200],
+    margins: { bottom: 120, left: 140, right: 140, top: 120 },
+    rows: [
+      ['项目', input.projectName],
+      ['报告类型', reportTypeLabels[parameters.reportType]],
+      ['生成日期', formatDate(input.createdAt)],
+      ...(input.requestedBy ? [['编制人', input.requestedBy]] : []),
+    ].map(
+      ([label, value]) =>
+        new TableRow({
+          children: [
+            new TableCell({
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({ bold: true, color: MUTED, text: label }),
+                  ],
+                }),
+              ],
+              shading: { fill: LIGHT },
+              verticalAlign: VerticalAlign.CENTER,
+              width: { size: 1700, type: WidthType.DXA },
+            }),
+            new TableCell({
+              children: [new Paragraph({ text: value })],
+              verticalAlign: VerticalAlign.CENTER,
+              width: { size: 6200, type: WidthType.DXA },
+            }),
+          ],
+        }),
+    ),
+    width: { size: 7900, type: WidthType.DXA },
+  });
+  const children: Array<Paragraph | Table> = [
+    new Paragraph({ spacing: { before: 2500 } }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       children: [
         new TextRun({
           bold: true,
-          color: ACCENT,
+          color: DARK,
           font: { eastAsia: CJK_FONT, name: CJK_FONT },
-          size: 24,
+          size: 22,
           text: reportTypeLabels[parameters.reportType],
         }),
       ],
@@ -231,7 +306,7 @@ async function renderDocx(input: RenderReportInput) {
           bold: true,
           color: DARK,
           font: { eastAsia: CJK_FONT, name: CJK_FONT },
-          size: 60,
+          size: 56,
           text: parameters.title,
         }),
       ],
@@ -260,15 +335,21 @@ async function renderDocx(input: RenderReportInput) {
         }),
       ],
     }),
+    new Paragraph({ spacing: { after: 900 } }),
     new Paragraph({ children: [new PageBreak()] }),
   ];
 
+  children.push(
+    new Paragraph({
+      heading: HeadingLevel.HEADING_1,
+      text: '报告信息',
+    }),
+    metadataTable,
+  );
+
   if (parameters.summary) {
     children.push(
-      new Paragraph({
-        heading: HeadingLevel.HEADING_1,
-        text: '报告摘要',
-      }),
+      new Paragraph({ heading: HeadingLevel.HEADING_1, text: '执行摘要' }),
       ...bodyParagraphs(parameters.summary).map(
         (text) =>
           new Paragraph({
@@ -279,8 +360,30 @@ async function renderDocx(input: RenderReportInput) {
     );
   }
 
+  children.push(
+    new Paragraph({ heading: HeadingLevel.HEADING_1, text: '章节导航' }),
+    ...parameters.sections.map(
+      (section, sectionIndex) =>
+        new Paragraph({
+          children: [
+            new TextRun({
+              bold: true,
+              color: ACCENT,
+              text: String(sectionIndex + 1).padStart(2, '0'),
+            }),
+            new TextRun({ text: `  ${section.title}` }),
+          ],
+          spacing: { after: 120 },
+        }),
+    ),
+  );
+
   parameters.sections.forEach((section, sectionIndex) => {
+    const startsNewPage = sectionIndex === 0 || section.images.length > 0;
     children.push(
+      ...(startsNewPage
+        ? [new Paragraph({ children: [new PageBreak()] })]
+        : []),
       new Paragraph({
         heading: HeadingLevel.HEADING_1,
         text: `${sectionIndex + 1}. ${section.title}`,
@@ -338,13 +441,20 @@ async function renderDocx(input: RenderReportInput) {
     sections: [
       {
         children,
-        footers: { default: createFooter() },
-        headers: { default: createHeader() },
+        footers: {
+          default: createFooter(),
+          first: new Footer({ children: [] }),
+        },
+        headers: {
+          default: createHeader(),
+          first: new Header({ children: [] }),
+        },
         properties: {
           page: {
             margin: { bottom: 1134, left: 1276, right: 1276, top: 1134 },
             size: { height: 16_838, width: 11_906 },
           },
+          titlePage: true,
         },
       },
     ],
@@ -361,7 +471,7 @@ async function renderDocx(input: RenderReportInput) {
           paragraph: { spacing: { after: 180, before: 280 } },
           run: {
             bold: true,
-            color: ACCENT,
+            color: DARK,
             font: { eastAsia: CJK_FONT, name: CJK_FONT },
             size: 32,
           },
@@ -455,6 +565,49 @@ function addBodyText(
     w: options.w,
     x: options.x,
     y: options.y,
+  });
+}
+
+function addNumberedPoints(
+  slide: pptxgen.Slide,
+  body: string,
+  options: {
+    h: number;
+    maximumPoints?: number;
+    w: number;
+    x: number;
+    y: number;
+  },
+) {
+  const points = bodySentences(body).slice(0, options.maximumPoints ?? 5);
+  if (points.length === 0) return;
+  const rowHeight = Math.min(1.08, options.h / points.length);
+  points.forEach((point, index) => {
+    const y = options.y + index * rowHeight;
+    slide.addText(String(index + 1).padStart(2, '0'), {
+      bold: true,
+      color: ACCENT,
+      fontFace: CJK_FONT,
+      fontSize: 13,
+      h: 0.28,
+      margin: 0,
+      w: 0.5,
+      x: options.x,
+      y,
+    });
+    slide.addText(point, {
+      breakLine: false,
+      color: DARK,
+      fit: 'shrink',
+      fontFace: CJK_FONT,
+      fontSize: 16,
+      h: Math.max(0.5, rowHeight - 0.12),
+      margin: 0,
+      valign: 'top',
+      w: options.w - 0.68,
+      x: options.x + 0.68,
+      y,
+    });
   });
 }
 
@@ -565,7 +718,7 @@ async function renderPptx(input: RenderReportInput) {
     line: { color: 'D0D5DD', width: 1 },
     w: 11.8,
     x: 0.72,
-    y: 3.55,
+    y: parameters.summary ? 3.55 : 1.48,
   });
   const overviewY = parameters.summary ? 3.9 : 1.72;
   parameters.sections.forEach((section, index) => {
@@ -615,10 +768,19 @@ async function renderPptx(input: RenderReportInput) {
 
       const showBody = Boolean(body);
       if (images.length > 0) {
-        const top = showBody ? 3.18 : 1.62;
-        if (showBody) {
+        const singleImageWithBody = images.length === 1 && showBody;
+        const top = singleImageWithBody ? 1.72 : showBody ? 3.02 : 1.62;
+        if (singleImageWithBody) {
+          addNumberedPoints(slide, body, {
+            h: 4.8,
+            maximumPoints: 4,
+            w: 4.72,
+            x: 7.82,
+            y: 1.82,
+          });
+        } else if (showBody) {
           addBodyText(slide, body, {
-            h: 1.18,
+            h: 1.05,
             w: 11.7,
             x: 0.72,
             y: 1.62,
@@ -627,9 +789,17 @@ async function renderPptx(input: RenderReportInput) {
         images.forEach((image, imageIndex) => {
           const asset = input.assets.get(image.assetId);
           if (!asset) throw new Error(`报告图片资产不存在：${image.assetId}`);
-          const boxWidth = images.length === 1 ? 9.8 : 5.6;
-          const boxX = images.length === 1 ? 1.76 : 0.72 + imageIndex * 6.05;
-          const boxHeight = showBody ? 3.1 : 4.65;
+          const boxWidth = singleImageWithBody
+            ? 6.55
+            : images.length === 1
+              ? 9.8
+              : 5.6;
+          const boxX = singleImageWithBody
+            ? 0.72
+            : images.length === 1
+              ? 1.76
+              : 0.72 + imageIndex * 6.05;
+          const boxHeight = singleImageWithBody ? 4.72 : showBody ? 3.22 : 4.65;
           const dimensions = containedImageSize(asset.bytes, 1200, 800);
           const ratio = dimensions.width / dimensions.height;
           let width = boxWidth;
@@ -673,11 +843,12 @@ async function renderPptx(input: RenderReportInput) {
             .join('\n'),
         );
       } else {
-        addBodyText(slide, body, {
-          h: 4.65,
-          w: 11.7,
-          x: 0.72,
-          y: 1.72,
+        addNumberedPoints(slide, body, {
+          h: 4.75,
+          maximumPoints: 6,
+          w: 11.1,
+          x: 0.86,
+          y: 1.82,
         });
       }
     }

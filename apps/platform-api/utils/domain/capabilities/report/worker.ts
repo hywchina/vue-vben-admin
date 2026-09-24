@@ -242,6 +242,7 @@ export class ReportGenerationWorker {
           ? await generateAiReportArtifact({
               apiUrl: reportAiApiUrl,
               assets,
+              createdAt: job.createdAt,
               maxOutputBytes: config.reportAiMaxOutputBytes,
               parameters: job.parameters,
               projectName: job.projectName,

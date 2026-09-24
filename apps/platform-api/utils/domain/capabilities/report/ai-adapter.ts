@@ -18,6 +18,7 @@ export class ReportAiAdapterError extends Error {
 interface GenerateAiReportInput {
   apiUrl: string;
   assets: ReadonlyMap<string, ReportImageAsset>;
+  createdAt: Date;
   fetchImplementation?: typeof fetch;
   maxOutputBytes: number;
   parameters: CreateReportInput;
@@ -29,6 +30,7 @@ interface GenerateAiReportInput {
 
 export function buildAiReportPrompt(input: {
   assets: ReadonlyMap<string, ReportImageAsset>;
+  createdAt?: Date;
   parameters: CreateReportInput;
   projectName: string;
   requestedBy?: string;
@@ -36,13 +38,20 @@ export function buildAiReportPrompt(input: {
   const { parameters } = input;
   const lines = [
     '请根据以下真实项目资料生成一份结构完整、表达专业的中文轨道客室设计报告。',
-    '不得虚构未提供的项目数据、试验结论、法规符合性或量化指标。',
+    '严格保留给定的标题、摘要、章节顺序、限定条件和待确认事项，不得改变其事实状态。',
+    '不得虚构未提供的项目数据、尺寸、性能、试验结论、法规符合性、量化指标、收益、能力或实施结果。',
+    '用户给出的建议、目标或待验证内容必须保持为建议、目标或待验证状态，不得写成已经完成的成果。',
+    '图片只能作为可见设计特征的证据，不得由图片推断尺寸、材料性能或合规结论。',
+    '每张附件图片最多使用一次；避免重复段落、空泛口号、装饰性库存图片和无依据的时间戳。',
     `报告类型：${reportTypeLabels[parameters.reportType]}`,
     `项目名称：${input.projectName}`,
     `报告标题：${parameters.title}`,
     `交付格式：${parameters.format === 'md' ? 'Markdown（.md）' : parameters.format.toUpperCase()}`,
   ];
   if (input.requestedBy) lines.push(`编制人：${input.requestedBy}`);
+  if (input.createdAt) {
+    lines.push(`生成日期：${input.createdAt.toLocaleDateString('zh-CN')}`);
+  }
   if (parameters.summary) lines.push(`报告摘要：${parameters.summary}`);
 
   parameters.sections.forEach((section, sectionIndex) => {
@@ -131,9 +140,13 @@ export async function generateAiReportArtifact(
     ),
   );
   form.set('language', 'Chinese');
+  form.set('project_name', input.projectName);
+  form.set('report_type', reportTypeLabels[input.parameters.reportType]);
+  form.set('generated_date', input.createdAt.toLocaleDateString('zh-CN'));
+  if (input.requestedBy) form.set('requested_by', input.requestedBy);
   form.set(
     'n_slides',
-    String(Math.min(20, Math.max(1, input.parameters.sections.length + 2))),
+    String(Math.min(12, Math.max(2, input.parameters.sections.length + 1))),
   );
   form.set('template', input.template);
   orderedImageAssets(input).forEach((asset, index) => {
