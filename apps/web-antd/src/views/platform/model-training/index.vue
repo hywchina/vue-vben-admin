@@ -49,6 +49,7 @@ const statusLoading = ref(true);
 const submitting = ref(false);
 const uploading = ref(false);
 const uploadInput = ref<HTMLInputElement>();
+const assetSearch = ref('');
 const selectedAssetIds = ref<string[]>([]);
 const captions = reactive<Record<string, string>>({});
 const previewUrls = reactive(new Map<string, string>());
@@ -90,6 +91,13 @@ const selectedAssets = computed(() =>
     .map((id) => imageAssets.value.find((asset) => asset.id === id))
     .filter((asset): asset is PlatformAsset => Boolean(asset)),
 );
+const filteredImageAssets = computed(() => {
+  const keyword = assetSearch.value.trim().toLowerCase();
+  if (!keyword) return imageAssets.value;
+  return imageAssets.value.filter((asset) =>
+    `${asset.name} ${asset.publicId}`.toLowerCase().includes(keyword),
+  );
+});
 const trainingJobs = computed(() =>
   platformStore.currentJobs
     .filter((job) => job.appKey === 'lora-training')
@@ -115,6 +123,18 @@ const selectedBaseModel = computed(() =>
 );
 const captionsComplete = computed(() =>
   selectedAssetIds.value.every((assetId) => captions[assetId]?.trim()),
+);
+const captionedAssetCount = computed(
+  () =>
+    selectedAssetIds.value.filter((assetId) => captions[assetId]?.trim())
+      .length,
+);
+const captionProgress = computed(() =>
+  selectedAssetIds.value.length > 0
+    ? Math.round(
+        (captionedAssetCount.value / selectedAssetIds.value.length) * 100,
+      )
+    : 0,
 );
 const canSubmit = computed(
   () =>
@@ -537,60 +557,146 @@ async function refreshDetails(reset: boolean) {
               上传图片会先按平台文件规则持久化，再由 Worker 发送到训练服务器。
             </span>
           </div>
-          <div v-if="imageAssets.length" class="asset-grid">
-            <button
-              v-for="asset in imageAssets"
-              :key="asset.id"
-              class="asset-card"
-              :class="[
-                { 'asset-card--selected': selectedAssetIds.includes(asset.id) },
-              ]"
-              type="button"
-              @click="toggleAsset(asset.id)"
-            >
-              <img
-                v-if="previewUrls.get(asset.id)"
-                :alt="asset.name"
-                :src="previewUrls.get(asset.id)"
-              />
-              <IconifyIcon v-else icon="lucide:image" />
-              <span>
-                <strong>{{ asset.name }}</strong>
-                <small>{{ asset.publicId }}</small>
-              </span>
-              <IconifyIcon
-                v-if="selectedAssetIds.includes(asset.id)"
-                class="selected-mark"
-                icon="lucide:circle-check-big"
-              />
-            </button>
-          </div>
-          <Empty v-else description="当前项目没有可用图片资产" />
-          <div v-if="selectedAssets.length" class="caption-list">
-            <div
-              v-for="asset in selectedAssets"
-              :key="asset.id"
-              class="caption-row"
-            >
-              <span>
-                <strong>{{ asset.name }}</strong>
-                <small>{{ asset.publicId }}</small>
-              </span>
+          <section class="dataset-library">
+            <header class="dataset-subheading">
+              <div>
+                <strong>选择训练图片</strong>
+                <span>项目内共 {{ imageAssets.length }} 张可用图片</span>
+              </div>
               <Input
-                v-model:value="captions[asset.id]"
-                :maxlength="1000"
-                placeholder="描述该图片的客室风格、材质、色彩和构图（必填）"
-              />
-              <Button
-                danger
-                size="small"
-                type="text"
+                v-model:value="assetSearch"
+                allow-clear
+                class="asset-search"
+                placeholder="搜索图片名称或编号"
+              >
+                <template #prefix>
+                  <IconifyIcon icon="lucide:search" />
+                </template>
+              </Input>
+            </header>
+            <div v-if="filteredImageAssets.length" class="asset-grid">
+              <button
+                v-for="asset in filteredImageAssets"
+                :key="asset.id"
+                :aria-pressed="selectedAssetIds.includes(asset.id)"
+                class="asset-card"
+                :class="[
+                  {
+                    'asset-card--selected': selectedAssetIds.includes(asset.id),
+                  },
+                ]"
+                type="button"
                 @click="toggleAsset(asset.id)"
               >
-                移除
-              </Button>
+                <img
+                  v-if="previewUrls.get(asset.id)"
+                  :alt="asset.name"
+                  :src="previewUrls.get(asset.id)"
+                />
+                <IconifyIcon v-else icon="lucide:image" />
+                <span>
+                  <strong :title="asset.name">{{ asset.name }}</strong>
+                  <small>{{ asset.publicId }}</small>
+                </span>
+                <IconifyIcon
+                  v-if="selectedAssetIds.includes(asset.id)"
+                  class="selected-mark"
+                  icon="lucide:circle-check-big"
+                />
+              </button>
             </div>
-          </div>
+            <Empty
+              v-else
+              :description="
+                imageAssets.length
+                  ? '没有匹配的图片'
+                  : '当前项目没有可用图片资产'
+              "
+            />
+          </section>
+
+          <section class="annotation-workspace">
+            <header class="annotation-heading">
+              <div>
+                <strong>逐图标注</strong>
+                <span v-if="selectedAssets.length">
+                  已完成 {{ captionedAssetCount }}/{{ selectedAssets.length }}
+                </span>
+                <span v-else>选择图片后，在这里逐张填写训练描述</span>
+              </div>
+              <div v-if="selectedAssets.length" class="annotation-progress">
+                <Progress
+                  :percent="captionProgress"
+                  :show-info="false"
+                  size="small"
+                  stroke-color="#c91d3c"
+                />
+                <b>{{ captionProgress }}%</b>
+              </div>
+            </header>
+
+            <div v-if="selectedAssets.length" class="caption-list">
+              <article
+                v-for="(asset, index) in selectedAssets"
+                :key="asset.id"
+                class="caption-card"
+                :class="{
+                  'caption-card--complete': captions[asset.id]?.trim(),
+                }"
+              >
+                <div class="caption-card__preview">
+                  <img
+                    v-if="previewUrls.get(asset.id)"
+                    :alt="asset.name"
+                    :src="previewUrls.get(asset.id)"
+                  />
+                  <IconifyIcon v-else icon="lucide:image" />
+                  <span>{{ index + 1 }}</span>
+                </div>
+                <div class="caption-card__body">
+                  <div class="caption-card__identity">
+                    <span>
+                      <strong :title="asset.name">{{ asset.name }}</strong>
+                      <small>{{ asset.publicId }}</small>
+                    </span>
+                    <Tag
+                      :color="captions[asset.id]?.trim() ? 'green' : 'orange'"
+                    >
+                      {{ captions[asset.id]?.trim() ? '已填写' : '待填写' }}
+                    </Tag>
+                  </div>
+                  <Textarea
+                    v-model:value="captions[asset.id]"
+                    :auto-size="{ minRows: 1, maxRows: 3 }"
+                    :maxlength="1000"
+                    placeholder="描述客室风格、材质、色彩、构图和主体特征（必填）"
+                  />
+                  <small>
+                    建议描述图片中真实可见的内容，避免使用空泛词语。
+                  </small>
+                </div>
+                <Tooltip title="从本次训练集中移除">
+                  <Button
+                    :aria-label="`移除 ${asset.name}`"
+                    danger
+                    shape="circle"
+                    size="small"
+                    type="text"
+                    @click="toggleAsset(asset.id)"
+                  >
+                    <IconifyIcon icon="lucide:x" />
+                  </Button>
+                </Tooltip>
+              </article>
+            </div>
+            <div v-else class="annotation-empty">
+              <IconifyIcon icon="lucide:captions" />
+              <div>
+                <strong>尚未选择训练图片</strong>
+                <span>从上方素材库选择图片后，将在这里集中完成标注。</span>
+              </div>
+            </div>
+          </section>
         </section>
       </div>
 
@@ -1040,6 +1146,7 @@ async function refreshDetails(reset: boolean) {
 .dataset-panel {
   display: flex;
   flex-direction: column;
+  gap: 12px;
   min-height: 0;
 }
 
@@ -1295,21 +1402,61 @@ async function refreshDetails(reset: boolean) {
   color: var(--rail-theme-secondary, #737e86);
 }
 
+.dataset-library,
+.annotation-workspace {
+  display: grid;
+  gap: 9px;
+  min-height: 0;
+  padding: 10px;
+  background: var(--rail-theme-surface, #fafbfc);
+  border: 1px solid var(--rail-theme-border, #e3e7ea);
+  border-radius: 12px;
+}
+
+.dataset-subheading,
+.annotation-heading {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dataset-subheading > div,
+.annotation-heading > div:first-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dataset-subheading span,
+.annotation-heading span,
+.annotation-empty span {
+  font-size: 11px;
+  color: var(--rail-theme-secondary, #758089);
+}
+
+.asset-search {
+  width: min(230px, 44%);
+}
+
 .asset-grid {
   display: grid;
-  flex: 1 1 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: minmax(132px, 1fr);
+  grid-auto-rows: 130px;
   gap: 10px;
   min-height: 0;
+  max-height: 270px;
+  padding: 2px 5px 3px 2px;
   overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .asset-card {
   position: relative;
   display: grid;
-  grid-template-rows: minmax(100px, 1fr) auto;
-  gap: 8px;
+  grid-template-rows: 78px auto;
+  gap: 6px;
   min-width: 0;
   padding: 7px;
   text-align: left;
@@ -1331,8 +1478,7 @@ async function refreshDetails(reset: boolean) {
 
 .asset-card > img {
   width: 100%;
-  height: 100%;
-  min-height: 100px;
+  height: 78px;
   object-fit: contain;
   background: var(--rail-theme-surface, #fff);
   border-radius: 7px;
@@ -1340,31 +1486,26 @@ async function refreshDetails(reset: boolean) {
 
 .asset-card > svg:not(.selected-mark) {
   width: 100%;
-  height: 100%;
-  min-height: 100px;
-  padding: 30px;
+  height: 78px;
+  padding: 24px;
   color: var(--rail-theme-secondary, #8a949b);
   background: var(--rail-theme-surface, #eef1f3);
   border-radius: 7px;
 }
 
-.asset-card > span,
-.caption-row > span {
+.asset-card > span {
   display: grid;
   min-width: 0;
 }
 
 .asset-card strong,
-.asset-card small,
-.caption-row strong,
-.caption-row small {
+.asset-card small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.asset-card small,
-.caption-row small {
+.asset-card small {
   font-size: var(--rail-font-caption);
   color: var(--rail-theme-secondary, #8a949b);
 }
@@ -1380,16 +1521,145 @@ async function refreshDetails(reset: boolean) {
 
 .caption-list {
   display: grid;
-  gap: 9px;
-  padding-top: 14px;
-  border-top: 1px solid var(--rail-theme-border, #edf0f2);
+  gap: 10px;
+  max-height: 330px;
+  padding-right: 5px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
-.caption-row {
+.annotation-progress {
   display: grid;
-  grid-template-columns: 150px minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: 120px 36px;
+  gap: 8px;
   align-items: center;
+}
+
+.annotation-progress :deep(.ant-progress) {
+  line-height: 1;
+}
+
+.annotation-progress b {
+  font-size: 11px;
+  color: var(--rail-theme-secondary, #66717a);
+  text-align: right;
+}
+
+.caption-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #e1e5e8);
+  border-radius: 10px;
+  transition: border-color 0.16s ease;
+}
+
+.caption-card--complete {
+  border-color: var(--rail-theme-border, #bcd9c8);
+}
+
+.caption-card__preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  overflow: hidden;
+  color: var(--rail-theme-secondary, #8a949b);
+  background: var(--rail-theme-surface, #eef1f3);
+  border-radius: 8px;
+}
+
+.caption-card__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: var(--rail-theme-surface, #fff);
+}
+
+.caption-card__preview > span {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: rgb(28 36 42 / 78%);
+  border-radius: 999px;
+}
+
+.caption-card__body {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.caption-card__body > small {
+  font-size: 10px;
+  color: var(--rail-theme-muted, #9099a0);
+}
+
+.caption-card__identity {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.caption-card__identity > span {
+  display: grid;
+  min-width: 0;
+}
+
+.caption-card__identity strong,
+.caption-card__identity small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.caption-card__identity small {
+  font-size: var(--rail-font-caption);
+  color: var(--rail-theme-secondary, #8a949b);
+}
+
+.caption-card__identity :deep(.ant-tag) {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.annotation-empty {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  min-height: 104px;
+  padding: 18px;
+  color: var(--rail-theme-secondary, #7d878e);
+  text-align: left;
+  border: 1px dashed var(--rail-theme-border, #d8dde1);
+  border-radius: 10px;
+}
+
+.annotation-empty > svg {
+  width: 30px;
+  height: 30px;
+}
+
+.annotation-empty > div {
+  display: grid;
+  gap: 3px;
 }
 
 .submit-panel {
@@ -1523,18 +1793,7 @@ async function refreshDetails(reset: boolean) {
   }
 
   .asset-grid {
-    flex: none;
-    grid-auto-rows: auto;
     max-height: 390px;
-  }
-
-  .asset-card {
-    grid-template-rows: 100px auto;
-  }
-
-  .asset-card > img,
-  .asset-card > svg:not(.selected-mark) {
-    height: 100px;
   }
 
   .job-row {
@@ -1547,8 +1806,22 @@ async function refreshDetails(reset: boolean) {
 }
 
 @media (max-width: 720px) {
+  .dataset-subheading,
+  .annotation-heading {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .asset-search {
+    width: 100%;
+  }
+
   .asset-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .annotation-progress {
+    grid-template-columns: minmax(0, 1fr) 36px;
   }
 
   .parameter-grid {
@@ -1581,13 +1854,23 @@ async function refreshDetails(reset: boolean) {
     gap: 8px;
   }
 
-  .caption-row {
-    grid-template-columns: 1fr auto;
+  .caption-card {
+    grid-template-columns: 58px minmax(0, 1fr);
   }
 
-  .caption-row :deep(.ant-input) {
-    grid-row: 2;
-    grid-column: 1 / -1;
+  .caption-card__preview {
+    width: 58px;
+    height: 58px;
+  }
+
+  .caption-card > :deep(.ant-btn) {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+  }
+
+  .caption-card__body {
+    padding-right: 28px;
   }
 
   .submit-panel,
