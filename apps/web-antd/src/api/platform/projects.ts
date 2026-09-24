@@ -79,6 +79,29 @@ export function removeProjectMemberApi(
   }>(`/projects/${projectId}/members/${userPublicId}`);
 }
 
+export function updateProjectMemberRoleApi(
+  projectId: string,
+  userPublicId: string,
+  projectRole: 'editor' | 'viewer',
+) {
+  return requestClient.request<ProjectMember>(
+    `/projects/${projectId}/members/${userPublicId}`,
+    { data: { projectRole }, method: 'PATCH' },
+  );
+}
+
+export function transferProjectOwnershipApi(
+  projectId: string,
+  userPublicId: string,
+) {
+  return requestClient.put<{
+    id: string;
+    name: string;
+    ownerId: string;
+    ownerPublicId: string;
+  }>(`/projects/${projectId}/owner`, { userPublicId });
+}
+
 export function setProjectPinnedApi(projectId: string, pinned: boolean) {
   return requestClient.request<{ id: string; pinned: boolean }>(
     `/projects/${projectId}/pin`,

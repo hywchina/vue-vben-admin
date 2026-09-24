@@ -7,6 +7,7 @@ import {
   requireIdentity,
   requirePermission,
 } from '~/utils/identity';
+import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
@@ -28,8 +29,8 @@ export default apiHandler(async (event) => {
   const input = await parseBody(event, schema);
   await requireProjectAccess(identity, projectId, 'write');
   const sql = useDatabase();
-  const [project] = await sql<{ ownerId: string }[]>`
-    SELECT owner_id AS "ownerId" FROM projects
+  const [project] = await sql<{ name: string; ownerId: string }[]>`
+    SELECT name, owner_id AS "ownerId" FROM projects
     WHERE id = ${projectId} AND archived_at IS NULL
   `;
   if (!project) throw new ApiError(404, 'PROJECT_NOT_FOUND', '项目不存在');
@@ -65,6 +66,16 @@ export default apiHandler(async (event) => {
     INSERT INTO project_members (project_id, user_id, project_role)
     VALUES (${projectId}, ${target.id}, ${input.projectRole})
   `;
+  await createNotification({
+    link: '/projects',
+    message: `${identity.realName} 邀请你以${
+      input.projectRole === 'editor' ? '编辑成员' : '只读成员'
+    }身份加入项目“${project.name}”。`,
+    preference: 'accountMessage',
+    title: '你已加入项目',
+    type: 'project',
+    userId: target.id,
+  }).catch((error) => console.warn('创建项目邀请通知失败', error));
   await writeAudit(event, {
     action: 'project.member.invite',
     actor: identity,

@@ -290,6 +290,79 @@ async function run() {
   const admin = await login(adminAccount.username, adminAccount.password);
   const user4 = await login(account4.username, account4.password);
 
+  const managedUsername = `rail_managed_${runId.replaceAll('-', '').slice(-12)}`;
+  const managedEmail = `${managedUsername}@rail.local`;
+  const managedInitialPassword = 'RailManaged1!2026';
+  const managedResetPassword = 'RailManaged2!2026';
+  await apiRequest('/users', {
+    body: {
+      department: '自动化验收',
+      email: managedEmail,
+      password: managedInitialPassword,
+      realName: '管理员创建账号',
+      role: 'user',
+      username: managedUsername,
+    },
+    expectedStatus: 403,
+    session: user1,
+  });
+  const managedUser = await apiRequest<{
+    id: string;
+    publicId: string;
+    roleCodes: string[];
+    username: string;
+  }>('/users', {
+    body: {
+      department: '自动化验收',
+      email: managedEmail,
+      password: managedInitialPassword,
+      realName: '管理员创建账号',
+      role: 'user',
+      username: managedUsername,
+    },
+    session: admin,
+  });
+  testUserIds.push(managedUser.envelope.data.id);
+  assert(
+    managedUser.envelope.data.username === managedUsername &&
+      managedUser.envelope.data.roleCodes.includes('user') &&
+      /^USR-\d{6}$/.test(managedUser.envelope.data.publicId),
+    '管理员新增用户没有返回正确的账号和角色信息',
+  );
+  const managedInitialSession = await login(
+    managedUsername,
+    managedInitialPassword,
+  );
+  await apiRequest(`/users/${managedUser.envelope.data.id}/password`, {
+    body: { newPassword: managedResetPassword },
+    method: 'PUT',
+    session: admin,
+  });
+  await apiRequest('/auth/login', {
+    body: { password: managedInitialPassword, username: managedUsername },
+    expectedStatus: 403,
+  });
+  const managedResetSession = await login(
+    managedUsername,
+    managedResetPassword,
+  );
+  const managedNotifications = await apiRequest<
+    Array<{ title: string; type: string }>
+  >('/notifications', { session: managedResetSession });
+  assert(
+    managedNotifications.envelope.data.some(
+      (item) => item.title === '平台账号已创建' && item.type === 'account',
+    ) &&
+      managedNotifications.envelope.data.some(
+        (item) => item.title === '登录密码已重置' && item.type === 'account',
+      ),
+    '管理员新增账号或重置密码后没有生成账号通知',
+  );
+  assert(
+    managedInitialSession.id === managedResetSession.id,
+    '重置密码后登录到了错误的用户账号',
+  );
+
   const invalidAvatar = await apiMultipartRequest(
     '/user/avatar',
     {
@@ -2051,6 +2124,67 @@ async function run() {
     /^USR-\d{6}$/.test(user2Info.envelope.data.publicId),
     '用户业务 ID 格式不正确',
   );
+
+  const ownershipProject = await apiRequest<{ id: string }>('/projects', {
+    body: {
+      description: '项目负责人转移与权限边界验收',
+      name: `负责人转移验收 ${runId.slice(-8)}`,
+      stage: 'concept',
+    },
+    session: user1,
+  });
+  disposableProjectIds.push(ownershipProject.envelope.data.id);
+  await apiRequest(`/projects/${ownershipProject.envelope.data.id}/members`, {
+    body: {
+      projectRole: 'editor',
+      userPublicId: user4Info.envelope.data.publicId,
+    },
+    session: user1,
+  });
+  await apiRequest(`/projects/${ownershipProject.envelope.data.id}/owner`, {
+    body: { userPublicId: user4Info.envelope.data.publicId },
+    method: 'PUT',
+    session: user1,
+  });
+  const ownershipMembers = await apiRequest<{
+    items: Array<{ projectRole: string; publicId: string }>;
+  }>(`/projects/${ownershipProject.envelope.data.id}/members`, {
+    session: user1,
+  });
+  assert(
+    ownershipMembers.envelope.data.items.some(
+      (item) =>
+        item.publicId === user1Info.envelope.data.publicId &&
+        item.projectRole === 'editor',
+    ) &&
+      ownershipMembers.envelope.data.items.some(
+        (item) =>
+          item.publicId === user4Info.envelope.data.publicId &&
+          item.projectRole === 'owner',
+      ),
+    '负责人转移后，原负责人和新负责人的项目角色不正确',
+  );
+  await apiRequest(`/projects/${ownershipProject.envelope.data.id}/members`, {
+    body: {
+      projectRole: 'viewer',
+      userPublicId: user2Info.envelope.data.publicId,
+    },
+    expectedStatus: 403,
+    session: user1,
+  });
+  await apiRequest(`/projects/${ownershipProject.envelope.data.id}/members`, {
+    body: {
+      projectRole: 'viewer',
+      userPublicId: user2Info.envelope.data.publicId,
+    },
+    session: user4,
+  });
+  await apiRequest('/users/me/current-project', {
+    body: { projectId },
+    method: 'PUT',
+    session: user1,
+  });
+
   await apiRequest(`/projects/${projectId}/members`, {
     body: {
       projectRole: 'editor',
@@ -2058,6 +2192,34 @@ async function run() {
     },
     session: user1,
   });
+  await apiRequest(
+    `/projects/${projectId}/members/${user2Info.envelope.data.publicId}`,
+    {
+      body: { projectRole: 'viewer' },
+      method: 'PATCH',
+      session: user1,
+    },
+  );
+  await apiRequest('/assets/text', {
+    body: {
+      content: '只读成员不能写入项目资产。',
+      description: '项目成员角色权限验收',
+      mimeType: 'text/markdown',
+      name: '只读成员越权写入.md',
+      projectId,
+      tags: ['member-role-boundary'],
+    },
+    expectedStatus: 403,
+    session: user2,
+  });
+  await apiRequest(
+    `/projects/${projectId}/members/${user2Info.envelope.data.publicId}`,
+    {
+      body: { projectRole: 'editor' },
+      method: 'PATCH',
+      session: user1,
+    },
+  );
   await apiRequest(`/projects/${projectId}/members`, {
     body: {
       projectRole: 'viewer',
@@ -2099,6 +2261,19 @@ async function run() {
           Boolean(member.avatar),
       ),
     '受邀成员列表或创建者/管理员邀请边界不正确',
+  );
+  const user2CollaborationNotifications = await apiRequest<
+    Array<{ title: string; type: string }>
+  >('/notifications', { session: user2 });
+  assert(
+    user2CollaborationNotifications.envelope.data.some(
+      (item) => item.title === '你已加入项目' && item.type === 'project',
+    ) &&
+      user2CollaborationNotifications.envelope.data.some(
+        (item) =>
+          item.title === '项目成员角色已更新' && item.type === 'project',
+      ),
+    '成员邀请或角色调整后没有生成项目协作通知',
   );
   const user2ProjectsAfterInvite = await apiRequest<{
     items: Array<{
@@ -2186,6 +2361,19 @@ async function run() {
     ),
     '成员移除后仍出现在项目成员列表',
   );
+  const user4CollaborationNotifications = await apiRequest<
+    Array<{ title: string; type: string }>
+  >('/notifications', { session: user4 });
+  assert(
+    user4CollaborationNotifications.envelope.data.some(
+      (item) => item.title === '项目负责人已转移' && item.type === 'project',
+    ) &&
+      user4CollaborationNotifications.envelope.data.some(
+        (item) =>
+          item.title === '项目成员关系已变更' && item.type === 'project',
+      ),
+    '负责人转移或成员移除后没有生成项目协作通知',
+  );
 
   const secondaryDashboardAsset = await apiRequest<{ id: string }>(
     '/assets/text',
@@ -2270,7 +2458,7 @@ async function run() {
   const emptyDashboard = await apiRequest<{
     currentProject: null | { id: string };
     summary: { projectCount: number };
-  }>('/dashboard', { session: user4 });
+  }>('/dashboard', { session: managedResetSession });
   assert(
     emptyDashboard.envelope.data.currentProject === null &&
       emptyDashboard.envelope.data.summary.projectCount === 0,

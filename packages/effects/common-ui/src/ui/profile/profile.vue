@@ -63,7 +63,7 @@ const tabsValue = defineModel<string>('modelValue');
               v-for="tab in tabs"
               :key="tab.value"
               :value="tab.value"
-              class="h-12 justify-start data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              class="h-12 justify-center text-center data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
             >
               {{ tab.label }}
             </TabsTrigger>

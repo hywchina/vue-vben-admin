@@ -17,6 +17,7 @@ import {
   Tag,
 } from 'ant-design-vue';
 
+import { createUserApi, resetUserPasswordApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import { usePlatformStore } from '#/store';
@@ -28,6 +29,20 @@ const roleEditorOpen = ref(false);
 const roleEditingUser = ref<null | PlatformUser>(null);
 const selectedRoleCode = ref('');
 const roleSaving = ref(false);
+const createUserOpen = ref(false);
+const userCreating = ref(false);
+const resetPasswordOpen = ref(false);
+const passwordResetting = ref(false);
+const passwordResetUser = ref<null | PlatformUser>(null);
+const resetPassword = ref('');
+const createUserForm = ref({
+  department: '',
+  email: '',
+  password: '',
+  realName: '',
+  role: 'user' as 'admin' | 'user',
+  username: '',
+});
 
 onMounted(() => {
   void platformStore.loadAdministration();
@@ -49,6 +64,12 @@ const roleOptions = computed(() =>
     value: role.code,
   })),
 );
+
+function roleScopeLabel(scope: string) {
+  if (scope === 'all') return '全部项目';
+  if (scope === 'project') return '参与的项目';
+  return scope;
+}
 
 function canEditRoles(user: PlatformUser) {
   return user.id !== userStore.userInfo?.id;
@@ -89,6 +110,84 @@ async function toggleStatus(user: PlatformUser) {
   await platformStore.toggleUserStatus(user.id);
   message.success('用户状态已更新');
 }
+
+function openCreateUser() {
+  createUserForm.value = {
+    department: '',
+    email: '',
+    password: '',
+    realName: '',
+    role: 'user',
+    username: '',
+  };
+  createUserOpen.value = true;
+}
+
+function hasValidPassword(value: string) {
+  return (
+    value.length >= 8 &&
+    value.length <= 128 &&
+    /[A-Za-z]/.test(value) &&
+    /\d/.test(value) &&
+    /[^\dA-Za-z]/.test(value)
+  );
+}
+
+const canCreateUser = computed(() => {
+  const input = createUserForm.value;
+  return Boolean(
+    /^[\w.-]{3,32}$/.test(input.username.trim()) &&
+    input.realName.trim() &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim()) &&
+    hasValidPassword(input.password),
+  );
+});
+
+async function createUser() {
+  if (!canCreateUser.value || userCreating.value) return;
+  userCreating.value = true;
+  try {
+    const created = await createUserApi({
+      ...createUserForm.value,
+      department: createUserForm.value.department.trim(),
+      email: createUserForm.value.email.trim(),
+      realName: createUserForm.value.realName.trim(),
+      username: createUserForm.value.username.trim(),
+    });
+    await platformStore.loadAdministration();
+    createUserOpen.value = false;
+    message.success(`账号已创建：${created.publicId}`);
+  } finally {
+    userCreating.value = false;
+  }
+}
+
+function openResetPassword(user: PlatformUser) {
+  if (!canEditRoles(user)) return;
+  passwordResetUser.value = user;
+  resetPassword.value = '';
+  resetPasswordOpen.value = true;
+}
+
+async function confirmResetPassword() {
+  const user = passwordResetUser.value;
+  if (
+    !user ||
+    !hasValidPassword(resetPassword.value) ||
+    passwordResetting.value
+  )
+    return;
+  passwordResetting.value = true;
+  try {
+    await resetUserPasswordApi(user.id, resetPassword.value);
+    resetPasswordOpen.value = false;
+    passwordResetUser.value = null;
+    resetPassword.value = '';
+    message.success(`已重置“${user.name}”的密码并撤销其刷新会话`);
+  } finally {
+    passwordResetting.value = false;
+  }
+}
 </script>
 
 <template>
@@ -99,9 +198,9 @@ async function toggleStatus(user: PlatformUser) {
       title="用户与权限"
     >
       <template #extra>
-        <Button type="primary">
+        <Button type="primary" @click="openCreateUser">
           <IconifyIcon class="mr-1" icon="lucide:user-plus" />
-          邀请用户
+          新增用户
         </Button>
       </template>
     </PageHeading>
@@ -184,11 +283,24 @@ async function toggleStatus(user: PlatformUser) {
                   >
                     {{ user.status === 'enabled' ? '停用' : '启用' }}
                   </Button>
+                  <Button
+                    :disabled="!canEditRoles(user)"
+                    type="link"
+                    @click="openResetPassword(user)"
+                  >
+                    重置密码
+                  </Button>
                 </div>
               </div>
             </div>
           </TabPane>
           <TabPane key="roles" tab="角色权限">
+            <div class="role-overview-note">
+              <IconifyIcon icon="lucide:info" />
+              <p>
+                平台角色决定账号可使用的菜单和管理操作；项目内的负责人、编辑和只读角色进一步限制具体项目的数据范围。系统角色由平台统一维护，不在此处逐项修改权限。
+              </p>
+            </div>
             <div class="role-grid">
               <article
                 v-for="role in platformStore.roles"
@@ -196,8 +308,10 @@ async function toggleStatus(user: PlatformUser) {
                 class="role-card"
               >
                 <div class="role-card__head">
-                  <span><IconifyIcon icon="lucide:shield" /></span>
-                  <Tag>系统角色</Tag>
+                  <span class="role-card__icon">
+                    <IconifyIcon icon="lucide:shield" />
+                  </span>
+                  <Tag class="role-card__type">系统角色</Tag>
                 </div>
                 <h2>{{ role.name }}</h2>
                 <p>{{ role.description }}</p>
@@ -213,7 +327,7 @@ async function toggleStatus(user: PlatformUser) {
                 </div>
                 <div class="role-card__scope">
                   <span>数据范围</span>
-                  <strong>{{ role.scope }}</strong>
+                  <strong>{{ roleScopeLabel(role.scope) }}</strong>
                 </div>
               </article>
             </div>
@@ -252,6 +366,93 @@ async function toggleStatus(user: PlatformUser) {
         </p>
       </div>
     </Modal>
+
+    <Modal
+      v-model:open="createUserOpen"
+      :confirm-loading="userCreating"
+      :ok-button-props="{ disabled: !canCreateUser }"
+      ok-text="创建账号"
+      title="新增平台用户"
+      @ok="createUser"
+    >
+      <div class="user-form">
+        <label>
+          <span>登录用户名</span>
+          <Input
+            v-model:value="createUserForm.username"
+            :maxlength="32"
+            autocomplete="off"
+            placeholder="3–32 位字母、数字、点、横线或下划线"
+          />
+        </label>
+        <label>
+          <span>姓名</span>
+          <Input v-model:value="createUserForm.realName" :maxlength="100" />
+        </label>
+        <label>
+          <span>企业邮箱</span>
+          <Input
+            v-model:value="createUserForm.email"
+            :maxlength="254"
+            autocomplete="off"
+          />
+        </label>
+        <label>
+          <span>所属部门</span>
+          <Input v-model:value="createUserForm.department" :maxlength="100" />
+        </label>
+        <label>
+          <span>平台角色</span>
+          <Select
+            v-model:value="createUserForm.role"
+            :options="roleOptions"
+            class="w-full"
+          />
+        </label>
+        <label>
+          <span>初始密码</span>
+          <Input
+            v-model:value="createUserForm.password"
+            :maxlength="128"
+            autocomplete="new-password"
+            placeholder="至少 8 位，包含字母、数字和符号"
+            type="password"
+            @press-enter="createUser"
+          />
+        </label>
+        <p class="form-hint">
+          密码不会显示在用户列表或审计日志中，请通过安全渠道告知用户。
+        </p>
+      </div>
+    </Modal>
+
+    <Modal
+      v-model:open="resetPasswordOpen"
+      :confirm-loading="passwordResetting"
+      :ok-button-props="{ disabled: !hasValidPassword(resetPassword) }"
+      ok-text="确认重置"
+      title="重置用户密码"
+      @ok="confirmResetPassword"
+    >
+      <div class="user-form">
+        <p>
+          将重置“{{
+            passwordResetUser?.name
+          }}”的登录密码，并撤销该账号全部刷新会话。
+        </p>
+        <label>
+          <span>新密码</span>
+          <Input
+            v-model:value="resetPassword"
+            :maxlength="128"
+            autocomplete="new-password"
+            placeholder="至少 8 位，包含字母、数字和符号"
+            type="password"
+            @press-enter="confirmResetPassword"
+          />
+        </label>
+      </div>
+    </Modal>
   </main>
 </template>
 
@@ -276,7 +477,7 @@ async function toggleStatus(user: PlatformUser) {
   display: grid;
   grid-template-columns:
     minmax(240px, 1.35fr) minmax(110px, 0.65fr) minmax(120px, 0.7fr)
-    70px 100px 70px 110px;
+    70px 100px 70px 170px;
   gap: 14px;
   align-items: center;
   padding: 0 18px;
@@ -358,6 +559,7 @@ async function toggleStatus(user: PlatformUser) {
 
 .user-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
@@ -368,9 +570,32 @@ async function toggleStatus(user: PlatformUser) {
 
 .role-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
   padding: 18px;
+}
+
+.role-overview-note {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 14px 18px;
+  margin: 18px 18px 0;
+  color: var(--rail-theme-text, #273244);
+  background: var(--rail-mist);
+  border-radius: 10px;
+}
+
+.role-overview-note > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--rail-red);
+}
+
+.role-overview-note p {
+  margin: 0;
+  font-size: var(--rail-font-label);
+  line-height: 1.6;
 }
 
 .role-card {
@@ -389,8 +614,9 @@ async function toggleStatus(user: PlatformUser) {
   min-width: 0;
 }
 
-.role-card__head > span {
+.role-card__icon {
   display: grid;
+  flex: 0 0 40px;
   place-items: center;
   width: 40px;
   height: 40px;
@@ -400,12 +626,9 @@ async function toggleStatus(user: PlatformUser) {
   border-radius: 10px;
 }
 
-.role-card__head :deep(.ant-tag) {
+.role-card__head :deep(.role-card__type) {
   flex: 0 0 auto;
-  max-width: calc(100% - 50px);
   margin: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   font-size: var(--rail-font-caption);
   color: var(--rail-steel);
   white-space: nowrap;
@@ -447,6 +670,36 @@ async function toggleStatus(user: PlatformUser) {
   font-size: 11px;
   line-height: 1.55;
   color: var(--rail-steel);
+}
+
+.user-form {
+  display: grid;
+  gap: 14px;
+  padding-top: 8px;
+}
+
+.user-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.user-form label > span {
+  font-size: var(--rail-font-label);
+  font-weight: 650;
+  color: var(--rail-ink);
+}
+
+.user-form p {
+  margin: 0;
+  line-height: 1.65;
+  color: var(--rail-steel);
+}
+
+.user-form .form-hint {
+  padding: 10px 12px;
+  font-size: var(--rail-font-caption);
+  background: var(--rail-mist);
+  border-radius: 8px;
 }
 
 .role-editor label {

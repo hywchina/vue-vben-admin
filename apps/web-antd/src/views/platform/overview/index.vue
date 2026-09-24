@@ -22,6 +22,8 @@ import {
   getProjectMembersApi,
   inviteProjectMemberApi,
   removeProjectMemberApi,
+  transferProjectOwnershipApi,
+  updateProjectMemberRoleApi,
 } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
@@ -60,6 +62,8 @@ const editDescription = ref('');
 const actionProject = ref<PlatformProject>();
 const submitting = ref(false);
 const removingMemberId = ref('');
+const updatingMemberId = ref('');
+const transferringOwnerId = ref('');
 const membersOpen = ref(false);
 const membersLoading = ref(false);
 const projectMembers = ref<ProjectMember[]>([]);
@@ -288,6 +292,68 @@ async function inviteMember() {
   } finally {
     submitting.value = false;
   }
+}
+
+async function changeMemberRole(member: ProjectMember, value: unknown) {
+  const project = actionProject.value;
+  const projectRole = value === 'viewer' ? 'viewer' : 'editor';
+  if (
+    !project ||
+    !canInviteMembers.value ||
+    member.projectRole === 'owner' ||
+    member.projectRole === projectRole
+  ) {
+    return;
+  }
+  updatingMemberId.value = member.userId;
+  try {
+    const updated = await updateProjectMemberRoleApi(
+      project.id,
+      member.publicId,
+      projectRole,
+    );
+    member.projectRole = updated.projectRole;
+    message.success(
+      `已将“${member.name}”调整为${
+        projectRole === 'editor' ? '编辑成员' : '只读成员'
+      }`,
+    );
+  } finally {
+    updatingMemberId.value = '';
+  }
+}
+
+function confirmTransferOwner(member: ProjectMember) {
+  const project = actionProject.value;
+  if (!project || !canInviteMembers.value || member.projectRole === 'owner') {
+    return;
+  }
+  Modal.confirm({
+    cancelText: '取消',
+    content:
+      '转移后，新负责人可以维护项目资料和成员；原负责人将变为编辑成员。该操作不会改变已有资产、任务和审计记录。',
+    okText: '确认转移',
+    async onOk() {
+      transferringOwnerId.value = member.userId;
+      try {
+        await transferProjectOwnershipApi(project.id, member.publicId);
+        await platformStore.refreshProjects();
+        actionProject.value = platformStore.projects.find(
+          (item) => item.id === project.id,
+        );
+        const result = await getProjectMembersApi(project.id);
+        projectMembers.value = result.items;
+        canInviteMembers.value = result.canInvite;
+        if (actionProject.value) {
+          syncProjectMemberPreviews(actionProject.value, result.items);
+        }
+        message.success(`项目负责人已转移给“${member.name}”`);
+      } finally {
+        transferringOwnerId.value = '';
+      }
+    },
+    title: `将“${member.name}”设为项目负责人？`,
+  });
 }
 
 function confirmRemoveMember(member: ProjectMember) {
@@ -913,15 +979,35 @@ function confirmDeleteProject(project: PlatformProject) {
             <span>{{ member.jobCount }} 个任务</span>
           </div>
           <div class="member-actions">
-            <span class="member-role">
-              {{
-                member.projectRole === 'owner'
-                  ? '创建者'
-                  : member.projectRole === 'editor'
-                    ? '编辑成员'
-                    : '只读成员'
-              }}
+            <span v-if="member.projectRole === 'owner'" class="member-role">
+              创建者
             </span>
+            <Select
+              v-else-if="canInviteMembers"
+              :disabled="updatingMemberId === member.userId"
+              :options="[
+                { label: '编辑成员', value: 'editor' },
+                { label: '只读成员', value: 'viewer' },
+              ]"
+              :value="member.projectRole"
+              class="member-role-select"
+              size="small"
+              @change="changeMemberRole(member, $event)"
+            />
+            <span v-else class="member-role">
+              {{ member.projectRole === 'editor' ? '编辑成员' : '只读成员' }}
+            </span>
+            <button
+              v-if="canInviteMembers && member.projectRole !== 'owner'"
+              :disabled="transferringOwnerId === member.userId"
+              class="member-owner-transfer"
+              type="button"
+              @click="confirmTransferOwner(member)"
+            >
+              {{
+                transferringOwnerId === member.userId ? '转移中…' : '设为负责人'
+              }}
+            </button>
             <button
               :aria-label="`移除 ${member.name}`"
               class="member-remove"
@@ -1024,7 +1110,7 @@ function confirmDeleteProject(project: PlatformProject) {
 
 .member-list article {
   display: grid;
-  grid-template-columns: 42px minmax(180px, 1fr) auto 164px;
+  grid-template-columns: 42px minmax(160px, 1fr) auto minmax(250px, auto);
   gap: 12px;
   align-items: center;
   padding: 12px;
@@ -1075,13 +1161,38 @@ function confirmDeleteProject(project: PlatformProject) {
 
 .member-actions {
   display: grid;
-  grid-template-columns: minmax(72px, 1fr) 48px;
-  gap: 12px;
+  grid-template-columns: 110px minmax(76px, auto) 48px;
+  gap: 8px;
   place-items: center end;
-  min-width: 164px;
+  min-width: 250px;
   font-size: 13px;
   line-height: 28px;
   white-space: nowrap;
+}
+
+.member-role-select {
+  width: 110px;
+}
+
+.member-owner-transfer {
+  min-width: 76px;
+  height: 28px;
+  padding: 0;
+  font: inherit;
+  color: var(--rail-theme-text, #273244);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.member-owner-transfer:hover:not(:disabled) {
+  color: var(--rail-red);
+  text-decoration: underline;
+}
+
+.member-owner-transfer:disabled {
+  color: var(--rail-theme-muted, #aeb5ba);
+  cursor: wait;
 }
 
 .member-remove {
@@ -1114,6 +1225,10 @@ function confirmDeleteProject(project: PlatformProject) {
 }
 
 @media (max-width: 680px) {
+  .member-invite {
+    grid-template-columns: 1fr;
+  }
+
   .member-list-toolbar {
     flex-direction: column;
     align-items: stretch;
@@ -1121,6 +1236,21 @@ function confirmDeleteProject(project: PlatformProject) {
 
   .member-list-toolbar :deep(.ant-input-affix-wrapper) {
     width: 100%;
+  }
+
+  .member-list article {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .member-contribution,
+  .member-actions {
+    grid-column: 1 / -1;
+  }
+
+  .member-actions {
+    grid-template-columns: 110px minmax(76px, 1fr) 48px;
+    width: 100%;
+    min-width: 0;
   }
 
   .project-overview-toolbar {

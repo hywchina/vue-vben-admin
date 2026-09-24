@@ -32,6 +32,8 @@ const [Form, formApi] = useVbenForm(
       componentProps: {
         class: 'w-full',
       },
+      labelClass:
+        'relative justify-start text-left [&>.text-destructive]:absolute [&>.text-destructive]:-left-3 [&>.text-destructive]:mr-0',
     },
     layout: 'horizontal',
     schema: computed(() => props.formSchema),
