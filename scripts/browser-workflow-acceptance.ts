@@ -751,6 +751,14 @@ async function setupAcceptanceData() {
       VALUES (${comparisonJobId}, ${comparisonMaskAssetId}, 0)
     `;
     await transaction`
+      INSERT INTO job_inputs (job_id, asset_id, position)
+      VALUES
+        (${modelJobId}, ${prepared.asset.id}, 0),
+        (${modelJobId}, ${historyOutputAssetId}, 1),
+        (${modelJobId}, ${dashboardOutputAssetId}, 2),
+        (${modelJobId}, ${comparisonOutputAssetId}, 3)
+    `;
+    await transaction`
       INSERT INTO job_inputs (
         job_id, asset_id, position, annotation_asset_id
       ) VALUES (
@@ -2028,6 +2036,32 @@ async function runBrowserAcceptance() {
     const modelRound = page.locator(`[data-job-id="${modelJobId}"]`);
     await modelRound.waitFor();
     await page.waitForTimeout(1200);
+    const modelInputCards = modelRound.locator(
+      '.round-input__visible-assets article.is-image',
+    );
+    const modelInputLabels = await modelInputCards
+      .locator('.input-image-label')
+      .allTextContents();
+    assert(
+      modelInputLabels.map((label) => label.trim()).join(',') ===
+        '前视图,后视图,左视图,右视图',
+      '三维输入图未按前、后、左、右顺序显示',
+    );
+    const modelInputTops = await modelInputCards.evaluateAll((cards) =>
+      cards.map((card) => Math.round(card.getBoundingClientRect().top)),
+    );
+    assert(
+      modelInputTops.length === 4 && new Set(modelInputTops).size === 1,
+      `三维四视图没有保持单行：${modelInputTops.join(',')}`,
+    );
+    assert(
+      (await modelRound
+        .getByText('使用当前参数和输入素材执行工作流。', {
+          exact: true,
+        })
+        .count()) === 0,
+      '三维轮次仍显示无意义的默认输入文案',
+    );
     const modelViewerCount = await modelRound
       .locator('.model3d-viewer')
       .count();
@@ -2392,6 +2426,14 @@ async function runBrowserAcceptance() {
     await page.getByText('本轮生成已停止').waitFor();
     await page.getByRole('button', { exact: true, name: '发送' }).waitFor();
     await page.reload();
+    const cancelledRound = page.locator(`[data-job-id="${jobId}"]`);
+    await cancelledRound.getByText('本轮已取消', { exact: true }).waitFor();
+    assert(
+      (await cancelledRound
+        .getByText('本轮执行失败', { exact: true })
+        .count()) === 0,
+      '用户主动停止的设计轮次被错误标记为执行失败',
+    );
     await page.locator(`[data-job-id="${comparisonJobId}"]`).waitFor();
     await page.getByRole('button', { exact: true, name: '发送' }).waitFor();
     const historicalComparisonRound = page.locator(

@@ -130,6 +130,51 @@ describe('comfyUI workflow catalog', () => {
     expect(regionPrompt['362']?.inputs.brush_data).toBe(brushData);
   });
 
+  it('keeps 3D inputs ordered front, back, left, right without stretching source images', async () => {
+    const multiview = WORKFLOW_CATALOG.find(
+      (entry) => entry.application.key === 'multiview-to-3d',
+    );
+    expect(multiview).toBeTruthy();
+    if (!multiview) throw new Error('缺少多视图生三维工作流目录');
+    const workflow = JSON.parse(
+      await readFile(
+        resolve(process.cwd(), 'workflows/comfyui', multiview.fileName),
+        'utf8',
+      ),
+    ) as Record<string, { inputs: Record<string, unknown> }>;
+    const parsed = parseWorkflowVersion({
+      apiJson: workflow,
+      ...multiview.version,
+    });
+
+    expect(
+      parsed.parameterSchema
+        .filter((field) => field.type === 'asset')
+        .map((field) => ({
+          assetIndex: field.assetIndex,
+          key: field.key,
+          label: field.label,
+        })),
+    ).toEqual([
+      { assetIndex: 0, key: 'frontImage', label: '前视图' },
+      { assetIndex: 1, key: 'backImage', label: '后视图' },
+      { assetIndex: 2, key: 'leftImage', label: '左视图' },
+      { assetIndex: 3, key: 'rightImage', label: '右视图' },
+    ]);
+
+    const cropFields = parsed.parameterSchema.filter(
+      (field) => field.inputName === 'crop',
+    );
+    expect(cropFields).toHaveLength(4);
+    expect(cropFields.every((field) => field.defaultValue === 'center')).toBe(
+      true,
+    );
+
+    expect(
+      ['51', '79', '81', '86'].map((nodeId) => workflow[nodeId]?.inputs.crop),
+    ).toEqual(['center', 'center', 'center', 'center']);
+  });
+
   it('uses explicit current-node wiring for EasyMark region outputs', async () => {
     const loadWorkflow = async (fileName: string) =>
       JSON.parse(

@@ -10746,7 +10746,7 @@
       "assetIndex": 0,
       "integer": false,
       "key": "frontImage",
-      "label": "正视图",
+      "label": "前视图",
       "options": [],
       "required": true,
       "targets": [
@@ -10764,14 +10764,14 @@
       "advanced": false,
       "assetIndex": 1,
       "integer": false,
-      "key": "leftImage",
-      "label": "左视图",
+      "key": "backImage",
+      "label": "后视图",
       "options": [],
       "required": true,
       "targets": [
         {
           "inputName": "image",
-          "nodeId": "78",
+          "nodeId": "80",
           "transport": "upload"
         }
       ],
@@ -10783,14 +10783,14 @@
       "advanced": false,
       "assetIndex": 2,
       "integer": false,
-      "key": "backImage",
-      "label": "后视图",
+      "key": "leftImage",
+      "label": "左视图",
       "options": [],
       "required": true,
       "targets": [
         {
           "inputName": "image",
-          "nodeId": "80",
+          "nodeId": "78",
           "transport": "upload"
         }
       ],
@@ -11159,7 +11159,7 @@
     {
       "acceptedKinds": [],
       "advanced": true,
-      "defaultValue": "none",
+      "defaultValue": "center",
       "group": "CLIP视觉编码",
       "inputName": "crop",
       "integer": false,
@@ -11279,7 +11279,7 @@
     {
       "acceptedKinds": [],
       "advanced": true,
-      "defaultValue": "none",
+      "defaultValue": "center",
       "group": "CLIP视觉编码",
       "inputName": "crop",
       "integer": false,
@@ -11304,7 +11304,7 @@
     {
       "acceptedKinds": [],
       "advanced": true,
-      "defaultValue": "none",
+      "defaultValue": "center",
       "group": "CLIP视觉编码",
       "inputName": "crop",
       "integer": false,
@@ -11380,7 +11380,7 @@
     {
       "acceptedKinds": [],
       "advanced": true,
-      "defaultValue": "none",
+      "defaultValue": "center",
       "group": "CLIP视觉编码",
       "inputName": "crop",
       "integer": false,

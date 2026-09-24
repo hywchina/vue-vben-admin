@@ -46,6 +46,13 @@ const props = withDefaults(
 );
 const exporting = ref(false);
 const exportError = ref('');
+const exportNotice = ref('');
+const preparedDownload = ref<{
+  filename: string;
+  format: ModelExportFormat;
+  size: number;
+  url: string;
+}>();
 
 type Panel = 'camera' | 'control' | 'export' | 'light' | 'model' | 'scene';
 type ViewerStatus = 'error' | 'loading' | 'ready';
@@ -122,6 +129,12 @@ function clearModel() {
   modelRoot = undefined;
   meshCount.value = 0;
   vertexCount.value = 0;
+}
+
+function clearPreparedDownload() {
+  if (!preparedDownload.value) return;
+  URL.revokeObjectURL(preparedDownload.value.url);
+  preparedDownload.value = undefined;
 }
 
 function updateViewport() {
@@ -364,6 +377,8 @@ async function downloadFormat(targetFormat: ModelExportFormat) {
   if (!modelRoot || exporting.value || status.value !== 'ready') return;
   exporting.value = true;
   exportError.value = '';
+  exportNotice.value = '';
+  clearPreparedDownload();
   const generation = loadGeneration;
   const name = props.name.replace(
     /\.(glb|gltf|obj|fbx|stl|ply|step|stp)$/i,
@@ -373,11 +388,24 @@ async function downloadFormat(targetFormat: ModelExportFormat) {
     const blob = await exportModel(modelRoot, targetFormat);
     if (destroyed || generation !== loadGeneration) return;
     const url = URL.createObjectURL(blob);
+    const filename = `${name}.${targetFormat}`;
+    preparedDownload.value = {
+      filename,
+      format: targetFormat,
+      size: blob.size,
+      url,
+    };
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `${name}.${targetFormat}`;
-    anchor.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    anchor.download = filename;
+    anchor.hidden = true;
+    document.body.append(anchor);
+    try {
+      anchor.click();
+      exportNotice.value = `${targetFormat.toUpperCase()} 文件已生成；若未自动下载，请点击下方链接`;
+    } finally {
+      anchor.remove();
+    }
   } catch (error) {
     if (generation === loadGeneration) {
       exportError.value =
@@ -438,6 +466,7 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(animationFrame);
   resizeObserver?.disconnect();
   controls?.dispose();
+  clearPreparedDownload();
   clearModel();
   scene?.clear();
   scene = undefined;
@@ -560,6 +589,25 @@ onBeforeUnmount(() => {
           使用 ASCII 格式。
         </small>
         <small v-if="exporting" role="status">正在导出…</small>
+        <small
+          v-else-if="exportNotice"
+          class="model3d-export-success"
+          role="status"
+        >
+          {{ exportNotice }}
+        </small>
+        <a
+          v-if="preparedDownload"
+          class="model3d-export-download"
+          :download="preparedDownload.filename"
+          :href="preparedDownload.url"
+        >
+          <IconifyIcon icon="lucide:download" />
+          下载 {{ preparedDownload.format.toUpperCase() }} 文件（{{
+            (preparedDownload.size / 1024 / 1024).toFixed(1)
+          }}
+          MB）
+        </a>
         <small v-if="exportError" role="alert">{{ exportError }}</small>
       </template>
     </aside>
@@ -730,6 +778,19 @@ onBeforeUnmount(() => {
   cursor: pointer;
   background: #bd1835;
   border: 0;
+  border-radius: 7px;
+}
+
+.model3d-panel .model3d-export-download {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #fff;
+  text-decoration: none;
+  background: #39705a;
   border-radius: 7px;
 }
 

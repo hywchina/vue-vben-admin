@@ -177,7 +177,7 @@ pnpm dev:rail
 | `outpaint` | 1 张图、四边扩展尺寸 | PNG/JPEG | `366.images` | `ImagePadForOutpaint` 会生成红色扩展标记；平台必须通过后端 `valuePrefix` 注入“删除红色扩展标记区域”固定协议，不能只发送用户的设计描述；同时检查扩展数值、显存和输出尺寸限制 |
 | `region-edit` | 底图、颜色笔画、分区指令 | PNG/JPEG | `293.images` | 自定义 `sum_Ksampler` 的历史输出字段必须核对 |
 | `region-marker-edit` | 底图、颜色/编号笔画、指令 | PNG/JPEG | `366.images` | `IO_EasyMark` 笔画格式与坐标系 |
-| `multiview-to-3d` | 前、左、后、右 4 张图 | GLB | `83.3d` | `SaveGLB` 的 `3d` 数组与 `/view` MIME |
+| `multiview-to-3d` | 前、后、左、右 4 张图 | GLB | `83.3d` | `SaveGLB` 的 `3d` 数组与 `/view` MIME；四图等比居中裁切后编码 |
 | `image-understanding` | 1 张图、理解指令 | TXT | `4.text` | `PreviewAny` 返回的 `text` 数组 |
 | `text-chat` | 文本指令 | TXT | `5.text` | TextGenerate 输出长度与 `PreviewAny` |
 | `image-upscale` | 1 张图、放大倍数 | PNG/JPEG | `90.images` | HYPIR 模型与最大显存 |

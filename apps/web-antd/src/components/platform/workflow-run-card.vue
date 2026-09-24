@@ -174,6 +174,7 @@ const promptEntry = computed(() => {
     value: String(props.job.parameters[preferred.key]),
   };
 });
+const isMultiview3d = computed(() => props.job.appKey === 'multiview-to-3d');
 const roundInputText = computed(() => {
   const firstCameraView = cameraViews.value[0];
   if (cameraViews.value.length === 1 && firstCameraView) {
@@ -185,6 +186,7 @@ const roundInputText = computed(() => {
       .map((view) => view.horizontalLabel)
       .join('、')}`;
   }
+  if (isMultiview3d.value) return '';
   return promptEntry.value?.value ?? '使用当前参数和输入素材执行工作流。';
 });
 const parameterEntries = computed(() => {
@@ -421,7 +423,10 @@ onMounted(() => void loadPreviews());
       <StatusPill :status="job.status" />
     </header>
 
-    <section class="round-input">
+    <section
+      class="round-input"
+      :class="{ 'round-input--multiview-3d': isMultiview3d }"
+    >
       <div class="round-input__cluster">
         <div class="round-input__message">
           <div
@@ -446,10 +451,14 @@ onMounted(() => void loadPreviews());
                 >
                   <img :alt="input.name" :src="previewUrls[input.assetId]" />
                   <span
-                    v-if="input.annotationAssetId"
+                    v-if="input.annotationAssetId || isMultiview3d"
                     class="input-image-label"
                   >
-                    标记前原图
+                    {{
+                      input.annotationAssetId
+                        ? '标记前原图'
+                        : inputFieldLabel(input.position)
+                    }}
                   </span>
                 </button>
                 <Tooltip title="编辑图片遮罩">
@@ -498,12 +507,15 @@ onMounted(() => void loadPreviews());
               </article>
             </template>
           </div>
-          <div v-if="!editingPrompt" class="round-input__bubble">
+          <div
+            v-if="!editingPrompt && roundInputText"
+            class="round-input__bubble"
+          >
             <p>
               {{ roundInputText }}
             </p>
           </div>
-          <div v-else class="round-input__editor">
+          <div v-if="editingPrompt" class="round-input__editor">
             <Textarea
               v-model:value="editedPrompt"
               :auto-size="{ minRows: 3, maxRows: 8 }"
@@ -526,7 +538,7 @@ onMounted(() => void loadPreviews());
           </div>
         </div>
         <div class="round-input-actions" data-testid="round-input-actions">
-          <Tooltip title="复制本轮输入">
+          <Tooltip v-if="roundInputText" title="复制本轮输入">
             <button aria-label="复制本轮输入" type="button" @click="copyInput">
               <IconifyIcon icon="lucide:copy" />
             </button>
@@ -624,6 +636,24 @@ onMounted(() => void loadPreviews());
           <strong>本轮执行失败</strong>
           <p>{{ job.error?.message ?? job.stage }}</p>
           <code>{{ job.error?.code ?? 'JOB_FAILED' }}</code>
+        </div>
+        <Tooltip title="复用本轮输入">
+          <button
+            aria-label="复用本轮输入"
+            class="round-action-button"
+            type="button"
+            @click="emit('rerun', job)"
+          >
+            <IconifyIcon icon="lucide:refresh-cw" />
+          </button>
+        </Tooltip>
+      </div>
+
+      <div v-else-if="job.status === 'cancelled'" class="round-cancelled">
+        <IconifyIcon icon="lucide:circle-stop" />
+        <div>
+          <strong>本轮已取消</strong>
+          <p>{{ job.stage || '用户已停止本轮生成' }}</p>
         </div>
         <Tooltip title="复用本轮输入">
           <button
@@ -948,9 +978,7 @@ onMounted(() => void loadPreviews());
 
       <div v-else class="round-empty-output">
         <IconifyIcon icon="lucide:ban" />
-        <span>
-          {{ job.status === 'cancelled' ? '本轮任务已取消' : job.stage }}
-        </span>
+        <span>{{ job.stage }}</span>
       </div>
     </section>
     <ImageLightbox
@@ -1169,6 +1197,29 @@ onMounted(() => void loadPreviews());
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.round-input--multiview-3d .round-input__cluster,
+.round-input--multiview-3d .round-input__message {
+  width: 100%;
+  max-width: 100%;
+}
+
+.round-input--multiview-3d .round-input__visible-assets {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  width: min(100%, 760px);
+}
+
+.round-input--multiview-3d .round-input__visible-assets article.is-image,
+.round-input--multiview-3d .round-input-image {
+  width: 100%;
+}
+
+.round-input--multiview-3d .round-input__visible-assets article.is-image img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
 }
 
 .round-input__visible-assets article {
@@ -1505,6 +1556,7 @@ onMounted(() => void loadPreviews());
 }
 
 .round-running,
+.round-cancelled,
 .round-error,
 .round-empty-output {
   display: flex;
@@ -1549,10 +1601,12 @@ onMounted(() => void loadPreviews());
 }
 
 .round-running span,
+.round-cancelled strong,
 .round-error strong {
   font-size: 14px;
 }
 
+.round-cancelled p,
 .round-error p,
 .round-error code {
   display: block;
@@ -1570,6 +1624,12 @@ onMounted(() => void loadPreviews());
   color: var(--rail-theme-accent, #b91c32);
 }
 
+.round-cancelled > svg {
+  font-size: 26px;
+  color: var(--rail-theme-secondary, #727f86);
+}
+
+.round-cancelled > div,
 .round-error > div {
   flex: 1;
   min-width: 0;

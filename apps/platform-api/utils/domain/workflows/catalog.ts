@@ -804,7 +804,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       acceptedAssetTypes: ['image'],
       category: 'generation',
       color: '#39705a',
-      description: '从前、左、后、右四个视角的设计图生成可复用 GLB 三维资产。',
+      description: '从前、后、左、右四个视角的设计图生成可复用 GLB 三维资产。',
       icon: 'lucide:box',
       key: 'multiview-to-3d',
       name: '多视图生三维',
@@ -821,9 +821,9 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       outputSchema: [output('83', '3d', 'model3d', ['ComfyUI', 'Hunyuan3D'])],
       parameterSchema: [
         ...[
-          [0, 'frontImage', '正视图', '56'],
-          [1, 'leftImage', '左视图', '78'],
-          [2, 'backImage', '后视图', '80'],
+          [0, 'frontImage', '前视图', '56'],
+          [1, 'backImage', '后视图', '80'],
+          [2, 'leftImage', '左视图', '78'],
           [3, 'rightImage', '右视图', '87'],
         ].map(([assetIndex, key, label, nodeId]) =>
           media({

@@ -1805,7 +1805,7 @@ function selectThreeDFiles(event: Event) {
     item.type.startsWith('image/'),
   );
   threeDFiles.value = files.slice(0, 3);
-  if (files.length > 3) message.info('三维生成只需补充左、后、右三张视图');
+  if (files.length > 3) message.info('三维生成只需补充后、左、右三张视图');
   input.value = '';
 }
 
@@ -1816,7 +1816,7 @@ async function transferThreeDToComposer() {
   try {
     await prepareOutputInComposer(output, 'multiview-to-3d', 'component');
     threeDOpen.value = false;
-    message.success('当前图片已作为正视图，请继续补充左、后、右三张视图');
+    message.success('当前图片已作为前视图，请继续补充后、左、右三张视图');
   } catch (error) {
     message.error(error instanceof Error ? error.message : '无法进入三维生成');
   } finally {
@@ -1827,7 +1827,7 @@ async function transferThreeDToComposer() {
 async function runThreeDDialog() {
   const output = threeDOutput.value;
   if (!output || threeDFiles.value.length !== 3) {
-    message.warning('请补充左、后、右三张视图');
+    message.warning('请补充后、左、右三张视图');
     return;
   }
   threeDSubmitting.value = true;
@@ -2891,7 +2891,7 @@ onBeforeUnmount(() => {
           <IconifyIcon icon="lucide:panel-bottom-open" />
           <span>
             <strong>转入下方编辑框</strong>
-            <small>将当前图片作为正视图，再自行补充左、后、右视图</small>
+            <small>将当前图片作为前视图，再自行补充后、左、右视图</small>
           </span>
           <IconifyIcon icon="lucide:arrow-right" />
         </button>
@@ -2906,7 +2906,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-else class="cmf-multi-dialog">
         <p class="continue-description">
-          当前图片作为正视图。请按左视图、后视图、右视图的顺序上传三张图片。
+          当前图片作为前视图。请按后视图、左视图、右视图的顺序上传三张图片。
         </p>
         <label class="cmf-file-picker">
           <input
@@ -2917,7 +2917,7 @@ onBeforeUnmount(() => {
           />
           <IconifyIcon icon="lucide:box" />
           <span>
-            <strong>上传左、后、右三张视图</strong>
+            <strong>上传后、左、右三张视图</strong>
             <small>已选择 {{ threeDFiles.length }}/3 张</small>
           </span>
         </label>
@@ -2927,7 +2927,7 @@ onBeforeUnmount(() => {
             :key="`${file.name}:${file.size}`"
           >
             <IconifyIcon icon="lucide:image" />
-            {{ ['左视图', '后视图', '右视图'][index] }}：{{ file.name }}
+            {{ ['后视图', '左视图', '右视图'][index] }}：{{ file.name }}
           </span>
         </div>
         <div class="cmf-dialog-actions">

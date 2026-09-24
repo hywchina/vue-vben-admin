@@ -138,6 +138,13 @@ function safeError(error: unknown) {
   return error instanceof Error ? error.message.slice(0, 2000) : '未知错误';
 }
 
+export function createComfyCancellationWarning(error: unknown) {
+  return {
+    code: 'COMFYUI_CANCEL_UNCONFIRMED',
+    message: `用户已取消本轮生成；ComfyUI 停止状态未确认：${safeError(error)}`,
+  };
+}
+
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -231,42 +238,50 @@ export class ComfyUiWorker {
       });
       return;
     }
+    let cancellationWarning: null | ReturnType<
+      typeof createComfyCancellationWarning
+    > = null;
     try {
       await this.#client?.cancel(job.externalJobId);
-      await sql.begin(async (transaction) => {
-        await transaction`
-          UPDATE job_executions
-          SET
-            status = 'cancelled',
-            completed_at = now(),
-            lease_owner = null,
-            lease_expires_at = null,
-            updated_at = now()
-          WHERE job_id = ${job.jobId}
-        `;
-        await transaction`
-          UPDATE jobs
-          SET
-            status = 'cancelled',
-            stage = 'ComfyUI 任务已取消',
-            completed_at = now(),
-            updated_at = now()
-          WHERE id = ${job.jobId}
-        `;
-      });
-      await writeSystemAudit({
-        action: 'workflow.comfyui.cancelled',
-        module: 'workflow',
-        targetId: job.jobId,
-        targetType: 'job',
-      });
     } catch (error) {
-      await this.#fail(
-        job,
-        'COMFYUI_CANCEL_FAILED',
-        `取消 ComfyUI 任务失败：${safeError(error)}`,
-      );
+      cancellationWarning = createComfyCancellationWarning(error);
     }
+    await sql.begin(async (transaction) => {
+      await transaction`
+        UPDATE job_executions
+        SET
+          status = 'cancelled',
+          last_error = ${
+            cancellationWarning ? transaction.json(cancellationWarning) : null
+          },
+          completed_at = now(),
+          lease_owner = null,
+          lease_expires_at = null,
+          updated_at = now()
+        WHERE job_id = ${job.jobId}
+      `;
+      await transaction`
+        UPDATE jobs
+        SET
+          status = 'cancelled',
+          stage = ${
+            cancellationWarning
+              ? '已由用户取消（外部任务停止未确认）'
+              : 'ComfyUI 任务已取消'
+          },
+          error = null,
+          completed_at = now(),
+          updated_at = now()
+        WHERE id = ${job.jobId}
+      `;
+    });
+    await writeSystemAudit({
+      action: 'workflow.comfyui.cancelled',
+      details: cancellationWarning ? { cancellationWarning } : undefined,
+      module: 'workflow',
+      targetId: job.jobId,
+      targetType: 'job',
+    });
   }
 
   async #claimJob() {

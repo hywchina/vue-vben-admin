@@ -19,7 +19,7 @@
   },
   "51": {
     "inputs": {
-      "crop": "none",
+      "crop": "center",
       "clip_vision": ["54", 1],
       "image": ["56", 0]
     },
@@ -101,7 +101,7 @@
   },
   "79": {
     "inputs": {
-      "crop": "none",
+      "crop": "center",
       "clip_vision": ["54", 1],
       "image": ["78", 0]
     },
@@ -121,7 +121,7 @@
   },
   "81": {
     "inputs": {
-      "crop": "none",
+      "crop": "center",
       "clip_vision": ["54", 1],
       "image": ["80", 0]
     },
@@ -153,7 +153,7 @@
   },
   "86": {
     "inputs": {
-      "crop": "none",
+      "crop": "center",
       "clip_vision": ["54", 1],
       "image": ["87", 0]
     },

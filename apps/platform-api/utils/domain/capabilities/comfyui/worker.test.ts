@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  createComfyCancellationWarning,
   extractComfyOutputFiles,
   normalizeComfyOutputMetadata,
 } from './worker';
@@ -69,5 +70,15 @@ describe('comfyUI worker output mapping', () => {
         mimeType: 'image/png',
       }),
     ).toEqual({ filename: 'render.png', mimeType: 'image/png' });
+  });
+
+  it('keeps an upstream cancellation problem separate from job failure', () => {
+    expect(
+      createComfyCancellationWarning(new Error('ComfyUI 取消请求失败')),
+    ).toEqual({
+      code: 'COMFYUI_CANCEL_UNCONFIRMED',
+      message:
+        '用户已取消本轮生成；ComfyUI 停止状态未确认：ComfyUI 取消请求失败',
+    });
   });
 });
