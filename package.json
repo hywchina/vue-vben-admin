@@ -40,6 +40,8 @@
     "db:rail:reset-users": "pnpm --filter @rail/platform-api db:reset-users",
     "db:rail:seed": "pnpm --filter @rail/platform-api db:seed",
     "dev:rail": "pnpm --filter @vben/vite-config stub && pnpm infra:rail:up && pnpm db:rail:migrate && pnpm db:rail:seed && pnpm --parallel --stream --filter @rail/platform-api --filter @rail/web dev",
+    "dev:rail:local": "cross-env CORS_ALLOWED_ORIGINS=http://localhost:5666,http://127.0.0.1:5666,http://[::1]:5666,http://172.18.3.19:5666 S3_PUBLIC_ENDPOINT=http://127.0.0.1:9000 S3_CORS_ORIGINS=http://localhost:5666,http://127.0.0.1:5666,http://[::1]:5666,http://172.18.3.19:5666 pnpm dev:rail",
+    "dev:rail:public": "cross-env CORS_ALLOWED_ORIGINS=http://localhost:5666,http://127.0.0.1:5666,http://[::1]:5666,http://172.18.3.19:5666,https://rail.yuanmou.ltd S3_PUBLIC_ENDPOINT=https://rail.yuanmou.ltd S3_CORS_ORIGINS=http://localhost:5666,http://127.0.0.1:5666,http://[::1]:5666,http://172.18.3.19:5666,https://rail.yuanmou.ltd pnpm dev:rail",
     "dev:rail:web": "pnpm --filter @vben/vite-config stub && pnpm --filter @rail/web dev",
     "dev:rail:services": "pnpm --parallel --stream --filter @rail/platform-api --filter @rail/web dev",
     "container:rail:start": "bash deploy/single-image/platform.sh up",

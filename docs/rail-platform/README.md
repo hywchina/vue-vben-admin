@@ -65,11 +65,19 @@ cp apps/platform-api/.env.example apps/platform-api/.env
 
 ### 2.3 一键启动
 
-先启动 Docker Desktop，再执行：
+先启动 Docker Desktop。日常本地开发使用本地模式，浏览器直接访问本机 MinIO，图片不经过公网代理：
 
 ```bash
-pnpm dev:rail
+pnpm dev:rail:local
 ```
+
+需要通过 `https://rail.yuanmou.ltd` 提供临时公网访问时，使用域名模式；平台 API 和数据库仍在本机，浏览器图片地址改为域名入口：
+
+```bash
+pnpm dev:rail:public
+```
+
+两种模式不能同时占用 `5320`、`5666` 端口。切换时先在当前终端按 `Ctrl+C`，再运行另一条命令。原有 `pnpm dev:rail` 保留为基础启动命令，默认读取 `apps/platform-api/.env`；当前开发环境默认值等同于本地模式。
 
 Linux 开发机也可以使用仓库根目录的管理脚本，让服务在后台运行：
 
@@ -103,7 +111,7 @@ Linux 开发机也可以使用仓库根目录的管理脚本，让服务在后�
 - MinIO 控制台：`http://localhost:9001`
 - 开发邮件箱：`http://localhost:8025`
 
-电脑重启后的手动恢复方式相同：启动 Docker Desktop，进入仓库，再执行 `pnpm dev:rail`。
+电脑重启后的手动恢复方式相同：启动 Docker Desktop，进入仓库，再按访问需求执行 `pnpm dev:rail:local` 或 `pnpm dev:rail:public`。
 
 ## 3. 开发账号、角色与注册
 
