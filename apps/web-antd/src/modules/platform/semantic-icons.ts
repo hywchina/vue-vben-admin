@@ -7,6 +7,9 @@ export const platformSemanticIcons = {
   access: 'lucide:users-round',
   applications: 'lucide:sparkles',
   assets: 'lucide:library-big',
+  cabin: 'lucide:train-front',
+  cmf: 'lucide:swatch-book',
+  component: 'lucide:boxes',
   audit: 'lucide:scroll-text',
   conversations: 'lucide:messages-square',
   design: 'lucide:message-square-more',
@@ -22,4 +25,5 @@ export const platformSemanticIcons = {
   security: 'lucide:shield-check',
   workbench: 'lucide:panels-top-left',
   workflow: 'lucide:workflow',
+  mask: 'rail:mask',
 } as const;

@@ -1,8 +1,15 @@
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import process from 'node:process';
+import { isDeepStrictEqual } from 'node:util';
 
+import { SignJWT } from 'jose';
+
+import { getConfig } from '../utils/config';
 import { closeDatabase, useDatabase } from '../utils/database';
+import { WORKFLOW_CATALOG } from '../utils/domain/workflows/catalog';
+import { seedWorkflowCatalogEntry } from '../utils/domain/workflows/repository';
 import { hashPassword } from '../utils/password';
 import { deleteObject } from '../utils/storage';
 
@@ -40,6 +47,8 @@ let promptTemplateCatalogBackup: null | {
 } = null;
 const notificationIds: string[] = [];
 const testUserIds: string[] = [];
+let metadataWorkflowId: null | string = null;
+const metadataWorkflowCode = `it-workflow-meta-${randomUUID()}`;
 
 const avatarPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -141,6 +150,43 @@ async function login(username: string, password: string) {
   return session;
 }
 
+async function verifySessionRenewal(session: Session) {
+  const expiredToken = await new SignJWT({
+    roles: ['user'],
+    username: session.username,
+  })
+    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
+    .setSubject(session.id)
+    .setIssuedAt(Math.floor(Date.now() / 1000) - 3600)
+    .setExpirationTime(Math.floor(Date.now() / 1000) - 1)
+    .sign(new TextEncoder().encode(getConfig().jwtSecret));
+  await apiRequest('/user/info', {
+    expectedStatus: 401,
+    session: { ...session, token: expiredToken },
+  });
+  const previousCookie = session.cookie;
+  const { envelope, response } = await apiRequest<string>('/auth/refresh', {
+    method: 'POST',
+    session: { ...session, token: expiredToken },
+  });
+  assert(
+    typeof envelope.data === 'string' && envelope.data.length > 0,
+    '续期必须返回访问令牌',
+  );
+  session.token = envelope.data;
+  session.cookie = response.headers.get('set-cookie')?.split(';')[0] ?? '';
+  assert(
+    session.cookie && session.cookie !== previousCookie,
+    '续期必须轮换刷新 Cookie',
+  );
+  await apiRequest('/user/info', { session });
+  await apiRequest('/auth/refresh', {
+    expectedStatus: 401,
+    method: 'POST',
+    session: { ...session, cookie: previousCookie },
+  });
+}
+
 async function createTestAccount(roleCode: 'admin' | 'user', index: number) {
   const suffix = runId.replaceAll('-', '').slice(-16);
   const username = `rail_it_${suffix}_${index}`;
@@ -181,6 +227,11 @@ async function cleanup() {
   }
 
   const sql = useDatabase();
+  if (metadataWorkflowId) {
+    await sql`DELETE FROM capability_workflows WHERE capability_code = ${metadataWorkflowCode}`;
+    await sql`DELETE FROM workflow_definitions WHERE id = ${metadataWorkflowId}`;
+  }
+  await sql`DELETE FROM applications WHERE key = ${metadataWorkflowCode}`;
   if (visibilityTestApplication) {
     await sql`
       UPDATE applications
@@ -230,6 +281,7 @@ async function cleanup() {
     await sql`DELETE FROM audit_events WHERE request_id = ANY(${requestIds})`;
   }
   if (testUserIds.length > 0) {
+    await sql`DELETE FROM business_id_aliases WHERE entity_type = 'USR' AND entity_id = ANY(${testUserIds}::uuid[])`;
     const avatars = await sql<{ objectKey: string }[]>`
       SELECT avatar_object_key AS "objectKey"
       FROM users
@@ -261,6 +313,7 @@ async function run() {
   const adminAccount = await createTestAccount('admin', 3);
   const account4 = await createTestAccount('user', 4);
   const user1 = await login(account1.username, account1.password);
+  await verifySessionRenewal(user1);
   const sql = useDatabase();
   const settleJobsForIntegration = async (jobIds: string[], stage: string) => {
     await sql.begin(async (transaction) => {
@@ -290,14 +343,146 @@ async function run() {
   const admin = await login(adminAccount.username, adminAccount.password);
   const user4 = await login(account4.username, account4.password);
 
+  const catalogEntry = WORKFLOW_CATALOG[0];
+  assert(catalogEntry, '缺少工作流目录');
+  const apiJson = JSON.parse(
+    await readFile(
+      new URL(`../workflows/comfyui/${catalogEntry.fileName}`, import.meta.url),
+      'utf8',
+    ),
+  );
+  const createdWorkflow = await apiRequest<{ id: string }>(
+    '/workflow-management',
+    {
+      body: {
+        code: metadataWorkflowCode,
+        name: '名称编辑验收',
+        description: '原说明',
+        publish: false,
+        version: { apiJson, ...catalogEntry.version },
+      },
+      session: admin,
+    },
+  );
+  metadataWorkflowId = createdWorkflow.envelope.data.id;
+  // JSON 查看/导出复用管理读取接口，不为普通用户开放原始工作流。
+  await apiRequest('/workflow-management', { expectedStatus: 401 });
+  await apiRequest('/workflow-management', {
+    session: user1,
+    expectedStatus: 403,
+  });
+  const jsonOverview = await apiRequest<{
+    workflows: Array<{
+      id: string;
+      versions: Array<{
+        activeCapabilities: string[];
+        apiJson: Record<string, unknown>;
+        version: number;
+      }>;
+    }>;
+  }>('/workflow-management', { session: admin });
+  const exportedVersion = jsonOverview.envelope.data.workflows.find(
+    (workflow) => workflow.id === metadataWorkflowId,
+  )?.versions[0];
+  assert(exportedVersion?.version === 1, '管理接口未返回登记版本');
+  assert(
+    exportedVersion && isDeepStrictEqual(exportedVersion.apiJson, apiJson),
+    '管理查看/导出 JSON 与登记的原始 API JSON 不一致',
+  );
+  assert(
+    exportedVersion.activeCapabilities.length === 0,
+    '未绑定版本的管理接口绑定信息不正确',
+  );
+  const workflowMetadataPath = `/workflow-management/${metadataWorkflowId}`;
+  await apiRequest(workflowMetadataPath, {
+    body: { name: '普通用户不能改名', description: '' },
+    method: 'PUT',
+    session: user1,
+    expectedStatus: 403,
+  });
+  await apiRequest(workflowMetadataPath, {
+    body: { name: '   ', description: '' },
+    method: 'PUT',
+    session: admin,
+    expectedStatus: 400,
+  });
+  const snapshotWorkflow = async () => {
+    const [row] = await sql<
+      {
+        definition: {
+          code: string;
+          description: string;
+          name: string;
+          status: string;
+        };
+        versions: unknown;
+      }[]
+    >`
+      SELECT jsonb_build_object('code', wd.code, 'name', wd.name, 'description', wd.description, 'status', wd.status) AS definition,
+        (SELECT jsonb_agg(to_jsonb(wv) ORDER BY version) FROM workflow_versions wv WHERE workflow_id = wd.id) AS versions
+      FROM workflow_definitions wd WHERE id = ${metadataWorkflowId}
+    `;
+    assert(row, '测试工作流不存在');
+    return row;
+  };
+  const beforeMetadataEdit = await snapshotWorkflow();
+  await apiRequest(workflowMetadataPath, {
+    body: { name: '  客室中文名称验收  ', description: '  新说明  ' },
+    method: 'PUT',
+    session: admin,
+  });
+  const afterMetadataEdit = await snapshotWorkflow();
+  assert(
+    afterMetadataEdit.definition.name === '客室中文名称验收' &&
+      afterMetadataEdit.definition.description === '新说明',
+    '中文名称/说明未持久化或未去除首尾空格',
+  );
+  assert(
+    afterMetadataEdit.definition.code === metadataWorkflowCode &&
+      afterMetadataEdit.definition.status === 'draft',
+    '元数据编辑修改了标识或发布状态',
+  );
+  assert(
+    JSON.stringify(afterMetadataEdit.versions) ===
+      JSON.stringify(beforeMetadataEdit.versions),
+    '元数据编辑修改了工作流版本/JSON/映射',
+  );
+  await apiRequest(workflowMetadataPath, {
+    body: {
+      name: '客室中文名称验收',
+      description: '新说明',
+      status: 'disabled',
+    },
+    method: 'PUT',
+    session: admin,
+  });
+  const beforeSeed = await snapshotWorkflow();
+  await sql`INSERT INTO applications (key, name, short_name, description, category, icon, color) VALUES (${metadataWorkflowCode}, '命名初始化验收', '验收', '本轮测试', 'generation', 'test', '#000000')`;
+  await sql`INSERT INTO capabilities (code, app_key, name) VALUES (${metadataWorkflowCode}, ${metadataWorkflowCode}, '命名初始化验收')`;
+  await seedWorkflowCatalogEntry(
+    {
+      ...catalogEntry,
+      application: { ...catalogEntry.application, key: metadataWorkflowCode },
+      workflow: { ...catalogEntry.workflow, code: metadataWorkflowCode },
+    },
+    apiJson,
+    admin.id,
+  );
+  assert(
+    JSON.stringify(await snapshotWorkflow()) === JSON.stringify(beforeSeed),
+    '再次初始化覆盖了编辑后的名称/说明/状态或新增了版本',
+  );
+  const [metadataAudit] = await sql<
+    { found: boolean }[]
+  >`SELECT EXISTS(SELECT 1 FROM audit_events WHERE target_id = ${metadataWorkflowId} AND action = 'workflow.update') AS found`;
+  assert(metadataAudit?.found, '工作流改名未写入审计');
+
   const managedUsername = `rail_managed_${runId.replaceAll('-', '').slice(-12)}`;
-  const managedEmail = `${managedUsername}@rail.local`;
   const managedInitialPassword = 'RailManaged1!2026';
   const managedResetPassword = 'RailManaged2!2026';
   await apiRequest('/users', {
     body: {
       department: '自动化验收',
-      email: managedEmail,
       password: managedInitialPassword,
       realName: '管理员创建账号',
       role: 'user',
@@ -314,7 +499,6 @@ async function run() {
   }>('/users', {
     body: {
       department: '自动化验收',
-      email: managedEmail,
       password: managedInitialPassword,
       realName: '管理员创建账号',
       role: 'user',
@@ -326,17 +510,144 @@ async function run() {
   assert(
     managedUser.envelope.data.username === managedUsername &&
       managedUser.envelope.data.roleCodes.includes('user') &&
-      /^USR-\d{6}$/.test(managedUser.envelope.data.publicId),
+      /^USR-\d{8,}$/.test(managedUser.envelope.data.publicId),
     '管理员新增用户没有返回正确的账号和角色信息',
   );
   const managedInitialSession = await login(
     managedUsername,
     managedInitialPassword,
   );
+  const [newAccountEmail] = await sql<{ email: null | string }[]>`
+    SELECT email FROM users WHERE id = ${managedInitialSession.id}
+  `;
+  assert(newAccountEmail?.email === null, '无邮箱创建账号不能生成虚构邮箱');
+  const profileValues = {
+    department: '无需邮箱',
+    introduction: '邮箱移除验收',
+    realName: '无需邮箱用户',
+  };
+  const profileResult = await apiRequest<typeof profileValues>(
+    '/user/profile',
+    {
+      body: profileValues,
+      method: 'PATCH',
+      session: managedInitialSession,
+    },
+  );
+  assert(
+    profileResult.envelope.data.realName === profileValues.realName,
+    '无需邮箱保存资料失败',
+  );
+  const [legacyEmail] = await sql<
+    { email: null | string }[]
+  >`SELECT email FROM users WHERE id = ${user1.id}`;
+  await apiRequest('/user/profile', {
+    body: { ...profileValues, email: 'ignored-value', roles: ['admin'] },
+    method: 'PATCH',
+    session: user1,
+  });
+  const [preservedEmail] = await sql<
+    { email: null | string }[]
+  >`SELECT email FROM users WHERE id = ${user1.id}`;
+  assert(
+    legacyEmail?.email === preservedEmail?.email,
+    '保存资料不应修改已有历史邮箱',
+  );
+  const profileInfo = await apiRequest<{ roles: string[] }>('/user/info', {
+    session: user1,
+  });
+  assert(
+    profileInfo.envelope.data.roles.length === 1 &&
+      profileInfo.envelope.data.roles[0] === 'user',
+    '资料接口不能提升角色',
+  );
+  for (const path of [
+    '/auth/password-reset/request',
+    '/auth/password-reset/confirm',
+  ]) {
+    await apiRequest(path, {
+      body: {
+        email: 'ignored@rail.local',
+        token: 'obsolete',
+        newPassword: 'RailReset123!',
+      },
+      expectedStatus: 404,
+    });
+  }
+  const registeredUsername = `rail_reg_${runId.replaceAll('-', '').slice(-12)}`;
+  if (getConfig().allowSelfRegistration) {
+    const registered = await apiRequest<{ id: string }>('/auth/register', {
+      body: {
+        username: registeredUsername,
+        password: managedInitialPassword,
+        role: 'admin',
+      },
+    });
+    testUserIds.push(registered.envelope.data.id);
+    const registeredSession = await login(
+      registeredUsername,
+      managedInitialPassword,
+    );
+    const registeredInfo = await apiRequest<{ roles: string[] }>('/user/info', {
+      session: registeredSession,
+    });
+    assert(
+      registeredInfo.envelope.data.roles.length === 1 &&
+        registeredInfo.envelope.data.roles[0] === 'user',
+      '注册不能分配管理员角色',
+    );
+    const [registeredRow] = await sql<
+      { email: null | string }[]
+    >`SELECT email FROM users WHERE id = ${registeredSession.id}`;
+    assert(registeredRow?.email === null, '无邮箱注册应该保存空邮箱');
+    await apiRequest('/auth/register', {
+      body: { username: registeredUsername, password: managedInitialPassword },
+      expectedStatus: 409,
+    });
+    await apiRequest('/auth/register', {
+      body: { username: `${registeredUsername}_w`, password: 'weak' },
+      expectedStatus: 400,
+    });
+    const changedPassword = 'RailPersonalChange123!2026';
+    await apiRequest('/user/password', {
+      body: { oldPassword: 'WrongPassword123!', newPassword: changedPassword },
+      method: 'PUT',
+      expectedStatus: 400,
+      session: registeredSession,
+    });
+    await apiRequest('/user/password', {
+      body: {
+        oldPassword: managedInitialPassword,
+        newPassword: changedPassword,
+      },
+      method: 'PUT',
+      session: registeredSession,
+    });
+    await apiRequest('/auth/refresh', {
+      method: 'POST',
+      expectedStatus: 401,
+      session: registeredSession,
+    });
+    await apiRequest('/auth/login', {
+      body: { username: registeredUsername, password: managedInitialPassword },
+      expectedStatus: 403,
+    });
+    await login(registeredUsername, changedPassword);
+  } else {
+    await apiRequest('/auth/register', {
+      body: { username: registeredUsername, password: managedInitialPassword },
+      expectedStatus: 403,
+    });
+  }
   await apiRequest(`/users/${managedUser.envelope.data.id}/password`, {
     body: { newPassword: managedResetPassword },
     method: 'PUT',
     session: admin,
+  });
+  await apiRequest('/auth/refresh', {
+    method: 'POST',
+    expectedStatus: 401,
+    session: managedInitialSession,
   });
   await apiRequest('/auth/login', {
     body: { password: managedInitialPassword, username: managedUsername },
@@ -430,8 +741,92 @@ async function run() {
     },
   );
   projectId = project.envelope.data.id;
+
+  // LoRA parameter contract: failure paths never enqueue a GPU task.
+  const loraInput = {
+    projectId,
+    name: `${runId}-lora-parameters`,
+    items: [{ assetId: randomUUID(), caption: 'rail interior' }],
+    parameters: {
+      baseModel: 'flux2-klein-9b',
+      steps: 1500,
+      repeats: 1,
+      rank: 16,
+      resolution: 512,
+      learningRate: 0.0001,
+      triggerWord: 'railstyle',
+      previewPrompt: '[trigger], rail interior',
+      disableSampling: true,
+    },
+  };
+  await apiRequest('/lora/trainings', { body: loraInput, expectedStatus: 401 });
+  await apiRequest('/lora/trainings', {
+    body: loraInput,
+    session: user2,
+    expectedStatus: 404,
+  });
+  for (const invalid of [
+    { steps: 19 },
+    { steps: 10_001 },
+    { steps: 1500.5 },
+    { steps: undefined, epochs: 5 },
+    { repeats: 0 },
+    { rank: 12 },
+    { resolution: 640 },
+    { disableSampling: 'false' },
+  ]) {
+    await apiRequest('/lora/trainings', {
+      body: {
+        ...loraInput,
+        parameters: { ...loraInput.parameters, ...invalid },
+      },
+      session: user1,
+      expectedStatus: 400,
+    });
+  }
+  await apiRequest('/lora/trainings', {
+    body: { ...loraInput, items: [loraInput.items[0], loraInput.items[0]] },
+    session: user1,
+    expectedStatus: 400,
+  });
+  for (const steps of [20, 10_000]) {
+    const rejected = await apiRequest('/lora/trainings', {
+      body: { ...loraInput, parameters: { ...loraInput.parameters, steps } },
+      session: user1,
+      expectedStatus: getConfig().loraApiUrl ? 400 : 503,
+    });
+    assert(
+      rejected.envelope.code ===
+        (getConfig().loraApiUrl
+          ? 'LORA_DATASET_ASSET_INVALID'
+          : 'ADAPTER_NOT_CONFIGURED'),
+      '合法 LoRA 步数被参数校验拒绝，或缺失图片未被安全拒绝',
+    );
+  }
+  const largeDataset = await apiRequest('/lora/trainings', {
+    body: {
+      ...loraInput,
+      items: Array.from({ length: 101 }, () => ({
+        assetId: randomUUID(),
+        caption: 'rail interior',
+      })),
+    },
+    session: user1,
+    expectedStatus: getConfig().loraApiUrl ? 400 : 503,
+  });
   assert(
-    /^CR-\d{4}-\d{4}$/.test(project.envelope.data.code),
+    largeDataset.envelope.code ===
+      (getConfig().loraApiUrl
+        ? 'LORA_DATASET_ASSET_INVALID'
+        : 'ADAPTER_NOT_CONFIGURED'),
+    '101 张图片不应被数量校验拒绝；仍须校验真实图片/适配器',
+  );
+  const [loraJobCount] = await sql<
+    { count: number }[]
+  >`SELECT count(*)::int AS count FROM jobs WHERE project_id = ${projectId} AND app_key = 'lora-training'`;
+  assert(loraJobCount?.count === 0, 'LoRA 参数失败路径创建了真实训练任务');
+  assert(
+    /^PRJ-\d{8,}$/.test(project.envelope.data.code),
     '项目业务 ID 格式不正确',
   );
   const renamedProjectName = `${projectName}（已重命名）`;
@@ -944,7 +1339,7 @@ async function run() {
     },
   );
   assert(
-    /^AST-\d{8}$/.test(textAsset.envelope.data.publicId),
+    /^AST-\d{8,}$/.test(textAsset.envelope.data.publicId),
     '资产业务 ID 格式不正确',
   );
   const textPreview = await apiRequest<{
@@ -1541,12 +1936,17 @@ async function run() {
     '手动标题保护验收完成',
   );
 
-  const designConversation = await apiRequest<{ id: string; title: string }>(
-    '/design-conversations',
-    {
-      body: { projectId, title: '统一设计会话验收' },
-      session: user1,
-    },
+  const designConversation = await apiRequest<{
+    id: string;
+    publicId: string;
+    title: string;
+  }>('/design-conversations', {
+    body: { projectId, title: '统一设计会话验收' },
+    session: user1,
+  });
+  assert(
+    /^DSC-\d{8,}$/.test(designConversation.envelope.data.publicId),
+    '设计会话必须返回统一业务编号',
   );
   const parallelDesignConversation = await apiRequest<{ id: string }>(
     '/design-conversations',
@@ -1616,7 +2016,7 @@ async function run() {
     },
   );
   assert(
-    /^TSK-\d{8}$/.test(parallelDesignJob.envelope.data.publicId),
+    /^TSK-\d{8,}$/.test(parallelDesignJob.envelope.data.publicId),
     '任务业务 ID 格式不正确',
   );
   await apiRequest('/jobs/batch', {
@@ -2072,9 +2472,13 @@ async function run() {
   `;
   if (createdNotification) notificationIds.push(createdNotification.id);
 
-  const conversation = await apiRequest<{ id: string }>(
+  const conversation = await apiRequest<{ id: string; publicId: string }>(
     '/assistant/conversations',
     { body: { projectId }, session: user1 },
+  );
+  assert(
+    /^AIC-\d{8,}$/.test(conversation.envelope.data.publicId),
+    'AI 会话必须返回统一业务编号',
   );
   conversationId = conversation.envelope.data.id;
   await apiRequest(`/assistant/conversations/${conversationId}/messages`, {
@@ -2120,8 +2524,16 @@ async function run() {
   const user4Info = await apiRequest<{ publicId: string }>('/user/info', {
     session: user4,
   });
+  // Emulate recorded pre-038 numbers for this run's disposable users only.
+  const user4LegacyPublicId = `USR-${String(BigInt(user4Info.envelope.data.publicId.slice(4))).padStart(6, '0')}`;
+  const user2LegacyPublicId = `USR-${String(BigInt(user2Info.envelope.data.publicId.slice(4))).padStart(6, '0')}`;
+  await sql`
+    INSERT INTO business_id_aliases(entity_type, legacy_id, entity_id) VALUES
+      ('USR', ${user4LegacyPublicId}, ${user4.id}),
+      ('USR', ${user2LegacyPublicId}, ${user2.id})
+  `;
   assert(
-    /^USR-\d{6}$/.test(user2Info.envelope.data.publicId),
+    /^USR-\d{8,}$/.test(user2Info.envelope.data.publicId),
     '用户业务 ID 格式不正确',
   );
 
@@ -2137,12 +2549,12 @@ async function run() {
   await apiRequest(`/projects/${ownershipProject.envelope.data.id}/members`, {
     body: {
       projectRole: 'editor',
-      userPublicId: user4Info.envelope.data.publicId,
+      userPublicId: user4LegacyPublicId,
     },
     session: user1,
   });
   await apiRequest(`/projects/${ownershipProject.envelope.data.id}/owner`, {
-    body: { userPublicId: user4Info.envelope.data.publicId },
+    body: { userPublicId: user4LegacyPublicId },
     method: 'PUT',
     session: user1,
   });
@@ -2192,14 +2604,11 @@ async function run() {
     },
     session: user1,
   });
-  await apiRequest(
-    `/projects/${projectId}/members/${user2Info.envelope.data.publicId}`,
-    {
-      body: { projectRole: 'viewer' },
-      method: 'PATCH',
-      session: user1,
-    },
-  );
+  await apiRequest(`/projects/${projectId}/members/${user2LegacyPublicId}`, {
+    body: { projectRole: 'viewer' },
+    method: 'PATCH',
+    session: user1,
+  });
   await apiRequest('/assets/text', {
     body: {
       content: '只读成员不能写入项目资产。',
@@ -2324,10 +2733,10 @@ async function run() {
     `/projects/${projectId}/members/${user1Info.envelope.data.publicId}`,
     { expectedStatus: 409, method: 'DELETE', session: user1 },
   );
-  await apiRequest(
-    `/projects/${projectId}/members/${user4Info.envelope.data.publicId}`,
-    { method: 'DELETE', session: admin },
-  );
+  await apiRequest(`/projects/${projectId}/members/${user4LegacyPublicId}`, {
+    method: 'DELETE',
+    session: admin,
+  });
   const user4ProjectsAfterRemoval = await apiRequest<{
     items: Array<{ id: string }>;
   }>('/projects', { session: user4 });

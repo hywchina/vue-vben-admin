@@ -4,7 +4,7 @@
 
 本文件适用于仓库根目录及全部子目录，用于约束后续 AI Agent 和开发人员在本仓库中的分析、开发、测试、文档与 Git 操作。
 
-本仓库最初来自 `vbenjs/vue-vben-admin` 的 `main` 分支，现已二次开发为“轨道客室智能设计平台”。它不是前端 Demo，也不是若干页面拼接：登录、用户、权限、项目、资产、任务台账、通知、审计、企业邮箱找回密码和 AI 助手本地会话层都必须使用真实平台 API 与持久化存储。
+本仓库最初来自 `vbenjs/vue-vben-admin` 的 `main` 分支，现已二次开发为“轨道客室智能设计平台”。它不是前端 Demo，也不是若干页面拼接：登录、用户、权限、项目、资产、任务台账、通知、审计和 AI 助手本地会话层都必须使用真实平台 API 与持久化存储。2026-10-08 起取消邮箱找回密码，注册、资料及管理员创建账号均不采集邮箱。
 
 总体设计原则是“稳定的平台框架 + 可替换的外部能力适配器”：
 
@@ -33,7 +33,7 @@
 | 路径 | 职责 |
 | --- | --- |
 | `apps/web-antd/` | 实际产品 Web；Vue 3、Vite、Ant Design Vue、Pinia、Vue Router |
-| `apps/platform-api/` | 独立平台 API；Nitro/H3、TypeScript、Zod、postgres.js、AWS SDK、Nodemailer |
+| `apps/platform-api/` | 独立平台 API；Nitro/H3、TypeScript、Zod、postgres.js、AWS SDK |
 | `apps/platform-api/api/v1/` | 文件式 REST API，统一挂载在 `/api/v1` |
 | `apps/platform-api/migrations/` | PostgreSQL 顺序迁移，是数据模型的重要事实来源 |
 | `apps/platform-api/scripts/` | 迁移、种子、账号重建和真实集成验收 |
@@ -51,7 +51,7 @@
 ### 4.1 用户、认证与权限
 
 - 系统只有 `admin` 和 `user` 两类角色，每个账号必须且只能拥有一个角色。
-- 登录方式只保留用户名和密码；企业邮箱仍用于注册信息、个人资料和找回密码。
+- 登录方式只保留用户名和密码；不提供忘记密码或邮件重置，不要求注册、个人资料或管理员创建账号填写邮箱。已有邮箱与历史重置令牌数据保留但不能通过旧链接重置密码；登录后修改密码和管理员重置其他用户密码继续保留。
 - 普通用户不能修改角色；管理员只能在用户与权限页面修改其他账号。
 - 不能修改当前登录管理员自己的角色或状态，不能降级或停用最后一名启用管理员。
 - 前端菜单、按钮隐藏只改善交互，不能代替后端认证、RBAC 和项目范围校验。
@@ -81,7 +81,7 @@
 - MinIO/S3 私有桶保存图片、视频、音频、文档、3D 模型、模型文件、压缩包和 AI 附件。
 - 浏览器通过平台 API 申请短时预签名 URL，再直传或读取对象存储；API 必须先校验身份、项目或对话归属。
 - 开发环境中 Web 与 API 是本机 Node.js 进程，PostgreSQL、MinIO、Mailpit 由 Docker Compose 运行。
-- 生产单机部署中 Web、API、迁移、PostgreSQL 和 MinIO 可全部由 `deploy/rail-platform/compose.production.yaml` 管理；企业 SMTP 和 AI/工作流服务仍是外部依赖。
+- 生产单机部署中 Web、API、迁移、PostgreSQL 和 MinIO 可全部由 `deploy/rail-platform/compose.production.yaml` 管理；AI/工作流服务仍是外部依赖，不再依赖企业 SMTP。旧开发/单镜像 Compose 的 Mailpit 为兼容保留，不被业务使用；未经请求不删除既有容器或卷。
 - Git 只保存代码、迁移、配置模板和文档。PostgreSQL 数据、MinIO 对象、Docker 卷/镜像、`node_modules`、构建缓存、本机 `.env` 和 `/tmp` 备份不在代码同步范围内。
 - 不得执行 `docker compose down -v`、删除数据卷或重建账号，除非用户明确授权且已经完成可验证备份。
 
@@ -127,7 +127,7 @@ pnpm --filter @rail/platform-api dev
 ### 数据库迁移
 
 - 已有 `001` 至 `009` 迁移视为已在环境中应用，不得为新需求改写历史迁移。
-- 新变更创建下一个顺序迁移（当前应从 `010_*.sql` 开始），并保证可在已有数据上升级。
+- 新变更创建下一个顺序迁移（当前最新为 `039_generated_asset_business_names.sql`，新增从 `040_*.sql` 开始），并保证可在已有数据上升级。
 - 迁移必须考虑约束、索引、旧数据转换、回滚/恢复策略和种子脚本兼容性。
 - `pnpm db:rail:reset-users -- --confirm=DELETE_ALL_USERS` 是破坏性维护命令，未经明确授权和备份不得运行。
 
@@ -178,6 +178,7 @@ upstream/main -> vbenjs/vue-vben-admin 官方主分支
 
 - 开始工作前运行 `git status`、`git branch -vv` 和 `git remote -v`；新机器不能盲目假设远程名称已经正确。
 - 二次开发提交到 `dev`，不得把项目改动推送到 `upstream`。
+- 用户明确指定分支时以其要求为准：2026-10-08 的整体验收与提交使用 `codex/client-feedback-white-shell-20260901`，跟踪并推送到 `origin` 同名分支；不能在提交前擅自切换到 `dev`。默认分支约定不代表当前工作区分支。
 - 不使用强制推送，不重写已共享提交，不用破坏性命令丢弃用户改动。
 - 上游更新必须作为独立任务评估、合并和回归，不能在普通功能提交中顺手同步大量官方变更。
 - 提交标题使用简洁的英文 Conventional Commit，例如 `feat(platform): ...`、`fix(auth): ...`、`docs(project): ...`。

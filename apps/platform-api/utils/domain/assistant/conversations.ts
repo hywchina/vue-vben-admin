@@ -61,6 +61,7 @@ const FALLBACK_EXTENSIONS = new Set([
 
 export interface AssistantConversationRecord {
   id: string;
+  publicId: string;
   projectId: null | string;
   projectName: null | string;
   title: string;
@@ -103,6 +104,7 @@ export async function requireAssistantConversation(
   const [conversation] = await sql<AssistantConversationRecord[]>`
     SELECT
       conversation.id,
+      conversation.public_id AS "publicId",
       conversation.user_id AS "userId",
       conversation.project_id AS "projectId",
       project.name AS "projectName",

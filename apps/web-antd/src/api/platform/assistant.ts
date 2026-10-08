@@ -13,6 +13,8 @@ export interface AiAssistantStatus {
 export interface AiConversation {
   createdAt: string;
   id: string;
+  /** Stable business number; optional only for cached legacy responses. */
+  publicId?: string;
   lastMessageAt: null | string;
   messageCount: number;
   projectId: null | string;
@@ -25,6 +27,7 @@ export interface AiAttachment {
   createdAt: string;
   filename: string;
   id: string;
+  publicId?: string;
   isImage: boolean;
   messageId?: string;
   mimeType: string;
@@ -38,6 +41,7 @@ export interface AiMessage {
   createdAt: string;
   errorCode: null | string;
   id: string;
+  publicId?: string;
   role: 'assistant' | 'system' | 'user';
   status: 'completed' | 'failed';
 }
@@ -67,6 +71,8 @@ export function createAiConversationApi() {
 export function renameAiConversationApi(conversationId: string, title: string) {
   return requestClient.request<{
     id: string;
+    /** Stable business number; optional only for cached legacy responses. */
+    publicId?: string;
     title: string;
     updatedAt: string;
   }>(`/assistant/conversations/${conversationId}`, {

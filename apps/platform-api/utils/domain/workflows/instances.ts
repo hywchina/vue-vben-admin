@@ -4,6 +4,7 @@ import { ApiError } from '~/utils/response';
 export interface WorkflowWorkspaceInstanceRecord {
   appKey: string;
   id: string;
+  publicId: string;
   projectId: string;
   title: string;
   userId: string;
@@ -19,6 +20,7 @@ export async function requireWorkflowWorkspaceInstance(input: {
   const [instance] = await sql<WorkflowWorkspaceInstanceRecord[]>`
     SELECT
       id,
+      public_id AS "publicId",
       user_id AS "userId",
       project_id AS "projectId",
       app_key AS "appKey",

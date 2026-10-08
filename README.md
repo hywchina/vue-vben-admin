@@ -4,9 +4,10 @@
 
 ## 当前能力
 
-- 用户名密码认证、注册、企业邮箱找回密码、刷新会话与账号管理
+- 用户名密码认证、无邮箱注册、刷新会话与账号管理；忘记密码已移除，保留登录后改密与管理员重置其他账号密码
 - 管理员/普通用户两级角色、项目范围隔离和后端权限校验
 - 项目、资产、版本、任务台账、通知和审计日志
+- 统一业务编号：`USR/PRJ/DSC/AIC/AST/TSK` 等类型前缀＋至少 8 位流水号，不加 RAIL；保留内部 UUID 与旧编号映射，完整规则见 [业务编号规范](docs/rail-platform/BUSINESS_IDS.md)
 - 首页六项快捷入口、跨项目个人设计检索与项目内多轮设计会话
 - 客室零部件、CMF、客室效果三类设计上下文及真实工作流复用
 - 登录后全局 AI 助手、用户级会话隔离与附件对象存储
@@ -28,7 +29,7 @@ flowchart TB
     end
 
     subgraph ACCESS["二、身份与权限域"]
-        IAM["1. 身份与访问管理<br/>登录注册 · 邮箱找回密码<br/>用户资料 · 头像 · 密码<br/>admin/user · RBAC<br/>owner/editor/viewer"]
+        IAM["1. 身份与访问管理<br/>登录 · 无邮箱注册<br/>用户资料 · 头像 · 密码<br/>admin/user · RBAC<br/>owner/editor/viewer"]
     end
 
     subgraph CORE["三、核心业务域"]
@@ -75,7 +76,6 @@ flowchart TB
 
         S3[("MinIO / S3 私有桶<br/>图片 · 视频 · 音频 · 文档<br/>三维模型 · 模型文件<br/>压缩包 · AI 附件")]
 
-        SMTP["企业 SMTP / Mailpit<br/>密码重置邮件"]
     end
 
     subgraph EXTERNAL["七、外部智能能力"]
@@ -132,7 +132,6 @@ flowchart TB
 
     API --> PG
     API -->|"预签名上传、下载和对象校验"| S3
-    API --> SMTP
     JOB --> WORKER
     WORKER --> PG
     WORKER --> S3
@@ -164,7 +163,7 @@ flowchart TB
     class PROJECT,ASSET,DESIGN,CAPABILITY,JOB core;
     class ASSISTANT,GOVERNANCE governance;
     class WEB,API,WORKER,ADAPTER service;
-    class PG,S3,SMTP data;
+    class PG,S3 data;
     class COMFYUI,LLM,FUTURE external;
     class STAGED,SAVED result;
     class OPERATIONS ops;

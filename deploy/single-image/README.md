@@ -45,10 +45,11 @@ docker compose --env-file deploy/single-image/config.env \
 | `AI_ASSISTANT_API_URL`、`AI_ASSISTANT_API_KEY`、`AI_ASSISTANT_MODEL` | vLLM 完整 chat completions 地址、密钥、已部署模型名称 |
 | `LORA_API_URL`、`LORA_API_TOKEN`、`LORA_MODEL_PATH`、`LORA_VAE_PATH` | 训练 API 及训练服务视角的模型路径，可按 API 环境模板补充 `LORA_GPU_IDS` 等设置 |
 | `REPORT_AI_API_URL` | Presenton 完整生成地址，例如 `http://presenton:80/api/v1/generate-file`；不是 private-office-AI |
-| `SMTP_HOST`、`SMTP_PORT`、`SMTP_USER`、`SMTP_PASSWORD` | 正式部署填写企业 SMTP；默认 Mailpit 仅为本地验收邮件沙箱 |
 | `NODE_IMAGE`、`NPM_REGISTRY`、`BUILD_NODE_OPTIONS` | 仅用于联网构建机器，运行时无需 Node、pnpm 或互联网 |
 
 `config.env` 会作为容器环境配置加载，支持 API `.env.example` 中的其他运行变量。Compose 固定容器内部数据库、对象存储、监听地址；宿主映射端口不影响容器服务寻址。数据库密码在连接 URL 中使用，建议保持初始化生成的十六进制字符串。
+
+2026-10-08 起已移除邮箱找回密码，账号创建不要求邮箱，也不再需要 `SMTP_*` 或 `BOOTSTRAP_ADMIN_EMAIL`。Compose 的 Mailpit 仅为旧环境兼容保留，不被平台使用；本次升级不删除既有邮件容器或数据卷。
 
 容器内的 `127.0.0.1` 指该容器自身。外部能力服务应加入同一 Docker 网络，再填写服务 DNS 名；单纯将宿主回环地址填入容器配置不可用。本次独立验收通过将现有 ComfyUI 容器连接到 `rail-platform-validation_default` 实现互访，使用其容器名和内部 8188 端口。整套系统 Compose 应使用服务名。
 

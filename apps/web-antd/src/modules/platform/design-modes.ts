@@ -1,5 +1,9 @@
 import type { PlatformApplication } from './types';
 
+import { assetTypeIcons } from '#/modules/platform/asset-types';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
+
 export type DesignModeKey = 'cabin' | 'cmf' | 'component' | 'report';
 
 export interface DesignModeToolDefinition {
@@ -45,7 +49,7 @@ const defaultDesignMode: DesignModeDefinition = {
   backgroundImage: '/design-modes/cabin.webp',
   defaultApplicationKey: 'text-to-image',
   description: '生成和深化客室整体空间、镜头、环境与材料效果。',
-  icon: 'lucide:train-front',
+  icon: platformSemanticIcons.cabin,
   key: 'cabin',
   label: '客室效果生成',
   placeholder:
@@ -53,31 +57,31 @@ const defaultDesignMode: DesignModeDefinition = {
   primaryTools: [
     {
       appKey: 'text-to-image',
-      icon: 'lucide:image-plus',
+      icon: platformUiIcons.imagePlus,
       key: 'text-to-image',
       label: '文生图',
     },
     {
       appKey: 'region-marker-edit',
-      icon: 'lucide:tags',
+      icon: platformUiIcons.tags,
       key: 'marker-generate',
       label: '标记生成',
     },
     {
       appKey: 'inpaint-single',
-      icon: 'lucide:paintbrush',
+      icon: platformSemanticIcons.mask,
       key: 'inpaint-single',
       label: '局部重绘',
     },
     {
       appKey: 'multi-image-edit',
-      icon: 'lucide:images',
+      icon: platformUiIcons.images,
       key: 'material-fusion',
       label: '部件/材质融合',
     },
     {
       appKey: 'single-image-edit',
-      icon: 'lucide:map',
+      icon: platformUiIcons.map,
       key: 'floor-plan-coloring',
       label: '平面图填色',
       placeholder:
@@ -85,7 +89,7 @@ const defaultDesignMode: DesignModeDefinition = {
     },
     {
       appKey: 'single-image-edit',
-      icon: 'lucide:sun-medium',
+      icon: platformUiIcons.sunMedium,
       key: 'environment-change',
       label: '环境更改',
       placeholder:
@@ -94,13 +98,13 @@ const defaultDesignMode: DesignModeDefinition = {
     },
     {
       appKey: 'image-upscale',
-      icon: 'lucide:zoom-in',
+      icon: platformUiIcons.zoomIn,
       key: 'image-upscale',
       label: '图像放大',
     },
     {
       appKey: 'image-understanding',
-      icon: 'lucide:scan-search',
+      icon: platformUiIcons.scanSearch,
       key: 'image-understanding',
       label: '图像理解',
     },
@@ -108,6 +112,7 @@ const defaultDesignMode: DesignModeDefinition = {
 };
 
 export const designModes: readonly DesignModeDefinition[] = [
+  defaultDesignMode,
   {
     applicationKeys: [
       'text-to-image',
@@ -128,7 +133,7 @@ export const designModes: readonly DesignModeDefinition[] = [
     backgroundImage: '/design-modes/component.webp',
     defaultApplicationKey: 'text-to-image',
     description: '生成座椅、桌板、行李架等客室零部件及多视角方案。',
-    icon: 'lucide:boxes',
+    icon: platformSemanticIcons.component,
     key: 'component',
     label: '客室零部件生成',
     placeholder:
@@ -136,49 +141,49 @@ export const designModes: readonly DesignModeDefinition[] = [
     primaryTools: [
       {
         appKey: 'text-to-image',
-        icon: 'lucide:image-plus',
+        icon: platformUiIcons.imagePlus,
         key: 'text-to-image',
         label: '文生图',
       },
       {
         appKey: 'inpaint-single',
-        icon: 'lucide:paintbrush',
+        icon: platformSemanticIcons.mask,
         key: 'inpaint-single',
         label: '局部重绘',
       },
       {
         appKey: 'region-marker-edit',
-        icon: 'lucide:tags',
+        icon: platformUiIcons.tags,
         key: 'marker-edit',
         label: '标记修改',
       },
       {
         appKey: 'multi-image-edit',
-        icon: 'lucide:images',
+        icon: platformUiIcons.images,
         key: 'multi-image-edit',
         label: '多图融合',
       },
       {
         appKey: 'camera-control-multi',
-        icon: 'lucide:orbit',
+        icon: platformUiIcons.orbit,
         key: 'camera-control-multi',
         label: '多角度生成',
       },
       {
         appKey: 'multiview-to-3d',
-        icon: 'lucide:box',
+        icon: assetTypeIcons.model3d,
         key: 'multiview-to-3d',
         label: '三维生成',
       },
       {
         appKey: 'image-upscale',
-        icon: 'lucide:zoom-in',
+        icon: platformUiIcons.zoomIn,
         key: 'image-upscale',
         label: '图像放大',
       },
       {
         appKey: 'image-understanding',
-        icon: 'lucide:scan-search',
+        icon: platformUiIcons.scanSearch,
         key: 'image-understanding',
         label: '图片理解',
       },
@@ -202,7 +207,7 @@ export const designModes: readonly DesignModeDefinition[] = [
     backgroundImage: '/design-modes/cmf.webp',
     defaultApplicationKey: 'text-to-image',
     description: '生成连续纹样、颜色、面料材质与表面图案方案。',
-    icon: 'lucide:swatch-book',
+    icon: platformSemanticIcons.cmf,
     key: 'cmf',
     label: 'CMF生成',
     placeholder:
@@ -210,42 +215,41 @@ export const designModes: readonly DesignModeDefinition[] = [
     primaryTools: [
       {
         appKey: 'text-to-image',
-        icon: 'lucide:image-plus',
+        icon: platformUiIcons.imagePlus,
         key: 'text-to-image',
         label: '文生图',
       },
       {
         appKey: 'inpaint-single',
-        icon: 'lucide:paintbrush',
+        icon: platformSemanticIcons.mask,
         key: 'inpaint-single',
         label: '局部重绘',
       },
       {
         appKey: 'multi-image-edit',
-        icon: 'lucide:images',
+        icon: platformUiIcons.images,
         key: 'multi-image-edit',
         label: '多图融合',
       },
       {
         appKey: 'image-upscale',
-        icon: 'lucide:zoom-in',
+        icon: platformUiIcons.zoomIn,
         key: 'image-upscale',
         label: '图像放大',
       },
       {
         appKey: 'image-understanding',
-        icon: 'lucide:scan-search',
+        icon: platformUiIcons.scanSearch,
         key: 'image-understanding',
         label: '图片理解',
       },
     ],
   },
-  defaultDesignMode,
   {
     applicationKeys: ['report-generator'],
     backgroundImage: '/design-modes/report.webp',
     description: '组合项目资产与说明，生成结构化 Word、PPT 或 Markdown 报告。',
-    icon: 'lucide:file-chart-column',
+    icon: platformSemanticIcons.report,
     key: 'report',
     label: '报告生成',
     placeholder: '选择项目资产并填写报告类型、章节和交付格式……',

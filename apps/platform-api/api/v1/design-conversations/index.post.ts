@@ -18,7 +18,13 @@ export default apiHandler(async (event) => {
   await requireProjectAccess(identity, input.projectId, 'write');
   const sql = useDatabase();
   const [conversation] = await sql<
-    { createdAt: Date; id: string; title: string; updatedAt: Date }[]
+    {
+      createdAt: Date;
+      id: string;
+      publicId: string;
+      title: string;
+      updatedAt: Date;
+    }[]
   >`
     INSERT INTO design_conversations (user_id, project_id, title)
     VALUES (
@@ -26,7 +32,7 @@ export default apiHandler(async (event) => {
       ${input.projectId},
       ${input.title ?? '新设计会话'}
     )
-    RETURNING id, title, created_at AS "createdAt", updated_at AS "updatedAt"
+    RETURNING id, public_id AS "publicId", title, created_at AS "createdAt", updated_at AS "updatedAt"
   `;
   if (!conversation) throw new Error('创建设计会话失败');
   await writeAudit(event, {

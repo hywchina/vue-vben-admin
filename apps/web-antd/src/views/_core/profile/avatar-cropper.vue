@@ -5,6 +5,9 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Modal } from 'ant-design-vue';
 
+import { assetTypeIcons } from '#/modules/platform/asset-types';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
+
 const props = defineProps<{
   filename: string;
   open: boolean;
@@ -188,7 +191,7 @@ watch(zoom, draw);
         <span class="avatar-cropper__corner corner-d"></span>
       </div>
       <div class="avatar-cropper__zoom">
-        <IconifyIcon icon="lucide:image" />
+        <IconifyIcon :icon="assetTypeIcons.image" />
         <input
           v-model.number="zoom"
           aria-label="裁剪缩放"
@@ -197,16 +200,16 @@ watch(zoom, draw);
           step="0.01"
           type="range"
         />
-        <IconifyIcon icon="lucide:zoom-in" />
+        <IconifyIcon :icon="platformUiIcons.zoomIn" />
       </div>
       <footer>
         <button type="button" @click="emit('cancel')">取消</button>
         <button aria-label="重置裁剪" type="button" @click="reset">
-          <IconifyIcon icon="lucide:history" />
+          <IconifyIcon :icon="platformUiIcons.rotateCcw" />
           <span>重置</span>
         </button>
         <button aria-label="向右旋转" type="button" @click="rotate">
-          <IconifyIcon icon="lucide:rotate-cw" />
+          <IconifyIcon :icon="platformUiIcons.rotateCw" />
           <span>旋转</span>
         </button>
         <button class="confirm" type="button" @click="confirm">确定</button>

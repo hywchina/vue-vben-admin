@@ -7,6 +7,7 @@ import { Button, Progress } from 'ant-design-vue';
 
 import StatusPill from '#/components/platform/status-pill.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 
 import AssetThumbnail from './asset-thumbnail.vue';
 
@@ -66,7 +67,9 @@ const active = (item: WorkbenchItem) =>
         </div>
       </template>
       <template v-else-if="section === 'projects'">
-        <span class="wb-folder"><IconifyIcon icon="lucide:folder" /></span>
+        <span class="wb-folder">
+          <IconifyIcon :icon="platformSemanticIcons.projects" />
+        </span>
         <div class="wb-item-body">
           <h3 :title="item.name">
             <button

@@ -37,7 +37,7 @@ export function updateWorkflowApi(
   input: {
     description: string;
     name: string;
-    status: 'disabled' | 'draft' | 'published';
+    status?: 'disabled' | 'draft' | 'published';
   },
 ) {
   return requestClient.put<{ id: string }>(

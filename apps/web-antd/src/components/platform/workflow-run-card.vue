@@ -14,12 +14,18 @@ import { IconifyIcon } from '@vben/icons';
 import { Button, message, Modal, Textarea, Tooltip } from 'ant-design-vue';
 
 import { getAssetDownloadApi, getAssetPreviewApi } from '#/api';
-import { assetTypeLabels } from '#/modules/platform/asset-types';
+import { beginAssetImageDrag } from '#/components/assistant/asset-image-drag';
+import {
+  assetTypeIcons,
+  assetTypeLabels,
+} from '#/modules/platform/asset-types';
 import { cameraViewDescriptors } from '#/modules/platform/camera-angles';
 import {
   designImageResultActions,
   designResultActionApplicationKeys,
 } from '#/modules/platform/design-result-actions';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { copyTextToClipboard } from '#/utils/copy-text';
 
 import ComfyMaskIcon from './comfy-mask-icon.vue';
@@ -475,7 +481,7 @@ onMounted(() => void loadPreviews());
                 </Tooltip>
                 <template v-if="!previewUrls[input.assetId]">
                   <span>
-                    <IconifyIcon icon="lucide:file-input" />
+                    <IconifyIcon :icon="assetTypeIcons[input.kind]" />
                     {{ assetTypeLabels[input.kind] }}
                   </span>
                   <small>{{ inputFieldLabel(input.position) }}</small>
@@ -502,7 +508,7 @@ onMounted(() => void loadPreviews());
                     :src="previewUrls[input.annotationAssetId]"
                   />
                   <span class="input-image-label">分区标记图</span>
-                  <IconifyIcon icon="lucide:maximize-2" />
+                  <IconifyIcon :icon="platformUiIcons.maximize2" />
                 </button>
               </article>
             </template>
@@ -540,7 +546,7 @@ onMounted(() => void loadPreviews());
         <div class="round-input-actions" data-testid="round-input-actions">
           <Tooltip v-if="roundInputText" title="复制本轮输入">
             <button aria-label="复制本轮输入" type="button" @click="copyInput">
-              <IconifyIcon icon="lucide:copy" />
+              <IconifyIcon :icon="platformUiIcons.copy" />
             </button>
           </Tooltip>
           <Tooltip v-if="promptEntry" title="修改并重新发送本轮输入">
@@ -549,7 +555,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="startEditingPrompt"
             >
-              <IconifyIcon icon="lucide:pencil" />
+              <IconifyIcon :icon="platformUiIcons.pencil" />
             </button>
           </Tooltip>
           <Tooltip title="查看本轮参数">
@@ -558,7 +564,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="inputDetailsOpen = true"
             >
-              <IconifyIcon icon="lucide:ellipsis" />
+              <IconifyIcon :icon="platformUiIcons.ellipsis" />
             </button>
           </Tooltip>
         </div>
@@ -578,7 +584,7 @@ onMounted(() => void loadPreviews());
                   :alt="input.name"
                   :src="previewUrls[input.assetId]"
                 />
-                <IconifyIcon v-else icon="lucide:file-input" />
+                <IconifyIcon v-else :icon="assetTypeIcons[input.kind]" />
                 <span>
                   {{
                     input.annotationAssetId
@@ -597,7 +603,7 @@ onMounted(() => void loadPreviews());
                   :alt="input.annotationName || '分区标记图'"
                   :src="previewUrls[input.annotationAssetId]"
                 />
-                <IconifyIcon v-else icon="lucide:file-input" />
+                <IconifyIcon v-else :icon="assetTypeIcons[input.kind]" />
                 <span>分区标记图</span>
                 <strong>
                   {{ input.annotationName || input.annotationAssetId }}
@@ -631,7 +637,7 @@ onMounted(() => void loadPreviews());
       </div>
 
       <div v-else-if="job.status === 'failed'" class="round-error">
-        <IconifyIcon icon="lucide:circle-alert" />
+        <IconifyIcon :icon="platformUiIcons.circleAlert" />
         <div>
           <strong>本轮执行失败</strong>
           <p>{{ job.error?.message ?? job.stage }}</p>
@@ -644,13 +650,13 @@ onMounted(() => void loadPreviews());
             type="button"
             @click="emit('rerun', job)"
           >
-            <IconifyIcon icon="lucide:refresh-cw" />
+            <IconifyIcon :icon="platformUiIcons.refreshCw" />
           </button>
         </Tooltip>
       </div>
 
       <div v-else-if="job.status === 'cancelled'" class="round-cancelled">
-        <IconifyIcon icon="lucide:circle-stop" />
+        <IconifyIcon :icon="platformUiIcons.circleStop" />
         <div>
           <strong>本轮已取消</strong>
           <p>{{ job.stage || '用户已停止本轮生成' }}</p>
@@ -662,7 +668,7 @@ onMounted(() => void loadPreviews());
             type="button"
             @click="emit('rerun', job)"
           >
-            <IconifyIcon icon="lucide:refresh-cw" />
+            <IconifyIcon :icon="platformUiIcons.refreshCw" />
           </button>
         </Tooltip>
       </div>
@@ -689,7 +695,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="comparisonMode = true"
             >
-              <IconifyIcon icon="lucide:columns-2" />
+              <IconifyIcon :icon="platformUiIcons.columns2" />
               对比
             </button>
             <button
@@ -697,7 +703,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="comparisonMode = false"
             >
-              <IconifyIcon icon="lucide:image" />
+              <IconifyIcon :icon="assetTypeIcons.image" />
               结果
             </button>
           </div>
@@ -759,9 +765,18 @@ onMounted(() => void loadPreviews());
             :aria-label="`全屏查看${output.name || `结果 ${index + 1}`}`"
             :class="{ active: output.assetId === activeOutput.assetId }"
             type="button"
+            draggable="true"
+            title="可拖拽到设计输入区或 AI 助手"
+            @dragstart="
+              beginAssetImageDrag($event, output.assetId, output.name)
+            "
             @click="openOutputImage(output)"
           >
-            <img :alt="output.name" :src="previewUrls[output.assetId]" />
+            <img
+              :alt="output.name"
+              :src="previewUrls[output.assetId]"
+              draggable="false"
+            />
             <span
               v-if="index === 2 && imageOutputs.length > 3"
               class="round-output-gallery__more"
@@ -788,11 +803,21 @@ onMounted(() => void loadPreviews());
             :aria-label="`全屏查看${activeOutput.name}`"
             class="round-output-image-open"
             type="button"
+            :draggable="activeOutput.kind === 'image'"
+            title="可拖拽到设计输入区或 AI 助手"
+            @dragstart="
+              beginAssetImageDrag(
+                $event,
+                activeOutput.assetId,
+                activeOutput.name,
+              )
+            "
             @click="openOutputImage(activeOutput)"
           >
             <img
               :alt="activeOutput.name"
               :src="previewUrls[activeOutput.assetId]"
+              draggable="false"
             />
           </button>
           <PlatformMarkdown
@@ -800,11 +825,7 @@ onMounted(() => void loadPreviews());
             :content="textContents[activeOutput.assetId]!"
           />
           <div v-else class="round-output-icon">
-            <IconifyIcon
-              :icon="
-                activeOutput.kind === 'model3d' ? 'lucide:box' : 'lucide:file'
-              "
-            />
+            <IconifyIcon :icon="assetTypeIcons[activeOutput.kind]" />
             <span>{{ assetTypeLabels[activeOutput.kind] }}</span>
           </div>
           <button
@@ -864,14 +885,7 @@ onMounted(() => void loadPreviews());
                     @click="triggerResultAction(action.key)"
                   >
                     <ComfyMaskIcon v-if="action.key === 'mask'" :size="16" />
-                    <IconifyIcon
-                      v-else
-                      :icon="
-                        action.key === 'save' && activeOutput.saved
-                          ? 'lucide:check'
-                          : action.icon
-                      "
-                    />
+                    <IconifyIcon v-else :icon="action.icon" />
                     <span v-if="!conversationLayout">{{ action.label }}</span>
                   </button>
                 </span>
@@ -911,7 +925,7 @@ onMounted(() => void loadPreviews());
                   type="button"
                   @click="copyOutput(activeOutput)"
                 >
-                  <IconifyIcon icon="lucide:copy" />
+                  <IconifyIcon :icon="platformUiIcons.copy" />
                 </button>
               </Tooltip>
               <Tooltip title="下载或查看结果">
@@ -921,7 +935,7 @@ onMounted(() => void loadPreviews());
                   type="button"
                   @click="emit('download', activeOutput)"
                 >
-                  <IconifyIcon icon="lucide:download" />
+                  <IconifyIcon :icon="platformUiIcons.download" />
                 </button>
               </Tooltip>
               <Tooltip :title="activeOutput.saved ? '已加入资产' : '加入资产'">
@@ -932,11 +946,7 @@ onMounted(() => void loadPreviews());
                   type="button"
                   @click="requestSaveOutput(activeOutput)"
                 >
-                  <IconifyIcon
-                    :icon="
-                      activeOutput.saved ? 'lucide:check' : 'lucide:folder-plus'
-                    "
-                  />
+                  <IconifyIcon :icon="platformSemanticIcons.assets" />
                 </button>
               </Tooltip>
               <Tooltip :title="flowLabel ?? '流转到工作流'">
@@ -946,7 +956,7 @@ onMounted(() => void loadPreviews());
                   type="button"
                   @click="emit('flow', activeOutput)"
                 >
-                  <IconifyIcon icon="lucide:send" />
+                  <IconifyIcon :icon="platformUiIcons.arrowRight" />
                 </button>
               </Tooltip>
               <Tooltip title="复用本轮再运行">
@@ -956,7 +966,7 @@ onMounted(() => void loadPreviews());
                   type="button"
                   @click="emit('rerun', job)"
                 >
-                  <IconifyIcon icon="lucide:refresh-cw" />
+                  <IconifyIcon :icon="platformUiIcons.refreshCw" />
                 </button>
               </Tooltip>
             </div>
@@ -977,7 +987,7 @@ onMounted(() => void loadPreviews());
       </div>
 
       <div v-else class="round-empty-output">
-        <IconifyIcon icon="lucide:ban" />
+        <IconifyIcon :icon="platformUiIcons.ban" />
         <span>{{ job.stage }}</span>
       </div>
     </section>
@@ -1037,14 +1047,7 @@ onMounted(() => void loadPreviews());
                 @click="triggerResultAction(action.key)"
               >
                 <ComfyMaskIcon v-if="action.key === 'mask'" :size="16" />
-                <IconifyIcon
-                  v-else
-                  :icon="
-                    action.key === 'save' && activeOutput.saved
-                      ? 'lucide:check'
-                      : action.icon
-                  "
-                />
+                <IconifyIcon v-else :icon="action.icon" />
                 <span v-if="!conversationLayout">{{ action.label }}</span>
               </button>
             </span>
@@ -1076,7 +1079,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="copyOutput(activeOutput)"
             >
-              <IconifyIcon icon="lucide:copy" />
+              <IconifyIcon :icon="platformUiIcons.copy" />
             </button>
           </Tooltip>
           <Tooltip title="下载或查看结果">
@@ -1086,7 +1089,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="emit('download', activeOutput)"
             >
-              <IconifyIcon icon="lucide:download" />
+              <IconifyIcon :icon="platformUiIcons.download" />
             </button>
           </Tooltip>
           <Tooltip :title="activeOutput.saved ? '已加入资产' : '加入资产'">
@@ -1097,11 +1100,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="requestSaveOutput(activeOutput)"
             >
-              <IconifyIcon
-                :icon="
-                  activeOutput.saved ? 'lucide:check' : 'lucide:folder-plus'
-                "
-              />
+              <IconifyIcon :icon="platformSemanticIcons.assets" />
             </button>
           </Tooltip>
           <Tooltip :title="flowLabel ?? '流转到工作流'">
@@ -1111,7 +1110,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="emit('flow', activeOutput)"
             >
-              <IconifyIcon icon="lucide:send" />
+              <IconifyIcon :icon="platformUiIcons.arrowRight" />
             </button>
           </Tooltip>
           <Tooltip title="复用本轮再运行">
@@ -1121,7 +1120,7 @@ onMounted(() => void loadPreviews());
               type="button"
               @click="emit('rerun', job)"
             >
-              <IconifyIcon icon="lucide:refresh-cw" />
+              <IconifyIcon :icon="platformUiIcons.refreshCw" />
             </button>
           </Tooltip>
         </div>

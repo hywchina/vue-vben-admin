@@ -196,6 +196,7 @@ export async function listAssetViews(
         SELECT 1 FROM (
           SELECT a.name AS value UNION ALL SELECT a.public_id
           UNION ALL SELECT u.real_name UNION ALL SELECT u.public_id
+          UNION ALL SELECT legacy_id FROM business_id_aliases WHERE entity_type = 'USR' AND entity_id = u.id
           UNION ALL SELECT source_job.public_id
           UNION ALL SELECT search_tag.tag FROM asset_tags search_tag WHERE search_tag.asset_id = a.id
         ) search_values WHERE CASE WHEN $8 = 'exact'

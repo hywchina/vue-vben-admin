@@ -7,6 +7,8 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Button, InputNumber } from 'ant-design-vue';
 
+import { platformUiIcons } from '#/modules/platform/ui-icons';
+
 import {
   cameraPrompt,
   closestCameraPreset,
@@ -247,7 +249,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
         <span>CAMERA ORBIT</span>
         <h3>镜头角度控制</h3>
       </div>
-      <IconifyIcon icon="lucide:orbit" />
+      <IconifyIcon :icon="platformUiIcons.orbit" />
     </header>
 
     <details
@@ -323,7 +325,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
           </g>
         </svg>
         <div class="camera-help">
-          <IconifyIcon icon="lucide:move-3d" />
+          <IconifyIcon :icon="platformUiIcons.move3d" />
           拖动画布自由环绕，滚轮调节距离
         </div>
       </div>
@@ -383,7 +385,7 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
           title="恢复默认镜头"
           @click="resetGroup(group)"
         >
-          <IconifyIcon icon="lucide:rotate-ccw" />
+          <IconifyIcon :icon="platformUiIcons.rotateCcw" />
         </Button>
       </div>
 

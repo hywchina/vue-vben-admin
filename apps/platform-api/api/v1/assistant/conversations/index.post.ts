@@ -13,12 +13,19 @@ export default apiHandler(async (event) => {
   await parseBody(event, schema);
   const sql = useDatabase();
   const [conversation] = await sql<
-    { createdAt: Date; id: string; projectId: null | string; title: string }[]
+    {
+      createdAt: Date;
+      id: string;
+      projectId: null | string;
+      publicId: string;
+      title: string;
+    }[]
   >`
     INSERT INTO ai_conversations (user_id, project_id)
     VALUES (${identity.id}, ${null})
     RETURNING
       id,
+      public_id AS "publicId",
       project_id AS "projectId",
       title,
       created_at AS "createdAt"

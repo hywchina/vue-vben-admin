@@ -4,7 +4,6 @@ import { requestClient } from '#/api/request';
 
 export interface CreatePlatformUserInput {
   department: string;
-  email: string;
   password: string;
   realName: string;
   role: 'admin' | 'user';

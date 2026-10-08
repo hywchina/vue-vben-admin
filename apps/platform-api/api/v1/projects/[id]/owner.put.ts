@@ -7,16 +7,14 @@ import {
   requireIdentity,
   requirePermission,
 } from '~/utils/identity';
+import { userPublicIdPattern } from '~/utils/identity/business-ids';
 import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
 
 const schema = z.object({
-  userPublicId: z
-    .string()
-    .trim()
-    .regex(/^USR-\d{6}$/),
+  userPublicId: z.string().trim().toUpperCase().regex(userPublicIdPattern),
 });
 
 export default apiHandler(async (event) => {
@@ -61,7 +59,7 @@ export default apiHandler(async (event) => {
       FROM project_members member
       JOIN users user_account ON user_account.id = member.user_id
       WHERE member.project_id = ${projectId}
-        AND user_account.public_id = ${input.userPublicId}
+        AND (user_account.public_id = ${input.userPublicId} OR user_account.id IN (SELECT entity_id FROM business_id_aliases WHERE entity_type = 'USR' AND legacy_id = ${input.userPublicId}))
       FOR UPDATE OF member
     `;
     if (!target) {

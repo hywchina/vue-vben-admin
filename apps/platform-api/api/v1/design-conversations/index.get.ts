@@ -20,6 +20,7 @@ export default apiHandler(async (event) => {
       lastAppKey: null | string;
       legacy: boolean;
       previewAssetId: null | string;
+      publicId: string;
       roundCount: number;
       title: string;
       updatedAt: Date;
@@ -27,6 +28,7 @@ export default apiHandler(async (event) => {
   >`
     SELECT
       conversation.id,
+      conversation.public_id AS "publicId",
       conversation.title,
       conversation.created_at AS "createdAt",
       conversation.updated_at AS "updatedAt",

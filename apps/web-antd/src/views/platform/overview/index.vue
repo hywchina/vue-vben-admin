@@ -27,6 +27,7 @@ import {
 } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 import { copyTextToClipboard } from '#/utils/copy-text';
 
@@ -95,7 +96,7 @@ const filteredProjects = computed(() => {
   return platformStore.projects.filter(
     (project) =>
       !query ||
-      `${project.name}${project.code}${project.description}`
+      `${project.name}${project.publicId ?? project.code}${project.description}${(project.legacyCodes ?? []).join(' ')}`
         .toLowerCase()
         .includes(query),
   );
@@ -445,7 +446,7 @@ function confirmDeleteProject(project: PlatformProject) {
           type="primary"
           @click="createOpen = true"
         >
-          <IconifyIcon icon="lucide:plus" />
+          <IconifyIcon :icon="platformUiIcons.plus" />
           新建项目
         </Button>
       </template>
@@ -549,7 +550,7 @@ function confirmDeleteProject(project: PlatformProject) {
             </span>
             <IconifyIcon
               class="workbench-tools__arrow"
-              icon="lucide:arrow-right"
+              :icon="platformUiIcons.arrowRight"
             />
           </button>
         </div>
@@ -580,7 +581,9 @@ function confirmDeleteProject(project: PlatformProject) {
               class="project-search"
               placeholder="搜索项目名称或编号"
             >
-              <template #prefix><IconifyIcon icon="lucide:search" /></template>
+              <template #prefix>
+                <IconifyIcon :icon="platformUiIcons.search" />
+              </template>
             </Input>
             <div class="project-view-switch" aria-label="项目视图">
               <button
@@ -589,7 +592,7 @@ function confirmDeleteProject(project: PlatformProject) {
                 type="button"
                 @click="viewMode = 'grid'"
               >
-                <IconifyIcon icon="lucide:grid-2x2" />
+                <IconifyIcon :icon="platformUiIcons.grid2x2" />
               </button>
               <button
                 aria-label="列表视图"
@@ -597,7 +600,7 @@ function confirmDeleteProject(project: PlatformProject) {
                 type="button"
                 @click="viewMode = 'list'"
               >
-                <IconifyIcon icon="lucide:list" />
+                <IconifyIcon :icon="platformUiIcons.list" />
               </button>
             </div>
           </div>
@@ -621,19 +624,21 @@ function confirmDeleteProject(project: PlatformProject) {
           >
             <div class="project-dashboard__hero">
               <span class="project-dashboard__folder" aria-hidden="true">
-                <IconifyIcon icon="lucide:folder" />
+                <IconifyIcon :icon="platformSemanticIcons.projects" />
               </span>
               <div class="project-dashboard__copy">
                 <h2>{{ project.name }}</h2>
                 <div class="project-dashboard__code">
-                  <code>{{ project.code }}</code>
+                  <code>{{ project.publicId ?? project.code }}</code>
                   <Tooltip title="复制项目编号">
                     <button
-                      :aria-label="`复制项目编号 ${project.code}`"
+                      :aria-label="`复制项目编号 ${project.publicId ?? project.code}`"
                       type="button"
-                      @click.stop="copyProjectCode(project.code)"
+                      @click.stop="
+                        copyProjectCode(project.publicId ?? project.code)
+                      "
                     >
-                      <IconifyIcon icon="lucide:copy" />
+                      <IconifyIcon :icon="platformUiIcons.copy" />
                     </button>
                   </Tooltip>
                 </div>
@@ -647,7 +652,7 @@ function confirmDeleteProject(project: PlatformProject) {
                     type="button"
                     @click.stop="togglePinned(project)"
                   >
-                    <IconifyIcon icon="lucide:pin" />
+                    <IconifyIcon :icon="platformUiIcons.pin" />
                   </button>
                 </Tooltip>
                 <Tooltip title="修改项目名称与说明">
@@ -656,7 +661,7 @@ function confirmDeleteProject(project: PlatformProject) {
                     type="button"
                     @click.stop="openEdit(project)"
                   >
-                    <IconifyIcon icon="lucide:pencil" />
+                    <IconifyIcon :icon="platformUiIcons.pencil" />
                   </button>
                 </Tooltip>
                 <Tooltip v-if="project.canDelete" title="删除项目">
@@ -666,7 +671,7 @@ function confirmDeleteProject(project: PlatformProject) {
                     type="button"
                     @click.stop="confirmDeleteProject(project)"
                   >
-                    <IconifyIcon icon="lucide:trash-2" />
+                    <IconifyIcon :icon="platformUiIcons.trash2" />
                   </button>
                 </Tooltip>
               </div>
@@ -706,7 +711,7 @@ function confirmDeleteProject(project: PlatformProject) {
                     <section class="member-preview-popover" @click.stop>
                       <header>
                         <strong>
-                          <IconifyIcon icon="lucide:users" />
+                          <IconifyIcon :icon="platformSemanticIcons.access" />
                           {{ project.members }} 名项目成员
                         </strong>
                       </header>
@@ -716,7 +721,7 @@ function confirmDeleteProject(project: PlatformProject) {
                         placeholder="筛选成员"
                       >
                         <template #prefix>
-                          <IconifyIcon icon="lucide:search" />
+                          <IconifyIcon :icon="platformUiIcons.search" />
                         </template>
                       </Input>
                       <div
@@ -753,7 +758,7 @@ function confirmDeleteProject(project: PlatformProject) {
                 </Popover>
               </div>
               <small class="project-dashboard__updated">
-                <IconifyIcon icon="lucide:clock-3" />
+                <IconifyIcon :icon="platformUiIcons.clock3" />
                 更新于 {{ formatProjectDate(project.updatedAt) }}
               </small>
             </div>
@@ -799,7 +804,7 @@ function confirmDeleteProject(project: PlatformProject) {
                 type="primary"
                 @click.stop="enterProject(project, '/design')"
               >
-                <IconifyIcon icon="lucide:message-square" />
+                <IconifyIcon :icon="platformSemanticIcons.design" />
                 开始设计
               </Button>
             </footer>
@@ -807,7 +812,7 @@ function confirmDeleteProject(project: PlatformProject) {
         </div>
 
         <section v-else class="project-empty">
-          <IconifyIcon icon="lucide:folder-search-2" />
+          <IconifyIcon :icon="platformUiIcons.folderSearch2" />
           <h2>{{ keyword ? '没有匹配的项目' : '还没有项目' }}</h2>
           <p>
             {{
@@ -817,7 +822,7 @@ function confirmDeleteProject(project: PlatformProject) {
             }}
           </p>
           <Button v-if="!keyword" type="primary" @click="createOpen = true">
-            <IconifyIcon icon="lucide:plus" />
+            <IconifyIcon :icon="platformUiIcons.plus" />
             创建第一个项目
           </Button>
         </section>
@@ -830,7 +835,7 @@ function confirmDeleteProject(project: PlatformProject) {
               type="button"
               @click="currentPage -= 1"
             >
-              <IconifyIcon icon="lucide:chevron-left" />
+              <IconifyIcon :icon="platformUiIcons.chevronLeft" />
             </button>
             <button class="active" type="button">{{ currentPage }}</button>
             <button
@@ -839,7 +844,7 @@ function confirmDeleteProject(project: PlatformProject) {
               type="button"
               @click="currentPage += 1"
             >
-              <IconifyIcon icon="lucide:chevron-right" />
+              <IconifyIcon :icon="platformUiIcons.chevronRight" />
             </button>
             <span>共 {{ totalPages }} 页</span>
           </div>
@@ -928,7 +933,7 @@ function confirmDeleteProject(project: PlatformProject) {
         <Input
           v-model:value="inviteUserId"
           :maxlength="10"
-          placeholder="输入用户 ID，例如 USR-000002"
+          placeholder="输入用户 ID，例如 USR-00000002"
           @press-enter="inviteMember"
         />
         <Select
@@ -947,7 +952,7 @@ function confirmDeleteProject(project: PlatformProject) {
       </p>
       <div class="member-list-toolbar">
         <strong>
-          <IconifyIcon icon="lucide:users" />
+          <IconifyIcon :icon="platformSemanticIcons.access" />
           {{ projectMembers.length }} 名项目成员
         </strong>
         <Input
@@ -955,7 +960,9 @@ function confirmDeleteProject(project: PlatformProject) {
           allow-clear
           placeholder="按姓名、用户名或用户 ID 筛选"
         >
-          <template #prefix><IconifyIcon icon="lucide:search" /></template>
+          <template #prefix>
+            <IconifyIcon :icon="platformUiIcons.search" />
+          </template>
         </Input>
       </div>
       <div v-if="membersLoading" class="member-loading">正在读取项目成员…</div>

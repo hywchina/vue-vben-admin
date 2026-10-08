@@ -8,6 +8,7 @@ import { Button, Input, message, Modal, Textarea } from 'ant-design-vue';
 
 import PageHeading from '#/components/platform/page-heading.vue';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
@@ -65,7 +66,7 @@ async function createProject() {
     >
       <template #extra>
         <Button type="primary" @click="createOpen = true">
-          <IconifyIcon class="mr-1" icon="lucide:plus" />
+          <IconifyIcon class="mr-1" :icon="platformUiIcons.plus" />
           新建项目
         </Button>
       </template>
@@ -86,7 +87,9 @@ async function createProject() {
             class="project-search"
             placeholder="搜索项目名称或编号"
           >
-            <template #prefix><IconifyIcon icon="lucide:search" /></template>
+            <template #prefix>
+              <IconifyIcon :icon="platformUiIcons.search" />
+            </template>
           </Input>
         </div>
 
@@ -119,7 +122,7 @@ async function createProject() {
             <p>{{ project.description }}</p>
             <div class="project-card__stats">
               <span>
-                <IconifyIcon icon="lucide:users" />
+                <IconifyIcon :icon="platformSemanticIcons.access" />
                 {{ project.members }} 位成员
               </span>
               <span>
@@ -135,7 +138,7 @@ async function createProject() {
                     ? '返回工作台'
                     : '进入项目'
                 }}
-                <IconifyIcon icon="lucide:arrow-right" />
+                <IconifyIcon :icon="platformUiIcons.arrowRight" />
               </Button>
             </div>
           </article>

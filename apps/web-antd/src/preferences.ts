@@ -8,12 +8,13 @@ import { defineOverridesPreferences } from '@vben/preferences';
 export const overridesPreferences = defineOverridesPreferences({
   app: {
     accessMode: 'frontend',
-    authPageLayout: 'panel-right',
+    authPageLayout: 'panel-center',
     contentCompact: 'wide',
     defaultAvatar: '/rail-logo.svg?v=crrc',
     defaultHomePath: '/home',
     enableCheckUpdates: false,
     enablePreferences: false,
+    enableRefreshToken: true,
     layout: 'header-sidebar-nav',
     locale: 'zh-CN',
     name: '客运装备内装模块化分区快速设计平台',

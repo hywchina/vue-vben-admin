@@ -22,12 +22,13 @@ export interface CreateLoraTrainingInput {
   name: string;
   parameters: {
     baseModel: string;
-    epochs: number;
+    disableSampling: boolean;
     learningRate: number;
     previewPrompt: string;
     rank: number;
     repeats: number;
     resolution: 512 | 768 | 1024;
+    steps: number;
     triggerWord: string;
   };
   projectId: string;

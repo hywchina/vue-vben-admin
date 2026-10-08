@@ -4,6 +4,7 @@ import { ApiError } from '~/utils/response';
 export interface DesignConversationRecord {
   archivedAt: Date | null;
   id: string;
+  publicId: string;
   projectId: string;
   title: string;
   titleManuallyEdited: boolean;
@@ -20,6 +21,7 @@ export async function requireDesignConversation(input: {
   const [conversation] = await sql<DesignConversationRecord[]>`
     SELECT
       id,
+      public_id AS "publicId",
       user_id AS "userId",
       project_id AS "projectId",
       title,

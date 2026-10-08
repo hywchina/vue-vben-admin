@@ -53,6 +53,7 @@ export default apiHandler(async (event) => {
         kind: 'normal';
         name: string;
         parentId: null | string;
+        publicId: string;
         updatedAt: Date;
       };
   try {
@@ -60,7 +61,7 @@ export default apiHandler(async (event) => {
       INSERT INTO asset_folders (project_id, parent_id, name, created_by, generation_category)
       VALUES (${input.projectId}, ${input.parentId ?? null}, ${input.name}, ${identity.id}, ${input.generationCategory ?? null})
       RETURNING
-        id, parent_id AS "parentId", name, generation_category AS "generationCategory",
+        id, public_id AS "publicId", parent_id AS "parentId", name, generation_category AS "generationCategory",
         kind,
         created_at AS "createdAt", updated_at AS "updatedAt"
     `;

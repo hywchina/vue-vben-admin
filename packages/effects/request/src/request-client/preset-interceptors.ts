@@ -70,10 +70,16 @@ export const authenticateResponseInterceptor = ({
         await doReAuthenticate();
         throw error;
       }
+      // 所有等待续期的请求也只能重试一次。
+      config.__isRetryRequest = true;
       // 如果正在刷新 token，则将请求加入队列，等待刷新完成
       if (client.isRefreshing) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
           client.refreshTokenQueue.push((newToken: string) => {
+            if (!newToken) {
+              reject(error);
+              return;
+            }
             config.headers.Authorization = formatToken(newToken);
             resolve(client.request(config.url, { ...config }));
           });
@@ -82,29 +88,30 @@ export const authenticateResponseInterceptor = ({
 
       // 标记开始刷新 token
       client.isRefreshing = true;
-      // 标记当前请求为重试请求，避免无限循环
-      config.__isRetryRequest = true;
-
+      let newToken: string;
       try {
-        const newToken = await doRefreshToken();
-
-        // 处理队列中的请求
-        client.refreshTokenQueue.forEach((callback) => callback(newToken));
-        // 清空队列
-        client.refreshTokenQueue = [];
-
-        return client.request(error.config.url, { ...error.config });
+        newToken = await doRefreshToken();
       } catch (refreshError) {
         // 如果刷新 token 失败，处理错误（如强制登出或跳转登录页面）
         client.refreshTokenQueue.forEach((callback) => callback(''));
         client.refreshTokenQueue = [];
-        console.error('Refresh token failed, please login again.');
-        await doReAuthenticate();
+        // 网络超时或服务暂时不可用时保留登录状态，下一次请求可再续期。
+        if (
+          axios.isAxiosError(refreshError) &&
+          refreshError.response?.status === 401
+        ) {
+          await doReAuthenticate();
+        }
 
         throw refreshError;
       } finally {
         client.isRefreshing = false;
       }
+      client.refreshTokenQueue.forEach((callback) => callback(newToken));
+      client.refreshTokenQueue = [];
+      config.headers.Authorization = formatToken(newToken);
+      // 重试的业务错误不属于续期失败，不能误触发退出。
+      return client.request(config.url, { ...config });
     },
   };
 };

@@ -5,7 +5,7 @@ import type { ValueType, VbenButtonGroupProps } from './button';
 
 import { computed, ref, watch } from 'vue';
 
-import { Circle, CircleCheckBig, LoaderCircle } from '@vben-core/icons';
+import { Circle, CircleCheck, LoaderCircle } from '@vben-core/icons';
 import { cn, isFunction } from '@vben-core/shared/utils';
 
 import { objectOmit } from '@vueuse/core';
@@ -134,7 +134,7 @@ async function onBtnClick(value: ValueType) {
             class="animate-spin"
             v-if="loadingValues.includes(btn.value)"
           />
-          <CircleCheckBig v-else-if="innerValue.includes(btn.value)" />
+          <CircleCheck v-else-if="innerValue.includes(btn.value)" />
           <Circle v-else />
         </slot>
       </div>

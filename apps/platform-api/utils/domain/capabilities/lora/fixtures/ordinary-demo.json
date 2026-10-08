@@ -1,0 +1,110 @@
+{
+  "job": "extension",
+  "config": {
+    "name": "flux2_klein_9b_interior_lora",
+    "process": [
+      {
+        "type": "diffusion_trainer",
+        "training_folder": "output",
+        "sqlite_db_path": "./aitk_db.db",
+        "device": "cuda",
+        "trigger_word": "interiorstyle",
+        "performance_log_every": 50,
+        "network": {
+          "type": "lora",
+          "linear": 16,
+          "linear_alpha": 16,
+          "network_kwargs": {
+            "ignore_if_contains": []
+          }
+        },
+        "save": {
+          "dtype": "bf16",
+          "save_every": 250,
+          "max_step_saves_to_keep": 4,
+          "save_format": "safetensors",
+          "push_to_hub": false
+        },
+        "datasets": [
+          {
+            "folder_path": "<server-managed-dataset>",
+            "caption_ext": "txt",
+            "default_caption": "",
+            "caption_dropout_rate": 0,
+            "shuffle_tokens": false,
+            "cache_latents_to_disk": true,
+            "cache_text_embeddings": true,
+            "resolution": [512],
+            "num_repeats": 1,
+            "flip_x": false,
+            "flip_y": false
+          }
+        ],
+        "train": {
+          "batch_size": 1,
+          "steps": 1500,
+          "gradient_accumulation": 1,
+          "train_unet": true,
+          "train_text_encoder": false,
+          "gradient_checkpointing": true,
+          "noise_scheduler": "flowmatch",
+          "timestep_type": "weighted",
+          "content_or_style": "style",
+          "optimizer": "adamw8bit",
+          "optimizer_params": {
+            "weight_decay": 0.0001
+          },
+          "lr": 0.0001,
+          "dtype": "bf16",
+          "unload_text_encoder": true,
+          "cache_text_embeddings": true,
+          "disable_sampling": true,
+          "skip_first_sample": true,
+          "ema_config": {
+            "use_ema": false,
+            "ema_decay": 0.99
+          }
+        },
+        "model": {
+          "arch": "flux2_klein_9b",
+          "name_or_path": "models/unet/flux-2-klein-9b.safetensors",
+          "vae_path": "models/vae/flux2-vae.safetensors",
+          "quantize": true,
+          "qtype": "qfloat8",
+          "quantize_te": true,
+          "qtype_te": "qfloat8",
+          "low_vram": true,
+          "layer_offloading": false,
+          "compile": false,
+          "model_kwargs": {
+            "match_target_res": false
+          }
+        },
+        "sample": {
+          "sampler": "flowmatch",
+          "sample_every": 250,
+          "width": 512,
+          "height": 512,
+          "samples": [
+            {
+              "prompt": "[trigger], modern style interior design"
+            }
+          ],
+          "neg": "",
+          "seed": 42,
+          "walk_seed": false,
+          "guidance_scale": 1,
+          "sample_steps": 4
+        },
+        "logging": {
+          "log_every": 10,
+          "use_ui_logger": false
+        }
+      }
+    ]
+  },
+  "meta": {
+    "name": "[name]",
+    "version": "1.0"
+  }
+}

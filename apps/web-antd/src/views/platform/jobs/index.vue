@@ -21,6 +21,8 @@ import {
 import { getProjectMembersApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
@@ -248,7 +250,9 @@ async function openConversation(job: PlatformJob) {
               class="job-search"
               placeholder="搜索任务名称、编号或创建人"
             >
-              <template #prefix><IconifyIcon icon="lucide:search" /></template>
+              <template #prefix>
+                <IconifyIcon :icon="platformUiIcons.search" />
+              </template>
             </Input>
             <Select
               v-model:value="ownerFilter"
@@ -274,7 +278,7 @@ async function openConversation(job: PlatformJob) {
         <div v-if="selectedJobIds.length" class="job-batch-bar">
           <strong>已选择 {{ selectedJobIds.length }} 项</strong>
           <Button @click="clearJobSelection">
-            <IconifyIcon icon="lucide:x" />
+            <IconifyIcon :icon="platformUiIcons.close" />
             取消选择
           </Button>
           <Button
@@ -285,7 +289,7 @@ async function openConversation(job: PlatformJob) {
               )
             "
           >
-            <IconifyIcon icon="lucide:trash-2" />
+            <IconifyIcon :icon="platformUiIcons.trash2" />
             批量删除
           </Button>
         </div>
@@ -307,7 +311,10 @@ async function openConversation(job: PlatformJob) {
             <div class="job-row__name">
               <div class="job-row__icon">
                 <IconifyIcon
-                  :icon="applicationMap[job.appKey]?.icon || 'lucide:workflow'"
+                  :icon="
+                    applicationMap[job.appKey]?.icon ||
+                    platformSemanticIcons.workflow
+                  "
                 />
               </div>
               <div>
@@ -366,7 +373,7 @@ async function openConversation(job: PlatformJob) {
                   shape="circle"
                   @click="openConversation(job)"
                 >
-                  <IconifyIcon icon="lucide:message-square-more" />
+                  <IconifyIcon :icon="platformSemanticIcons.design" />
                 </Button>
               </Tooltip>
               <Tooltip
@@ -385,7 +392,7 @@ async function openConversation(job: PlatformJob) {
                   shape="circle"
                   @click="cancelJob(job)"
                 >
-                  <IconifyIcon icon="lucide:square" />
+                  <IconifyIcon :icon="platformUiIcons.square" />
                 </Button>
               </Tooltip>
               <Tooltip v-else title="删除任务">
@@ -395,7 +402,7 @@ async function openConversation(job: PlatformJob) {
                   shape="circle"
                   @click="confirmArchive([job])"
                 >
-                  <IconifyIcon icon="lucide:trash-2" />
+                  <IconifyIcon :icon="platformUiIcons.trash2" />
                 </Button>
               </Tooltip>
             </div>

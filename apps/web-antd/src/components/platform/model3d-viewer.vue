@@ -33,6 +33,9 @@ import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 
+import { assetTypeIcons } from '#/modules/platform/asset-types';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
+
 import { exportModel, modelExportFormats } from './model3d-export';
 
 const props = withDefaults(
@@ -87,12 +90,12 @@ let loadGeneration = 0;
 let destroyed = false;
 
 const panels: { icon: string; key: Panel; label: string }[] = [
-  { icon: 'lucide:image', key: 'scene', label: '场景' },
-  { icon: 'lucide:box', key: 'model', label: '模型' },
-  { icon: 'lucide:camera', key: 'camera', label: '摄影机' },
-  { icon: 'lucide:sun', key: 'light', label: '灯光' },
-  { icon: 'lucide:move-3d', key: 'control', label: '控制' },
-  { icon: 'lucide:download', key: 'export', label: '导出' },
+  { icon: assetTypeIcons.image, key: 'scene', label: '场景' },
+  { icon: assetTypeIcons.model3d, key: 'model', label: '模型' },
+  { icon: platformUiIcons.camera, key: 'camera', label: '摄影机' },
+  { icon: platformUiIcons.sun, key: 'light', label: '灯光' },
+  { icon: platformUiIcons.move3d, key: 'control', label: '控制' },
+  { icon: platformUiIcons.download, key: 'export', label: '导出' },
 ];
 
 const format = computed(() => {
@@ -511,7 +514,9 @@ onBeforeUnmount(() => {
       @click="toggleFullscreen"
     >
       <IconifyIcon
-        :icon="fullscreen ? 'lucide:minimize-2' : 'lucide:maximize-2'"
+        :icon="
+          fullscreen ? platformUiIcons.minimize2 : platformUiIcons.maximize2
+        "
       />
     </button>
 
@@ -570,7 +575,7 @@ onBeforeUnmount(() => {
         <strong>导出模型</strong>
         <small>保留工作流生成的原始 {{ format.toUpperCase() }} 文件。</small>
         <button type="button" @click="downloadOriginal">
-          <IconifyIcon icon="lucide:download" />
+          <IconifyIcon :icon="platformUiIcons.download" />
           下载原始模型（{{ format.toUpperCase() }}）
         </button>
         <div class="model3d-export-formats" aria-label="模型下载格式">
@@ -602,7 +607,7 @@ onBeforeUnmount(() => {
           :download="preparedDownload.filename"
           :href="preparedDownload.url"
         >
-          <IconifyIcon icon="lucide:download" />
+          <IconifyIcon :icon="platformUiIcons.download" />
           下载 {{ preparedDownload.format.toUpperCase() }} 文件（{{
             (preparedDownload.size / 1024 / 1024).toFixed(1)
           }}
@@ -622,7 +627,9 @@ onBeforeUnmount(() => {
       <IconifyIcon
         :class="{ 'is-loading': status === 'loading' }"
         :icon="
-          status === 'loading' ? 'lucide:loader-circle' : 'lucide:package-x'
+          status === 'loading'
+            ? platformUiIcons.loaderCircle
+            : platformUiIcons.packageX
         "
       />
       <strong>

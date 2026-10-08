@@ -9,7 +9,7 @@ import { parseBody } from '~/utils/validation';
 const schema = z.object({
   description: z.string().trim().max(2000).default(''),
   name: z.string().trim().min(1).max(200),
-  status: z.enum(['disabled', 'draft', 'published']),
+  status: z.enum(['disabled', 'draft', 'published']).optional(),
 });
 
 export default apiHandler(async (event) => {
@@ -28,7 +28,7 @@ export default apiHandler(async (event) => {
   await writeAudit(event, {
     action: 'workflow.update',
     actor: identity,
-    details: { status: input.status },
+    details: { fields: Object.keys(input), status: input.status },
     module: 'workflow',
     targetId: workflowId,
     targetType: 'workflow',

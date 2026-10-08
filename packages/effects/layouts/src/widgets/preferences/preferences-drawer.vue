@@ -17,7 +17,7 @@ import type { SegmentedItem } from '@vben-core/shadcn-ui';
 
 import { computed, ref } from 'vue';
 
-import { Copy, Pin, PinOff, RotateCw } from '@vben/icons';
+import { Copy, Pin, PinOff, RotateCcw } from '@vben/icons';
 import { $t, loadLocaleMessages } from '@vben/locales';
 import {
   clearCache,
@@ -343,7 +343,7 @@ function handleCustomPreferencesUpdate(updates: CustomPreferencesRecord) {
               v-if="mergedDiffPreference"
               class="absolute top-0.5 right-0.5 size-2 rounded-sm bg-primary"
             ></span>
-            <RotateCw class="size-4" />
+            <RotateCcw class="size-4" />
           </VbenIconButton>
           <VbenIconButton
             :tooltip="

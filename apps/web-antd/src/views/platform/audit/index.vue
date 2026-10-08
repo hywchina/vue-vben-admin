@@ -7,6 +7,7 @@ import { Input, Pagination, Select, Tag } from 'ant-design-vue';
 
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
 const platformStore = usePlatformStore();
@@ -105,7 +106,9 @@ onMounted(loadEvents);
               class="audit-search"
               placeholder="搜索姓名、用户名、动作、对象或 IP"
             >
-              <template #prefix><IconifyIcon icon="lucide:search" /></template>
+              <template #prefix>
+                <IconifyIcon :icon="platformUiIcons.search" />
+              </template>
             </Input>
             <Select
               v-model:value="moduleFilter"

@@ -25,6 +25,7 @@ import {
   syncPromptRatio,
   validDimension,
 } from '#/modules/platform/image-dimensions';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 import TemplateEditor from './prompt-template-editor.vue';
 
@@ -267,7 +268,7 @@ watch(visibleCategories, () => {
               manageOpen = true;
             "
           >
-            <IconifyIcon icon="lucide:settings-2" />
+            <IconifyIcon :icon="platformUiIcons.settings2" />
             维护
           </button>
         </header>
@@ -282,7 +283,7 @@ watch(visibleCategories, () => {
                 @click="activeCategoryId = category.id"
               >
                 {{ category.name }}
-                <IconifyIcon icon="lucide:chevron-right" />
+                <IconifyIcon :icon="platformUiIcons.chevronRight" />
               </button>
             </nav>
             <section v-if="activeCategory">
@@ -347,7 +348,7 @@ watch(visibleCategories, () => {
             @click="selected = selected.filter((id) => id !== item.id)"
           >
             {{ item.label }}
-            <IconifyIcon icon="lucide:x" />
+            <IconifyIcon :icon="platformUiIcons.close" />
           </button>
         </div>
         <section
@@ -391,7 +392,7 @@ watch(visibleCategories, () => {
       title="提示词模板"
       type="button"
     >
-      <IconifyIcon icon="lucide:notebook-tabs" />
+      <IconifyIcon :icon="platformUiIcons.notebookTabs" />
       提示词模板
     </button>
   </Popover>
@@ -414,8 +415,10 @@ watch(visibleCategories, () => {
   justify-content: center;
   min-height: 30px;
   padding: 4px 8px;
-  font-size: 15px;
-  font-weight: 600;
+  font-family: inherit;
+  font-size: var(--design-parameter-font-size, 14px);
+  font-weight: 400;
+  line-height: 22px;
   color: var(--rail-theme-text, #17191c);
   cursor: pointer;
   background: transparent;

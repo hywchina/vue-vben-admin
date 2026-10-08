@@ -1,81 +1,19 @@
 import { randomUUID } from 'node:crypto';
 
-import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
-import {
-  calculateTrainingSteps,
-  DEFAULT_LORA_BASE_MODEL,
-} from '~/utils/domain/capabilities/lora/template';
+import { createLoraTrainingSchema } from '~/utils/domain/capabilities/lora/parameters';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
 
-const parametersSchema = z.object({
-  baseModel: z.literal(DEFAULT_LORA_BASE_MODEL),
-  epochs: z.number().int().min(1).max(100),
-  learningRate: z.number().min(0.000001).max(0.01),
-  previewPrompt: z.string().trim().max(1000).default(''),
-  rank: z
-    .number()
-    .int()
-    .refine((value) => [4, 8, 16, 32, 64].includes(value)),
-  repeats: z.number().int().min(1).max(100),
-  resolution: z.union([z.literal(512), z.literal(768), z.literal(1024)]),
-  triggerWord: z
-    .string()
-    .trim()
-    .min(2)
-    .max(64)
-    .regex(
-      /^[A-Za-z][A-Za-z0-9_-]*$/,
-      '触发词只能包含英文、数字、下划线和连字符',
-    ),
-});
-
-const createTrainingSchema = z
-  .object({
-    items: z
-      .array(
-        z.object({
-          assetId: z.string().uuid(),
-          caption: z.string().trim().min(1).max(1000),
-        }),
-      )
-      .min(1)
-      .max(100),
-    name: z.string().trim().min(1).max(200),
-    parameters: parametersSchema,
-    projectId: z.string().uuid(),
-  })
-  .superRefine((input, context) => {
-    if (
-      new Set(input.items.map((item) => item.assetId)).size !==
-      input.items.length
-    ) {
-      context.addIssue({
-        code: 'custom',
-        message: '训练图片不能重复选择',
-        path: ['items'],
-      });
-    }
-    const steps = calculateTrainingSteps(input.items.length, input.parameters);
-    if (steps < 20 || steps > 10_000) {
-      context.addIssue({
-        code: 'custom',
-        message: '图片数 × Repeat × Epoch 必须在 20 到 10000 之间',
-        path: ['parameters', 'epochs'],
-      });
-    }
-  });
-
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:job:write');
-  const input = await parseBody(event, createTrainingSchema);
+  const input = await parseBody(event, createLoraTrainingSchema);
   await requireProjectAccess(identity, input.projectId, 'write');
   const config = getConfig();
   if (!config.loraApiUrl) {
@@ -98,7 +36,7 @@ export default apiHandler(async (event) => {
     FROM assets asset
     JOIN asset_versions version
       ON version.asset_id = asset.id AND version.version = asset.current_version
-    WHERE asset.id IN ${sql(assetIds)}
+    WHERE asset.id = ANY(${assetIds}::uuid[])
       AND asset.project_id = ${input.projectId}
       AND asset.kind = 'image'
       AND asset.status = 'available'
@@ -129,7 +67,7 @@ export default apiHandler(async (event) => {
     ...input.parameters,
     datasetItems: input.items,
     model: input.parameters.baseModel,
-    totalSteps: calculateTrainingSteps(input.items.length, input.parameters),
+    totalSteps: input.parameters.steps,
   };
   const created = await sql.begin(async (transaction) => {
     await transaction`

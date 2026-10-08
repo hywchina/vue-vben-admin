@@ -47,7 +47,7 @@ const breadcrumbs = computed((): IBreadcrumb[] => {
   }
   if (props.showHome) {
     resultBreadcrumb.unshift({
-      icon: 'lucide:house',
+      icon: 'lucide:layout-dashboard',
       isHome: true,
       path: '/',
     });

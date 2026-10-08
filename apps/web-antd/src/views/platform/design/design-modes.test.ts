@@ -39,16 +39,16 @@ function application(
 describe('design mode catalog', () => {
   it('keeps the four customer-facing modes in a stable order', () => {
     expect(designModes.map((mode) => mode.key)).toEqual([
+      'cabin',
       'component',
       'cmf',
-      'cabin',
       'report',
     ]);
     expect(getDesignMode('report').standalonePath).toBe('/report-generation');
     expect(designModes.map((mode) => mode.backgroundImage)).toEqual([
+      '/design-modes/cabin.webp',
       '/design-modes/component.webp',
       '/design-modes/cmf.webp',
-      '/design-modes/cabin.webp',
       '/design-modes/report.webp',
     ]);
   });

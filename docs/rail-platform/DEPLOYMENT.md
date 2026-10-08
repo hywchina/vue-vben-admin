@@ -20,14 +20,14 @@
 | Nitro 平台 API | **本地电脑 Node.js 进程** | `pnpm --filter @rail/platform-api dev`，一键命令会自动启动 | 5320 |
 | PostgreSQL | **Docker 容器** | `compose.yaml` | 5432 |
 | MinIO 对象存储 | **Docker 容器** | `compose.yaml` | 9000、9001 |
-| Mailpit 开发邮箱 | **Docker 容器** | `compose.yaml` | 1025、8025 |
+| Mailpit 历史开发邮件沙箱 | **Docker 容器，仅兼容保留，不被业务调用** | `compose.yaml` | 1025、8025 |
 | 用户、项目、资产、应用、任务、日志、AI 聊天 | **Web/API 内的业务模块** | 随本地 Web/API 运行，数据写入 Docker 数据库/对象存储 | 不单独占用端口 |
-| 企业 SMTP | 不使用 | Mailpit 代替 | — |
+| 企业 SMTP | 不使用 | 已移除邮箱找回密码，不再配置 | — |
 | AI 推理、ComfyUI 工作流、LoRA 训练 | **平台外部进程** | 通过服务端 API 地址接入，可与平台运行在同一 Linux 主机 | 由外部服务决定 |
 
-也就是说，源码方式下 Docker 只负责数据库、文件存储和测试邮箱；前端与平台 API 仍在本地 Node.js 中运行，修改代码后可以热更新。
+也就是说，源码方式下 Docker 负责数据库与文件存储，历史邮件沙箱仅兼容保留；前端与平台 API 仍在本地 Node.js 中运行，修改代码后可以热更新。
 
-为避免 Linux 开发机直接访问 Docker Hub 超时，开发 Compose 中 PostgreSQL 和 Mailpit 使用 DaoCloud 的 Docker Hub 前缀镜像；镜像版本、容器环境、端口和数据卷均保持不变。MinIO 继续使用 Quay 官方镜像。生产 Compose 的镜像来源不受此开发环境调整影响。
+开发 Compose 使用上游镜像名称和明确版本：`postgres:17.6-alpine`、`axllent/mailpit:v1.30.0`，不再使用 DaoCloud 前缀；MinIO 使用 Quay 官方镜像。容器环境、端口和数据卷仍按现有 Compose 保留；镜像拉取受限时通过现有离线交付流程处理。
 
 ### 方式 B：Docker 单机内网部署
 
@@ -43,7 +43,7 @@
 | MinIO 管理控制台 | **Docker 容器 `minio`** | 仅本机 127.0.0.1:9001 |
 | 用户、项目、资产、应用、任务、日志、AI 聊天 | **`web` + `api` 内的业务模块** | 通过 Web 入口使用，不是独立容器 |
 | Mailpit | **正式 Compose 不部署** | — |
-| 企业 SMTP | **公司现有邮件服务器** | 平台 API 通过 `SMTP_*` 连接 |
+| 企业 SMTP | **无需部署或配置** | 已移除邮箱找回密码 |
 | AI 推理、ComfyUI 工作流、LoRA 训练 | **独立外部服务** | 平台 API 通过适配器调用 |
 
 Docker 正式方式只要求目标机器安装 Docker，不要求宿主机安装 Node.js 或 pnpm；Node.js 和前端构建过程都在镜像内完成。
@@ -149,7 +149,7 @@ pnpm install --frozen-lockfile
 
 ### 4.3 可选配置
 
-开发默认值可以直接运行。如需连接自己的 SMTP、修改账号或外部 AI 地址：
+开发默认值可以直接运行。如需修改账号或外部 AI 地址：
 
 macOS/Linux：
 
@@ -423,7 +423,7 @@ Copy-Item deploy/rail-platform/.env.production.example `
 - `JWT_SECRET`：至少 32 字符的随机签名密钥。
 - `S3_SECRET_KEY`：对象存储随机密码。
 - `BOOTSTRAP_ADMIN_PASSWORD`：首个管理员密码，至少 12 字符。
-- 管理员邮箱和企业 `SMTP_*` 参数。
+- 管理员用户名、姓名和强密码；无需邮箱或 `SMTP_*` 参数。
 - `AI_ASSISTANT_API_URL`、`AI_ASSISTANT_API_KEY` 和 `AI_ASSISTANT_MODEL`：生产 API 容器不能使用宿主机 `127.0.0.1:18081`；vLLM 加入同一 Compose 网络后应使用 `http://vllm:8000/v1/chat/completions`。
 - `LORA_API_URL` 和 `LORA_API_TOKEN`：必须从 `api` 与 `platform-worker` 容器网络可达；AI Toolkit 使用宿主机服务时不能填写容器自身的 `127.0.0.1`。`LORA_MODEL_PATH`、`LORA_VAE_PATH` 和数据集根目录是训练服务器视角的路径。
 
@@ -560,6 +560,8 @@ docker compose --env-file deploy/rail-platform/.env.production -f deploy/rail-pl
 严禁对正式数据执行 `down -v` 或手工删除 `rail-production-postgres`、`rail-production-minio` 卷。
 
 ## 6. 更新版本
+
+2026-10-08 本轮版本不是下文历史纯代码重构：包括新增迁移 037（生成资产名称）、038（统一业务编号）、039（DSC/INS 文件名前缀）。升级须先一致备份并在恢复副本预演，暂停旧 Worker 输出写入，顺序迁移后同步部署 Web/API/Worker；不能只更新前端或将迁移 038/039 后的数据库直接交给旧 API。LoRA 参数/分批数据集及账号无邮箱契约也要求 API 与 Worker 同步。恢复策略见 [运维说明](OPERATIONS.md)，业务编号见 [编号规范](BUSINESS_IDS.md)。数据库和对象存储镜像/数据卷无需重建，Mailpit 仅兼容保留。
 
 1. 按第 7 节备份数据库和对象存储。
 2. 获取新代码：`git pull --ff-only`，或用新的完整代码包替换旧代码包。
@@ -702,9 +704,9 @@ Intel/AMD (`amd64`) 构建的镜像不能直接用于 ARM (`arm64`) 机器。App
 
 直接连接对象存储时，可从用户电脑打开 `S3_PUBLIC_ENDPOINT/minio/health/live`。采用第 4.8 节同源桶路径转发时，健康/管理路径不会转发给 MinIO，应运行专项签名上传/下载验收，不要额外公开管理路径。检查实际签名地址、HTTPS、隧道、Host 和 CORS；公开地址不能填写 Docker 主机名 `minio` 或远程访问者不可达的 localhost。
 
-### 忘记密码邮件发送失败
+### 账号密码维护
 
-检查企业 SMTP 地址、端口、TLS、用户和密码。源码开发模式可在 `http://localhost:8025` 查看 Mailpit；正式 Compose 不包含 Mailpit。
+2026-10-08 起不提供忘记密码或邮件重置；旧页面跳回登录，旧重置 API 返回 404。登录后可在个人中心修改密码，管理员可在“用户与权限”重置其他账号密码；仍撤销对应刷新会话。注册与资料无需邮箱。旧 Mailpit 容器仅兼容保留，不是业务依赖，不因升级自动删除容器或卷。
 
 ## 10. 部署验收清单
 
@@ -715,10 +717,10 @@ Intel/AMD (`amd64`) 构建的镜像不能直接用于 ARM (`arm64`) 机器。App
 - [ ] 管理员登录成功，开发默认密码不能使用。
 - [ ] 创建项目、文本资产和图片上传/预览成功。
 - [ ] 普通用户不能访问管理员用户管理功能。
-- [ ] 企业邮箱找回密码成功。
+- [ ] 无邮箱注册/资料保存成功，忘记密码入口消失，旧接口不可调用。
 - [ ] 另一台内网电脑能访问 Web 和对象存储。
 - [ ] PostgreSQL 与 MinIO 备份已生成并复制到其他介质。
-- [ ] 已记录防火墙、域名/IP、SMTP、外部 AI 地址和负责人。
+- [ ] 已记录防火墙、域名/IP、外部 AI 地址和负责人。
 
 通过以上检查后，系统框架才算在该机器部署完成。外部 AI、ComfyUI、LoRA 等服务仍是独立模块，需要按照各自部署文档运行，再把服务地址和密钥配置到平台适配器中。
 

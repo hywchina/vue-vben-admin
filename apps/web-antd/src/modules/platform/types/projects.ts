@@ -2,10 +2,14 @@ export interface PlatformProject {
   activeJobCount: number;
   assetCount: number;
   canDelete: boolean;
+  /** Compatibility alias of publicId. */
   code: string;
+  legacyCodes?: string[];
   createdAt: string;
   description: string;
   id: string;
+  /** Stable business number; optional only for cached legacy responses. */
+  publicId?: string;
   isPinned: boolean;
   isOwner: boolean;
   jobCount: number;

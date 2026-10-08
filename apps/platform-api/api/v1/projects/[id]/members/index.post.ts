@@ -7,6 +7,7 @@ import {
   requireIdentity,
   requirePermission,
 } from '~/utils/identity';
+import { userPublicIdPattern } from '~/utils/identity/business-ids';
 import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -14,10 +15,7 @@ import { parseBody } from '~/utils/validation';
 
 const schema = z.object({
   projectRole: z.enum(['editor', 'viewer']).default('editor'),
-  userPublicId: z
-    .string()
-    .trim()
-    .regex(/^USR-\d{6}$/),
+  userPublicId: z.string().trim().toUpperCase().regex(userPublicIdPattern),
 });
 
 export default apiHandler(async (event) => {
@@ -44,7 +42,7 @@ export default apiHandler(async (event) => {
   const [target] = await sql<{ id: string; name: string; publicId: string }[]>`
     SELECT id, public_id AS "publicId", real_name AS name
     FROM users
-    WHERE public_id = ${input.userPublicId} AND status = 'enabled'
+    WHERE (public_id = ${input.userPublicId} OR id IN (SELECT entity_id FROM business_id_aliases WHERE entity_type = 'USR' AND legacy_id = ${input.userPublicId})) AND status = 'enabled'
   `;
   if (!target) {
     throw new ApiError(404, 'INVITEE_NOT_FOUND', '未找到启用状态的用户 ID');

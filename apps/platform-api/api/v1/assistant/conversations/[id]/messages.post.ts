@@ -102,10 +102,12 @@ export default apiHandler(async (event) => {
     attachments[0]?.filename,
   );
   const userMessage = await sql.begin(async (transaction) => {
-    const [message] = await transaction<{ createdAt: Date; id: string }[]>`
+    const [message] = await transaction<
+      { createdAt: Date; id: string; publicId: string }[]
+    >`
       INSERT INTO ai_messages (conversation_id, role, content)
       VALUES (${conversationId}, 'user', ${content})
-      RETURNING id, created_at AS "createdAt"
+      RETURNING id, public_id AS "publicId", created_at AS "createdAt"
     `;
     if (!message) throw new Error('创建 AI 用户消息失败');
     if (attachmentIds.length > 0) {
@@ -140,7 +142,7 @@ export default apiHandler(async (event) => {
   try {
     const reply = await requestAssistantReply({ conversation, identity });
     const [assistantMessage] = await sql<
-      { content: string; createdAt: Date; id: string }[]
+      { content: string; createdAt: Date; id: string; publicId: string }[]
     >`
       INSERT INTO ai_messages (
         conversation_id, role, content, external_message_id
@@ -148,7 +150,7 @@ export default apiHandler(async (event) => {
         ${conversationId}, 'assistant', ${reply.content},
         ${reply.messageId ?? null}
       )
-      RETURNING id, content, created_at AS "createdAt"
+      RETURNING id, public_id AS "publicId", content, created_at AS "createdAt"
     `;
     if (!assistantMessage) throw new Error('保存 AI 回复失败');
     await sql`
@@ -178,6 +180,7 @@ export default apiHandler(async (event) => {
       },
       serviceError: null,
       userMessageId: userMessage.id,
+      userMessagePublicId: userMessage.publicId,
     };
   } catch (error) {
     if (!(error instanceof AssistantProviderError)) {
@@ -191,7 +194,7 @@ export default apiHandler(async (event) => {
             'AI 服务暂时无法处理请求，请稍后重试。',
           );
     const [assistantMessage] = await sql<
-      { content: string; createdAt: Date; id: string }[]
+      { content: string; createdAt: Date; id: string; publicId: string }[]
     >`
       INSERT INTO ai_messages (
         conversation_id, role, content, status, error_code
@@ -199,7 +202,7 @@ export default apiHandler(async (event) => {
         ${conversationId}, 'assistant', ${providerError.message}, 'failed',
         ${providerError.code}
       )
-      RETURNING id, content, created_at AS "createdAt"
+      RETURNING id, public_id AS "publicId", content, created_at AS "createdAt"
     `;
     if (!assistantMessage) {
       throw new Error('保存 AI 错误消息失败', { cause: error });
@@ -236,6 +239,7 @@ export default apiHandler(async (event) => {
         message: providerError.message,
       },
       userMessageId: userMessage.id,
+      userMessagePublicId: userMessage.publicId,
     };
   }
 });

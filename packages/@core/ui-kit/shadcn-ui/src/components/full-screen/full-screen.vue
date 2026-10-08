@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { Maximize, Minimize } from '@vben-core/icons';
+import { Maximize2, Minimize2 } from '@vben-core/icons';
 
 import { useFullscreen } from '@vueuse/core';
 
@@ -35,7 +35,7 @@ isFullscreen.value = !!(
     class="hover:animate-[shrink_0.3s_ease-in-out]"
     @click="toggle"
   >
-    <Minimize v-if="isFullscreen" class="text-foreground size-4" />
-    <Maximize v-else class="text-foreground size-4" />
+    <Minimize2 v-if="isFullscreen" class="text-foreground size-4" />
+    <Maximize2 v-else class="text-foreground size-4" />
   </VbenIconButton>
 </template>

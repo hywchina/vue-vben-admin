@@ -29,18 +29,6 @@ const formSchema = computed((): VbenFormSchema[] => {
       rules: z.string().min(1, { message: $t('authentication.usernameTip') }),
     },
     {
-      component: 'VbenInput',
-      componentProps: {
-        placeholder: 'name@company.com',
-      },
-      fieldName: 'email',
-      label: '企业邮箱',
-      rules: z
-        .string()
-        .min(1, { message: '请输入企业邮箱' })
-        .email('请输入有效的企业邮箱'),
-    },
-    {
       component: 'VbenInputPassword',
       componentProps: {
         passwordStrength: true,
@@ -108,7 +96,6 @@ async function handleSubmit(value: Recordable<any>) {
   loading.value = true;
   try {
     await registerApi({
-      email: String(value.email),
       password: String(value.password),
       username: String(value.username),
     });

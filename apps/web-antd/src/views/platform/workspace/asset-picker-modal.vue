@@ -23,6 +23,8 @@ import {
   assetTypeLabels,
   assetTypeOptions,
 } from '#/modules/platform/asset-types';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 const props = defineProps<{
   acceptedKinds: AssetType[];
@@ -234,7 +236,9 @@ watch(compatibleAssets, () => {
         class="asset-picker-search"
         placeholder="搜索当前文件夹中的名称、编号或标签"
       >
-        <template #prefix><IconifyIcon icon="lucide:search" /></template>
+        <template #prefix>
+          <IconifyIcon :icon="platformUiIcons.search" />
+        </template>
       </Input>
       <Select
         v-model:value="typeFilter"
@@ -262,11 +266,11 @@ watch(compatibleAssets, () => {
         type="button"
         @click="enterFolder(item.id)"
       >
-        <IconifyIcon v-if="index === 0" icon="lucide:house" />
+        <IconifyIcon v-if="index === 0" :icon="platformSemanticIcons.assets" />
         {{ item.name }}
         <IconifyIcon
           v-if="index < breadcrumbs.length - 1"
-          icon="lucide:chevron-right"
+          :icon="platformUiIcons.chevronRight"
         />
       </button>
     </nav>
@@ -282,7 +286,9 @@ watch(compatibleAssets, () => {
           >
             <IconifyIcon
               :icon="
-                folder.kind === 'favorites' ? 'lucide:star' : 'lucide:folder'
+                folder.kind === 'favorites'
+                  ? platformUiIcons.star
+                  : platformUiIcons.folder
               "
             />
             <span>
@@ -295,7 +301,7 @@ watch(compatibleAssets, () => {
                 }}{{ folder.assetCount }} 项资产
               </small>
             </span>
-            <IconifyIcon icon="lucide:chevron-right" />
+            <IconifyIcon :icon="platformUiIcons.chevronRight" />
           </button>
         </div>
         <div v-if="compatibleAssets.length" class="asset-picker-grid">

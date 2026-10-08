@@ -36,13 +36,11 @@ export function uploadUserAvatarApi(file: File) {
 
 export function updateUserProfileApi(input: {
   department: string;
-  email: string;
   introduction: string;
   realName: string;
 }) {
   return requestClient.request<{
     department: string;
-    email: string;
     introduction: string;
     realName: string;
   }>('/user/profile', { data: input, method: 'PATCH' });

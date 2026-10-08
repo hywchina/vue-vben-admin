@@ -13,6 +13,7 @@ import {
   sizeRatio,
   validDimension,
 } from '#/modules/platform/image-dimensions';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 const props = defineProps<{
   height: number;
   heightField: CapabilityField;
@@ -185,7 +186,9 @@ function commit(side: 'height' | 'width') {
           >
             <IconifyIcon
               :icon="
-                locked ? 'lucide:lock-keyhole' : 'lucide:lock-keyhole-open'
+                locked
+                  ? platformUiIcons.lockKeyhole
+                  : platformUiIcons.lockKeyholeOpen
               "
             />
           </button>
@@ -208,10 +211,10 @@ function commit(side: 'height' | 'width') {
       </section>
     </template>
     <button class="size-trigger" type="button" aria-label="设置图片比例与尺寸">
-      <IconifyIcon icon="lucide:rectangle-horizontal" />
+      <IconifyIcon :icon="platformUiIcons.rectangleHorizontal" />
       比例 {{ caption }}
       <span>{{ width }}×{{ height }}</span>
-      <IconifyIcon icon="lucide:chevron-down" />
+      <IconifyIcon :icon="platformUiIcons.chevronDown" />
     </button>
   </Popover>
 </template>
@@ -309,6 +312,10 @@ function commit(side: 'height' | 'width') {
   gap: 6px;
   align-items: center;
   padding: 6px 8px;
+  font-family: inherit;
+  font-size: var(--design-parameter-font-size, 14px);
+  font-weight: 400;
+  line-height: 22px;
   color: var(--rail-theme-text, #30363b);
   white-space: nowrap;
   cursor: pointer;
@@ -318,6 +325,7 @@ function commit(side: 'height' | 'width') {
 }
 
 .size-trigger span {
+  font-weight: 600;
   color: var(--rail-theme-text, #475569);
 }
 </style>

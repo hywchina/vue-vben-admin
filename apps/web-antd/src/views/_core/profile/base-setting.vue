@@ -52,16 +52,6 @@ const formSchema = computed((): VbenFormSchema[] => {
     },
     {
       component: 'Input',
-      fieldName: 'email',
-      label: '企业邮箱',
-      rules: z
-        .string()
-        .trim()
-        .min(1, { message: '请输入企业邮箱' })
-        .email('请输入有效的企业邮箱'),
-    },
-    {
-      component: 'Input',
       fieldName: 'department',
       label: '所属部门',
       rules: z
@@ -105,7 +95,6 @@ const formSchema = computed((): VbenFormSchema[] => {
 function toFormValues(data: Awaited<ReturnType<typeof getUserInfoApi>>) {
   return {
     department: data.department ?? '',
-    email: data.email ?? '',
     introduction: data.introduction ?? '',
     realName: data.realName,
     publicId: data.publicId,
@@ -125,7 +114,6 @@ async function handleSubmit(values: Recordable<unknown>) {
   try {
     await updateUserProfileApi({
       department: String(values.department ?? ''),
-      email: String(values.email ?? ''),
       introduction: String(values.introduction ?? ''),
       realName: String(values.realName ?? ''),
     });

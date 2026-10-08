@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { LoraField } from '#/modules/platform/lora-training';
 import type { PlatformAsset, PlatformJob } from '#/modules/platform/types';
 
 import {
@@ -18,12 +19,9 @@ import {
   Drawer,
   Empty,
   Input,
-  InputNumber,
   message,
   Modal,
   Progress,
-  Select,
-  Slider,
   Spin,
   Tag,
   Textarea,
@@ -40,7 +38,19 @@ import {
 } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
+import { assetTypeIcons } from '#/modules/platform/asset-types';
+import {
+  createLoraParameters,
+  LORA_FIELDS,
+  LORA_GROUPS,
+  loraFieldValue,
+  updateLoraParameter,
+  validLoraParameters,
+} from '#/modules/platform/lora-training';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
+
+import LoraParameterField from './lora-parameter-field.vue';
 
 const platformStore = usePlatformStore();
 const router = useRouter();
@@ -55,25 +65,23 @@ const captions = reactive<Record<string, string>>({});
 const previewUrls = reactive(new Map<string, string>());
 const detailOpen = ref(false);
 const professionalOpen = ref(false);
-const professionalSection = ref<
-  'advanced' | 'caption' | 'network' | 'optimizer' | 'sample' | 'training'
->('training');
+const professionalSection =
+  ref<(typeof LORA_GROUPS)[number]['key']>('training');
 const detailJob = ref<PlatformJob>();
 const detailLoading = ref(false);
 const trainingLog = ref('');
 const logOffset = ref(0);
 const metricPoints = ref<Array<{ step: number; value: number }>>([]);
-const parameters = reactive({
-  baseModel: 'flux2-klein-9b',
-  epochs: 5,
-  learningRate: 0.0001,
-  name: '',
-  previewPrompt: '[trigger], modern style rail cabin interior design',
-  rank: 16,
-  repeats: 20,
-  resolution: 512 as 512 | 768 | 1024,
-  triggerWord: 'interiorstyle',
-});
+const parameters = reactive(createLoraParameters());
+const mainFields = LORA_FIELDS.filter((field) => field.main);
+const professionalFields = computed(() =>
+  LORA_FIELDS.filter(
+    (field) => !field.main && field.group === professionalSection.value,
+  ),
+);
+function changeParameter(field: LoraField, value: unknown) {
+  if (field.binding) updateLoraParameter(parameters, field.binding, value);
+}
 let pollingTimer: ReturnType<typeof setInterval> | undefined;
 
 const currentProjectName = computed(
@@ -107,9 +115,7 @@ const trainingJobs = computed(() =>
         new Date(left.createdAt).getTime(),
     ),
 );
-const totalSteps = computed(
-  () => selectedAssetIds.value.length * parameters.repeats * parameters.epochs,
-);
+const totalSteps = computed(() => parameters.steps);
 const baseModelOptions = computed(() =>
   (adapterStatus.value?.models ?? []).map((model) => ({
     label: model.label,
@@ -142,9 +148,7 @@ const canSubmit = computed(
     adapterStatus.value?.reachable === true &&
     selectedAssetIds.value.length > 0 &&
     captionsComplete.value &&
-    totalSteps.value >= 20 &&
-    totalSteps.value <= 10_000 &&
-    /^[A-Za-z][A-Za-z0-9_-]{1,63}$/.test(parameters.triggerWord.trim()) &&
+    validLoraParameters(parameters) &&
     Boolean(parameters.name.trim()) &&
     baseModelOptions.value.some(
       (model) => model.value === parameters.baseModel,
@@ -249,24 +253,14 @@ function toggleAsset(assetId: string) {
     );
     return;
   }
-  if (selectedAssetIds.value.length >= 100) {
-    message.warning('单个训练任务最多选择 100 张图片');
-    return;
-  }
   selectedAssetIds.value.push(assetId);
   captions[assetId] ??= '';
 }
 
 async function uploadFiles(event: Event) {
   const input = event.target as HTMLInputElement;
-  const allFiles = [...(input.files ?? [])];
+  const files = [...(input.files ?? [])];
   input.value = '';
-  if (allFiles.length === 0) return;
-  const remaining = Math.max(0, 100 - selectedAssetIds.value.length);
-  const files = allFiles.slice(0, remaining);
-  if (files.length < allFiles.length) {
-    message.warning('单个训练任务最多选择 100 张图片，多余文件未上传');
-  }
   if (files.length === 0) return;
   uploading.value = true;
   try {
@@ -304,12 +298,13 @@ async function submitTraining() {
       name: parameters.name.trim(),
       parameters: {
         baseModel: parameters.baseModel,
-        epochs: parameters.epochs,
+        disableSampling: parameters.disableSampling,
         learningRate: parameters.learningRate,
         previewPrompt: parameters.previewPrompt.trim(),
         rank: parameters.rank,
         repeats: parameters.repeats,
         resolution: parameters.resolution,
+        steps: parameters.steps,
         triggerWord: parameters.triggerWord.trim(),
       },
       projectId: platformStore.currentProjectId,
@@ -387,8 +382,8 @@ async function refreshDetails(reset: boolean) {
           v-else
           :icon="
             adapterStatus?.reachable
-              ? 'lucide:circle-check'
-              : 'lucide:circle-alert'
+              ? platformUiIcons.circleCheck
+              : platformUiIcons.circleAlert
           "
         />
         <div>
@@ -423,112 +418,51 @@ async function refreshDetails(reset: boolean) {
             </div>
             <Button size="small" @click="professionalOpen = true">
               专业设置
-              <IconifyIcon icon="lucide:expand" />
+              <IconifyIcon :icon="platformUiIcons.maximize2" />
             </Button>
           </header>
-          <label class="wide-field base-model-field">
-            <span>使用底模</span>
-            <div>
-              <Select
-                v-model:value="parameters.baseModel"
-                :loading="statusLoading"
-                :options="baseModelOptions"
-                placeholder="请选择训练基础模型"
-              />
-              <Button
-                :loading="statusLoading"
-                aria-label="刷新基础模型列表"
-                @click="loadAdapterStatus"
+          <div class="wide-field">
+            <span>
+              任务名称
+              <Tooltip
+                title="平台业务任务的显示名称，不属于训练超参数。建议使用项目或场景名称，最多 200 字符；不作为服务器目录路径。"
               >
-                <IconifyIcon icon="lucide:refresh-cw" />
-              </Button>
-            </div>
-            <small>
-              模型列表由平台后端白名单提供，不向浏览器暴露权重路径。
-            </small>
-          </label>
-          <label class="wide-field">
-            <span>任务名称</span>
-            <Input v-model:value="parameters.name" :maxlength="200" />
-          </label>
-          <div class="basic-slider-list">
-            <label class="slider-field">
-              <span>
-                单张训练次数
-                <small>Repeat</small>
-              </span>
-              <div>
-                <Slider
-                  v-model:value="parameters.repeats"
-                  :min="1"
-                  :max="100"
-                />
-                <InputNumber
-                  v-model:value="parameters.repeats"
-                  :min="1"
-                  :max="100"
-                />
-              </div>
-            </label>
-            <label class="slider-field">
-              <span>
-                训练轮次
-                <small>Epoch</small>
-              </span>
-              <div>
-                <Slider v-model:value="parameters.epochs" :min="1" :max="100" />
-                <InputNumber
-                  v-model:value="parameters.epochs"
-                  :min="1"
-                  :max="100"
-                />
-              </div>
-            </label>
-          </div>
-          <label class="wide-field total-step-field">
-            <span>预计总步数</span>
-            <Input
-              :status="
-                totalSteps > 10000 || (totalSteps > 0 && totalSteps < 20)
-                  ? 'error'
-                  : undefined
-              "
-              :value="
-                selectedAssetIds.length
-                  ? `${totalSteps} 步`
-                  : '选择训练图片后自动计算'
-              "
-              disabled
-            />
-          </label>
-          <label class="wide-field">
-            <span>触发词</span>
-            <Input
-              v-model:value="parameters.triggerWord"
-              placeholder="例如 interiorstyle"
-            />
-            <small>
-              英文开头，可包含数字、下划线和连字符；平台会写入每张 caption。
-            </small>
-          </label>
-          <label class="wide-field preview-field">
-            <span>
-              模型效果预览提示词
-              <small>训练中用于生成实时样图</small>
+                <button type="button" aria-label="任务名称说明">
+                  <IconifyIcon :icon="platformUiIcons.circleHelp" />
+                </button>
+              </Tooltip>
             </span>
-            <Textarea
-              v-model:value="parameters.previewPrompt"
-              :rows="6"
-              :maxlength="1000"
+            <Input
+              v-model:value="parameters.name"
+              :maxlength="200"
+              aria-label="任务名称"
             />
-          </label>
-          <div class="parameter-summary">
-            <span>LoRA Rank {{ parameters.rank }}</span>
-            <span>
-              {{ parameters.resolution }} × {{ parameters.resolution }}
-            </span>
-            <span>LR {{ parameters.learningRate }}</span>
           </div>
+          <LoraParameterField
+            v-for="field in mainFields"
+            :key="field.path"
+            :field="field"
+            :value="loraFieldValue(field, parameters)"
+            :options="baseModelOptions"
+            :loading="statusLoading"
+            @change="changeParameter(field, $event)"
+          />
+          <Button
+            :loading="statusLoading"
+            size="small"
+            @click="loadAdapterStatus"
+          >
+            <IconifyIcon :icon="platformUiIcons.refreshCw" />
+            刷新基础模型列表
+          </Button>
+          <p class="parameter-note">
+            {{
+              parameters.disableSampling
+                ? '按 demo 默认禁用训练样图；可在专业设置中开启采样。'
+                : '已启用训练样图，每 250 步采样一次。'
+            }}
+            Repeat 不改变总步数。
+          </p>
         </section>
 
         <section class="platform-panel dataset-panel">
@@ -538,11 +472,11 @@ async function refreshDetails(reset: boolean) {
               <strong>项目训练集</strong>
               <span>选择已入库图片，并为每张图片填写真实 caption</span>
             </div>
-            <Tag color="blue">已选 {{ selectedAssetIds.length }}/100</Tag>
+            <Tag color="blue">已选 {{ selectedAssetIds.length }} 张</Tag>
           </header>
           <div class="dataset-actions">
             <Button :loading="uploading" @click="uploadInput?.click()">
-              <IconifyIcon icon="lucide:upload" />
+              <IconifyIcon :icon="platformUiIcons.upload" />
               上传并加入项目资产
             </Button>
             <input
@@ -570,7 +504,7 @@ async function refreshDetails(reset: boolean) {
                 placeholder="搜索图片名称或编号"
               >
                 <template #prefix>
-                  <IconifyIcon icon="lucide:search" />
+                  <IconifyIcon :icon="platformUiIcons.search" />
                 </template>
               </Input>
             </header>
@@ -593,7 +527,7 @@ async function refreshDetails(reset: boolean) {
                   :alt="asset.name"
                   :src="previewUrls.get(asset.id)"
                 />
-                <IconifyIcon v-else icon="lucide:image" />
+                <IconifyIcon v-else :icon="assetTypeIcons.image" />
                 <span>
                   <strong :title="asset.name">{{ asset.name }}</strong>
                   <small>{{ asset.publicId }}</small>
@@ -601,7 +535,7 @@ async function refreshDetails(reset: boolean) {
                 <IconifyIcon
                   v-if="selectedAssetIds.includes(asset.id)"
                   class="selected-mark"
-                  icon="lucide:circle-check-big"
+                  :icon="platformUiIcons.circleCheck"
                 />
               </button>
             </div>
@@ -650,7 +584,7 @@ async function refreshDetails(reset: boolean) {
                     :alt="asset.name"
                     :src="previewUrls.get(asset.id)"
                   />
-                  <IconifyIcon v-else icon="lucide:image" />
+                  <IconifyIcon v-else :icon="assetTypeIcons.image" />
                   <span>{{ index + 1 }}</span>
                 </div>
                 <div class="caption-card__body">
@@ -684,13 +618,13 @@ async function refreshDetails(reset: boolean) {
                     type="text"
                     @click="toggleAsset(asset.id)"
                   >
-                    <IconifyIcon icon="lucide:x" />
+                    <IconifyIcon :icon="platformUiIcons.close" />
                   </Button>
                 </Tooltip>
               </article>
             </div>
             <div v-else class="annotation-empty">
-              <IconifyIcon icon="lucide:captions" />
+              <IconifyIcon :icon="platformUiIcons.captions" />
               <div>
                 <strong>尚未选择训练图片</strong>
                 <span>从上方素材库选择图片后，将在这里集中完成标注。</span>
@@ -704,18 +638,14 @@ async function refreshDetails(reset: boolean) {
         <div>
           <strong>提交前检查</strong>
           <span>
-            {{ selectedAssetIds.length }} 张图片 · {{ totalSteps }} 步 · rank
-            {{ parameters.rank }} · {{ parameters.resolution }}px
+            {{ selectedAssetIds.length }} 张图片 · {{ totalSteps }} 步
           </span>
           <small v-if="selectedAssetIds.length && !captionsComplete">
             每张训练图片都必须填写 caption。
           </small>
-          <small
-            v-else-if="
-              totalSteps > 10000 || (totalSteps > 0 && totalSteps < 20)
-            "
-          >
-            总步数必须在 20 到 10000 之间。
+          <small v-else-if="!validLoraParameters(parameters)">
+            请检查参数范围：总步数须为 20–10000 的整数，Repeat 须为 1–100
+            的整数；触发词、学习率等须符合问号中的说明。
           </small>
         </div>
         <Button
@@ -801,230 +731,45 @@ async function refreshDetails(reset: boolean) {
       title="专业设置"
       width="min(820px, 94vw)"
     >
+      <p class="parameter-note">
+        仅展示普通 demo YAML
+        中的参数。固定项保持已验证配置，自动项由平台管理；悬停、聚焦或点击问号可查看说明。
+      </p>
       <div class="professional-settings">
         <nav aria-label="LoRA 专业设置分类">
           <button
-            :class="{ active: professionalSection === 'training' }"
+            v-for="group in LORA_GROUPS"
+            :key="group.key"
+            :class="{ active: professionalSection === group.key }"
+            :aria-pressed="professionalSection === group.key"
             type="button"
-            @click="professionalSection = 'training'"
+            @click="professionalSection = group.key"
           >
-            训练参数
-          </button>
-          <button
-            :class="{ active: professionalSection === 'sample' }"
-            type="button"
-            @click="professionalSection = 'sample'"
-          >
-            样图设置
-          </button>
-          <button
-            :class="{ active: professionalSection === 'optimizer' }"
-            type="button"
-            @click="professionalSection = 'optimizer'"
-          >
-            学习率与优化器
-          </button>
-          <button
-            :class="{ active: professionalSection === 'network' }"
-            type="button"
-            @click="professionalSection = 'network'"
-          >
-            网络
-          </button>
-          <button
-            :class="{ active: professionalSection === 'caption' }"
-            type="button"
-            @click="professionalSection = 'caption'"
-          >
-            打标设置
-          </button>
-          <button
-            :class="{ active: professionalSection === 'advanced' }"
-            type="button"
-            @click="professionalSection = 'advanced'"
-          >
-            高级设置
+            {{ group.label }}
           </button>
         </nav>
-
-        <section v-if="professionalSection === 'training'">
+        <section
+          :aria-label="
+            LORA_GROUPS.find((group) => group.key === professionalSection)
+              ?.label
+          "
+        >
           <header>
-            <h3>训练参数</h3>
-            <span>与基础面板实时同步</span>
+            <h3>
+              {{
+                LORA_GROUPS.find((group) => group.key === professionalSection)
+                  ?.label
+              }}
+            </h3>
+            <span>{{ professionalFields.length }} 项</span>
           </header>
-          <label class="professional-slider">
-            <span>
-              <small>Repeat</small>
-              单张训练次数
-            </span>
-            <div>
-              <Slider v-model:value="parameters.repeats" :min="1" :max="100" />
-              <InputNumber
-                v-model:value="parameters.repeats"
-                :min="1"
-                :max="100"
-              />
-            </div>
-          </label>
-          <label class="professional-slider">
-            <span>
-              <small>Epoch</small>
-              训练轮次
-            </span>
-            <div>
-              <Slider v-model:value="parameters.epochs" :min="1" :max="100" />
-              <InputNumber
-                v-model:value="parameters.epochs"
-                :min="1"
-                :max="100"
-              />
-            </div>
-          </label>
-          <div class="fixed-setting">
-            <span>
-              <small>Batch size</small>
-              批量大小
-            </span>
-            <strong>1</strong>
-          </div>
-          <div class="fixed-setting">
-            <span>
-              <small>Mixed precision</small>
-              训练混合精度
-            </span>
-            <strong>BF16</strong>
-          </div>
-        </section>
-
-        <section v-else-if="professionalSection === 'sample'">
-          <header>
-            <h3>样图设置</h3>
-            <span>训练过程中按 checkpoint 生成预览</span>
-          </header>
-          <label class="professional-field">
-            <span>样图分辨率</span>
-            <Select
-              v-model:value="parameters.resolution"
-              :options="
-                [512, 768, 1024].map((value) => ({
-                  label: `${value} × ${value}`,
-                  value,
-                }))
-              "
-            />
-          </label>
-          <label class="professional-field">
-            <span>模型效果预览提示词</span>
-            <Textarea
-              v-model:value="parameters.previewPrompt"
-              :rows="5"
-              :maxlength="1000"
-            />
-          </label>
-        </section>
-
-        <section v-else-if="professionalSection === 'optimizer'">
-          <header>
-            <h3>学习率与优化器</h3>
-            <span>保持已验证模板的稳定优化策略</span>
-          </header>
-          <label class="professional-field">
-            <span>学习率</span>
-            <InputNumber
-              v-model:value="parameters.learningRate"
-              :min="0.000001"
-              :max="0.01"
-              :step="0.00001"
-            />
-          </label>
-          <div class="fixed-setting">
-            <span>
-              <small>Optimizer</small>
-              优化器
-            </span>
-            <strong>AdamW8Bit</strong>
-          </div>
-          <div class="fixed-setting">
-            <span>
-              <small>Noise scheduler</small>
-              噪声调度器
-            </span>
-            <strong>FlowMatch</strong>
-          </div>
-        </section>
-
-        <section v-else-if="professionalSection === 'network'">
-          <header>
-            <h3>网络</h3>
-            <span>LoRA 线性秩和 Alpha 保持一致</span>
-          </header>
-          <label class="professional-field">
-            <span>LoRA Rank / Alpha</span>
-            <Select
-              v-model:value="parameters.rank"
-              :options="
-                [4, 8, 16, 32, 64].map((value) => ({
-                  label: `${value} / ${value}`,
-                  value,
-                }))
-              "
-            />
-          </label>
-          <div class="fixed-setting">
-            <span>
-              <small>Network type</small>
-              网络类型
-            </span>
-            <strong>LoRA</strong>
-          </div>
-        </section>
-
-        <section v-else-if="professionalSection === 'caption'">
-          <header>
-            <h3>打标设置</h3>
-            <span>图片和同名 TXT caption 一一对应</span>
-          </header>
-          <label class="professional-field">
-            <span>触发词</span>
-            <Input v-model:value="parameters.triggerWord" />
-          </label>
-          <div class="fixed-setting">
-            <span>
-              <small>Caption extension</small>
-              描述文件扩展名
-            </span>
-            <strong>TXT</strong>
-          </div>
-          <div class="fixed-setting">
-            <span>
-              <small>Caption dropout</small>
-              描述丢弃率
-            </span>
-            <strong>0</strong>
-          </div>
-        </section>
-
-        <section v-else>
-          <header>
-            <h3>高级设置</h3>
-            <span>只读展示已验证模板中的平台固定项</span>
-          </header>
-          <div class="fixed-setting">
-            <span>Transformer 量化</span>
-            <strong>QFloat8</strong>
-          </div>
-          <div class="fixed-setting">
-            <span>文本编码器量化</span>
-            <strong>QFloat8</strong>
-          </div>
-          <div class="fixed-setting">
-            <span>低显存模式</span>
-            <strong>开启</strong>
-          </div>
-          <div class="fixed-setting">
-            <span>Latent / 文本嵌入缓存</span>
-            <strong>磁盘缓存</strong>
-          </div>
+          <LoraParameterField
+            v-for="field in professionalFields"
+            :key="field.path"
+            :field="field"
+            :value="loraFieldValue(field, parameters)"
+            @change="changeParameter(field, $event)"
+          />
         </section>
       </div>
     </Modal>
@@ -1316,7 +1061,9 @@ async function refreshDetails(reset: boolean) {
   display: grid;
   gap: 18px;
   align-content: start;
+  max-height: 65vh;
   padding: 22px 28px;
+  overflow-y: auto;
 }
 
 .professional-settings > section > header {
@@ -1885,6 +1632,49 @@ async function refreshDetails(reset: boolean) {
 
   .adapter-status > button {
     grid-column: 1 / -1;
+  }
+}
+
+.parameter-note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--rail-theme-secondary, #758089);
+}
+
+.wide-field > span button {
+  display: inline-flex;
+  padding: 3px;
+  margin-left: 4px;
+  color: var(--rail-theme-secondary, #758089);
+  cursor: help;
+  background: transparent;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .professional-settings {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .professional-settings > nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rail-theme-border, #e8ebee);
+  }
+
+  .professional-settings > nav button {
+    padding: 7px 9px;
+    font-size: 12px;
+  }
+
+  .professional-settings > section {
+    max-height: 55vh;
+    padding: 14px;
   }
 }
 </style>

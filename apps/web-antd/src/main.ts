@@ -21,7 +21,9 @@ async function initApplication() {
   // 固定平台发布外壳，避免旧的本地偏好恢复黑色独立侧栏。
   updatePreferences({
     app: {
+      authPageLayout: 'panel-center',
       enablePreferences: false,
+      enableRefreshToken: true,
       layout: 'header-sidebar-nav',
       name: import.meta.env.VITE_APP_TITLE,
     },

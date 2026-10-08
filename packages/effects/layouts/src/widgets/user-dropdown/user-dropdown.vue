@@ -12,7 +12,7 @@ import {
   Languages,
   LockKeyhole,
   LogOut,
-  RotateCw,
+  RefreshCw,
   Search,
   Settings,
 } from '@vben/icons';
@@ -526,7 +526,7 @@ if (preferences.shortcutKeys.enable) {
             @click="handleRefresh"
           >
             <VbenIconButton class="mr-2" @click="handleRefresh">
-              <RotateCw class="size-4" />
+              <RefreshCw class="size-4" />
             </VbenIconButton>
             {{ $t('preferences.widget.refresh') }}
           </DropdownMenuItem>

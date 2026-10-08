@@ -40,6 +40,7 @@ export interface PlatformAsset {
 }
 
 export interface AssetFolder {
+  publicId?: string;
   generationCategory?: AssetGenerationCategory | null;
   assetCount: number;
   createdAt: string;

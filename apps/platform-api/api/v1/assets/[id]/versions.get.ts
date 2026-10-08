@@ -23,6 +23,7 @@ export default apiHandler(async (event) => {
       id: string;
       mimeType: string;
       originalFilename: null | string;
+      publicId: string;
       sha256: null | string;
       sizeBytes: number;
       status: string;
@@ -32,6 +33,7 @@ export default apiHandler(async (event) => {
   >`
     SELECT
       av.id,
+      av.public_id AS "publicId",
       av.version,
       av.storage_kind AS "storageKind",
       av.original_filename AS "originalFilename",

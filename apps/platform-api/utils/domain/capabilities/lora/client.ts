@@ -152,11 +152,18 @@ export class AiToolkitClient {
         file.filename,
       );
     }
-    return await this.#json<{ files: string[]; message: string }>(
+    const result = await this.#json<{ files: string[]; message: string }>(
       '/api/datasets/upload',
       { body: form, method: 'POST' },
       false,
     );
+    if (
+      !Array.isArray(result.files) ||
+      files.some((file) => !result.files.includes(file.filename))
+    ) {
+      throw new AiToolkitClientError(502, 'AI Toolkit 数据集上传回执缺少文件');
+    }
+    return result;
   }
 
   async #json<T = unknown>(

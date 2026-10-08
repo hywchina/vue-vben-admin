@@ -1,5 +1,7 @@
 import type { AssetType } from './types';
 
+import { platformUiIcons } from './ui-icons';
+
 export const assetTypeLabels: Record<AssetType, string> = {
   archive: '压缩包',
   audio: '音频',
@@ -21,6 +23,13 @@ export const assetTypeIcons: Record<AssetType, string> = {
   text: 'lucide:notebook-text',
   video: 'lucide:video',
 };
+
+/** 未知类型不得冒充文档；已知八类文件统一使用真实类型图标。 */
+export function assetTypeIcon(kind?: null | string) {
+  return kind && Object.hasOwn(assetTypeIcons, kind)
+    ? assetTypeIcons[kind as AssetType]
+    : platformUiIcons.file;
+}
 
 export const assetTypeOptions = Object.entries(assetTypeLabels).map(
   ([value, label]) => ({ label, value }),

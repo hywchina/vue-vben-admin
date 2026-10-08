@@ -1,38 +1,17 @@
-import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
 import { requireIdentity, requirePermission } from '~/utils/identity';
+import { createAccountSchema } from '~/utils/identity/account-input';
 import { createNotification } from '~/utils/notifications';
 import { hashPassword } from '~/utils/password';
 import { ApiError, apiHandler } from '~/utils/response';
-import { PLATFORM_ROLE_CODES } from '~/utils/roles';
 import { parseBody } from '~/utils/validation';
-
-const schema = z.object({
-  department: z.string().trim().max(100).optional().default(''),
-  email: z.string().trim().email('请输入有效的企业邮箱').max(254),
-  password: z
-    .string()
-    .min(8, '密码至少需要 8 个字符')
-    .max(128)
-    .regex(/[A-Za-z]/, '密码必须包含字母')
-    .regex(/\d/, '密码必须包含数字')
-    .regex(/[^\dA-Za-z]/, '密码必须包含符号'),
-  realName: z.string().trim().min(1, '姓名不能为空').max(100),
-  role: z.enum(PLATFORM_ROLE_CODES).default('user'),
-  username: z
-    .string()
-    .trim()
-    .min(3, '用户名至少需要 3 个字符')
-    .max(32)
-    .regex(/^[\w.-]+$/, '用户名只能包含字母、数字、点、横线和下划线'),
-});
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:user:write');
   requirePermission(identity, 'platform:role:write');
-  const input = await parseBody(event, schema);
+  const input = await parseBody(event, createAccountSchema);
   const passwordHash = await hashPassword(input.password);
   const sql = useDatabase();
 
@@ -49,14 +28,14 @@ export default apiHandler(async (event) => {
         }[]
       >`
         INSERT INTO users (
-          username, password_hash, real_name, department, email
+          username, password_hash, real_name, department
         ) VALUES (
           ${input.username}, ${passwordHash}, ${input.realName},
-          ${input.department}, ${input.email.toLowerCase()}
+          ${input.department}
         )
         RETURNING
           id, public_id AS "publicId", username, real_name AS name,
-          department, email
+          department, COALESCE(email, '') AS email
       `;
       if (!user) throw new Error('创建用户失败');
       await transaction`
@@ -80,7 +59,6 @@ export default apiHandler(async (event) => {
       action: 'user.create',
       actor: identity,
       details: {
-        email: created.email,
         publicId: created.publicId,
         role: input.role,
         username: created.username,
@@ -99,9 +77,6 @@ export default apiHandler(async (event) => {
     };
   } catch (error) {
     const constraint = (error as { constraint_name?: string }).constraint_name;
-    if (constraint === 'users_email_lower_uidx') {
-      throw new ApiError(409, 'EMAIL_EXISTS', '该企业邮箱已被其他账号使用');
-    }
     if (constraint === 'users_username_lower_uidx') {
       throw new ApiError(409, 'USERNAME_EXISTS', '用户名已存在');
     }

@@ -7,6 +7,8 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Input, InputNumber, Popover, Switch, Textarea } from 'ant-design-vue';
 
+import { platformUiIcons } from '#/modules/platform/ui-icons';
+
 const props = defineProps<{
   field: CapabilityField;
   value: unknown;
@@ -22,12 +24,18 @@ const isSeedField = computed(() =>
 
 const displayValue = computed(() => {
   const value = props.value;
-  if (props.field.type === 'boolean') return value ? '开启' : '关闭';
+  if (props.field.type === 'boolean') return value === true ? '开启' : '关闭';
   const option = props.field.options.find((item) => item.value === value);
   if (option) return option.label;
   if (value === undefined || value === null || value === '') return '设置';
+  if (typeof value === 'object') return JSON.stringify(value);
   return String(value);
 });
+
+// Long model filenames need readable rows, not narrow ratio-style tiles.
+const longOptions = computed(() =>
+  props.field.options.some((option) => option.label.length > 18),
+);
 
 function optionRatio(label: string) {
   const match = label.match(/(\d+)\s*[:：]\s*(\d+)/);
@@ -66,11 +74,17 @@ function randomizeSeed() {
           <small v-if="field.help">{{ field.help }}</small>
         </header>
 
-        <div v-if="field.type === 'select'" class="quick-option-grid">
+        <div
+          v-if="field.type === 'select'"
+          class="quick-option-grid"
+          :class="{ 'quick-option-grid--list': longOptions }"
+        >
           <button
             v-for="option in field.options"
             :key="String(option.value)"
             :class="{ active: option.value === value }"
+            :aria-pressed="option.value === value"
+            :title="option.label"
             type="button"
             @click="emit('change', option.value)"
           >
@@ -78,7 +92,7 @@ function randomizeSeed() {
               v-if="optionRatio(option.label)"
               :style="{ aspectRatio: optionRatio(option.label) }"
             ></i>
-            <IconifyIcon v-else icon="lucide:circle-dot" />
+            <IconifyIcon v-else :icon="platformUiIcons.circleDot" />
             <span>{{ option.label }}</span>
           </button>
         </div>
@@ -92,7 +106,7 @@ function randomizeSeed() {
             @update:value="emit('change', $event ?? field.defaultValue)"
           />
           <button v-if="isSeedField" type="button" @click="randomizeSeed">
-            <IconifyIcon icon="lucide:dices" />
+            <IconifyIcon :icon="platformUiIcons.dices" />
             随机
           </button>
         </div>
@@ -129,22 +143,23 @@ function randomizeSeed() {
     <button
       class="quick-field-trigger"
       :data-param-key="field.key"
+      :title="`${field.label}：${displayValue}`"
       type="button"
     >
       <IconifyIcon
         :icon="
           field.type === 'select'
-            ? 'lucide:list-filter'
+            ? platformUiIcons.listFilter
             : field.type === 'boolean'
-              ? 'lucide:toggle-left'
+              ? platformUiIcons.toggleLeft
               : field.type === 'number'
-                ? 'lucide:sliders-horizontal'
-                : 'lucide:type'
+                ? platformUiIcons.slidersHorizontal
+                : platformUiIcons.type
         "
       />
-      <span>{{ field.label }}</span>
+      <span class="quick-field-label">{{ field.label }}</span>
       <strong>{{ displayValue }}</strong>
-      <IconifyIcon icon="lucide:chevron-down" />
+      <IconifyIcon :icon="platformUiIcons.chevronDown" />
     </button>
   </Popover>
 </template>
@@ -157,12 +172,22 @@ function randomizeSeed() {
   align-items: center;
   min-height: 32px;
   padding: 4px 7px;
-  font-size: 14px;
+  font-family: inherit;
+  font-size: var(--design-parameter-font-size, 14px);
+  font-weight: 400;
+  line-height: 22px;
   color: var(--rail-theme-text, #262a2f);
+  white-space: nowrap;
   cursor: pointer;
   background: transparent;
   border: 0;
   border-radius: 7px;
+}
+
+.quick-field-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .quick-field-trigger:hover {
@@ -174,7 +199,7 @@ function randomizeSeed() {
   max-width: 112px;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-weight: 650;
+  font-weight: 600;
   color: var(--rail-theme-text, #111418);
   white-space: nowrap;
 }
@@ -193,6 +218,8 @@ function randomizeSeed() {
 .quick-field-panel {
   width: min(280px, 76vw);
   padding: 14px;
+  font-family: inherit;
+  overflow-wrap: anywhere;
 }
 
 .quick-field-panel--compact {
@@ -218,24 +245,48 @@ function randomizeSeed() {
 
 .quick-option-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   max-height: min(360px, 45vh);
-  overflow-y: auto;
+  overflow: hidden auto;
 }
 
 .quick-option-grid button {
   display: grid;
   gap: 6px;
   place-items: center;
+  min-width: 0;
   min-height: 64px;
   padding: 8px 5px;
+  font-family: inherit;
   font-size: 12px;
+  line-height: 1.5;
   color: var(--rail-theme-text, #30363b);
   cursor: pointer;
   background: var(--rail-theme-surface, #f7f7f8);
   border: 1px solid transparent;
   border-radius: 10px;
+}
+
+.quick-option-grid button span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.quick-option-grid--list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.quick-option-grid--list button {
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  justify-items: start;
+  min-height: 42px;
+  padding: 10px;
+  font-size: 13px;
+  text-align: left;
 }
 
 .quick-option-grid button:hover,
@@ -264,6 +315,7 @@ function randomizeSeed() {
 
 .quick-number-field :deep(.ant-input-number) {
   flex: 1;
+  min-width: 0;
 }
 
 .quick-number-field button {

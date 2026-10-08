@@ -8,7 +8,7 @@ import { computed, h, nextTick, ref } from 'vue';
 import { useSimpleLocale } from '@vben-core/composables';
 import {
   CircleAlert,
-  CircleCheckBig,
+  CircleCheck,
   CircleHelp,
   CircleX,
   Info,
@@ -79,7 +79,7 @@ const getIconRender = computed(() => {
           break;
         }
         case 'success': {
-          iconRender = h(CircleCheckBig, {
+          iconRender = h(CircleCheck, {
             style: { color: 'hsl(var(--success))' },
           });
           break;

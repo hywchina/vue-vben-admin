@@ -14,11 +14,11 @@ import {
   ArrowRightToLine,
   ExternalLink,
   FoldHorizontal,
-  Fullscreen,
+  Maximize2,
   Minimize2,
   Pin,
   PinOff,
-  RotateCw,
+  RefreshCw,
   X,
 } from '@vben/icons';
 import { $t, useI18n } from '@vben/locales';
@@ -154,7 +154,7 @@ export function useTabbar() {
           }
           toggleMaximize();
         },
-        icon: contentIsMaximize.value ? Minimize2 : Fullscreen,
+        icon: contentIsMaximize.value ? Minimize2 : Maximize2,
         key: contentIsMaximize.value ? 'restore-maximize' : 'maximize',
         text: contentIsMaximize.value
           ? $t('preferences.tabbar.contextMenu.restoreMaximize')
@@ -163,7 +163,7 @@ export function useTabbar() {
       {
         disabled: disabledRefresh,
         handler: () => refreshTab(),
-        icon: RotateCw,
+        icon: RefreshCw,
         key: 'reload',
         text: $t('preferences.tabbar.contextMenu.reload'),
       },

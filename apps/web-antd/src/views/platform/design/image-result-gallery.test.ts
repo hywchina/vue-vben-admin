@@ -59,6 +59,25 @@ function loadImage(image: HTMLImageElement, width: number, height: number) {
 }
 
 describe('image result gallery', () => {
+  it('drags main and thumbnail assets independently without changing selection or opening', () => {
+    const { root, opened } = renderGallery(3);
+    const transfer = new DataTransfer();
+    for (const [selector, id] of [
+      ['.gallery-main', 'image-0'],
+      ['.gallery-thumbnails button:last-child', 'image-2'],
+    ] as const) {
+      const element = required(root.querySelector<HTMLButtonElement>(selector));
+      expect(element.getAttribute('draggable')).toBe('true');
+      const event = new Event('dragstart', { bubbles: true }) as DragEvent;
+      Object.defineProperty(event, 'dataTransfer', { value: transfer });
+      element.dispatchEvent(event);
+      expect(
+        JSON.parse(transfer.getData('application/x-rail-asset-image')).assetId,
+      ).toBe(id);
+    }
+    expect(opened).toEqual([]);
+    expect(root.querySelector('.gallery-counter')?.textContent).toBe('1 / 3');
+  });
   it.each([2, 3, 5, 8])(
     'renders exactly %i thumbnails and opens the selected output',
     async (count) => {

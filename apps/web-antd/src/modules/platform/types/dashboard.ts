@@ -1,6 +1,7 @@
 import type { AssetType } from './assets';
 
 export interface DashboardProjectSummary {
+  publicId?: string;
   activeJobCount: number;
   assetCount: number;
   assetTypes: Array<{ count: number; type: AssetType }>;
@@ -58,6 +59,7 @@ export interface PlatformDashboard {
     projectCode: string;
     projectId: string;
     projectName: string;
+    publicId?: string;
     roundCount: number;
     title: string;
     updatedAt: string;

@@ -1,17 +1,20 @@
 import type { AssetGenerationCategory, PlatformAsset } from './types';
 
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
+
 export const assetGenerationModules: Array<{
   icon: string;
   key: 'all' | 'favorites' | 'unclassified' | AssetGenerationCategory;
   label: string;
 }> = [
-  { key: 'cmf', label: 'CMF', icon: 'lucide:palette' },
-  { key: 'component', label: '零部件', icon: 'lucide:box' },
-  { key: 'cabin', label: '客室', icon: 'lucide:armchair' },
-  { key: 'report', label: '报告', icon: 'lucide:file-text' },
-  { key: 'all', label: '全部', icon: 'lucide:layout-grid' },
-  { key: 'favorites', label: '收藏', icon: 'lucide:star' },
-  { key: 'unclassified', label: '未分类', icon: 'lucide:folder' },
+  { key: 'cmf', label: 'CMF', icon: platformSemanticIcons.cmf },
+  { key: 'component', label: '零部件', icon: platformSemanticIcons.component },
+  { key: 'cabin', label: '客室', icon: platformSemanticIcons.cabin },
+  { key: 'report', label: '报告', icon: platformSemanticIcons.report },
+  { key: 'all', label: '全部', icon: platformUiIcons.layoutGrid },
+  { key: 'favorites', label: '收藏', icon: platformUiIcons.star },
+  { key: 'unclassified', label: '未分类', icon: platformUiIcons.folder },
 ];
 export type AssetModuleKey = (typeof assetGenerationModules)[number]['key'];
 export function assetCategoryLabel(category?: AssetGenerationCategory | null) {

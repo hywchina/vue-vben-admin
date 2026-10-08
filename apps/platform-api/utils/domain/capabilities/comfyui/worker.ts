@@ -12,6 +12,7 @@ import {
   readObject,
   storeObject,
 } from '../../../infrastructure/storage';
+import { allocateGeneratedAssetName } from '../../assets/generated-names';
 import { validateFileForKind } from '../../assets/validation';
 import { writeSystemAudit } from '../../audit/writer';
 import { createNotification } from '../../notifications/repository';
@@ -479,6 +480,11 @@ export class ComfyUiWorker {
     const stored = await storeObject(objectKey, mimeType, downloaded.bytes);
     try {
       await sql.begin(async (transaction) => {
+        const generatedName = await allocateGeneratedAssetName(transaction, {
+          filename,
+          jobId: job.jobId,
+          mimeType,
+        });
         await transaction`
           INSERT INTO assets (
             id, project_id, name, description, kind, source, source_app_key,
@@ -486,7 +492,7 @@ export class ComfyUiWorker {
           ) VALUES (
             ${assetId},
             ${job.projectId},
-            ${`${job.capabilityName} · ${filename}`},
+            ${generatedName.filename},
             ${`由 ${job.jobName} 生成，等待用户确认是否保存到资产中心。`},
             ${output.definition.kind},
             'workflow',
@@ -508,13 +514,14 @@ export class ComfyUiWorker {
             1,
             'object',
             ${objectKey},
-            ${filename},
+            ${generatedName.filename},
             ${mimeType},
             ${downloaded.bytes.byteLength},
             ${createHash('sha256').update(downloaded.bytes).digest('hex')},
             ${stored.ETag?.replaceAll('"', '') ?? null},
             'available',
             ${transaction.json({
+              generatedName,
               comfyui: {
                 filename: output.file.filename,
                 nodeId: output.definition.nodeId,

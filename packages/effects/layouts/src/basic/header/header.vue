@@ -2,7 +2,7 @@
 import { computed, useSlots } from 'vue';
 
 import { useRefresh } from '@vben/hooks';
-import { LockKeyhole, LogOut, RotateCw } from '@vben/icons';
+import { LockKeyhole, LogOut, RefreshCw } from '@vben/icons';
 import { $t } from '@vben/locales';
 import { preferences, usePreferences } from '@vben/preferences';
 import { useAccessStore } from '@vben/stores';
@@ -287,7 +287,7 @@ function clearPreferencesAndLogout() {
     <slot :name="slot.name">
       <template v-if="slot.name === 'refresh'">
         <VbenIconButton class="my-0 mr-1 rounded-md" @click="refresh">
-          <RotateCw class="size-4" />
+          <RefreshCw class="size-4" />
         </VbenIconButton>
       </template>
     </slot>
@@ -386,7 +386,7 @@ function clearPreferencesAndLogout() {
             :tooltip="$t('preferences.widget.refresh')"
             @click="refresh"
           >
-            <RotateCw class="size-4" />
+            <RefreshCw class="size-4" />
           </VbenIconButton>
         </template>
       </slot>

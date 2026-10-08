@@ -81,6 +81,8 @@ export interface WorkflowVersion {
   checksum: string;
   createdAt: string;
   id: string;
+  /** Stable business number; optional only for cached legacy responses. */
+  publicId?: string;
   modelRequirements: string[];
   outputSchema: WorkflowOutputDefinition[];
   parameterSchema: WorkflowParameterDefinition[];
@@ -92,6 +94,7 @@ export interface WorkflowDefinition {
   createdAt: string;
   description: string;
   id: string;
+  publicId?: string;
   name: string;
   provider: string;
   status: 'disabled' | 'draft' | 'published';

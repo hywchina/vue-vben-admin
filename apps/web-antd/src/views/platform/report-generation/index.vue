@@ -41,7 +41,9 @@ import {
   getReportStatusApi,
 } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
+import { assetTypeIcons } from '#/modules/platform/asset-types';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
 import AssetPickerModal from '../workspace/asset-picker-modal.vue';
@@ -516,7 +518,7 @@ onBeforeUnmount(() => {
                       type="text"
                       @click="moveSection(sectionIndex, -1)"
                     >
-                      <IconifyIcon icon="lucide:arrow-up" />
+                      <IconifyIcon :icon="platformUiIcons.arrowUp" />
                     </Button>
                   </Tooltip>
                   <Tooltip title="下移">
@@ -526,7 +528,7 @@ onBeforeUnmount(() => {
                       type="text"
                       @click="moveSection(sectionIndex, 1)"
                     >
-                      <IconifyIcon icon="lucide:arrow-down" />
+                      <IconifyIcon :icon="platformUiIcons.arrowDown" />
                     </Button>
                   </Tooltip>
                   <Tooltip title="删除章节">
@@ -536,7 +538,7 @@ onBeforeUnmount(() => {
                       type="text"
                       @click="removeSection(section.clientId)"
                     >
-                      <IconifyIcon icon="lucide:trash-2" />
+                      <IconifyIcon :icon="platformUiIcons.trash2" />
                     </Button>
                   </Tooltip>
                 </div>
@@ -560,7 +562,7 @@ onBeforeUnmount(() => {
                       :alt="image.caption"
                       :src="previews.get(image.assetId)"
                     />
-                    <IconifyIcon v-else icon="lucide:image" />
+                    <IconifyIcon v-else :icon="assetTypeIcons.image" />
                   </div>
                   <Input
                     v-model:value="image.caption"
@@ -574,7 +576,7 @@ onBeforeUnmount(() => {
                       type="text"
                       @click="moveImage(section, imageIndex, -1)"
                     >
-                      <IconifyIcon icon="lucide:chevron-left" />
+                      <IconifyIcon :icon="platformUiIcons.chevronLeft" />
                     </Button>
                     <Button
                       :disabled="imageIndex === section.images.length - 1"
@@ -582,7 +584,7 @@ onBeforeUnmount(() => {
                       type="text"
                       @click="moveImage(section, imageIndex, 1)"
                     >
-                      <IconifyIcon icon="lucide:chevron-right" />
+                      <IconifyIcon :icon="platformUiIcons.chevronRight" />
                     </Button>
                     <Button
                       danger
@@ -610,9 +612,9 @@ onBeforeUnmount(() => {
                     :disabled="uploading"
                     size="small"
                   >
-                    <IconifyIcon icon="lucide:image-plus" />
+                    <IconifyIcon :icon="platformUiIcons.imagePlus" />
                     {{ uploading ? '正在上传…' : '添加图片' }}
-                    <IconifyIcon icon="lucide:chevron-down" />
+                    <IconifyIcon :icon="platformUiIcons.chevronDown" />
                   </Button>
                   <template #overlay>
                     <div
@@ -627,7 +629,7 @@ onBeforeUnmount(() => {
                           type="text"
                           @click="selectImageSource('asset', section.clientId)"
                         >
-                          <IconifyIcon icon="lucide:folder" />
+                          <IconifyIcon :icon="platformUiIcons.folder" />
                         </Button>
                       </Tooltip>
                       <Tooltip placement="top" title="上传本地图片">
@@ -637,7 +639,7 @@ onBeforeUnmount(() => {
                           type="text"
                           @click="selectImageSource('local', section.clientId)"
                         >
-                          <IconifyIcon icon="lucide:upload" />
+                          <IconifyIcon :icon="platformUiIcons.upload" />
                         </Button>
                       </Tooltip>
                     </div>
@@ -651,7 +653,7 @@ onBeforeUnmount(() => {
               :disabled="sections.length >= (status?.limits.sections ?? 8)"
               @click="addSection"
             >
-              <IconifyIcon icon="lucide:plus" />
+              <IconifyIcon :icon="platformUiIcons.plus" />
               添加章节
             </Button>
           </section>
@@ -683,7 +685,7 @@ onBeforeUnmount(() => {
                 type="primary"
                 @click="submitReport"
               >
-                <IconifyIcon icon="lucide:file-output" />
+                <IconifyIcon :icon="platformSemanticIcons.report" />
                 生成 {{ form.format.toUpperCase() }} 报告
               </Button>
             </div>
@@ -702,7 +704,7 @@ onBeforeUnmount(() => {
             size="small"
             @click="platformStore.refreshCurrentProjectJobs()"
           >
-            <IconifyIcon icon="lucide:refresh-cw" />
+            <IconifyIcon :icon="platformUiIcons.refreshCw" />
             刷新
           </Button>
         </header>
@@ -747,7 +749,7 @@ onBeforeUnmount(() => {
                 type="primary"
                 @click="downloadAsset(job.outputAssetId)"
               >
-                <IconifyIcon icon="lucide:download" />
+                <IconifyIcon :icon="platformUiIcons.download" />
                 下载报告
               </Button>
               <Button

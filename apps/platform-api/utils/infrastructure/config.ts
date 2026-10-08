@@ -13,15 +13,12 @@ export interface PlatformConfig {
   aiAssistantTimeoutMs: number;
   allowSelfRegistration: boolean;
   appPublicUrl: string;
-  bootstrapAdminEmail: string;
   bootstrapAdminName: string;
   bootstrapAdminPassword: string;
   bootstrapAdminUsername: string;
-  bootstrapUser1Email: string;
   bootstrapUser1Name: string;
   bootstrapUser1Password: string;
   bootstrapUser1Username: string;
-  bootstrapUser2Email: string;
   bootstrapUser2Name: string;
   bootstrapUser2Password: string;
   bootstrapUser2Username: string;
@@ -49,7 +46,6 @@ export interface PlatformConfig {
   loraWorkerLeaseSeconds: number;
   maxInlineTextBytes: number;
   maxUploadBytes: number;
-  passwordResetTtlMinutes: number;
   refreshTokenTtlDays: number;
   reportAiApiUrl: null | string;
   reportAiMaxOutputBytes: number;
@@ -64,14 +60,6 @@ export interface PlatformConfig {
   s3PublicEndpoint: string;
   s3Region: string;
   s3SecretKey: string;
-  smtpFromAddress: string;
-  smtpFromName: string;
-  smtpHost: string;
-  smtpPassword: null | string;
-  smtpPort: number;
-  smtpSecure: boolean;
-  smtpTlsRejectUnauthorized: boolean;
-  smtpUser: null | string;
 }
 
 let cachedConfig: null | PlatformConfig = null;
@@ -246,11 +234,6 @@ export function getConfig(): PlatformConfig {
   }
 
   const s3Endpoint = process.env.S3_ENDPOINT ?? 'http://localhost:9000';
-  const smtpUser = process.env.SMTP_USER?.trim() || null;
-  const smtpPassword = process.env.SMTP_PASSWORD || null;
-  if (Boolean(smtpUser) !== Boolean(smtpPassword)) {
-    throw new Error('SMTP_USER 与 SMTP_PASSWORD 必须同时配置或同时留空。');
-  }
 
   cachedConfig = {
     accessTokenTtlSeconds: positiveInteger(
@@ -282,20 +265,14 @@ export function getConfig(): PlatformConfig {
       true,
     ),
     appPublicUrl: process.env.APP_PUBLIC_URL ?? 'http://localhost:5666',
-    bootstrapAdminEmail:
-      process.env.BOOTSTRAP_ADMIN_EMAIL ?? 'admin@rail.local',
     bootstrapAdminName: process.env.BOOTSTRAP_ADMIN_NAME ?? '平台管理员',
     bootstrapAdminPassword:
       process.env.BOOTSTRAP_ADMIN_PASSWORD ?? 'RailAdmin123!',
     bootstrapAdminUsername: process.env.BOOTSTRAP_ADMIN_USERNAME ?? 'admin',
-    bootstrapUser1Email:
-      process.env.BOOTSTRAP_USER1_EMAIL ?? 'user1@rail.local',
     bootstrapUser1Name: process.env.BOOTSTRAP_USER1_NAME ?? '普通用户一',
     bootstrapUser1Password:
       process.env.BOOTSTRAP_USER1_PASSWORD ?? 'RailUser1!2026',
     bootstrapUser1Username: process.env.BOOTSTRAP_USER1_USERNAME ?? 'user1',
-    bootstrapUser2Email:
-      process.env.BOOTSTRAP_USER2_EMAIL ?? 'user2@rail.local',
     bootstrapUser2Name: process.env.BOOTSTRAP_USER2_NAME ?? '普通用户二',
     bootstrapUser2Password:
       process.env.BOOTSTRAP_USER2_PASSWORD ?? 'RailUser2!2026',
@@ -364,10 +341,6 @@ export function getConfig(): PlatformConfig {
       process.env.MAX_UPLOAD_BYTES,
       2 * 1024 * 1024 * 1024,
     ),
-    passwordResetTtlMinutes: positiveInteger(
-      process.env.PASSWORD_RESET_TTL_MINUTES,
-      30,
-    ),
     refreshTokenTtlDays: positiveInteger(
       process.env.REFRESH_TOKEN_TTL_DAYS,
       30,
@@ -397,17 +370,6 @@ export function getConfig(): PlatformConfig {
     s3PublicEndpoint: process.env.S3_PUBLIC_ENDPOINT ?? s3Endpoint,
     s3Region: process.env.S3_REGION ?? 'us-east-1',
     s3SecretKey: process.env.S3_SECRET_KEY ?? 'railminio-dev-secret',
-    smtpFromAddress: process.env.SMTP_FROM_ADDRESS ?? 'no-reply@rail.local',
-    smtpFromName: process.env.SMTP_FROM_NAME ?? '轨道客室智能设计平台',
-    smtpHost: process.env.SMTP_HOST ?? 'localhost',
-    smtpPassword,
-    smtpPort: positiveInteger(process.env.SMTP_PORT, 1025),
-    smtpSecure: booleanValue(process.env.SMTP_SECURE, false),
-    smtpTlsRejectUnauthorized: booleanValue(
-      process.env.SMTP_TLS_REJECT_UNAUTHORIZED,
-      true,
-    ),
-    smtpUser,
   };
 
   return cachedConfig;

@@ -12,7 +12,6 @@ async function seed() {
   const accounts = [
     {
       department: '平台运营',
-      email: config.bootstrapAdminEmail,
       name: config.bootstrapAdminName,
       password: config.bootstrapAdminPassword,
       roleCode: 'admin',
@@ -22,7 +21,6 @@ async function seed() {
       ? [
           {
             department: '设计部门',
-            email: config.bootstrapUser1Email,
             name: config.bootstrapUser1Name,
             password: config.bootstrapUser1Password,
             roleCode: 'user',
@@ -30,7 +28,6 @@ async function seed() {
           },
           {
             department: '设计部门',
-            email: config.bootstrapUser2Email,
             name: config.bootstrapUser2Name,
             password: config.bootstrapUser2Password,
             roleCode: 'user',
@@ -44,17 +41,15 @@ async function seed() {
   for (const account of accounts) {
     const passwordHash = await hashPassword(account.password);
     const [user] = await sql<{ id: string }[]>`
-      INSERT INTO users (username, password_hash, real_name, department, email)
+      INSERT INTO users (username, password_hash, real_name, department)
       VALUES (
         ${account.username},
         ${passwordHash},
         ${account.name},
-        ${account.department},
-        ${account.email.toLowerCase()}
+        ${account.department}
       )
       ON CONFLICT (lower(username)) DO UPDATE SET
         real_name = EXCLUDED.real_name,
-        email = COALESCE(users.email, EXCLUDED.email),
         updated_at = now()
       RETURNING id
     `;

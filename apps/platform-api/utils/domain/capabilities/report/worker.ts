@@ -7,6 +7,7 @@ import process from 'node:process';
 import { useDatabase } from '../../../database';
 import { getConfig } from '../../../infrastructure/config';
 import { deleteObject, readObject, storeObject } from '../../../storage';
+import { allocateGeneratedAssetName } from '../../assets/generated-names';
 import { writeSystemAudit } from '../../audit/writer';
 import { createNotification } from '../../notifications/repository';
 import { generateAiReportArtifact, ReportAiAdapterError } from './ai-adapter';
@@ -277,14 +278,28 @@ export class ReportGenerationWorker {
         artifact.bytes,
       );
       const versionId = randomUUID();
+      let registeredFilename = artifact.filename;
       try {
         await sql.begin(async (transaction) => {
+          // A retried registration must reuse the already registered filename.
+          const [existing] = await transaction<{ filename: string }[]>`
+            SELECT original_filename AS filename FROM asset_versions
+            WHERE asset_id = ${job.outputAssetId} AND version = 1
+          `;
+          const generatedName =
+            existing ??
+            (await allocateGeneratedAssetName(transaction, {
+              filename: artifact.filename,
+              jobId: job.jobId,
+              mimeType: artifact.mimeType,
+            }));
+          registeredFilename = generatedName.filename;
           await transaction`
             INSERT INTO assets (
               id, project_id, name, description, kind, source, source_app_key,
               source_job_id, owner_id, status, saved_at
             ) VALUES (
-              ${job.outputAssetId}, ${job.projectId}, ${job.parameters.title},
+              ${job.outputAssetId}, ${job.projectId}, ${generatedName.filename},
               ${`由“${job.jobName}”通过${job.generationMode === 'ai' ? 'AI 服务' : '平台模板'}生成的${reportTypeLabels[job.parameters.reportType]}。`},
               ${job.parameters.format === 'md' ? 'text' : 'document'},
               'workflow', 'report-generator', ${job.jobId},
@@ -299,10 +314,12 @@ export class ReportGenerationWorker {
               created_by, completed_at
             ) VALUES (
               ${versionId}, ${job.outputAssetId}, 1, 'object', ${job.objectKey},
-              ${artifact.filename}, ${artifact.mimeType}, ${artifact.bytes.byteLength},
+              ${generatedName.filename}, ${artifact.mimeType}, ${artifact.bytes.byteLength},
               ${createHash('sha256').update(artifact.bytes).digest('hex')},
               ${stored.ETag?.replaceAll('"', '') ?? null}, 'available',
               ${transaction.json({
+                generatedName,
+                originalFilename: artifact.filename,
                 format: job.parameters.format,
                 generationMode: job.generationMode,
                 imageCount: job.parameters.sections.reduce(
@@ -354,7 +371,7 @@ export class ReportGenerationWorker {
       }
       await createNotification({
         link: '/report-generation',
-        message: `${artifact.filename} 已生成并加入当前项目资产。`,
+        message: `${registeredFilename} 已生成并加入当前项目资产。`,
         title: '报告生成完成',
         type: 'job',
         userId: job.createdBy,

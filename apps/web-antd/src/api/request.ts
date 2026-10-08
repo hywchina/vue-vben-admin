@@ -25,6 +25,7 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   const client = new RequestClient({
     ...options,
     baseURL,
+    withCredentials: true,
   });
 
   /**
@@ -83,15 +84,25 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   );
 
   // token过期的处理
-  client.addResponseInterceptor(
-    authenticateResponseInterceptor({
-      client,
-      doReAuthenticate,
-      doRefreshToken,
-      enableRefreshToken: preferences.app.enableRefreshToken,
-      formatToken,
-    }),
-  );
+  const authenticationInterceptor = authenticateResponseInterceptor({
+    client,
+    doReAuthenticate,
+    doRefreshToken,
+    enableRefreshToken: preferences.app.enableRefreshToken,
+    formatToken,
+  });
+  client.addResponseInterceptor({
+    rejected: (error) => {
+      // 登录/注册等公开接口的 401 是表单错误，不应刷新或撤销已有会话。
+      if (/^\/auth\/(?:login|register)(?:$|\?)/.test(error.config?.url ?? '')) {
+        throw error;
+      }
+      if (authenticationInterceptor.rejected) {
+        return authenticationInterceptor.rejected(error);
+      }
+      throw error;
+    },
+  });
 
   // 通用的错误处理,如果没有进入上面的错误处理逻辑，就会进入这里
   client.addResponseInterceptor(

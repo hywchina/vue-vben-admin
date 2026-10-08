@@ -22,12 +22,14 @@ export default apiHandler(async (event) => {
       id: string;
       lastOpenedAt: Date;
       projectId: string;
+      publicId: string;
       title: string;
       updatedAt: Date;
     }[]
   >`
     SELECT
       instance.id,
+      instance.public_id AS "publicId",
       instance.project_id AS "projectId",
       instance.app_key AS "appKey",
       instance.title,

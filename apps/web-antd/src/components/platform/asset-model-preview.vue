@@ -5,6 +5,8 @@ import { IconifyIcon } from '@vben/icons';
 
 import { getAssetPreviewApi } from '#/api';
 import Model3dViewer from '#/components/platform/model3d-viewer.vue';
+import { assetTypeIcons } from '#/modules/platform/asset-types';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 const props = defineProps<{
   assetId: string;
@@ -43,7 +45,7 @@ watch(
   <div v-else class="asset-model-preview__state">
     <IconifyIcon
       :class="{ 'is-loading': loading }"
-      :icon="failed ? 'lucide:box' : 'lucide:loader-circle'"
+      :icon="failed ? assetTypeIcons.model3d : platformUiIcons.loaderCircle"
     />
     {{ failed ? '暂时无法读取三维模型' : '正在读取三维模型' }}
   </div>

@@ -8,7 +8,7 @@
 | `GET /api/v1/health/ready` | PostgreSQL 和对象存储都可用 | 失败实例不接收流量，按 dependency 排查 |
 | `GET /api/v1/health` | 与 ready 相同的兼容入口 | 供既有监控迁移 |
 
-ready 会确保资产桶存在并检查权限；邮件和外部 AI 不作为核心流量就绪条件，应独立监控，避免邮件故障导致全站下线。
+ready 会确保资产桶存在并检查权限；外部 AI 不作为核心流量就绪条件，应独立监控。2026-10-08 起移除忘记密码和邮件服务，不再需要 SMTP 或用户邮箱配置；旧邮箱与重置令牌数据保留，旧页面重定向登录、旧 API 返回 404。忘记密码时由管理员在“用户与权限”重置其他账号密码；登录后仍可自行修改密码。旧 Mailpit 容器和卷为兼容保留，不因代码更新自动删除。
 
 ## 2. 环境分级
 
@@ -32,6 +32,39 @@ ready 会确保资产桶存在并检查权限；邮件和外部 AI 不作为核�
 核心模块重构发布需额外记录重构基线 `0c352a574` 和 `REFACTOR_COMMITLOG.md`。本轮没有数据库迁移或配置变化，应用回滚可重新部署基线代码；兼容导出层在本轮保留，调用方不需要同步切换导入路径。回滚后仍必须检查 ready、权限/项目隔离、对象上传和 AI 会话隔离，不能只以进程启动成功作为恢复完成。
 
 ## 4. 备份与恢复
+
+### 统一业务编号升级（2026-10-08）
+
+迁移 038 为 15 类业务记录统一分配 `前缀-至少8位流水号`，不加 RAIL；用户编号补足八位、项目编号改为 PRJ，原用户/项目编号保存在 `business_id_aliases`。先备份并在恢复副本预演，发布时暂停写入，先迁移再启动新 API/Worker/Web。UUID、对象键、生成文件名、现有 AST/TSK 与第三方 ID 不变。历史别名不是权限凭证，不可绕过原有成员和用户范围。
+
+回退必须停写、恢复升级前数据库备份并部署对应旧版本应用；仅回退旧 API 可能无法邀请新版用户编号或生成符合约束的用户记录。备份含敏感账号信息，放入受限目录，不提交 Git。验收命令与全部前缀见 [统一业务编号](BUSINESS_IDS.md)。
+
+### 生成资产名称升级与恢复（2026-10-08）
+
+当前规则为 `DSC-00000125-YYYYMMDD-001.ext`，无设计会话的历史/专属实例使用 INS 编号。037 首次建立 UUID 名称与计数器；038 建立业务编号；039 只将真实任务输出自动名称的 UUID 前缀换为对应编号，保留日期、序号、扩展名及计数器。上传/复制件与手动名称不覆盖。升级前暂停旧 Worker 的输出登记并按下文备份数据库；先按顺序迁移，再启动新版 API/Worker。文件不搬迁或重传，不重建存储卷。
+
+039 的升级前后资产名称及全部版本下载名快照保存在 `generated_asset_business_name_history`；037 的 `generated_asset_name_history` 原始快照另行保留，两者都不可在确认前清理。版本 metadata/上游原文件名是历史信息，不作为新名称的运行时来源。
+
+可在已应用 038、尚未应用 039 的恢复副本预演（自动回滚，夹具也回滚；业务序列可留下正常空号）：
+
+```bash
+pnpm --filter @rail/platform-api exec node ../../scripts/run-with-env.mjs .env -- tsx scripts/generated-asset-naming-integration-test.ts --preview-migration
+pnpm db:rail:migrate
+pnpm --filter @rail/platform-api exec node ../../scripts/run-with-env.mjs .env -- tsx scripts/generated-asset-naming-integration-test.ts --verify-history
+```
+
+历史核对仅用于刚完成 039 升级的环境，检查每个版本是否符合升级快照（允许被保护的手动名称与下载名不同）。正常用户后续手动修改展示名或添加版本不应被迁移重新覆盖。若需恢复到 039 前的 UUID 名称，先暂停写入并备份当前名称，再由维护人员审查执行以下事务；会覆盖这些历史资产升级后的手动改名，只影响迁移备份中记录的资产/版本，不影响新版新增资产和文件内容。保留计数器，防止未来重用号码，不删除迁移记录或备份表。需要恢复到 037 前的上游原名称时，使用 037 原始快照并单独审查，不混用两次恢复。
+
+```sql
+BEGIN;
+UPDATE assets a SET name = h.previous_name
+FROM generated_asset_business_name_history h WHERE a.id = h.asset_id;
+UPDATE asset_versions v SET original_filename = backup.item->>'filename'
+FROM generated_asset_business_name_history h,
+  LATERAL jsonb_array_elements(h.previous_filenames) AS backup(item)
+WHERE v.id = (backup.item->>'id')::uuid;
+COMMIT;
+```
 
 备份必须同时覆盖 PostgreSQL 和 S3/MinIO；只备份一边会产生无文件元数据或孤立文件。建议暂停写入或使用一致快照，并记录数据库时间、桶快照、应用提交和迁移版本。
 

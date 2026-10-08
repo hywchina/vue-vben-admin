@@ -19,7 +19,6 @@ export namespace AuthApi {
   }
 
   export interface RegisterParams {
-    email: string;
     password: string;
     username: string;
   }
@@ -36,11 +35,13 @@ export async function loginApi(data: AuthApi.LoginParams) {
  * 刷新accessToken
  */
 export async function refreshTokenApi() {
-  const response = (await baseRequestClient.post<AuthApi.RefreshTokenResult>(
-    '/auth/refresh',
-    undefined,
-    { withCredentials: true },
-  )) as unknown as { data: AuthApi.RefreshTokenResult };
+  // 保留 HTTP 状态，区分会话失效与暂时的网络/服务故障。
+  const response =
+    await baseRequestClient.instance.post<AuthApi.RefreshTokenResult>(
+      '/auth/refresh',
+      undefined,
+      { withCredentials: true },
+    );
   return response.data.data;
 }
 
@@ -57,23 +58,6 @@ export async function registerApi(data: AuthApi.RegisterParams) {
   return requestClient.post<{ id: string; username: string }>(
     '/auth/register',
     data,
-  );
-}
-
-export function requestPasswordResetApi(email: string) {
-  return requestClient.post<{ accepted: boolean; message: string }>(
-    '/auth/password-reset/request',
-    { email },
-  );
-}
-
-export function confirmPasswordResetApi(input: {
-  newPassword: string;
-  token: string;
-}) {
-  return requestClient.post<{ changed: boolean }>(
-    '/auth/password-reset/confirm',
-    input,
   );
 }
 

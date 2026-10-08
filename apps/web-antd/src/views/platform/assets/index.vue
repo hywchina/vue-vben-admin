@@ -57,6 +57,7 @@ import {
   assetTypeOptions,
   assetUploadAccept,
 } from '#/modules/platform/asset-types';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
 const platformStore = usePlatformStore();
@@ -1129,7 +1130,7 @@ async function saveAssetName() {
           type="primary"
           @click="uploadOpen = true"
         >
-          <IconifyIcon icon="lucide:upload" />
+          <IconifyIcon :icon="platformUiIcons.upload" />
           登记资产
         </Button>
       </div>
@@ -1183,7 +1184,7 @@ async function saveAssetName() {
                   aria-label="执行搜索"
                   @click="submitSearch"
                 >
-                  <IconifyIcon icon="lucide:search" />
+                  <IconifyIcon :icon="platformUiIcons.search" />
                 </button>
               </template>
             </Input>
@@ -1192,7 +1193,7 @@ async function saveAssetName() {
             :class="{ 'has-filters': activeFilterCount }"
             @click="filterOpen = true"
           >
-            <IconifyIcon icon="lucide:sliders-horizontal" />
+            <IconifyIcon :icon="platformUiIcons.slidersHorizontal" />
             筛选
             <span v-if="activeFilterCount">{{ activeFilterCount }}</span>
           </Button>
@@ -1210,7 +1211,7 @@ async function saveAssetName() {
               type="button"
               @click="viewMode = 'grid'"
             >
-              <IconifyIcon icon="lucide:grid-2x2" />
+              <IconifyIcon :icon="platformUiIcons.grid2x2" />
             </button>
             <button
               :class="{ active: viewMode === 'list' }"
@@ -1219,7 +1220,7 @@ async function saveAssetName() {
               type="button"
               @click="viewMode = 'list'"
             >
-              <IconifyIcon icon="lucide:list" />
+              <IconifyIcon :icon="platformUiIcons.list" />
             </button>
           </div>
         </div>
@@ -1260,7 +1261,7 @@ async function saveAssetName() {
               v-for="(item, index) in breadcrumbs"
               :key="item.id ?? 'root'"
             >
-              <IconifyIcon v-if="index" icon="lucide:chevron-right" />
+              <IconifyIcon v-if="index" :icon="platformUiIcons.chevronRight" />
               <button type="button" @click="enterFolder(item.id)">
                 {{ item.name }}
               </button>
@@ -1270,7 +1271,7 @@ async function saveAssetName() {
             :disabled="projectFilter === 'all' || isFavoritesFolder"
             @click="openCreateFolder"
           >
-            <IconifyIcon icon="lucide:folder-plus" />
+            <IconifyIcon :icon="platformUiIcons.folderPlus" />
             新建文件夹
           </Button>
         </div>
@@ -1298,7 +1299,9 @@ async function saveAssetName() {
           >
             <IconifyIcon
               :icon="
-                folder.kind === 'favorites' ? 'lucide:star' : 'lucide:folder'
+                folder.kind === 'favorites'
+                  ? platformUiIcons.star
+                  : platformUiIcons.folder
               "
             />
             <span>
@@ -1317,14 +1320,14 @@ async function saveAssetName() {
                 type="button"
                 @click.stop="openRenameFolder(folder.id, folder.name)"
               >
-                <IconifyIcon icon="lucide:pencil" />
+                <IconifyIcon :icon="platformUiIcons.pencil" />
               </button>
               <button
                 :aria-label="`删除文件夹${folder.name}`"
                 type="button"
                 @click.stop="confirmDeleteFolder(folder.id, folder.name)"
               >
-                <IconifyIcon icon="lucide:trash-2" />
+                <IconifyIcon :icon="platformUiIcons.trash2" />
               </button>
             </div>
           </article>
@@ -1352,25 +1355,25 @@ async function saveAssetName() {
         <div v-if="selectedAssetIds.length" class="asset-batch-bar">
           <strong>已选择 {{ selectedAssetIds.length }} 项</strong>
           <Button @click="clearAssetSelection">
-            <IconifyIcon icon="lucide:x" />
+            <IconifyIcon :icon="platformUiIcons.close" />
             取消选择
           </Button>
           <Button
             :disabled="projectFilter === 'all' || isFavoritesFolder"
             @click="openBatch('move')"
           >
-            <IconifyIcon icon="lucide:folder-input" />
+            <IconifyIcon :icon="platformUiIcons.folderInput" />
             移动到
           </Button>
           <Button
             :disabled="projectFilter === 'all' || isFavoritesFolder"
             @click="openBatch('copy')"
           >
-            <IconifyIcon icon="lucide:copy" />
+            <IconifyIcon :icon="platformUiIcons.copy" />
             复制到
           </Button>
           <Button danger @click="confirmBatchDelete">
-            <IconifyIcon icon="lucide:trash-2" />
+            <IconifyIcon :icon="platformUiIcons.trash2" />
             删除
           </Button>
         </div>
@@ -1430,8 +1433,8 @@ async function saveAssetName() {
                   }"
                   :icon="
                     assetPreviewStatuses.get(asset.id) === 'error'
-                      ? 'lucide:image-off'
-                      : 'lucide:loader-circle'
+                      ? platformUiIcons.imageOff
+                      : platformUiIcons.loaderCircle
                   "
                 />
                 <small>
@@ -1455,7 +1458,7 @@ async function saveAssetName() {
                 type="button"
                 @click.stop="toggleAssetFavorite(asset)"
               >
-                <IconifyIcon icon="lucide:star" />
+                <IconifyIcon :icon="platformUiIcons.star" />
               </button>
             </div>
             <div class="asset-card__body">
@@ -1489,7 +1492,10 @@ async function saveAssetName() {
         </div>
         <div v-else-if="!assetsLoading && !loadError" class="rail-empty">
           <div>
-            <IconifyIcon class="empty-icon" icon="lucide:package-open" />
+            <IconifyIcon
+              class="empty-icon"
+              :icon="platformUiIcons.packageOpen"
+            />
             <p>没有符合条件的资产</p>
             <small>调整筛选条件，或者登记一项新资产。</small>
           </div>
@@ -1692,7 +1698,10 @@ async function saveAssetName() {
             v-else-if="detailPreviewLoading"
             class="asset-preview-state asset-detail-preview__state"
           >
-            <IconifyIcon class="is-loading" icon="lucide:loader-circle" />
+            <IconifyIcon
+              class="is-loading"
+              :icon="platformUiIcons.loaderCircle"
+            />
             <small>正在读取资产内容</small>
           </div>
           <div
@@ -1706,8 +1715,8 @@ async function saveAssetName() {
               }"
               :icon="
                 assetPreviewStatuses.get(selectedAsset.id) === 'error'
-                  ? 'lucide:image-off'
-                  : 'lucide:loader-circle'
+                  ? platformUiIcons.imageOff
+                  : platformUiIcons.loaderCircle
               "
             />
             <small>
@@ -1790,7 +1799,7 @@ async function saveAssetName() {
           :loading="deletingAssetId === selectedAsset.id"
           @click="confirmDeleteAsset(selectedAsset)"
         >
-          <IconifyIcon icon="lucide:trash-2" />
+          <IconifyIcon :icon="platformUiIcons.trash2" />
           删除资产
         </Button>
       </template>
@@ -1887,7 +1896,9 @@ async function saveAssetName() {
             <span class="upload-file-icon">
               <IconifyIcon
                 :icon="
-                  uploadFile ? 'lucide:file-check-2' : 'lucide:upload-cloud'
+                  uploadFile
+                    ? platformUiIcons.fileCheck2
+                    : platformUiIcons.upload
                 "
               />
             </span>
@@ -1907,7 +1918,7 @@ async function saveAssetName() {
           </span>
         </label>
         <div class="upload-placeholder">
-          <IconifyIcon icon="lucide:file-up" />
+          <IconifyIcon :icon="platformUiIcons.upload" />
           <div>
             <strong>文件将保存到平台对象存储</strong>
             <p>

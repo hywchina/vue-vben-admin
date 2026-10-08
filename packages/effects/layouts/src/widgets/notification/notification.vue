@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import type { NotificationItem } from './types';
 
-import { Bell, CircleCheckBig, CircleX, MailCheck } from '@vben/icons';
+import { Bell, CircleCheck, CircleX, MailCheck } from '@vben/icons';
 import { $t } from '@vben/locales';
 
 import {
@@ -129,7 +129,7 @@ defineExpose({ toggle });
                       :tooltip="$t('common.confirm')"
                       @click.stop="emit('read', item)"
                     >
-                      <CircleCheckBig class="size-4" />
+                      <CircleCheck class="size-4" />
                     </VbenIconButton>
                     <VbenIconButton
                       v-if="item.isRead"

@@ -21,7 +21,7 @@ function createJob(overrides: Partial<PlatformJob> = {}): PlatformJob {
     name: '测试任务',
     ownedByCurrentUser: true,
     owner: '测试用户',
-    ownerPublicId: 'USR-000001',
+    ownerPublicId: 'USR-00000001',
     outputs: [],
     parameters: {},
     progress: 0,

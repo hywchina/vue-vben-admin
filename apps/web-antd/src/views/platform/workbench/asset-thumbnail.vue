@@ -4,6 +4,7 @@ import { ref, watch } from 'vue';
 import { IconifyIcon } from '@vben/icons';
 
 import { getAssetPreviewApi } from '#/api/platform/assets';
+import { assetTypeIcon } from '#/modules/platform/asset-types';
 const props = defineProps<{ assetId?: string; name: string; type?: string }>();
 const url = ref('');
 let generation = 0;
@@ -27,16 +28,7 @@ watch(
 <template>
   <div class="wb-thumbnail">
     <img v-if="url" :src="url" :alt="name" loading="lazy" @error="url = ''" />
-    <IconifyIcon
-      v-else
-      :icon="
-        type === 'model3d'
-          ? 'lucide:box'
-          : type === 'image'
-            ? 'lucide:image'
-            : 'lucide:file-text'
-      "
-    />
+    <IconifyIcon v-else :icon="assetTypeIcon(type)" />
   </div>
 </template>
 <style scoped>

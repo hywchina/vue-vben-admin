@@ -3,6 +3,7 @@ import { requestClient } from '#/api/request';
 export interface PlatformNotification {
   createdAt: string;
   id: string;
+  publicId?: string;
   isRead: boolean;
   link: null | string;
   message: string;

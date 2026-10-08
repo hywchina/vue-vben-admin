@@ -56,12 +56,15 @@ export default apiHandler(async (event) => {
       filename: string;
       id: string;
       mimeType: string;
+      publicId: string;
       sizeBytes: number;
       status: string;
     }[]
   >`
     INSERT INTO ai_attachments (
-      id, conversation_id, user_id, object_key, original_filename,
+      id,
+      public_id AS "publicId",
+      public_id AS "publicId", conversation_id, user_id, object_key, original_filename,
       mime_type, size_bytes
     ) VALUES (
       ${attachmentId}, ${conversationId}, ${identity.id}, ${objectKey},

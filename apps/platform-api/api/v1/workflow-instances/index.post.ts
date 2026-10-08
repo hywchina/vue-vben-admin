@@ -55,6 +55,7 @@ export default apiHandler(async (event) => {
         id: string;
         lastOpenedAt: Date;
         projectId: string;
+        publicId: string;
         title: string;
         updatedAt: Date;
       }[]
@@ -66,6 +67,7 @@ export default apiHandler(async (event) => {
       )
       RETURNING
         id,
+        public_id AS "publicId",
         project_id AS "projectId",
         app_key AS "appKey",
         title,

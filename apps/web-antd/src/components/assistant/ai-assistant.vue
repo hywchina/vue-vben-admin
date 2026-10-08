@@ -25,18 +25,29 @@ import {
   getAiAttachmentPreviewApi,
   getAiConversationsApi,
   getAiMessagesApi,
+  getAssetPreviewApi,
   removeAiAttachmentApi,
   renameAiConversationApi,
   sendAiMessageApi,
   uploadAiAttachmentApi,
 } from '#/api';
 import PlatformMarkdown from '#/components/platform/platform-markdown.vue';
+import { assetTypeIcons } from '#/modules/platform/asset-types';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { copyTextToClipboard } from '#/utils/copy-text';
 
+import {
+  assetImageDragType,
+  readAssetImageFile,
+  readDraggedAssetId,
+  readDraggedImageName,
+} from './asset-image-drag';
 import assistantLogo from './assistant-logo.svg';
 import { assistantPanelSize, clampFloatingPosition } from './floating-position';
 
 interface PendingFile {
+  sourceAssetId?: string;
   attachmentId?: string;
   file: File;
   id: string;
@@ -179,6 +190,9 @@ const initialized = ref(false);
 const initializing = ref(false);
 const loadingMessages = ref(false);
 const sending = ref(false);
+const importingAsset = ref(false);
+const dropDepth = ref(0);
+let disposed = false;
 const status = ref<AiAssistantStatus>();
 const conversations = ref<AiConversation[]>([]);
 const activeConversationId = ref('');
@@ -205,6 +219,7 @@ const defaultMaxImagesPerMessage = 4;
 const canSend = computed(
   () =>
     !sending.value &&
+    !importingAsset.value &&
     (draft.value.trim().length > 0 || pendingFiles.value.length > 0),
 );
 const pendingImageCount = computed(
@@ -221,7 +236,9 @@ const visibleConversations = computed(() => {
   return conversations.value
     .filter((conversation) => {
       if (!query) return true;
-      return conversation.title.toLocaleLowerCase('zh-CN').includes(query);
+      return `${conversation.title} ${conversation.publicId ?? ''}`
+        .toLocaleLowerCase('zh-CN')
+        .includes(query);
     })
     .toSorted((left, right) => {
       const leftTime = Date.parse(
@@ -430,7 +447,7 @@ function closeAssistant() {
 }
 
 function confirmDeleteConversation(conversation: AiConversation) {
-  if (sending.value) return;
+  if (sending.value || importingAsset.value) return;
   Modal.confirm({
     title: '删除这条对话？',
     content: `“${conversation.title}”及其中的消息、附件将被删除，无法恢复。`,
@@ -461,7 +478,7 @@ function releasePendingFiles() {
 }
 
 async function startNewConversation() {
-  if (sending.value) return;
+  if (sending.value || importingAsset.value) return;
   closeConversationMenu();
   activeConversationId.value = '';
   messages.value = [];
@@ -472,7 +489,7 @@ async function startNewConversation() {
 }
 
 async function selectConversation(conversationId: string) {
-  if (sending.value) return;
+  if (sending.value || importingAsset.value) return;
   closeConversationMenu();
   if (conversationId === activeConversationId.value) return;
   activeConversationId.value = conversationId;
@@ -489,6 +506,11 @@ function handleFiles(event: Event) {
   const target = event.target as HTMLInputElement;
   const selectedFiles = [...(target.files ?? [])];
   target.value = '';
+  if (sending.value || importingAsset.value) return;
+  addPendingFiles(selectedFiles);
+}
+
+function addPendingFiles(selectedFiles: File[], sourceAssetId?: string) {
   const remainingSlots = Math.max(0, 8 - pendingFiles.value.length);
   if (selectedFiles.length > remainingSlots) {
     message.warning('每条消息最多添加 8 个附件');
@@ -515,6 +537,7 @@ function handleFiles(event: Event) {
     }
     if (file.type.startsWith('image/')) remainingImageSlots -= 1;
     pendingFiles.value.push({
+      sourceAssetId,
       file,
       id: createLocalId(),
       previewUrl: file.type.startsWith('image/')
@@ -525,6 +548,92 @@ function handleFiles(event: Event) {
   }
   if (skippedImages > 0) {
     message.warning(`每条消息最多添加 ${maxImagesPerMessage.value} 张图片`);
+  }
+}
+
+function acceptsDrop(event: DragEvent) {
+  return [...(event.dataTransfer?.types ?? [])].some(
+    (type) => type === assetImageDragType || type === 'Files',
+  );
+}
+
+function resetDropHighlight() {
+  dropDepth.value = 0;
+}
+
+function enterDrop(event: DragEvent) {
+  if (!acceptsDrop(event) || sending.value || importingAsset.value) return;
+  event.preventDefault();
+  dropDepth.value += 1;
+}
+
+function overDrop(event: DragEvent) {
+  event.preventDefault();
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect =
+      acceptsDrop(event) && !sending.value && !importingAsset.value
+        ? 'copy'
+        : 'none';
+  }
+}
+
+async function receiveDrop(event: DragEvent) {
+  event.preventDefault();
+  event.stopPropagation();
+  resetDropHighlight();
+  if (sending.value || importingAsset.value) {
+    message.warning('请等待当前发送或图片读取完成');
+    return;
+  }
+  const transfer = event.dataTransfer;
+  if (!transfer) return;
+  if (!transfer.types.includes(assetImageDragType)) {
+    if (transfer.files.length > 0) addPendingFiles([...transfer.files]);
+    else message.warning('请拖入平台生成的图片或本地文件');
+    return;
+  }
+  const assetId = readDraggedAssetId(transfer);
+  if (!assetId) {
+    message.warning('图片拖拽信息无效，请重新拖拽');
+    return;
+  }
+  if (pendingFiles.value.some((item) => item.sourceAssetId === assetId)) {
+    message.info('这张图片已在待发送附件中');
+    return;
+  }
+  if (
+    pendingFiles.value.length >= 8 ||
+    pendingImageCount.value >= maxImagesPerMessage.value
+  ) {
+    message.warning(
+      `每条消息最多添加 8 个附件、${maxImagesPerMessage.value} 张图片`,
+    );
+    return;
+  }
+  importingAsset.value = true;
+  const conversationId = activeConversationId.value;
+  try {
+    const file = await readAssetImageFile(
+      assetId,
+      status.value?.maxAttachmentBytes ?? defaultMaxAttachmentBytes,
+      {
+        getPreview: getAssetPreviewApi,
+        readFile: (url) => fetch(url, { signal: AbortSignal.timeout(30_000) }),
+      },
+      readDraggedImageName(transfer),
+    );
+    if (disposed || conversationId !== activeConversationId.value) return;
+    addPendingFiles([file], assetId);
+    await nextTick();
+    composerInput.value?.focus();
+  } catch (error) {
+    if (!disposed) {
+      message.error(
+        error instanceof Error ? error.message : '读取图片失败，请重试',
+      );
+    }
+  } finally {
+    importingAsset.value = false;
   }
 }
 
@@ -648,6 +757,7 @@ async function copyAssistantMessage(content: string) {
 }
 
 onMounted(() => {
+  document.addEventListener('dragend', resetDropHighlight);
   window.addEventListener('resize', resizeFloatingAssistant);
   window.visualViewport?.addEventListener('resize', resizeFloatingAssistant);
   window.visualViewport?.addEventListener('scroll', resizeFloatingAssistant);
@@ -656,6 +766,8 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
+  document.removeEventListener('dragend', resetDropHighlight);
   window.removeEventListener('resize', resizeFloatingAssistant);
   window.visualViewport?.removeEventListener('resize', resizeFloatingAssistant);
   window.visualViewport?.removeEventListener('scroll', resizeFloatingAssistant);
@@ -702,11 +814,11 @@ onBeforeUnmount(() => {
                 aria-haspopup="dialog"
                 :aria-expanded="conversationMenuOpen"
                 aria-label="选择历史对话"
-                :disabled="sending"
+                :disabled="sending || importingAsset"
                 title="历史对话"
                 @click="toggleConversationMenu"
               >
-                <IconifyIcon icon="lucide:history" />
+                <IconifyIcon :icon="platformSemanticIcons.history" />
               </button>
 
               <div
@@ -724,10 +836,10 @@ onBeforeUnmount(() => {
                     :disabled="!activeConversationId || messages.length === 0"
                     @click="confirmClearConversation"
                   >
-                    <IconifyIcon icon="lucide:trash-2" />
+                    <IconifyIcon :icon="platformUiIcons.trash2" />
                   </button>
                   <label>
-                    <IconifyIcon icon="lucide:search" />
+                    <IconifyIcon :icon="platformUiIcons.search" />
                     <input
                       v-model="conversationSearch"
                       type="search"
@@ -754,8 +866,8 @@ onBeforeUnmount(() => {
                     <IconifyIcon
                       :icon="
                         conversationSortOrder === 'desc'
-                          ? 'lucide:arrow-down-wide-narrow'
-                          : 'lucide:arrow-up-narrow-wide'
+                          ? platformUiIcons.arrowDownWideNarrow
+                          : platformUiIcons.arrowUpNarrowWide
                       "
                     />
                     {{ conversationSortOrder === 'desc' ? '新→旧' : '旧→新' }}
@@ -768,7 +880,7 @@ onBeforeUnmount(() => {
                     class="rail-ai-conversation-new"
                     @click="startNewConversation"
                   >
-                    <IconifyIcon icon="lucide:plus" />
+                    <IconifyIcon :icon="platformUiIcons.plus" />
                     新对话
                   </button>
                   <div
@@ -797,7 +909,7 @@ onBeforeUnmount(() => {
                         aria-label="保存名称"
                         :disabled="renamingConversation"
                       >
-                        <IconifyIcon icon="lucide:check" />
+                        <IconifyIcon :icon="platformUiIcons.check" />
                       </button>
                       <button
                         type="button"
@@ -806,7 +918,7 @@ onBeforeUnmount(() => {
                         :disabled="renamingConversation"
                         @click="cancelConversationRename"
                       >
-                        <IconifyIcon icon="lucide:x" />
+                        <IconifyIcon :icon="platformUiIcons.close" />
                       </button>
                     </form>
                     <template v-else>
@@ -817,6 +929,8 @@ onBeforeUnmount(() => {
                       >
                         <strong>{{ conversation.title }}</strong>
                         <small>
+                          <span v-if="conversation.publicId">{{ conversation.publicId }} ·
+                          </span>
                           {{ formatConversationDate(conversation) }}
                         </small>
                       </button>
@@ -827,17 +941,17 @@ onBeforeUnmount(() => {
                         title="重命名"
                         @click="startConversationRename(conversation)"
                       >
-                        <IconifyIcon icon="lucide:pencil" />
+                        <IconifyIcon :icon="platformUiIcons.pencil" />
                       </button>
                       <button
                         type="button"
                         class="rail-ai-conversation-delete-button"
                         :aria-label="`删除 ${conversation.title}`"
                         title="删除对话"
-                        :disabled="sending"
+                        :disabled="sending || importingAsset"
                         @click="confirmDeleteConversation(conversation)"
                       >
-                        <IconifyIcon icon="lucide:trash-2" />
+                        <IconifyIcon :icon="platformUiIcons.trash2" />
                       </button>
                     </template>
                   </div>
@@ -851,10 +965,10 @@ onBeforeUnmount(() => {
               type="button"
               title="新建对话"
               aria-label="新建对话"
-              :disabled="sending"
+              :disabled="sending || importingAsset"
               @click="startNewConversation"
             >
-              <IconifyIcon icon="lucide:plus" />
+              <IconifyIcon :icon="platformUiIcons.plus" />
             </button>
             <button
               type="button"
@@ -862,7 +976,7 @@ onBeforeUnmount(() => {
               aria-label="关闭 AI 设计助手"
               @click="closeAssistant"
             >
-              <IconifyIcon icon="lucide:x" />
+              <IconifyIcon :icon="platformUiIcons.close" />
             </button>
           </div>
         </header>
@@ -928,7 +1042,7 @@ onBeforeUnmount(() => {
                       :alt="attachment.filename"
                     />
                     <span v-else class="rail-ai-attachment__icon">
-                      <IconifyIcon icon="lucide:file-text" />
+                      <IconifyIcon :icon="assetTypeIcons.document" />
                     </span>
                     <span class="rail-ai-attachment__meta">
                       <strong>{{ attachment.filename }}</strong>
@@ -951,17 +1065,17 @@ onBeforeUnmount(() => {
                     aria-label="复制 Markdown"
                     @click="copyAssistantMessage(item.content)"
                   >
-                    <IconifyIcon icon="lucide:copy" />
+                    <IconifyIcon :icon="platformUiIcons.copy" />
                   </button>
                   <div class="rail-ai-message__time">
                     <IconifyIcon
                       v-if="item.uiState === 'sending'"
-                      icon="lucide:loader-circle"
+                      :icon="platformUiIcons.loaderCircle"
                       class="is-spinning"
                     />
                     <IconifyIcon
                       v-if="item.status === 'failed'"
-                      icon="lucide:circle-alert"
+                      :icon="platformUiIcons.circleAlert"
                     />
                     {{
                       item.uiState === 'sending'
@@ -976,7 +1090,7 @@ onBeforeUnmount(() => {
                 class="rail-ai-avatar is-user"
                 aria-label="用户"
               >
-                <IconifyIcon icon="lucide:user-round" />
+                <IconifyIcon :icon="platformSemanticIcons.profile" />
               </div>
             </article>
             <article
@@ -1002,9 +1116,29 @@ onBeforeUnmount(() => {
           </div>
         </main>
 
-        <footer class="rail-ai-composer">
+        <footer
+          class="rail-ai-composer"
+          :class="{ 'is-drop-active': dropDepth > 0 }"
+          data-testid="assistant-attachment-dropzone"
+          @dragenter="enterDrop"
+          @dragover="overDrop"
+          @dragleave="dropDepth = Math.max(0, dropDepth - 1)"
+          @drop="receiveDrop"
+        >
+          <div
+            v-if="dropDepth > 0 || importingAsset"
+            class="rail-ai-drop-hint"
+            role="status"
+          >
+            <IconifyIcon :icon="platformUiIcons.imagePlus" />
+            {{
+              importingAsset
+                ? '正在读取图片…'
+                : '松开添加图片或文件，不会自动发送'
+            }}
+          </div>
           <div v-if="!status?.configured" class="rail-ai-service-note">
-            <IconifyIcon icon="lucide:info" />
+            <IconifyIcon :icon="platformUiIcons.info" />
             对话可正常保存；配置 AI 服务后即可获取回复。
           </div>
           <div v-if="pendingFiles.length" class="rail-ai-pending-files">
@@ -1015,7 +1149,7 @@ onBeforeUnmount(() => {
               :class="{ 'is-failed': item.state === 'failed' }"
             >
               <img v-if="item.previewUrl" :src="item.previewUrl" alt="" />
-              <IconifyIcon v-else icon="lucide:file-text" />
+              <IconifyIcon v-else :icon="assetTypeIcons.document" />
               <span>
                 <strong>{{ item.file.name }}</strong>
                 <small>
@@ -1034,7 +1168,7 @@ onBeforeUnmount(() => {
                 :aria-label="`移除 ${item.file.name}`"
                 @click="removePendingFile(item)"
               >
-                <IconifyIcon icon="lucide:x" />
+                <IconifyIcon :icon="platformUiIcons.close" />
               </button>
             </div>
           </div>
@@ -1063,10 +1197,12 @@ onBeforeUnmount(() => {
                 class="rail-ai-attach-button"
                 :title="`添加图片或文件；每条消息最多 ${maxImagesPerMessage} 张图片`"
                 :aria-label="`添加图片或文件；每条消息最多 ${maxImagesPerMessage} 张图片`"
-                :disabled="sending || pendingFiles.length >= 8"
+                :disabled="
+                  sending || importingAsset || pendingFiles.length >= 8
+                "
                 @click="chooseFiles"
               >
-                <IconifyIcon icon="lucide:paperclip" />
+                <IconifyIcon :icon="platformUiIcons.paperclip" />
               </button>
 
               <button
@@ -1077,7 +1213,11 @@ onBeforeUnmount(() => {
                 @click="handleSend"
               >
                 <IconifyIcon
-                  :icon="sending ? 'lucide:loader-circle' : 'lucide:arrow-up'"
+                  :icon="
+                    sending
+                      ? platformUiIcons.loaderCircle
+                      : platformUiIcons.send
+                  "
                   :class="{ 'is-spinning': sending }"
                 />
               </button>
@@ -1132,6 +1272,7 @@ onBeforeUnmount(() => {
   z-index: 1200;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   width: min(430px, calc(100vw - 32px));
   height: min(720px, calc(100dvh - 48px));
   overflow: hidden;
@@ -1746,6 +1887,7 @@ onBeforeUnmount(() => {
 }
 
 .rail-ai-composer {
+  min-width: 0;
   padding: 12px 20px 20px;
   background: transparent;
 }
@@ -1838,6 +1980,21 @@ onBeforeUnmount(() => {
 .rail-ai-input-shell:focus-within {
   border-color: var(--assistant-red);
   box-shadow: 0 0 0 3px rgb(185 28 50 / 9%);
+}
+
+.rail-ai-composer.is-drop-active .rail-ai-input-shell {
+  background: var(--rail-theme-accent-soft, #fff1f3);
+  border-color: var(--assistant-red);
+  box-shadow: 0 0 0 3px rgb(185 28 50 / 9%);
+}
+
+.rail-ai-drop-hint {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--assistant-red);
 }
 
 .rail-ai-input-shell textarea {

@@ -16,7 +16,9 @@ import { getAssetApi, getAssetPreviewApi } from '#/api';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import ComfyMaskIcon from '#/components/platform/comfy-mask-icon.vue';
 import ImageLightbox from '#/components/platform/image-lightbox.vue';
+import { assetTypeIcons } from '#/modules/platform/asset-types';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 import AssetPickerModal from './asset-picker-modal.vue';
 import {
@@ -634,12 +636,12 @@ onBeforeUnmount(stopCapture);
       <IconifyIcon
         :icon="
           field.type === 'capture'
-            ? 'lucide:monitor-up'
+            ? platformUiIcons.monitorUp
             : field.type === 'mask'
-              ? 'lucide:paintbrush'
+              ? platformUiIcons.paintbrush
               : field.type === 'region'
-                ? 'lucide:square-dashed-mouse-pointer'
-                : 'lucide:image'
+                ? platformUiIcons.squareDashedMousePointer
+                : assetTypeIcons.image
         "
       />
     </header>
@@ -667,7 +669,7 @@ onBeforeUnmount(stopCapture);
           @click="lightboxOpen = true"
         />
         <div v-if="!captureActive && !previewUrl" class="capture-placeholder">
-          <IconifyIcon icon="lucide:monitor-up" />
+          <IconifyIcon :icon="platformUiIcons.monitorUp" />
           <p>共享屏幕或打开摄像头后，可截取当前帧或持续实时运行。</p>
         </div>
       </div>
@@ -678,7 +680,7 @@ onBeforeUnmount(stopCapture);
           "
           @click="startCapture('screen')"
         >
-          <IconifyIcon icon="lucide:monitor-up" />
+          <IconifyIcon :icon="platformUiIcons.monitorUp" />
           共享屏幕
         </Button>
         <Button
@@ -687,13 +689,13 @@ onBeforeUnmount(stopCapture);
           "
           @click="startCapture('camera')"
         >
-          <IconifyIcon icon="lucide:camera" />
+          <IconifyIcon :icon="platformUiIcons.camera" />
           摄像头
         </Button>
       </div>
       <div class="capture-direct-actions">
         <Button :disabled="!captureActive" @click="openAreaPicker">
-          <IconifyIcon icon="lucide:scan" />
+          <IconifyIcon :icon="platformUiIcons.scan" />
           Set Area
         </Button>
         <Button
@@ -703,7 +705,9 @@ onBeforeUnmount(stopCapture);
           @click="toggleLive"
         >
           <IconifyIcon
-            :icon="liveCapturing ? 'lucide:square' : 'lucide:radio'"
+            :icon="
+              liveCapturing ? platformUiIcons.square : platformUiIcons.radio
+            "
           />
           {{ liveCapturing ? '停止 Live' : 'Live On' }}
         </Button>
@@ -721,7 +725,7 @@ onBeforeUnmount(stopCapture);
           项目资产
         </Button>
         <Button @click="fileInputRef?.click()">
-          <IconifyIcon icon="lucide:upload" />
+          <IconifyIcon :icon="platformUiIcons.upload" />
           导入
         </Button>
         <Button
@@ -752,7 +756,11 @@ onBeforeUnmount(stopCapture);
         <ComfyMaskIcon v-if="field.type === 'mask'" :size="15" />
         <IconifyIcon
           v-else
-          :icon="isDrawingField ? 'lucide:scan-line' : 'lucide:maximize-2'"
+          :icon="
+            isDrawingField
+              ? platformUiIcons.scanLine
+              : platformUiIcons.maximize2
+          "
         />
         {{
           field.type === 'mask'
@@ -764,7 +772,9 @@ onBeforeUnmount(stopCapture);
       </span>
       <div v-if="!previewUrl" class="media-placeholder">
         <IconifyIcon
-          :icon="loadingPreview ? 'lucide:loader-circle' : 'lucide:scan'"
+          :icon="
+            loadingPreview ? platformUiIcons.loaderCircle : platformUiIcons.scan
+          "
         />
         <p>{{ loadingPreview ? '正在读取预览' : '选择项目资产或导入图像' }}</p>
       </div>
@@ -778,7 +788,7 @@ onBeforeUnmount(stopCapture);
         从项目资产选择
       </Button>
       <Button @click="fileInputRef?.click()">
-        <IconifyIcon icon="lucide:upload" />
+        <IconifyIcon :icon="platformUiIcons.upload" />
         导入
       </Button>
     </div>
@@ -832,7 +842,7 @@ onBeforeUnmount(stopCapture);
             activeMarker = undefined;
           "
         >
-          <IconifyIcon icon="lucide:paintbrush" />
+          <IconifyIcon :icon="platformUiIcons.paintbrush" />
           画笔
         </Button>
         <Button
@@ -842,7 +852,7 @@ onBeforeUnmount(stopCapture);
             activeMarker = undefined;
           "
         >
-          <IconifyIcon icon="lucide:square" />
+          <IconifyIcon :icon="platformUiIcons.square" />
           方框
         </Button>
         <Button
@@ -854,7 +864,7 @@ onBeforeUnmount(stopCapture);
             activeMarker = undefined;
           "
         >
-          <IconifyIcon icon="lucide:square-dashed" />
+          <IconifyIcon :icon="platformUiIcons.squareDashed" />
           色块
         </Button>
         <Button
@@ -864,14 +874,14 @@ onBeforeUnmount(stopCapture);
             activeMarker = undefined;
           "
         >
-          <IconifyIcon icon="lucide:eraser" />
+          <IconifyIcon :icon="platformUiIcons.eraser" />
           橡皮
         </Button>
         <Button :disabled="!undoHistory.length" @click="undoDrawing">
-          <IconifyIcon icon="lucide:undo-2" />
+          <IconifyIcon :icon="platformUiIcons.undo2" />
         </Button>
         <Button :disabled="!redoHistory.length" @click="redoDrawing">
-          <IconifyIcon icon="lucide:redo-2" />
+          <IconifyIcon :icon="platformUiIcons.redo2" />
         </Button>
         <button
           v-for="color in [

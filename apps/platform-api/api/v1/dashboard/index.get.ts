@@ -16,6 +16,7 @@ interface DashboardProject {
   activeJobCount: number;
   assetCount: number;
   code: string;
+  publicId: string;
   id: string;
   isPinned: boolean;
   jobCount: number;
@@ -33,6 +34,7 @@ export default apiHandler(async (event) => {
     SELECT
       project.id,
       project.code,
+      project.public_id AS "publicId",
       project.name,
       project.updated_at AS "updatedAt",
       EXISTS (
@@ -277,6 +279,7 @@ export default apiHandler(async (event) => {
     >`
       SELECT
         conversation.id,
+        conversation.public_id AS "publicId",
         conversation.title,
         conversation.project_id AS "projectId",
         project.code AS "projectCode",

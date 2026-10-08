@@ -13,12 +13,14 @@ export default apiHandler(async (event) => {
       messageCount: number;
       projectId: null | string;
       projectName: null | string;
+      publicId: string;
       title: string;
       updatedAt: Date;
     }[]
   >`
     SELECT
       conversation.id,
+      conversation.public_id AS "publicId",
       conversation.project_id AS "projectId",
       project.name AS "projectName",
       conversation.title,

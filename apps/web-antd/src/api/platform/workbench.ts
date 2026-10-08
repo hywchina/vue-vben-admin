@@ -13,6 +13,8 @@ export type WorkbenchSection =
   | 'tasks';
 export interface WorkbenchItem {
   id: string;
+  /** Stable business number; optional only for cached legacy responses. */
+  publicId?: string;
   name: string;
   projectId: string;
   projectName: string;

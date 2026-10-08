@@ -14,6 +14,8 @@ import { IconifyIcon } from '@vben/icons';
 import { useWindowSize } from '@vueuse/core';
 import { Button, Modal, Tooltip } from 'ant-design-vue';
 
+import { platformUiIcons } from '#/modules/platform/ui-icons';
+
 const props = defineProps<{
   hasNext?: boolean;
   hasPrevious?: boolean;
@@ -155,11 +157,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
   >
     <div class="lightbox-toolbar">
       <Button aria-label="缩小图片" size="small" @click="setZoom(zoom / 1.2)">
-        <IconifyIcon icon="lucide:zoom-out" />
+        <IconifyIcon :icon="platformUiIcons.zoomOut" />
       </Button>
       <span>{{ Math.round(zoom * 100) }}%</span>
       <Button aria-label="放大图片" size="small" @click="setZoom(zoom * 1.2)">
-        <IconifyIcon icon="lucide:zoom-in" />
+        <IconifyIcon :icon="platformUiIcons.zoomIn" />
       </Button>
       <Button size="small" @click="resetView">原始比例</Button>
       <Tooltip title="放大后按住图片拖拽查看细节">
@@ -169,7 +171,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
           class="lightbox-pan-tool"
           role="img"
         >
-          <IconifyIcon icon="lucide:hand" />
+          <IconifyIcon :icon="platformUiIcons.hand" />
         </span>
       </Tooltip>
     </div>
@@ -191,7 +193,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
         shape="circle"
         @click.stop="emit('previous')"
       >
-        <IconifyIcon icon="lucide:chevron-left" />
+        <IconifyIcon :icon="platformUiIcons.chevronLeft" />
       </Button>
       <img
         v-if="url"
@@ -211,7 +213,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown));
         shape="circle"
         @click.stop="emit('next')"
       >
-        <IconifyIcon icon="lucide:chevron-right" />
+        <IconifyIcon :icon="platformUiIcons.chevronRight" />
       </Button>
     </div>
     <div v-if="$slots.actions" class="lightbox-actions">

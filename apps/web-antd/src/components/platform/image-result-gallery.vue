@@ -3,6 +3,8 @@ import type { CameraViewDescriptor } from '#/modules/platform/camera-angles';
 
 import { computed, reactive, watch } from 'vue';
 
+import { beginAssetImageDrag } from '#/components/assistant/asset-image-drag';
+
 const props = defineProps<{
   activeId?: string;
   completedAt?: string;
@@ -74,10 +76,13 @@ watch(
     <button
       class="gallery-main"
       type="button"
+      draggable="true"
+      title="可拖拽到设计输入区或 AI 助手"
       :aria-label="`全屏查看${activeImage.name}`"
+      @dragstart="beginAssetImageDrag($event, activeImage.id, activeImage.name)"
       @click="emit('open', activeImage.id)"
     >
-      <img :src="activeImage.url" :alt="activeImage.name" />
+      <img :src="activeImage.url" :alt="activeImage.name" draggable="false" />
       <span v-if="activeImage.camera" class="gallery-camera-badge">
         <strong>
           镜头 {{ activeIndex + 1 }} ·
@@ -92,6 +97,9 @@ watch(
         v-for="(image, index) in images"
         :key="image.id"
         type="button"
+        draggable="true"
+        title="可拖拽到设计输入区或 AI 助手"
+        @dragstart="beginAssetImageDrag($event, image.id, image.name)"
         :aria-label="imageAriaLabel(image, index)"
         :aria-pressed="image.id === activeImage.id"
         :class="{ 'has-camera': image.camera }"
@@ -101,6 +109,7 @@ watch(
           <img
             :src="image.url"
             :alt="image.name"
+            draggable="false"
             @load="recordDimensions($event, index)"
           />
         </span>

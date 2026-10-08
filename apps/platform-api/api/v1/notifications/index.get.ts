@@ -12,12 +12,14 @@ export default apiHandler(async (event) => {
       isRead: boolean;
       link: null | string;
       message: string;
+      publicId: string;
       title: string;
       type: string;
     }[]
   >`
     SELECT
       id,
+      public_id AS "publicId",
       type,
       title,
       message,

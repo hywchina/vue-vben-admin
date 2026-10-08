@@ -18,12 +18,14 @@ export default apiHandler(async (event) => {
       createdAt: Date;
       errorCode: null | string;
       id: string;
+      publicId: string;
       role: 'assistant' | 'system' | 'user';
       status: 'completed' | 'failed';
     }[]
   >`
     SELECT
       message.id,
+      message.public_id AS "publicId",
       message.role,
       message.content,
       message.status,
@@ -41,11 +43,13 @@ export default apiHandler(async (event) => {
       id: string;
       messageId: string;
       mimeType: string;
+      publicId: string;
       sizeBytes: number;
     }[]
   >`
     SELECT
       attachment.id,
+      attachment.public_id AS "publicId",
       attachment.message_id AS "messageId",
       attachment.original_filename AS filename,
       attachment.mime_type AS "mimeType",

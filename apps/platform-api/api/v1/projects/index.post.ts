@@ -21,10 +21,6 @@ export default apiHandler(async (event) => {
   const sql = useDatabase();
 
   const project = await sql.begin(async (transaction) => {
-    const [sequence] = await transaction<{ value: string }[]>`
-      SELECT nextval('project_code_seq')::text AS value
-    `;
-    const code = `CR-${new Date().getUTCFullYear()}-${String(sequence?.value ?? '1').padStart(4, '0')}`;
     const [created] = await transaction<
       {
         code: string;
@@ -32,14 +28,15 @@ export default apiHandler(async (event) => {
         description: string;
         id: string;
         name: string;
+        publicId: string;
         stage: string;
         updatedAt: Date;
       }[]
     >`
-      INSERT INTO projects (code, name, description, stage, owner_id)
-      VALUES (${code}, ${input.name}, ${input.description}, ${input.stage}, ${identity.id})
+      INSERT INTO projects (name, description, stage, owner_id)
+      VALUES (${input.name}, ${input.description}, ${input.stage}, ${identity.id})
       RETURNING
-        id, code, name, description, stage,
+        id, code, public_id AS "publicId", name, description, stage,
         created_at AS "createdAt", updated_at AS "updatedAt"
     `;
     if (!created) throw new Error('创建项目失败');

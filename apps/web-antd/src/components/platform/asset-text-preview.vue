@@ -4,6 +4,7 @@ import { ref, watch } from 'vue';
 import { IconifyIcon } from '@vben/icons';
 
 import { getAssetPreviewApi } from '#/api';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 const props = defineProps<{ assetId: string }>();
 
@@ -42,11 +43,11 @@ watch(
 
 <template>
   <div v-if="loading" class="asset-text-preview__state">
-    <IconifyIcon class="is-loading" icon="lucide:loader-circle" />
+    <IconifyIcon class="is-loading" :icon="platformUiIcons.loaderCircle" />
     正在读取文本内容
   </div>
   <div v-else-if="failed" class="asset-text-preview__state">
-    <IconifyIcon icon="lucide:file-warning" />
+    <IconifyIcon :icon="platformUiIcons.fileWarning" />
     暂时无法读取文本内容
   </div>
   <pre v-else class="asset-text-preview__content">{{ content }}</pre>

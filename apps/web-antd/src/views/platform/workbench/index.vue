@@ -60,6 +60,8 @@ import {
   assetImageActions,
   assetImageActionUnavailable,
 } from '#/modules/platform/asset-image-actions';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 import ProjectManager from '#/views/platform/overview/index.vue';
 
@@ -564,10 +566,45 @@ async function action(actionName: string, item: WorkbenchItem) {
         <p>继续设计，跟进任务，管理项目成果。</p>
       </div>
       <Button type="primary" size="large" :disabled="busy" @click="newDesign">
-        <template #icon><IconifyIcon icon="lucide:plus" /></template>
+        <template #icon><IconifyIcon :icon="platformUiIcons.plus" /></template>
         新建设计
       </Button>
     </header>
+    <nav class="wb-management" aria-label="管理与记录">
+      <div class="wb-management__label">
+        <span>管理与记录</span>
+      </div>
+      <div class="wb-management__actions">
+        <Tooltip title="查看和管理全部项目">
+          <Button type="text" @click="openProjects()">
+            <template #icon>
+              <IconifyIcon :icon="platformSemanticIcons.projects" />
+            </template>
+            项目管理
+          </Button>
+        </Tooltip>
+        <Tooltip
+          v-for="tool in tools"
+          :key="tool.key"
+          :title="tool.description"
+        >
+          <Button type="text" @click="router.push(tool.path)">
+            <template #icon>
+              <IconifyIcon :icon="tool.icon" />
+            </template>
+            {{ tool.title }}
+          </Button>
+        </Tooltip>
+        <Tooltip title="重新加载工作台数据">
+          <Button type="text" @click="refresh()">
+            <template #icon>
+              <IconifyIcon :icon="platformUiIcons.refreshCw" />
+            </template>
+            刷新工作台
+          </Button>
+        </Tooltip>
+      </div>
+    </nav>
     <div class="wb-grid">
       <section
         v-for="definition in definitions"
@@ -645,20 +682,6 @@ async function action(actionName: string, item: WorkbenchItem) {
         </Button>
       </section>
     </div>
-    <footer class="wb-management">
-      <span>管理与记录</span>
-      <Button type="text" @click="openProjects()">项目管理</Button>
-      <Button
-        v-for="tool in tools"
-        :key="tool.key"
-        type="text"
-        @click="router.push(tool.path)"
-      >
-        {{ tool.title }}
-      </Button>
-      <Button type="text" @click="refresh()">刷新工作台</Button>
-    </footer>
-
     <Modal
       :open="projectsOpen"
       title="我的项目"
@@ -1029,16 +1052,49 @@ async function action(actionName: string, item: WorkbenchItem) {
 .wb-management {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   align-items: center;
-  margin-top: 20px;
-  font-size: 12px;
-  color: var(--rail-theme-muted, #99a1ad);
+  justify-content: space-between;
+  padding: 10px 12px;
+  margin: -8px 0 20px;
+  background: var(--rail-theme-surface, #fff);
+  border: 1px solid var(--rail-theme-border, #e9edf1);
+  border-radius: 10px;
 }
 
-.wb-management :deep(.ant-btn) {
+.wb-management__label,
+.wb-management__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.wb-management__label {
+  padding: 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--rail-theme-text, #293544);
+}
+
+.wb-management__actions {
+  justify-content: flex-end;
+}
+
+.wb-management__actions :deep(.ant-btn) {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  height: 30px;
+  padding-inline: 9px;
   font-size: 12px;
   color: var(--rail-theme-secondary, #828d9b);
+}
+
+.wb-management__actions :deep(.ant-btn:hover) {
+  color: var(--rail-theme-accent, #bd1934);
+  background: var(--rail-theme-surface, #fff3f5);
 }
 
 .wb-dialog {
@@ -1133,6 +1189,19 @@ async function action(actionName: string, item: WorkbenchItem) {
 
   .wb-heading {
     gap: 10px;
+  }
+
+  .wb-management {
+    align-items: flex-start;
+    padding: 10px;
+  }
+
+  .wb-management__actions {
+    justify-content: flex-start;
+  }
+
+  .wb-management__label {
+    font-size: 15px;
   }
 
   .wb-panel {

@@ -18,7 +18,6 @@ async function resetUsers() {
   const accounts = [
     {
       department: '平台运营',
-      email: config.bootstrapAdminEmail.toLowerCase(),
       name: config.bootstrapAdminName,
       password: config.bootstrapAdminPassword,
       roleCode: 'admin',
@@ -26,7 +25,6 @@ async function resetUsers() {
     },
     {
       department: '设计部门',
-      email: config.bootstrapUser1Email.toLowerCase(),
       name: config.bootstrapUser1Name,
       password: config.bootstrapUser1Password,
       roleCode: 'user',
@@ -34,7 +32,6 @@ async function resetUsers() {
     },
     {
       department: '设计部门',
-      email: config.bootstrapUser2Email.toLowerCase(),
       name: config.bootstrapUser2Name,
       password: config.bootstrapUser2Password,
       roleCode: 'user',
@@ -44,10 +41,9 @@ async function resetUsers() {
 
   if (
     new Set(accounts.map((account) => account.username.toLowerCase())).size !==
-      accounts.length ||
-    new Set(accounts.map((account) => account.email)).size !== accounts.length
+    accounts.length
   ) {
-    throw new Error('重建账号的用户名和邮箱必须互不重复。');
+    throw new Error('重建账号的用户名必须互不重复。');
   }
 
   const preparedAccounts = await Promise.all(
@@ -130,7 +126,6 @@ async function resetUsers() {
       await transaction`
         UPDATE users SET
           username = ${account.username},
-          email = ${account.email},
           updated_at = now()
         WHERE id = ${account.id}
       `;

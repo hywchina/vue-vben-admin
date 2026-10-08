@@ -59,19 +59,17 @@ const coreRoutes: RouteRecordRaw[] = [
       {
         name: 'ForgetPassword',
         path: 'forget-password',
-        component: () =>
-          import('#/views/_core/authentication/forget-password.vue'),
+        redirect: { path: LOGIN_PATH, query: {}, hash: '' },
         meta: {
-          title: $t('page.auth.forgetPassword'),
+          title: $t('page.auth.login'),
         },
       },
       {
         name: 'ResetPassword',
         path: 'reset-password',
-        component: () =>
-          import('#/views/_core/authentication/reset-password.vue'),
+        redirect: { path: LOGIN_PATH, query: {}, hash: '' },
         meta: {
-          title: '重置密码',
+          title: $t('page.auth.login'),
         },
       },
       {

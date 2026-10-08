@@ -14,6 +14,8 @@ interface ProjectRow {
   activeJobCount: number;
   assetCount: number;
   code: string;
+  publicId: string;
+  legacyCodes: string[];
   createdAt: Date;
   description: string;
   id: string;
@@ -42,6 +44,8 @@ export default apiHandler(async (event) => {
     SELECT
       p.id,
       p.code,
+      p.public_id AS "publicId",
+      ARRAY(SELECT legacy_id FROM business_id_aliases WHERE entity_type = 'PRJ' AND entity_id = p.id) AS "legacyCodes",
       p.created_at AS "createdAt",
       p.name,
       p.description,

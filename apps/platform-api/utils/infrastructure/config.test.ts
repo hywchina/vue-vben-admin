@@ -18,6 +18,16 @@ describe('production configuration validation', () => {
     expect(validateProductionEnvironment(validEnvironment)).toEqual([]);
   });
 
+  it('ignores legacy mail settings after removing forgotten password', () => {
+    expect(
+      validateProductionEnvironment({
+        ...validEnvironment,
+        BOOTSTRAP_ADMIN_EMAIL: 'not-an-email',
+        SMTP_USER: 'legacy-unused-user',
+      }),
+    ).toEqual([]);
+  });
+
   it('rejects missing settings, defaults, wildcards and malformed origins', () => {
     const issues = validateProductionEnvironment({
       ...validEnvironment,

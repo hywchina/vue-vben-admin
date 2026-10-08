@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { DesignGenerationCategory } from '#/modules/platform/design-generation';
 import type { DesignModeKey } from '#/modules/platform/design-modes';
 import type { TemplateSize } from '#/modules/platform/image-dimensions';
 import type {
@@ -51,7 +52,12 @@ import {
   getJobsApi,
   renameDesignConversationApi,
   saveDesignConversationDraftApi,
+  saveWorkflowOutputApi,
 } from '#/api';
+import {
+  assetImageDragType,
+  readDraggedAssetId,
+} from '#/components/assistant/asset-image-drag';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { assetCategoryLabel } from '#/modules/platform/asset-browser';
@@ -60,6 +66,14 @@ import {
   assetImageActionUnavailable,
   assetImageOutput,
 } from '#/modules/platform/asset-image-actions';
+import { assetTypeIcons } from '#/modules/platform/asset-types';
+import {
+  defaultGenerationApplicationKey,
+  designGenerationCategories,
+  designGenerationCategory,
+  generationApplications,
+  isDesignGenerationApplication,
+} from '#/modules/platform/design-generation';
 import {
   applicationsForDesignMode,
   designModeDefaults,
@@ -74,6 +88,7 @@ import {
   validDimension,
 } from '#/modules/platform/image-dimensions';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 import { selectDesignConversationJobs } from '#/store/platform/helpers';
 
@@ -81,6 +96,7 @@ import AssetPickerModal from '../workspace/asset-picker-modal.vue';
 import CameraAngleControl from '../workspace/camera-angle-control.vue';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
 import { createRegionInputAnnotations } from '../workspace/region-annotation';
+import { acceptComposerImageDrop } from './design-composer-drop';
 import {
   assignMediaAssetIds,
   mediaInputProgress,
@@ -121,8 +137,8 @@ const conversationSearch = ref('');
 const activeConversationId = ref('');
 const selectedAppKey = ref(DEFAULT_APP_KEY);
 const functionMenuOpen = ref(false);
+const generationMenuOpen = ref(false);
 const selectedModeKey = ref<DesignModeKey>('cabin');
-const selectedModeCardKey = ref<DesignModeKey | null>(null);
 const selectedBusinessToolKey = ref('');
 const threadScrollRef = ref<HTMLElement>();
 const capability = ref<null | PlatformCapability>(null);
@@ -137,6 +153,9 @@ const composerAssetPickerOpen = ref(false);
 const composerSourcePickerOpen = ref(false);
 const composerFileInputRef = ref<HTMLInputElement>();
 const composerUploading = ref(false);
+const composerImportingImage = ref(false);
+const composerImageDragDepth = ref(0);
+let composerDisposed = false;
 const composerMaskEditorOpen = ref(false);
 const composerMaskField = ref<CapabilityField>();
 const composerMaskSource = ref('');
@@ -201,7 +220,9 @@ const regularConversations = computed(() =>
 const visibleConversations = computed(() => {
   const query = conversationSearch.value.trim().toLowerCase();
   return regularConversations.value.filter(
-    (item) => !query || item.title.toLowerCase().includes(query),
+    (item) =>
+      !query ||
+      `${item.title} ${item.publicId ?? ''}`.toLowerCase().includes(query),
   );
 });
 const projectOptions = computed(() =>
@@ -230,18 +251,22 @@ const modeAvailability = computed(
         mode.key,
         Boolean(
           mode.standalonePath ||
-          applicationsForDesignMode(platformStore.applications, mode).length >
-            0,
+          applicationsForDesignMode(platformStore.applications, mode).some(
+            (item) => isDesignGenerationApplication(item.key),
+          ),
         ),
       ]),
     ) as Record<DesignModeKey, boolean>,
 );
-const availableApplications = computed(() => {
-  const query = appSearch.value.trim().toLowerCase();
-  return applicationsForDesignMode(
+const designApplications = computed(() =>
+  applicationsForDesignMode(
     platformStore.applications,
     activeDesignMode.value,
-  ).filter(
+  ).filter((item) => isDesignGenerationApplication(item.key)),
+);
+const availableApplications = computed(() => {
+  const query = appSearch.value.trim().toLowerCase();
+  return generationApplications(designApplications.value, 'image').filter(
     (item) =>
       !query ||
       `${item.name}${item.shortName}${item.description}`
@@ -251,12 +276,21 @@ const availableApplications = computed(() => {
 });
 const defaultApplicationKey = computed(
   () =>
-    availableApplications.value.find(
+    designApplications.value.find(
       (item) => item.key === activeDesignMode.value.defaultApplicationKey,
-    )?.key ?? availableApplications.value[0]?.key,
+    )?.key ?? designApplications.value[0]?.key,
 );
 const effectiveApplicationKey = computed(
   () => selectedAppKey.value || defaultApplicationKey.value || DEFAULT_APP_KEY,
+);
+const generationCategory = computed(() =>
+  designGenerationCategory(effectiveApplicationKey.value),
+);
+const activeGenerationCategory = computed(
+  () =>
+    designGenerationCategories.find(
+      (item) => item.key === generationCategory.value,
+    ) ?? designGenerationCategories[0],
 );
 const application = computed(() =>
   platformStore.applications.find(
@@ -518,6 +552,126 @@ function showComposerMediaProgress() {
       ? `已完成 ${progress.filled}/${progress.capacity} 张图片输入`
       : `必填图片已完成，当前 ${progress.filled}/${progress.capacity} 张`,
   );
+}
+
+const composerImageDropHint = computed(() => {
+  if (composerImportingImage.value) return '正在添加图片，请稍候';
+  const progress = composerMediaProgress.value;
+  if (!progress.capacity) return '当前功能不接受图片输入，请先选择图生图功能';
+  if (!composerCanAddMedia.value) {
+    return `当前功能最多接收 ${progress.capacity} 张图片，请先移除已有图片`;
+  }
+  return `松开添加图片 · 已选 ${progress.filled}/${progress.capacity} 张${
+    progress.missingRequired > 0 ? ` · 还需 ${progress.missingRequired} 张` : ''
+  }`;
+});
+
+function isComposerImageDrag(event: DragEvent) {
+  return event.dataTransfer?.types.includes(assetImageDragType);
+}
+
+function enterComposerImageDrag(event: DragEvent) {
+  if (!isComposerImageDrag(event)) return;
+  event.preventDefault();
+  composerImageDragDepth.value += 1;
+}
+
+function overComposerImageDrag(event: DragEvent) {
+  if (!isComposerImageDrag(event)) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+}
+
+function leaveComposerImageDrag(event: DragEvent) {
+  if (!isComposerImageDrag(event)) return;
+  composerImageDragDepth.value = Math.max(0, composerImageDragDepth.value - 1);
+}
+
+async function dropComposerImage(event: DragEvent) {
+  if (!isComposerImageDrag(event) || !event.dataTransfer) return;
+  event.preventDefault();
+  event.stopPropagation();
+  composerImageDragDepth.value = 0;
+  const assetId = readDraggedAssetId(event.dataTransfer);
+  if (!assetId) {
+    message.warning('无法识别拖入的图片，请重新拖拽');
+    return;
+  }
+  if (
+    composerImportingImage.value ||
+    composerUploading.value ||
+    capabilityLoading.value ||
+    submitting.value ||
+    hydratingDraft ||
+    !activeConversationId.value
+  ) {
+    message.info('输入区正在准备中，请稍后重新拖拽');
+    return;
+  }
+  const projectId = platformStore.currentProjectId;
+  const conversationId = activeConversationId.value;
+  const generation = loadGeneration;
+  const appKey = effectiveApplicationKey.value;
+  const mode = draftMode.value;
+  const output = conversationJobs.value
+    .flatMap((job) => job.outputs)
+    .find((item) => item.assetId === assetId);
+  const isCurrent = () =>
+    !composerDisposed &&
+    projectId === platformStore.currentProjectId &&
+    conversationId === activeConversationId.value &&
+    generation === loadGeneration &&
+    appKey === effectiveApplicationKey.value &&
+    mode === draftMode.value &&
+    !capabilityLoading.value &&
+    !hydratingDraft;
+  composerImportingImage.value = true;
+  try {
+    const added = await acceptComposerImageDrop({
+      assetId,
+      projectId,
+      output,
+      fields: () => mediaFields.value,
+      selections: () => selectedAssets,
+      isCurrent,
+      confirmSave: () =>
+        new Promise<boolean>((resolve) => {
+          Modal.confirm({
+            title: '加入资产并用作输入',
+            content:
+              '该生成图片尚未加入资产中心。是否保存为当前项目资产，并添加到当前功能的输入区？',
+            okText: '加入并使用',
+            cancelText: '取消',
+            onOk: () => {
+              resolve(true);
+            },
+            onCancel: () => {
+              resolve(false);
+            },
+          });
+        }),
+      getAsset: getAssetApi,
+      saveOutput: saveWorkflowOutputApi,
+      commit: async (asset, field) => {
+        // Update only the captured project's cache, after the async context check.
+        if (!platformStore.currentAssets.some((item) => item.id === asset.id)) {
+          platformStore.assets.unshift(asset);
+          if (platformStore.currentProject)
+            platformStore.currentProject.assetCount += 1;
+        }
+        if (output) output.saved = true;
+        await selectAsset(field, asset.id);
+      },
+    });
+    if (added && isCurrent()) showComposerMediaProgress();
+  } catch (error) {
+    if (!composerDisposed)
+      message.warning(
+        error instanceof Error ? error.message : '添加图片失败，请重试',
+      );
+  } finally {
+    composerImportingImage.value = false;
+  }
 }
 
 async function addComposerAssetIds(assetIds: string[]) {
@@ -845,7 +999,10 @@ async function ensureConversation() {
   const requestedAppKey =
     typeof route.query.appKey === 'string' &&
     platformStore.applications.some(
-      (item) => item.key === route.query.appKey && item.visible,
+      (item) =>
+        item.key === route.query.appKey &&
+        item.visible &&
+        isDesignGenerationApplication(item.key),
     )
       ? route.query.appKey
       : undefined;
@@ -884,13 +1041,16 @@ async function selectConversation(
     return;
   }
   await saveDraftNow();
-  selectedModeCardKey.value = null;
+  selectedModeKey.value = 'cabin';
   selectedBusinessToolKey.value = '';
   activeConversationId.value = conversationId;
   const availablePreferredApp =
     preferredAppKey &&
     platformStore.applications.some(
-      (item) => item.key === preferredAppKey && item.visible,
+      (item) =>
+        item.key === preferredAppKey &&
+        item.visible &&
+        isDesignGenerationApplication(item.key),
     )
       ? preferredAppKey
       : undefined;
@@ -910,6 +1070,11 @@ async function selectConversation(
 }
 
 async function chooseApplication(appKey: string, businessToolKey = '') {
+  if (!isDesignGenerationApplication(appKey)) {
+    message.info('文本生成功能暂不接入设计工作台，历史结果仍可查看');
+    return;
+  }
+  generationMenuOpen.value = false;
   functionMenuOpen.value = false;
   appSearch.value = '';
   parameterDrawerOpen.value = false;
@@ -928,6 +1093,24 @@ async function chooseApplication(appKey: string, businessToolKey = '') {
   await loadCapability(appKey);
 }
 
+async function chooseGenerationCategory(category: DesignGenerationCategory) {
+  generationMenuOpen.value = false;
+  if (category === generationCategory.value) return;
+  const appKey = defaultGenerationApplicationKey(
+    designApplications.value,
+    category,
+  );
+  if (!appKey) {
+    message.info(
+      category === 'text'
+        ? '文生图工作流尚未接入或不可用'
+        : '局部重绘工作流尚未接入或不可用',
+    );
+    return;
+  }
+  await chooseApplication(appKey);
+}
+
 async function chooseDesignMode(modeKey: DesignModeKey) {
   const mode = getDesignMode(modeKey);
   if (mode.standalonePath) {
@@ -937,12 +1120,11 @@ async function chooseDesignMode(modeKey: DesignModeKey) {
   const applications = applicationsForDesignMode(
     platformStore.applications,
     mode,
-  );
+  ).filter((item) => isDesignGenerationApplication(item.key));
   if (applications.length === 0) {
     message.info(`${mode.label}的执行服务与能力契约尚未接入`);
     return;
   }
-  selectedModeCardKey.value = modeKey;
   if (modeKey === selectedModeKey.value) return;
   await saveDraftNow();
   selectedModeKey.value = modeKey;
@@ -1169,6 +1351,11 @@ async function clearSubmittedComposer() {
 }
 
 async function runCapability() {
+  if (composerImportingImage.value) {
+    message.info('图片正在添加，请完成后再提交');
+    return;
+  }
+  if (!isDesignGenerationApplication(effectiveApplicationKey.value)) return;
   if (!application.value || !capability.value || !activeConversationId.value) {
     return;
   }
@@ -1249,6 +1436,10 @@ async function runJobSnapshot(
   job: PlatformJob,
   override?: { parameterKey: string; value: string },
 ) {
+  if (!isDesignGenerationApplication(job.appKey)) {
+    message.info('文本生成功能暂不接入设计工作台，历史结果仍可查看');
+    return;
+  }
   if (activeJob.value) {
     message.warning('当前设计会话已有任务在运行，请等待完成或停止后再提交');
     return;
@@ -1265,7 +1456,6 @@ async function runJobSnapshot(
   }
   if (job.designMode) {
     selectedModeKey.value = job.designMode;
-    selectedModeCardKey.value = job.designMode;
   }
   await chooseApplication(job.appKey);
   hydratingDraft = true;
@@ -1463,7 +1653,6 @@ async function saveOutputMask(file: File) {
   });
   if (actionOutput.value) {
     selectedModeKey.value = actionDesignMode.value;
-    selectedModeCardKey.value = actionDesignMode.value;
     await chooseApplication('inpaint-single');
     const maskField = mediaFields.value.find(
       (field) => field.type === 'mask' && field.assetIndex !== undefined,
@@ -1537,7 +1726,6 @@ async function prepareOutputInComposer(
 ) {
   await ensureWorkflowOutputAsset(output);
   selectedModeKey.value = modeKey;
-  selectedModeCardKey.value = modeKey;
   await chooseApplication(appKey, businessToolKey);
   const target = mediaFields.value.find(
     (field) =>
@@ -1953,7 +2141,6 @@ async function importAssetAction() {
     if (sourceJob) {
       if (sourceJob.designMode && sourceJob.designMode !== 'report') {
         selectedModeKey.value = sourceJob.designMode;
-        selectedModeCardKey.value = sourceJob.designMode;
       }
       await chooseApplication(sourceJob.appKey);
       for (const [key, value] of Object.entries(sourceJob.parameters))
@@ -2034,6 +2221,7 @@ watch(
   { immediate: true },
 );
 onBeforeUnmount(() => {
+  composerDisposed = true;
   stopPolling();
   if (draftTimer) clearTimeout(draftTimer);
   void saveDraftNow();
@@ -2070,7 +2258,7 @@ onBeforeUnmount(() => {
         type="primary"
         @click="createConversation"
       >
-        <IconifyIcon icon="lucide:square-pen" />
+        <IconifyIcon :icon="platformSemanticIcons.newDesign" />
         新建会话
       </Button>
       <Input
@@ -2080,7 +2268,7 @@ onBeforeUnmount(() => {
         placeholder="搜索会话"
       >
         <template #prefix>
-          <IconifyIcon icon="lucide:search" />
+          <IconifyIcon :icon="platformUiIcons.search" />
         </template>
       </Input>
       <div class="conversation-list-heading">
@@ -2102,6 +2290,7 @@ onBeforeUnmount(() => {
           <span class="conversation-item__body">
             <strong :title="item.title">{{ item.title }}</strong>
             <small>
+              <span v-if="item.publicId">{{ item.publicId }} ·</span>
               {{ item.roundCount }} 轮 ·
               {{ formatConversationTime(item.updatedAt) }}
             </small>
@@ -2118,7 +2307,7 @@ onBeforeUnmount(() => {
                 type="button"
                 @click.stop="openRename"
               >
-                <IconifyIcon icon="lucide:pencil" />
+                <IconifyIcon :icon="platformUiIcons.pencil" />
               </button>
               <button
                 aria-label="删除当前会话"
@@ -2126,7 +2315,7 @@ onBeforeUnmount(() => {
                 type="button"
                 @click.stop="archiveConversation(item)"
               >
-                <IconifyIcon icon="lucide:trash-2" />
+                <IconifyIcon :icon="platformUiIcons.trash2" />
               </button>
             </span>
           </span>
@@ -2150,7 +2339,9 @@ onBeforeUnmount(() => {
     >
       <IconifyIcon
         :icon="
-          sidebarCollapsed ? 'lucide:chevron-right' : 'lucide:chevron-left'
+          sidebarCollapsed
+            ? platformUiIcons.chevronRight
+            : platformUiIcons.chevronLeft
         "
       />
     </button>
@@ -2192,10 +2383,22 @@ onBeforeUnmount(() => {
       <footer class="design-composer" data-testid="design-composer">
         <div
           class="composer-box"
+          :class="{ 'composer-box--image-drop': composerImageDragDepth > 0 }"
           :data-application-count="availableApplications.length"
           :data-effective-app-key="effectiveApplicationKey"
           :style="{ '--app-accent': application?.color }"
+          @dragenter="enterComposerImageDrag"
+          @dragover="overComposerImageDrag"
+          @dragleave="leaveComposerImageDrag"
+          @drop="dropComposerImage"
         >
+          <div
+            v-if="composerImageDragDepth > 0 || composerImportingImage"
+            class="composer-image-drop-hint"
+            role="status"
+          >
+            {{ composerImageDropHint }}
+          </div>
           <section
             v-if="composerImageFields.length"
             class="composer-media-tray"
@@ -2222,7 +2425,7 @@ onBeforeUnmount(() => {
                     :alt="item.asset.name"
                     :src="composerPreviewUrls[item.asset.id]"
                   />
-                  <IconifyIcon v-else icon="lucide:file-image" />
+                  <IconifyIcon v-else :icon="assetTypeIcons.image" />
                 </button>
                 <div class="composer-input-asset__move-actions">
                   <button
@@ -2232,7 +2435,7 @@ onBeforeUnmount(() => {
                     type="button"
                     @click="moveComposerInput(item.field, -1)"
                   >
-                    <IconifyIcon icon="lucide:arrow-left" />
+                    <IconifyIcon :icon="platformUiIcons.arrowLeft" />
                   </button>
                   <button
                     :aria-label="`编辑${item.asset.name}`"
@@ -2240,7 +2443,7 @@ onBeforeUnmount(() => {
                     type="button"
                     @click.stop="openComposerMask(item.field, item.asset.name)"
                   >
-                    <IconifyIcon icon="lucide:paintbrush" />
+                    <IconifyIcon :icon="platformSemanticIcons.mask" />
                   </button>
                   <button
                     :aria-label="`右移${item.asset.name}`"
@@ -2252,7 +2455,7 @@ onBeforeUnmount(() => {
                     type="button"
                     @click="moveComposerInput(item.field, 1)"
                   >
-                    <IconifyIcon icon="lucide:arrow-right" />
+                    <IconifyIcon :icon="platformUiIcons.arrowRight" />
                   </button>
                 </div>
                 <button
@@ -2262,7 +2465,7 @@ onBeforeUnmount(() => {
                   type="button"
                   @click="removeSelectedAsset(item.field)"
                 >
-                  <IconifyIcon icon="lucide:x" />
+                  <IconifyIcon :icon="platformUiIcons.close" />
                 </button>
               </article>
 
@@ -2275,7 +2478,7 @@ onBeforeUnmount(() => {
                 <template #content>
                   <div class="composer-media-source-menu">
                     <button type="button" @click="chooseComposerLocalFiles">
-                      <IconifyIcon icon="lucide:upload" />
+                      <IconifyIcon :icon="platformUiIcons.upload" />
                       <span>
                         <strong>本地上传</strong>
                         <small>可一次选择多张图片</small>
@@ -2292,14 +2495,16 @@ onBeforeUnmount(() => {
                 </template>
                 <button
                   aria-label="添加输入图片"
-                  :disabled="composerUploading"
+                  :disabled="composerUploading || composerImportingImage"
                   class="composer-input-asset__add"
                   data-testid="composer-add-image"
                   type="button"
                 >
                   <IconifyIcon
                     :icon="
-                      composerUploading ? 'lucide:loader-circle' : 'lucide:plus'
+                      composerUploading
+                        ? platformUiIcons.loaderCircle
+                        : platformUiIcons.plus
                     "
                   />
                   <span>{{ composerUploading ? '上传中' : '添加图片' }}</span>
@@ -2333,6 +2538,43 @@ onBeforeUnmount(() => {
           <div class="composer-bottom">
             <div class="composer-toolbar">
               <Popover
+                v-model:open="generationMenuOpen"
+                placement="topLeft"
+                trigger="click"
+              >
+                <template #content>
+                  <div class="design-generation-menu" aria-label="生成类别列表">
+                    <button
+                      v-for="category in designGenerationCategories"
+                      :key="category.key"
+                      :data-generation-category="category.key"
+                      :aria-pressed="category.key === generationCategory"
+                      type="button"
+                      @click="chooseGenerationCategory(category.key)"
+                    >
+                      <IconifyIcon :icon="category.icon" />
+                      <span>{{ category.label }}</span>
+                      <IconifyIcon
+                        v-if="category.key === generationCategory"
+                        :icon="platformUiIcons.check"
+                      />
+                    </button>
+                  </div>
+                </template>
+                <button
+                  class="design-function-trigger design-generation-trigger"
+                  data-testid="active-design-category"
+                  :data-generation-category="generationCategory"
+                  aria-label="切换生成类别"
+                  type="button"
+                >
+                  <IconifyIcon :icon="activeGenerationCategory.icon" />
+                  <span>{{ activeGenerationCategory.label }}</span>
+                  <IconifyIcon :icon="platformUiIcons.chevronDown" />
+                </button>
+              </Popover>
+              <Popover
+                v-if="generationCategory === 'image'"
                 v-model:open="functionMenuOpen"
                 placement="topLeft"
                 trigger="click"
@@ -2357,7 +2599,7 @@ onBeforeUnmount(() => {
                         <span>{{ item.name || item.shortName }}</span>
                         <IconifyIcon
                           v-if="item.key === selectedAppKey"
-                          icon="lucide:check"
+                          :icon="platformUiIcons.check"
                         />
                       </button>
                       <small v-if="!availableApplications.length">
@@ -2373,14 +2615,14 @@ onBeforeUnmount(() => {
                   type="button"
                 >
                   <IconifyIcon
-                    :icon="application?.icon ?? 'lucide:image-plus'"
+                    :icon="application?.icon ?? platformUiIcons.imagePlus"
                   />
                   <span>
                     {{
                       application?.name || application?.shortName || '文生图'
                     }}
                   </span>
-                  <IconifyIcon icon="lucide:chevron-down" />
+                  <IconifyIcon :icon="platformUiIcons.chevronDown" />
                 </button>
               </Popover>
               <div class="parameter-chips">
@@ -2407,7 +2649,7 @@ onBeforeUnmount(() => {
                     type="button"
                     @click="openMediaPicker"
                   >
-                    <IconifyIcon icon="lucide:paperclip" />
+                    <IconifyIcon :icon="platformUiIcons.paperclip" />
                     素材
                     <strong>
                       {{ selectedAssetIds.length }}/{{ mediaFields.length }}
@@ -2427,7 +2669,7 @@ onBeforeUnmount(() => {
                   :disabled="!capability || capabilityLoading"
                   @click="parameterDrawerOpen = true"
                 >
-                  <IconifyIcon icon="lucide:sliders-horizontal" />
+                  <IconifyIcon :icon="platformUiIcons.slidersHorizontal" />
                   更多
                 </button>
               </div>
@@ -2437,7 +2679,9 @@ onBeforeUnmount(() => {
               class="composer-submit"
               :class="{ 'composer-submit--stop': activeJob }"
               :disabled="
-                !activeConversationId || activeJob?.status === 'cancelling'
+                !activeConversationId ||
+                activeJob?.status === 'cancelling' ||
+                composerImportingImage
               "
               :loading="submitting || activeJob?.status === 'cancelling'"
               shape="circle"
@@ -2445,7 +2689,7 @@ onBeforeUnmount(() => {
               @click="activeJob ? cancelActiveJob() : runCapability()"
             >
               <span v-if="activeJob" class="composer-stop-mark"></span>
-              <IconifyIcon v-else icon="lucide:arrow-up" />
+              <IconifyIcon v-else :icon="platformUiIcons.send" />
             </Button>
           </div>
         </div>
@@ -2454,11 +2698,11 @@ onBeforeUnmount(() => {
             v-for="mode in designModes"
             :key="mode.key"
             :class="{
-              active: mode.key === selectedModeCardKey,
+              active: mode.key === selectedModeKey,
               unavailable: !modeAvailability[mode.key],
             }"
             :data-unavailable="!modeAvailability[mode.key] || undefined"
-            :aria-pressed="mode.key === selectedModeCardKey"
+            :aria-pressed="mode.key === selectedModeKey"
             :style="{
               backgroundImage: `linear-gradient(90deg, rgba(8, 17, 23, 0.96) 0%, rgba(8, 17, 23, 0.82) 48%, rgba(8, 17, 23, 0.18) 100%), url(${mode.backgroundImage})`,
             }"
@@ -2472,7 +2716,13 @@ onBeforeUnmount(() => {
           >
             <span class="design-mode-switcher__label">
               {{ mode.label }}
-              <IconifyIcon icon="lucide:chevron-right" />
+              <IconifyIcon
+                :icon="
+                  mode.key === selectedModeKey
+                    ? platformUiIcons.circleCheck
+                    : platformUiIcons.chevronRight
+                "
+              />
             </span>
             <small v-if="!modeAvailability[mode.key]">待接入</small>
           </button>
@@ -2497,7 +2747,7 @@ onBeforeUnmount(() => {
         type="button"
         @click="markdownPickerOpen = true"
       >
-        <IconifyIcon icon="lucide:file-text" />
+        <IconifyIcon :icon="assetTypeIcons.document" />
         <span>
           <strong>从资产加载 Markdown 文本</strong>
           <small>只提取 .md 文件中的文字，不加载文档内图片</small>
@@ -2569,7 +2819,7 @@ onBeforeUnmount(() => {
             type="button"
             @click="markdownPickerOpen = true"
           >
-            <IconifyIcon icon="lucide:file-text" />
+            <IconifyIcon :icon="assetTypeIcons.document" />
             <span>
               <strong>从资产加载 Markdown 文本</strong>
               <small>只提取文字并追加到当前编辑框</small>
@@ -2746,12 +2996,12 @@ onBeforeUnmount(() => {
         data-testid="cmf-multi-image-methods"
       >
         <button type="button" @click="transferCmfMultiImageToComposer">
-          <IconifyIcon icon="lucide:panel-bottom-open" />
+          <IconifyIcon :icon="platformUiIcons.panelBottomOpen" />
           <span>
             <strong>转入下方编辑框</strong>
             <small>将当前图片带入融合能力，再自行添加素材和提示词</small>
           </span>
-          <IconifyIcon icon="lucide:arrow-right" />
+          <IconifyIcon :icon="platformUiIcons.arrowRight" />
         </button>
         <button type="button" @click="cmfMultiImageMode = 'dialog'">
           <IconifyIcon :icon="platformSemanticIcons.workbench" />
@@ -2759,7 +3009,7 @@ onBeforeUnmount(() => {
             <strong>在弹窗中完成</strong>
             <small>上传两张参考图并填写提示词，确认后直接进入生成流程</small>
           </span>
-          <IconifyIcon icon="lucide:arrow-right" />
+          <IconifyIcon :icon="platformUiIcons.arrowRight" />
         </button>
       </div>
       <div v-else class="cmf-multi-dialog">
@@ -2773,7 +3023,7 @@ onBeforeUnmount(() => {
             type="file"
             @change="selectCmfMultiImageFiles"
           />
-          <IconifyIcon icon="lucide:images" />
+          <IconifyIcon :icon="platformUiIcons.images" />
           <span>
             <strong>上传两张参考图</strong>
             <small>已选择 {{ cmfMultiImageFiles.length }}/2 张</small>
@@ -2784,7 +3034,7 @@ onBeforeUnmount(() => {
             v-for="file in cmfMultiImageFiles"
             :key="`${file.name}:${file.size}`"
           >
-            <IconifyIcon icon="lucide:image" />
+            <IconifyIcon :icon="assetTypeIcons.image" />
             {{ file.name }}
           </span>
         </div>
@@ -2839,12 +3089,12 @@ onBeforeUnmount(() => {
     >
       <div v-if="multiAngleMode === 'choose'" class="cmf-action-choices">
         <button type="button" @click="transferMultiAngleToComposer">
-          <IconifyIcon icon="lucide:panel-bottom-open" />
+          <IconifyIcon :icon="platformUiIcons.panelBottomOpen" />
           <span>
             <strong>转入下方编辑框</strong>
             <small>使用当前图片作为源图，检查参数后再发送</small>
           </span>
-          <IconifyIcon icon="lucide:arrow-right" />
+          <IconifyIcon :icon="platformUiIcons.arrowRight" />
         </button>
         <button type="button" @click="multiAngleMode = 'dialog'">
           <IconifyIcon :icon="platformSemanticIcons.workbench" />
@@ -2852,7 +3102,7 @@ onBeforeUnmount(() => {
             <strong>在弹窗中完成</strong>
             <small>直接使用当前图片，或上传另一张图片替换后生成</small>
           </span>
-          <IconifyIcon icon="lucide:arrow-right" />
+          <IconifyIcon :icon="platformUiIcons.arrowRight" />
         </button>
       </div>
       <div v-else class="cmf-multi-dialog">
@@ -2861,7 +3111,7 @@ onBeforeUnmount(() => {
         </p>
         <label class="cmf-file-picker">
           <input accept="image/*" type="file" @change="selectMultiAngleFile" />
-          <IconifyIcon icon="lucide:image-up" />
+          <IconifyIcon :icon="platformUiIcons.imageUp" />
           <span>
             <strong>可选：替换源图</strong>
             <small>{{ multiAngleFile?.name ?? '当前使用生成结果' }}</small>
@@ -2888,12 +3138,12 @@ onBeforeUnmount(() => {
     >
       <div v-if="threeDMode === 'choose'" class="cmf-action-choices">
         <button type="button" @click="transferThreeDToComposer">
-          <IconifyIcon icon="lucide:panel-bottom-open" />
+          <IconifyIcon :icon="platformUiIcons.panelBottomOpen" />
           <span>
             <strong>转入下方编辑框</strong>
             <small>将当前图片作为前视图，再自行补充后、左、右视图</small>
           </span>
-          <IconifyIcon icon="lucide:arrow-right" />
+          <IconifyIcon :icon="platformUiIcons.arrowRight" />
         </button>
         <button type="button" @click="threeDMode = 'dialog'">
           <IconifyIcon :icon="platformSemanticIcons.workbench" />
@@ -2901,7 +3151,7 @@ onBeforeUnmount(() => {
             <strong>在弹窗中完成</strong>
             <small>补充三张视图，确认后直接进入三维生成流程</small>
           </span>
-          <IconifyIcon icon="lucide:arrow-right" />
+          <IconifyIcon :icon="platformUiIcons.arrowRight" />
         </button>
       </div>
       <div v-else class="cmf-multi-dialog">
@@ -2915,7 +3165,7 @@ onBeforeUnmount(() => {
             type="file"
             @change="selectThreeDFiles"
           />
-          <IconifyIcon icon="lucide:box" />
+          <IconifyIcon :icon="assetTypeIcons.model3d" />
           <span>
             <strong>上传后、左、右三张视图</strong>
             <small>已选择 {{ threeDFiles.length }}/3 张</small>
@@ -2926,7 +3176,7 @@ onBeforeUnmount(() => {
             v-for="(file, index) in threeDFiles"
             :key="`${file.name}:${file.size}`"
           >
-            <IconifyIcon icon="lucide:image" />
+            <IconifyIcon :icon="assetTypeIcons.image" />
             {{ ['后视图', '左视图', '右视图'][index] }}：{{ file.name }}
           </span>
         </div>
@@ -3774,7 +4024,7 @@ main.design-page {
   padding: 8px 11px;
   overflow: hidden;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 600;
   color: #fff;
   text-align: left;
   cursor: pointer;
@@ -3791,7 +4041,8 @@ main.design-page {
     box-shadow 160ms ease;
 }
 
-.design-mode-switcher button:hover {
+.design-mode-switcher button:hover,
+.design-mode-switcher button:focus-visible {
   color: #fff;
   border-color: rgb(255 255 255 / 42%);
   box-shadow: 0 7px 16px rgb(15 23 42 / 20%);
@@ -3799,11 +4050,16 @@ main.design-page {
 }
 
 .design-mode-switcher button.active {
+  font-size: 15px;
+  font-weight: 800;
   color: #fff;
   border-color: var(--rail-theme-accent, #d4203c);
   box-shadow:
+    inset 0 0 0 1px var(--rail-theme-accent, #d4203c),
     0 0 0 2px rgb(212 32 60 / 18%),
     0 7px 16px rgb(15 23 42 / 20%);
+  opacity: 1;
+  filter: none;
 }
 
 .design-mode-switcher button.unavailable {
@@ -3855,6 +4111,20 @@ main.design-page {
   box-shadow:
     0 0 0 3px rgb(30 41 59 / 5%),
     0 14px 36px rgb(30 41 59 / 6%);
+}
+
+.design-page .composer-box--image-drop {
+  border-color: var(--rail-theme-primary, #cf123b);
+  box-shadow: 0 0 0 3px rgb(207 18 59 / 10%);
+}
+
+.composer-image-drop-hint {
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #cf123b;
+  background: #fff1f4;
+  border-radius: 8px;
 }
 
 .design-page .composer-box :deep(textarea.ant-input) {
@@ -3978,8 +4248,12 @@ main.design-page {
 }
 
 .design-page .parameter-chips {
+  --design-parameter-font-size: 14px;
+
+  display: grid;
   flex: 1;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
   padding: 0;
   overflow: hidden;
 }
@@ -3989,8 +4263,11 @@ main.design-page {
   flex: 1 1 auto;
   gap: 2px;
   min-width: 0;
-  overflow-x: auto;
+  padding-right: 20px;
+  overflow: auto hidden;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 20px), transparent);
 }
 
 .parameter-chips__scroll::-webkit-scrollbar {
@@ -3998,15 +4275,38 @@ main.design-page {
 }
 
 .composer-more-button {
+  position: relative;
   flex: 0 0 auto;
   color: #bd1934 !important;
   background: var(--rail-theme-surface, #fff1f3) !important;
+}
+
+.composer-more-button::before {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: -12px;
+  width: 1px;
+  pointer-events: none;
+  content: '';
+  background: var(--rail-theme-border, #e4e6e8);
 }
 
 .design-page .parameter-chips button {
   padding: 4px 7px;
   background: transparent;
   border-color: transparent;
+}
+
+.design-page .parameter-chips :deep(button) {
+  font-family: inherit;
+  font-size: var(--design-parameter-font-size);
+  font-weight: 400;
+  line-height: 22px;
+}
+
+.design-page .parameter-chips :deep(strong) {
+  font-weight: 600;
 }
 
 .composer-submit.ant-btn {
@@ -4394,6 +4694,12 @@ main.design-page {
   white-space: nowrap;
 }
 
+.design-generation-menu {
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+}
+
 .design-function-menu {
   width: min(300px, 75vw);
 }
@@ -4406,7 +4712,8 @@ main.design-page {
   overflow-y: auto;
 }
 
-.design-function-options button {
+.design-function-options button,
+.design-generation-menu button {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -4416,12 +4723,15 @@ main.design-page {
   border-radius: 6px;
 }
 
-.design-function-options button span {
+.design-function-options button span,
+.design-generation-menu button span {
   flex: 1;
 }
 
 .design-function-options button:hover,
-.design-function-options button[aria-pressed='true'] {
+.design-function-options button[aria-pressed='true'],
+.design-generation-menu button:hover,
+.design-generation-menu button[aria-pressed='true'] {
   color: var(--rail-theme-accent, #bd1934);
   background: var(--rail-theme-surface, #fff1f3);
 }

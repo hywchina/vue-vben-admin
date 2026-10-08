@@ -13,7 +13,7 @@
     "dev:api": "node ../../scripts/run-with-env.mjs .env -- nitro dev --port 5320",
     "prepare": "nitro prepare",
     "test": "vitest run",
-    "test:integration": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/comfyui-worker-integration-test.ts",
+    "test:integration": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/comfyui-worker-integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/generated-asset-naming-integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/business-id-integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/lora-dataset-integration-test.ts",
     "typecheck": "tsc --noEmit",
     "workflow:sync-parameters": "tsx scripts/sync-workflow-parameters.ts",
     "worker": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/worker.ts",
@@ -28,7 +28,6 @@
     "image-size": "catalog:",
     "jose": "catalog:",
     "nitropack": "catalog:",
-    "nodemailer": "catalog:",
     "postgres": "catalog:",
     "pptxgenjs": "catalog:",
     "tsx": "catalog:",
@@ -36,7 +35,6 @@
   },
   "devDependencies": {
     "@types/node": "catalog:",
-    "@types/nodemailer": "catalog:",
     "cross-env": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

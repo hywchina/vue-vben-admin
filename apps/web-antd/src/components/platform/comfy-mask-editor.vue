@@ -19,6 +19,9 @@ import { IconifyIcon } from '@vben/icons';
 
 import { message, Modal } from 'ant-design-vue';
 
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
+
 import {
   colorSelectFill,
   invertMask,
@@ -956,58 +959,42 @@ onBeforeUnmount(() => {
         <div class="mask-editor-title">遮罩编辑器</div>
         <div class="mask-editor-top-tools">
           <button :disabled="!canUndo" title="撤销" @click="undo">
-            <svg viewBox="0 0 15 15">
-              <path
-                d="M8.77 12.18a.46.46 0 1 1 0-.92 2.67 2.67 0 0 0 0-5.34H4.2l1.43 1.43a.46.46 0 0 1-.64.64L2.78 5.78a.45.45 0 0 1 0-.64l2.21-2.21a.46.46 0 0 1 .64.64L4.2 5h3.98c2.45 0 4.17 1.47 4.17 3.58a3.59 3.59 0 0 1-3.58 3.6Z"
-              />
-            </svg>
+            <IconifyIcon :icon="platformUiIcons.undo2" />
           </button>
           <button :disabled="!canRedo" title="重做" @click="redo">
-            <svg viewBox="0 0 15 15">
-              <path
-                d="M6.23 12.18a3.59 3.59 0 0 1-3.58-3.58c0-2.11 1.71-3.58 4.17-3.58h3.98L9.37 3.59a.46.46 0 0 1 .64-.64l2.21 2.21a.45.45 0 0 1 0 .64l-2.21 2.21a.46.46 0 0 1-.64-.64l1.43-1.43H6.82c-1.92 0-3.26 1.1-3.26 2.67a2.67 2.67 0 0 0 2.67 2.67.46.46 0 1 1 0 .9Z"
-              />
-            </svg>
+            <IconifyIcon :icon="platformUiIcons.redo2" />
           </button>
           <i></i>
           <button title="向左旋转" @click="transformAll('rotate-left')">
-            <IconifyIcon icon="lucide:rotate-ccw" />
+            <IconifyIcon :icon="platformUiIcons.rotateCcw" />
           </button>
           <button title="向右旋转" @click="transformAll('rotate-right')">
-            <IconifyIcon icon="lucide:rotate-cw" />
+            <IconifyIcon :icon="platformUiIcons.rotateCw" />
           </button>
           <button title="水平翻转" @click="transformAll('mirror-horizontal')">
-            <svg viewBox="0 0 15 15">
-              <path
-                d="M7 2a.5.5 0 0 1 1 0v11a.5.5 0 0 1-1 0V2ZM3.5 4.5l-2 3 2 3v-6Zm8 0v6l2-3-2-3Z"
-              />
-            </svg>
+            <IconifyIcon :icon="platformUiIcons.flipHorizontal2" />
           </button>
           <button title="垂直翻转" @click="transformAll('mirror-vertical')">
-            <svg viewBox="0 0 15 15">
-              <path
-                d="M2 7.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5Zm2.5-3 3-2 3 2h-6Zm0 6h6l-3 2-3-2Z"
-              />
-            </svg>
+            <IconifyIcon :icon="platformUiIcons.flipVertical2" />
           </button>
           <i></i>
           <button class="text-tool" @click="invertCurrentMask">反转</button>
           <button class="text-tool" @click="clearAll">清除</button>
           <button class="save-tool" :disabled="saving" @click="save">
-            <IconifyIcon icon="lucide:check" />
+            <IconifyIcon :icon="platformUiIcons.check" />
             {{ saving ? '保存中' : '保存' }}
           </button>
           <button class="cancel-tool" @click="closeEditor">
-            <IconifyIcon icon="lucide:x" />
+            <IconifyIcon :icon="platformUiIcons.close" />
             取消
           </button>
         </div>
         <div class="mask-editor-window-tools">
           <button title="切换全屏" @click="toggleFullscreen">
-            <IconifyIcon icon="lucide:panel-top-open" />
+            <IconifyIcon :icon="platformUiIcons.maximize2" />
           </button>
           <button title="关闭遮罩编辑器" @click="closeEditor">
-            <IconifyIcon icon="lucide:x" />
+            <IconifyIcon :icon="platformUiIcons.close" />
           </button>
         </div>
       </header>
@@ -1019,60 +1006,35 @@ onBeforeUnmount(() => {
             title="遮罩画笔"
             @click="selectTool('mask')"
           >
-            <svg viewBox="0 0 44 44">
-              <path
-                d="M10.97 15.98v14.04c0 .825.675 1.5 1.5 1.5h23.07c.825 0 1.5-.675 1.5-1.5V15.98c0-.825-.675-1.5-1.5-1.5H12.47c-.825 0-1.5.675-1.5 1.5Zm14.82 12.18c-4.365 1.41-8.355-2.58-6.945-6.945.51-1.575 1.785-2.85 3.36-3.36 4.365-1.41 8.355 2.58 6.945 6.945-.51 1.575-1.785 2.85-3.36 3.36Z"
-              />
-            </svg>
+            <IconifyIcon :icon="platformSemanticIcons.mask" />
           </button>
           <button
             :class="{ active: tool === 'paint' }"
             title="绘画画笔"
             @click="selectTool('paint')"
           >
-            <svg viewBox="0 0 44 44">
-              <path
-                d="M34 13.93c0 .47-.19.94-.55 1.31L20.43 28.28l-.27.22a2.62 2.62 0 0 0-2.61-2.49c.07-.12.16-.24.27-.34l13.04-13.04a1.84 1.84 0 0 1 3.14 1.3ZM19.64 29.03c0 4.46-6.46 3.18-9.64 0 3.3-.47 4.75-2.58 7.06-2.58a2.58 2.58 0 0 1 2.58 2.58Z"
-              />
-            </svg>
+            <IconifyIcon :icon="platformUiIcons.paintbrush" />
           </button>
           <button
             :class="{ active: tool === 'erase' }"
             title="橡皮"
             @click="selectTool('erase')"
           >
-            <svg viewBox="0 0 44 44">
-              <path
-                d="M17.27 34.27c-.42 0-.85-.16-1.17-.48l-5.88-5.88a1.65 1.65 0 0 1 0-2.34l15.34-15.34a1.65 1.65 0 0 1 2.34 0l5.88 5.88c.65.65.65 1.7 0 2.34L18.44 33.79c-.32.32-.75.48-1.17.48Z"
-              />
-            </svg>
+            <IconifyIcon :icon="platformUiIcons.eraser" />
           </button>
           <button
             :class="{ active: tool === 'fill' }"
             title="填充"
             @click="selectTool('fill')"
           >
-            <svg viewBox="0 0 44 44">
-              <path
-                d="m33.4 21.76-11.42 11.41a1.56 1.56 0 0 1-2.25.05l-8.91-8.91a1.56 1.56 0 0 1 0-2.21l.34-.34H33.4Zm-.64 2.23s-1.52 2.02-1.52 2.86a1.52 1.52 0 1 0 3.04 0c0-.84-1.52-2.86-1.52-2.86Z"
-              />
-              <path
-                d="M20.83 34.17c-.55 0-1.07-.21-1.46-.6l-8.91-8.91a2.07 2.07 0 0 1 0-2.92l11.31-11.31a2.07 2.07 0 0 1 2.92 0l8.91 8.91c.8.8.8 2.12 0 2.92L22.29 33.57c-.39.39-.91.6-1.46.6Z"
-                fill="none"
-                stroke="currentColor"
-              />
-            </svg>
+            <IconifyIcon :icon="platformUiIcons.paintBucket" />
           </button>
           <button
             :class="{ active: tool === 'select' }"
             title="颜色选取"
             @click="selectTool('select')"
           >
-            <svg viewBox="0 0 44 44">
-              <path
-                d="M30.29 13.72a2.78 2.78 0 0 0-3.94 0l-2.88 2.88-.75-.75a.5.5 0 0 0-.71.71l1.4 1.4-9.59 9.59a1.87 1.87 0 0 0-.49 1.73l-.15.13a.99.99 0 0 0 1.4 1.4l.11-.13a1.87 1.87 0 0 0 1.77-.49l9.59-9.59 1.38 1.38a.5.5 0 0 0 .7-.71l-.71-.72 2.88-2.89a2.78 2.78 0 0 0-.01-3.94Zm-10.86 12.1h-2.46l7.15-7.15 1.23 1.23-5.92 5.92Z"
-              />
-            </svg>
+            <IconifyIcon :icon="platformUiIcons.pipette" />
           </button>
           <div
             class="mask-zoom-readout"
@@ -1097,7 +1059,7 @@ onBeforeUnmount(() => {
           @wheel="handleWheel"
         >
           <div v-if="loading" class="mask-editor-loading">
-            <IconifyIcon icon="lucide:loader-circle" />
+            <IconifyIcon :icon="platformUiIcons.loaderCircle" />
             正在读取图片
           </div>
           <div
@@ -1120,7 +1082,11 @@ onBeforeUnmount(() => {
           </div>
           <div class="mask-tool-cursor" :style="toolCursorStyle">
             <IconifyIcon
-              :icon="tool === 'fill' ? 'lucide:paint-bucket' : 'lucide:pipette'"
+              :icon="
+                tool === 'fill'
+                  ? platformUiIcons.paintBucket
+                  : platformUiIcons.pipette
+              "
             />
           </div>
         </div>
@@ -1329,11 +1295,7 @@ onBeforeUnmount(() => {
             <label class="layer-label">遮罩层</label>
             <div :class="{ active: activeLayer === 'mask' }" class="layer-card">
               <input v-model="maskVisible" type="checkbox" />
-              <svg viewBox="0 0 20 20">
-                <path
-                  d="M1.31 5.32v9.36c0 .55.45 1 1 1h15.38c.55 0 1-.45 1-1V5.32c0-.55-.45-1-1-1H2.31c-.55 0-1 .45-1 1Zm9.88 8.12c-2.91.94-5.57-1.72-4.63-4.63.34-1.05 1.19-1.9 2.24-2.24 2.91-.94 5.57 1.72 4.63 4.63-.34 1.05-1.19 1.9-2.24 2.24Z"
-                />
-              </svg>
+              <IconifyIcon :icon="platformSemanticIcons.mask" />
               <button
                 :disabled="activeLayer === 'mask'"
                 @click="activateLayer('mask')"
@@ -1347,11 +1309,7 @@ onBeforeUnmount(() => {
               class="layer-card"
             >
               <input v-model="paintVisible" type="checkbox" />
-              <svg viewBox="0 0 20 20">
-                <path
-                  d="M17 6.965c0 .235-.095.47-.275.655l-6.51 6.52-.135.11a1.31 1.31 0 0 0-1.305-1.245l.135-.17 6.52-6.52a.92.92 0 0 1 1.575.65ZM9.82 14.515c0 2.23-3.23 1.59-4.82 0 1.65-.235 2.375-1.29 3.53-1.29.715 0 1.29.58 1.29 1.29Z"
-                />
-              </svg>
+              <IconifyIcon :icon="platformUiIcons.paintbrush" />
               <button
                 v-show="tool === 'erase' || activeLayer === 'paint'"
                 :disabled="activeLayer === 'paint'"

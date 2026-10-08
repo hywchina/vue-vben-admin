@@ -1,12 +1,43 @@
 # 当前系统架构说明
 
+## 统一图标语义层（2026-10-08）
+
+- Web 的业务实体、八类文件、动作/状态分别集中在 `semantic-icons.ts`、`asset-types.ts`、`ui-icons.ts`；业务页、路由和结果工具引用映射，不各自写图标字符串。遮罩工具保留原 ComfyUI 图形并集中注册为 `rail:mask`，工具按钮不再维护重复 SVG。
+- `getApplicationsApi` 在读取真实应用数据后，用 `capability-icons.ts` 按稳定功能代码归一化显示图标，兼容数据库中旧图标；不改写后端配置、JSON、发布版本、绑定或任何权限。未知功能只使用本地登记图形，无法识别时显示应用图标。
+- 共享外壳的刷新、重置、全屏、成功和首页图形与业务页一致；共享包不能反向依赖 Web，因此仍通过同名 Lucide 组件/内部常量渲染，测试约束两者一致。品牌 Logo、曲线和场景示意图不视为动作 icon。
+- 完整含义和引用位置见 [ICON_CATALOG.md](ICON_CATALOG.md)，由 `scripts/platform-icon-catalog.mjs` 扫描生成。图标变更只更新 Web，无数据库迁移、API/Worker 重启或 Docker 名称变动。
+
+## 工作流 API JSON 只读查看与导出（2026-10-08）
+
+- 编辑弹窗下方使用 `workflow-json-viewer.vue`，复用 `GET /workflow-management` 返回的 `versions[].apiJson`、版本号和 `activeCapabilities`，仍由 `platform:workflow:read` 服务端权限保护；普通用户不能读取原始工作流。没有新增接口、权限、数据库迁移或文件读取旁路。
+- 按版本号降序显示已有版本；唯一绑定版本优先选中，否则显示最新版本。每个版本独立显示绑定功能，名称来自同一管理响应，未知代码原样显示。标签说明最新版本不一定是执行版本、绑定不保证服务可执行，不改变现有发布/绑定逻辑。
+- JSON 使用 Vue 文本插值在可滚动 `pre/code` 中展示，不解析为 HTML、不提供编辑；复制复用共享剪贴板工具，下载仅导出所选 `apiJson` 的 UTF-8 JSON，文件名为 `code-vN.json`。Blob URL 延迟撤销并清理临时链接，失败有明确提示。不导出参数映射、模型依赖等平台封装，不把原始 JSON 写入审计日志。
+- 版本选择、展开/收起、复制和下载不调用任何更新接口，不改动编辑器未保存的名称/说明。注册新工作流仍使用原有表单，编辑已有工作流不恢复新增版本入口。部署只更新 Web 产物。
+
+## 工作流注册信息编辑（2026-10-08）
+
+管理页行操作使用“编辑”替代“新增版本”，只提交 `name` 与 `description`。复用有 `platform:workflow:write` 鉴权和审计的 `PUT /workflow-management/:id`；`status` 改为可选，未提供时 SQL 保留数据库当前状态，避免打开弹窗后覆盖其他管理员的状态修改。既有发布/停用操作继续显式提交 status。
+
+中文名称为 `workflow_definitions.name`，标识为稳定的 `workflow_definitions.code`，JSON 文件名是初始化目录的文件名，三者不是同一个字段。编辑不修改 capabilities/applications 的功能名称，不改变 `workflow_versions`、参数/输出映射、模型依赖、任务快照、API 原文件或功能绑定。既有版本接口保留兼容，但页面不再提供新增版本入口。目录初始化仅为新工作流写入默认名称/说明/发布状态，已有定义保留管理员维护值；受控版本导入与初始化绑定逻辑仍沿用原有流程，本轮没有修改文生图绑定行为。
+
+## 生成资产命名（2026-10-08）
+
+- ComfyUI、LoRA 与报告 Worker 在资产登记事务中调用 `utils/domain/assets/generated-names.ts`；`assets.name` 和 `asset_versions.original_filename` 初始一致，分别服务展示与下载，不修改对象键。上游原文件名保留在版本 metadata/执行回执中；报告正文标题保持用户填写的内容。
+- 格式为 `DSC-00000125-YYYYMMDD-001.ext`。命名读取任务关联设计会话的持久化 `public_id`，不直接显示内部 UUID；专属训练/报告及旧调试链路没有设计会话时读取已有实例的 INS 编号，不伪造 DSC 会话。分配器保留任务 TSK 编号的防御性兜底，但当前数据库约束要求任务存在会话或实例，正常链路不会走该分支。日期由数据库按北京时间分配；同上下文同日所有输出类型共享序号，超过 999 不截断。
+- `generated_asset_name_counters` 持久化分配序号，主键为上下文/日期；原子 UPSERT 支持并发和 Worker 重启，资产登记失败时序号一起回滚。保留计数行防止删除资产后重用号码；回执成功路径和报告已有版本路径不重新分配。
+- 迁移 037 对实际 `job_outputs` 的 workflow 资产按创建时间、任务时间、输出位置、资产 UUID 稳定排序回填，含已保存、暂存与软删除记录。只改名称，保留 ID、版本、对象内容、权限、目录、标签、状态与血缘。上传及无任务输出关联的用户复制件不受影响；`generated_asset_name_history` 保存原名称与全部版本原文件名用于恢复。
+- 后续迁移 039 在 038 业务编号层之上，仅替换真实任务输出名称/各版本下载名中与其来源上下文吻合的自动 UUID 前缀；日期、序号、扩展名、计数器键与高水位不变。手动名称分别独立保留，不强制覆盖；新增 `generated_asset_business_name_history` 保存升级前后名称与版本快照，不改写 037 备份、版本 metadata 或外部回执。
+- 前端继续使用真实资产 API，不在浏览器计算序号或伪造名称。手动重命名仍沿用既有接口；统一规则是自动登记及本次历史回填的默认名称，不覆盖用户日后修改。
+
 > 2026-09-23 根 Compose 已采用 `rail-platform:1.0.0`：Web、API、Worker 合入一个业务镜像和一个 `rail-platform-1` 容器，以非 root 用户通过 Supervisor 运行；PostgreSQL、MinIO 和邮件沙箱为独立基础设施容器。推理/训练服务仍独立，平台无需 CUDA 或模型挂载。子项目隔离验证入口见 [部署说明](../../deploy/single-image/README.md)。
 
 > 2026-09-08 跨项目现状核对：见 [开发机整体架构梳理](SYSTEM_ARCHITECTURE_OVERVIEW.md)。该文档补充 Presenton 与共享 vLLM 的实现归属、运行状态以及已知报告契约差异；以下历史验收与能力描述不代表当前服务全部在线。
 
 > 更新时间：2026-08-08。本文以当前仓库代码、数据库迁移和部署配置为准，不把模拟协议测试描述成真实 GPU 推理已验证。
 
-当前项目已经从纯前端演示升级为可持久化的平台框架。登录、企业邮箱找回密码、用户、权限、项目、资产、任务、通知、审计和 AI 助手会话使用真实 API、PostgreSQL、MinIO 和 SMTP。ComfyUI 已实现 18 项工作流目录、能力映射、独立 Worker、媒体输入和图片/文本/3D 输出登记；本机 18 项能力已完成真实 ComfyUI GPU 推理验收，其他部署环境仍需按服务、模型和自定义节点版本独立预检。
+当前项目已经从纯前端演示升级为可持久化的平台框架。登录、用户、权限、项目、资产、任务、通知、审计和 AI 助手会话使用真实 API、PostgreSQL 和 MinIO。2026-10-08 起取消企业邮箱找回密码，注册、资料及管理员新增账号不采集邮箱，不再依赖 SMTP。ComfyUI 已实现 18 项工作流目录、能力映射、独立 Worker、媒体输入和图片/文本/3D 输出登记；本机 18 项能力已完成真实 ComfyUI GPU 推理验收，其他部署环境仍需按服务、模型和自定义节点版本独立预检。
+
+2026-10-08 编号层：内部主键/外键继续 UUID；15 类业务实体统一持久化 `public_id`，输出 `publicId`，类型前缀＋至少 8 位流水号，不加 RAIL。项目 `code` 为兼容别名；历史用户/项目编号进入 `business_id_aliases`，所有解析仍受原权限约束。见 [统一业务编号](BUSINESS_IDS.md)。
 
 ## 1. 核心架构结论
 
@@ -42,7 +73,7 @@ flowchart TB
 
   subgraph PlatformAPI["独立平台 API：Nitro / H3"]
     Gateway["REST API /api/v1<br/>Zod 校验 / 统一响应 / Request ID"]
-    Identity["认证与 RBAC<br/>JWT / 邮件重置 / 刷新会话 / 权限 / 项目范围"]
+    Identity["认证与 RBAC<br/>JWT / 刷新会话 / 权限 / 项目范围"]
     Domains["平台领域服务<br/>项目 / 资产 / 任务 / AI 会话 / 通知 / 审计"]
     StorageControl["存储控制<br/>对象校验 / 预签名 URL / 私有桶"]
 
@@ -63,8 +94,6 @@ flowchart TB
   StorageControl -->|"建桶 / HEAD / 预签名"| S3
   Browser -->|"短时预签名 PUT / GET"| S3
 
-  Mail["企业 SMTP 邮件系统"]
-  Identity -->|"密码重置邮件"| Mail
 
   subgraph Capability["外部能力层"]
     ChatAdapter["AI 助手适配器<br/>vLLM / OpenAI 兼容协议"]
@@ -107,11 +136,10 @@ flowchart LR
   Web -->|"Vite 代理 /api"| API
   API --> PG
   API --> MinIO
-  API -->|"开发 SMTP"| Mailpit
   Browser -->|"预签名文件传输"| MinIO
 ```
 
-`pnpm dev:rail` 会依次启动 Docker 基础设施、执行数据库迁移、执行幂等种子初始化，再并行启动 Web 与 API。当前 Docker 不负责运行 Web 和 API；Mailpit 只用于本地接收测试邮件，生产环境由企业 SMTP 替代。
+`pnpm dev:rail` 会依次启动 Docker 基础设施、执行数据库迁移、执行幂等种子初始化，再并行启动 Web 与 API。当前 Docker 不负责运行 Web 和 API；Mailpit 为旧环境兼容保留，当前业务不再调用邮件服务，生产无需企业 SMTP。
 
 生产环境建议把 Web 构建产物部署到静态服务器，通过反向代理将同域 `/api/v1` 转发到 Nitro API；PostgreSQL、对象存储、密钥、备份和监控由生产基础设施单独管理。
 
@@ -131,8 +159,7 @@ flowchart LR
 | 数据访问 | postgres.js | PostgreSQL 参数化查询和事务 |
 | 关系数据库 | PostgreSQL 17.6 | 业务数据、权限关系、会话和文件元数据 |
 | 对象存储 | MinIO、AWS SDK for JavaScript v3 | S3 私有桶、预签名上传、下载和图片预览 |
-| 邮件服务 | Nodemailer、SMTP | 企业邮箱密码重置邮件；连接与投递只发生在后端 |
-| 开发邮件沙箱 | Mailpit | 本地 SMTP 接收与邮件页面验收 |
+| 历史开发邮件沙箱 | Mailpit | 旧 Compose 兼容保留，平台不再依赖 |
 | 本地基础设施 | Docker Compose | 可复现地启动 PostgreSQL、MinIO 和 Mailpit |
 | 测试与质量 | Vitest、Playwright、vue-tsc、ESLint、Oxlint、Stylelint、Oxfmt | 单元测试、浏览器验收、类型和代码质量检查 |
 
@@ -164,7 +191,7 @@ flowchart TB
 
 | 模块 | 页面/入口 | 实现技术 | 当前功能 | 主要数据来源 |
 | --- | --- | --- | --- | --- |
-| 账号认证 | `/auth/login`、`register`、`forget-password`、`reset-password` | Vben Auth、Vue 表单、Zod、Pinia | 用户名密码登录、企业邮箱注册与找回密码、协议校验、登录态恢复 | 认证 API |
+| 账号认证 | `/auth/login`、`register` | Vben Auth、Vue 表单、Zod、Pinia | 用户名密码登录与无邮箱注册、协议校验、登录态恢复；旧找回页面只重定向登录 | 认证 API |
 | 固定平台外壳 | `layouts/basic.vue` | Vben BasicLayout、Pinia、Ant Design Vue | 顶部品牌栏、全宽标签栏与嵌入式竖向导航、当前项目切换、通知、用户 ID/菜单、退出登录；品牌红 Logo 与完整平台名固定在白色顶栏，约 184 px 侧栏从标签栏下方开始，与内容共享画布背景且无分隔边框，并保留折叠和移动端抽屉 | 项目、通知、当前用户 API |
 | 首页 | `/home`（登录默认入口） | Vue、Pinia、响应式 CSS/SVG | 参考甲方 AI 视觉稿建立项目主视觉、四项真实指标、六个业务入口和最近工作区；建筑/客室线稿由本地 SVG/CSS 绘制，不引入外部素材；最近工作只展示无图片任务列表与八类最近生成资产，直接消费 `/dashboard` 权限过滤结果并提供真实空状态；模型训练和报告使用独立禁用页面，不伪造外部成功或系统性能数据 | `/dashboard` 聚合 + 会话、资产、应用状态 API |
 | 设计工作台 | `/projects`；旧 `/workspace/overview` 只重定向 | Vue、Pinia、Modal/Form、Tooltip | 由原项目空间升级：单层浅色卡片展示全部可访问项目及统计，支持搜索、排序、创建、修改、个人置顶、软删除、成员管理和项目任务入口；页面内提供平台管理与操作日志入口，用户与权限和工作流管理仅管理员可见，日志对所有账号开放但服务端强制管理员全量、普通用户仅自身 | 项目、成员、个人置顶、软归档、当前项目偏好、用户/角色、工作流与审计 API |
@@ -172,8 +199,8 @@ flowchart TB
 | 设计生成 | `/design?conversationId=:id` | 平台基础布局内的 Vue 工作区、Pinia、Canvas、MediaDevices | 复用固定平台功能侧栏和顶部项目/用户设置栏，其右侧增加独立可折叠任务栏，主区固定承载结果与底部输入，形成 0820 两级侧栏结构；统一输入器通过可扩展模式目录组织客室零部件、CMF、客室效果和报告能力，三种视觉模式共享后端功能目录，分别定义占位提示、首次提示词预设、结果操作和可维护提示词模板，真实可用性仍由平台 API 决定；任务以 `design_mode` 固化提交时模式，历史轮次据此恢复专属操作；需要图片输入时按能力 Schema 的 `assetIndex` 在编辑框上方生成有序托盘，本地多选先通过既有上传链路登记为当前项目资产，资产中心多选复用项目范围校验，左右移动直接交换槽位并持久化草稿，固定 N 张由槽位数量与必填标记约束；环境更改与平面图填色复用单图编辑契约，多图融合复用三图输入契约，多角度生成复用单图契约，三维生成复用前/左/后/右四视图契约；理解、环境和复合生成入口先将素材带入编辑器，只有用户确认后才创建任务；统一资产选择器、图片/Markdown 输入、遮罩和分区编辑、对比、3D、任务状态与会话内深化设计保持原链路；多图片结果使用自适应网格和支持键盘导航的共享全屏查看器 | 设计会话、应用、能力、资产、资产目录、提示词模板、草稿、任务 API |
 | 单能力调试兼容 | `/workspace/:appKey?instanceId=:id` | 隐藏管理员路由、Canvas、MediaDevices | 保留历史实例和旧精确流转链路用于兼容回溯，不在产品菜单展示 | 应用、调试实例、资产、任务 API |
 | 项目任务台账 | `/jobs`（不在侧栏展示，由设计工作台项目指标进入） | Vue、Pinia、状态组件 | 显示任务业务 ID、创建成员、状态和进度；失败错误使用限长摘要并可展开完整详情；支持状态/成员/关键词筛选、排序、多选和取消选择；活动任务显示取消操作，没有执行记录的孤立任务立即转为取消，真实 Worker 任务进入取消中，终态任务才可批量软删除 | `jobs`、`job_executions`、`project_members`、`job_inputs`、`job_outputs` |
-| 个人中心 | `/profile` | Vben Profile、Vue 表单、Canvas 裁剪 | 展示唯一用户 ID；资料与企业邮箱更新、邮箱安全状态、真实密码修改、消息提醒偏好；角色只读；头像悬浮上传，非方图经 1:1 拖动、缩放、旋转裁剪后写入私有对象存储并刷新全局用户态 | 用户、偏好与头像对象 API |
-| 用户与权限 | `/administration/access`（从设计工作台进入） | 路由角色守卫、管理员表格和弹窗 | 仅管理员可见；按字段标明姓名、用户 ID、用户名与邮箱；用户状态、其他用户角色管理、角色统计；窄卡片文字不越界 | 用户、角色 API |
+| 个人中心 | `/profile` | Vben Profile、Vue 表单、Canvas 裁剪 | 展示唯一用户 ID；姓名、部门、简介更新，无邮箱填写；真实密码修改、消息提醒偏好；角色只读；头像悬浮上传，非方图经 1:1 拖动、缩放、旋转裁剪后写入私有对象存储并刷新全局用户态 | 用户、偏好与头像对象 API |
+| 用户与权限 | `/administration/access`（从设计工作台进入） | 路由角色守卫、管理员表格和弹窗 | 仅管理员可见；按字段标明姓名、用户 ID、用户名；新增账号无需邮箱，保留其他用户密码重置、状态、角色管理与角色统计 | 用户、角色 API |
 | 操作日志 | `/audit`（从设计工作台进入） | Vue、Pinia、服务端分页与筛选 | 管理员查看全部账号，普通用户只查看自身；区分姓名、用户名和角色快照 | `audit_events` |
 | AI 设计助手 | 全部登录后页面的右下角弹窗 | Vue Teleport、Iconify、安全 Markdown 解析、预签名上传 | 个人历史对话、名称搜索、时间排序、重命名、Markdown 回复与复制、附件、预览、下载、清空与服务状态；与项目设计会话分层但共享平台外壳 | AI 助手 API + PostgreSQL + MinIO/S3 |
 
@@ -196,7 +223,7 @@ Nitro 使用文件路径生成 `/api/v1` 路由。每个业务接口一般按以
 | API 模块 | 主要接口 | 实现技术 | 功能与数据 |
 | --- | --- | --- | --- |
 | 公共接口层 | 全部 `/api/v1/**`、`/health` | Nitro、H3 | CORS、Request ID、错误归一化、统一响应包 |
-| 认证与会话 | `/auth/login`、`register`、`refresh`、`logout`、`password-reset/**`、`codes` | JOSE、scrypt、SHA-256、Nodemailer、HttpOnly Cookie | 登录锁定、JWT、刷新会话轮换、企业邮箱注册、一次性密码重置和权限码 |
+| 认证与会话 | `/auth/login`、`register`、`refresh`、`logout`、`codes` | JOSE、scrypt、SHA-256、HttpOnly Cookie | 登录锁定、JWT、刷新会话轮换、无邮箱注册和权限码；旧 `password-reset/**` 已移除 |
 | 当前用户 | `/user/info`、`profile`、`password`、`notification-preferences` | Zod、postgres.js | 资料、密码和提醒偏好；不允许自助修改角色 |
 | 项目 | `/projects`、`/projects/:id`、`/projects/:id/pin`、`/users/me/current-project` | PostgreSQL 事务、项目范围校验 | 创建与可见项目聚合查询、负责人/管理员改名、按用户独立置顶；删除时锁定项目并拒绝仍有活动任务的项目，写入 `archived_at/archived_by`，清理置顶和失效当前项目偏好但保留领域台账 |
 | 资产 | `/assets`、`/asset-folders`、`/assets/batch`、`assets/:id`、`uploads`、`text`、`complete`、`favorite`、`download`、`preview`、`versions` | AWS SDK v3、预签名 URL/对象复制、PostgreSQL | 多模态资产、持久化普通目录、批量移动/独立复制/递归软删除、版本、标签、基于 `asset_favorites` 的个人收藏软链接目录、下载、预览、项目范围重命名及创建时间/名称/类型白名单排序；3D 对象通过短时地址交给共享 Three.js 查看器 |
@@ -233,7 +260,7 @@ erDiagram
   ROLES ||--o{ ROLE_PERMISSIONS : grants
   PERMISSIONS ||--o{ ROLE_PERMISSIONS : included
   USERS ||--o{ REFRESH_SESSIONS : owns
-  USERS ||--o{ PASSWORD_RESET_TOKENS : requests
+  USERS ||--o{ PASSWORD_RESET_TOKENS : legacy_tokens
   USERS ||--|| USER_PREFERENCES : configures
 
   USERS ||--o{ PROJECT_MEMBERS : joins
@@ -276,9 +303,9 @@ erDiagram
 
 | 数据域 | PostgreSQL 表 | 说明 |
 | --- | --- | --- |
-| 身份权限 | `users`、`roles`、`permissions`、`user_roles`、`role_permissions`、`password_reset_tokens` | 账号、`USR-*` 业务 ID、企业邮箱、密码散列、角色、权限码和一次性重置令牌摘要 |
+| 身份权限 | `users`、`roles`、`permissions`、`user_roles`、`role_permissions`、`password_reset_tokens` | 账号、`USR-*` 业务 ID、密码散列、角色、权限码；邮箱列与历史重置令牌表仅保留兼容数据，无新邮件重置写入 |
 | 会话偏好 | `refresh_sessions`、`user_preferences` | 刷新令牌哈希、当前项目、提醒偏好 |
-| 项目 | `projects`、`project_members`、`project_user_pins` | `CR-*` 项目元数据、owner/editor/viewer 成员关系、用户级置顶，以及 `archived_at/archived_by` 项目软删除记录 |
+| 项目 | `projects`、`project_members`、`project_user_pins` | `PRJ-*` 项目元数据、owner/editor/viewer 成员关系、用户级置顶，以及 `archived_at/archived_by` 项目软删除记录 |
 | 资产 | `assets`、`asset_versions`、`asset_tags`、`asset_favorites`、`asset_folders` | `AST-*` 统一资产、成员归属、版本、来源、标签、个人收藏软链接和多级普通目录；收藏系统目录不写入 `assets.folder_id` |
 | 项目设计与应用任务 | `design_conversations`、`design_conversation_drafts`、`design_prompt_template_catalogs`、`applications`、`jobs`、`job_inputs`、`job_outputs` | 用户项目设计会话、会话内多应用草稿、管理员维护的模式提示词目录、`TSK-*` 任务参数、`design_mode`、成员归属、软归档、状态、输入输出与资产血缘；`job_inputs.asset_id` 始终是适配器消费的原始输入，可选 `annotation_asset_id` 只登记用户可见的分区标记快照 |
 | 管理员调试兼容 | `workflow_workspace_instances`、`workflow_workspace_drafts`、`workflow_asset_transfers` | 单能力调试实例及旧精确流转；不再作为普通用户主交互模型 |
@@ -329,32 +356,15 @@ sequenceDiagram
 
 JWT 中的角色不是最终授权依据。每次受保护请求都会根据用户编号从数据库重新加载账号状态、角色和权限，因此停用账号或调整角色能够影响后续请求。
 
-连续登录失败 5 次会触发 15 分钟临时锁定。修改密码或通过邮箱成功重置密码都会撤销该用户的全部刷新会话。
+连续登录失败 5 次会触发 15 分钟临时锁定。登录后修改密码或管理员重置其他账号密码都会撤销该用户的全部刷新会话；不再提供邮箱找回。
 
-### 8.2 企业邮箱密码重置
+会话续期策略（2026-10-08）：访问 JWT 默认有效 900 秒（15 分钟），这是单个令牌的有效期；刷新会话与 HttpOnly Cookie 默认有效 30 天，每次成功续期轮换。Web 固定启用自动刷新，覆盖旧浏览器偏好；业务请求遇到 401 时，通过 `/auth/refresh` 获取新令牌并重试一次，同一客户端的并发请求共享一次续期。公开登录和注册接口的错误不会触发续期。
 
-```mermaid
-sequenceDiagram
-  participant U as 用户
-  participant W as Web
-  participant A as 平台 API
-  participant D as PostgreSQL
-  participant M as 企业 SMTP
+当前前后端均没有按用户无操作时长退出的计时器，因此没有需要从较短时长延长到 30 分钟的空闲超时配置；空闲 30 分钟后再次访问时，仍通过有效刷新会话续期。刷新会话缺失、过期、撤销或账号停用会要求重新登录；临时网络超时、刷新接口 5xx 和续期后的业务 5xx 不清空登录状态。旧版本关闭自动续期，导致首次登录约 15 分钟后无论是否操作都可能被业务请求退出，本次已修正该行为。
 
-  U->>W: 提交企业邮箱
-  W->>A: POST /auth/password-reset/request
-  A->>A: IP 与账号频率限制
-  A->>D: 查询账号并保存随机令牌 SHA-256 摘要
-  A->>M: 发送带一次性链接的重置邮件
-  A-->>W: 始终返回相同受理结果
-  U->>W: 打开邮件链接并输入新密码
-  W->>A: POST /auth/password-reset/confirm
-  A->>D: 原子校验未使用、未过期的令牌摘要
-  A->>D: 写入新 scrypt 密码并撤销全部刷新会话
-  A-->>W: 重置成功，返回登录页
-```
+### 8.2 无邮箱账号与密码维护（2026-10-08）
 
-原始重置令牌只出现在用户收到的 HTTPS 链接中，数据库只保存 SHA-256 摘要；令牌默认 30 分钟有效且只能消费一次。申请接口不会根据邮箱是否存在返回不同文案，避免账号枚举。SMTP 密钥只在平台 API 环境变量中配置，不进入 Web 构建产物。
+移除忘记密码/邮件重置页面及 API、邮件工具和 Nodemailer 依赖；旧页面路由仅重定向登录，旧 API 返回 404。`account-input.ts` 统一注册、管理员创建及资料校验，邮箱不再参与输入；旧客户端额外传入邮箱会被忽略。新账号的 `users.email` 为 NULL，资料 SQL 不写邮箱，既有邮箱不改变。历史 `005` 迁移和重置令牌表保留，不删数据、不改写已应用迁移；管理员改密仍可使旧令牌失效。登录后修改密码要求旧密码，管理员重置其他账号要求用户/角色写权限并保护自身；仍撤销刷新会话并审计。不新增迁移，也不要求 SMTP 配置。
 
 ### 8.3 平台初始化与项目切换
 
@@ -452,7 +462,9 @@ interface CapabilityAdapter {
 
 ### 8.6 LoRA 训练数据流
 
-`POST /api/v1/lora/trainings` 是 LoRA 的稳定业务入口。浏览器只提交当前项目图片 ID、逐图 caption 和 Repeat、Epoch、rank、学习率、分辨率、触发词、预览提示词等白名单字段，不接收训练服务器路径或完整 `job_config`。
+2026-10-08 数据集移除前后端固定 100 张上限，页面显示“已选 N 张”。API 仍校验至少一图、caption、重复/项目/版本及 `LORA_MAX_DATASET_BYTES` 总容量（默认 2 GiB）。Worker 再校验容量，按最多 16 张/目标 32 MiB 分批读取图片与同名标注；单张超目标图片单独传输。每批完整回执后读取下一批，全部成功后才创建训练任务；传输操作间续租并检查取消。失败按同一目录确定性文件名重传，不自动清空目录。细节见 [LoRA 参数说明](LORA_TRAINING_PARAMETERS.md)。
+
+`POST /api/v1/lora/trainings` 是 LoRA 的稳定业务入口。浏览器只提交当前项目图片 ID、逐图 caption 和直接设定的 steps、Repeat、rank、学习率、分辨率、触发词、预览提示词、禁用采样开关等白名单字段，不接收训练服务器路径或完整 `job_config`。2026-10-08 移除新任务 Epoch：普通 demo 的 72 项参数由共享 `lora/demo.ts` 定义，6 项常用参数在主面板、其余 66 项（包括只读）分组放入专业设置，每项有问号说明。配置生成器从同一基准复制并覆盖受控值；旧排队任务保留原 Epoch 计算与采样行为。参见 [LoRA 参数说明](LORA_TRAINING_PARAMETERS.md)。
 
 ```mermaid
 sequenceDiagram
@@ -465,8 +477,11 @@ sequenceDiagram
   W->>A: 项目、图片 ID、caption、白名单参数
   A->>D: 校验项目/资产并写 jobs + lora_training_executions
   K->>D: 租约领取任务
-  K->>S: 读取当前项目图片
-  K->>T: 创建数据集并上传图片/caption
+  K->>T: 创建受控数据集目录
+  loop 每批最多 16 张 / 目标 32 MiB
+    K->>S: 读取当前批图片
+    K->>T: 上传当前批图片与同名 caption，核对回执
+  end
   K->>T: 生成受控 Flux2 配置、创建任务、启动任务与 GPU 队列
   loop 每 5 秒
     K->>T: 查询 step/total_steps/status
@@ -587,7 +602,7 @@ rail-cabin-design-platform/
 │           ├── domain/                 # 资产、项目、AI、审计、通知、能力契约
 │           ├── identity/               # 身份、角色、密码、令牌、会话
 │           ├── http/                   # Cookie、请求、校验、响应与错误
-│           └── infrastructure/         # 配置、数据库、对象存储、邮件、健康检查
+│           └── infrastructure/         # 配置、数据库、对象存储、健康检查
 ├── packages/                           # Vben 通用 UI、布局、Store、Request 等包
 ├── internal/                           # Vite、TypeScript、Lint 等仓库工具链
 ├── deploy/rail-platform/compose.yaml   # PostgreSQL + MinIO + 开发 Mailpit
@@ -613,7 +628,7 @@ flowchart LR
 
 ### 已经可真实使用
 
-- 用户注册、用户名密码登录、企业邮箱找回密码、令牌刷新、退出和登录失败锁定。
+- 无邮箱用户注册、用户名密码登录、令牌刷新、退出和登录失败锁定；邮箱找回密码已移除。
 - 用户资料、密码、提醒偏好、用户状态、角色和权限保护。
 - 创建、查看和切换项目；项目级数据范围检查。
 - 图片、视频、音频、文本、文档、3D 模型、模型文件和压缩包 8 类统一文件资产与真实对象存储。
@@ -621,7 +636,7 @@ flowchart LR
 - 项目“开始设计”、多应用会话时间线、按成员管理的任务台账、通知和审计。
 - 全局 AI 设计助手：按用户隔离的会话历史、文本、图片/音视频/文档附件、预览下载、清空、外部 API 转发与失败留痕。
 - 报告生成：结构化章节与项目 PNG/JPEG 资产输入、模板/AI 双适配器路由、持久化 Worker、DOCX/PPTX/Markdown 输出、任务取消，以及 `document`/`text` 资产回流。外部 `generate-file` 地址只存在于平台 API/Worker 配置中。
-- PostgreSQL/MinIO 数据持久化、SMTP 邮件投递、迁移、种子、测试和生产构建。
+- PostgreSQL/MinIO 数据持久化、迁移、种子、测试和生产构建；SMTP 邮件依赖已移除。
 
 ### 已预留但尚未完成
 
@@ -661,6 +676,8 @@ ComfyUI 采用“平台 API 创建持久化任务、独立 Worker 执行、输�
 ## 2026-09-10：统一功能输入器与参数展示
 
 - 功能来源仍是 `/applications` 的可见已发布能力，前端默认显式选中 `text-to-image`。执行调用继续提交确定的 `appKey`，不增加隐式文生文回退。三个视觉模式不再过滤功能列表。
+- 2026-10-08 输入器增加“文生图 / 图生图”类别：`text-to-image` 独占文生图，直接展示原有参数；图生图增加第二级功能选择，切入时默认 `inpaint-single`，不可用时提示且保留当前功能，不静默回退。其余已发布功能共享既有目录，`text-chat` 暂从设计输入器及历史重发入口排除，后端 API、已有记录与结果查看保留；`text-to-image-lora` 暂归图生图，不修改其 LoRA 输入契约。
+- 分类通过 `design-generation.ts` 从实际 `appKey` 推导，不另存可漂移的分类状态；历史复用、图片编辑与功能切换自动同步类别。快捷参数、媒体槽位和完整抽屉仍读取当前能力 Schema/presentation，分类切换继续走 `chooseApplication` 和既有草稿 API，不增加迁移或环境变量。
 - 新表 `capability_parameter_presentations` 按 `capability_code` 保存有序 `quick_field_keys`。能力 GET 返回 `presentation.quickFieldKeys` 和当前 `workflowVersionId`；管理员 PUT `/capabilities/:code/presentation` 使用 `platform:workflow:write`，锁定当前绑定并检查版本，拒绝重复或无效字段，记录 `capability.presentation.update` 审计。参数值和工作流快照不受此配置影响。
 - 未配置时沿用非 advanced 常用字段；明确配置空数组时不显示快捷参数。重新绑定工作流后，GET 自动过滤已不存在的字段，完整参数仍按新 Schema 展示。
 - `design_conversation_drafts` 主键扩展为 `(conversation_id, app_key, design_mode)`，GET/PUT 接受 `designMode`，省略时为 `cabin`，保留旧客户端行为与旧草稿。项目及会话所有者校验维持原链路。
@@ -710,3 +727,16 @@ ComfyUI 采用“平台 API 创建持久化任务、独立 Worker 执行、输�
 新增 `DELETE /assistant/conversations/:id`：按当前用户校验归属，在事务中锁定会话、读取附件对象键与消息数量、删除会话，利用已有外键级联删除消息及附件关系；事务后清理私有对象。对象清理失败记录审计计数，沿用现有清空消息的尽力清理策略。审计事件为 `assistant.conversation.delete`，不写聊天正文。无新迁移。前端逐条确认删除，删除当前会话后复位为空白，删除其他会话不改变当前会话。
 
 模板内比例宫格与外部比例入口共用 imageRatios 和 linkedSize，直接读写设计页 parameterValues；比例不使用模板旧尺寸选项作为另一份状态。选择立即生效，确认应用生成格式固定的比例行；宽高监听通过 syncPromptRatio 只替换此行，文本与参数继续经既有草稿 API 持久化。未应用比例模板且无该行时，外部改尺寸不会自动插入文字。
+
+### AI 助手接收生成图片拖拽（2026-10-08）
+
+- 图片画廊主图、缩略图及单张结果通过 `application/x-rail-asset-image` 携带版本、资产 UUID 和展示文件名，不携带预签名 URL、对象键或任意外链。文件名仅作显示，不能作为授权；接收端校验协议和 UUID，不解析外部 HTML/图片 URL。
+- 松开后调用现有 `GET /assets/:id/preview` 重新验证项目读取权限、资源存在性和可用状态，再读取新签名地址。此接口支持暂存结果；普通 `GET /assets/:id` 只接受已入库资产，因此不能用来读取尚未保存的会话结果。拖拽不会调用保存资产接口或改变源资产。
+- 浏览器校验支持的 PNG/JPEG/WebP/GIF MIME、响应类型和真实字节数，生成 File 并复用助手待发附件列表；读取有超时、重复资产去重及图片/附件数量限制。拖拽不创建 AI 消息或上传对象，点击发送时才沿用申请预签名 PUT、完成登记及发送附件 ID 的既有用户隔离链路。读取过程中阻止发送和对话切换，卸载/上下文改变不追加迟到结果。
+- 原有本地选择附件保留，输入区也可接收本地文件拖入；多附件在面板内横向滚动，不撑宽消息列。图片对比滑块保留原交互，先切到结果视图再拖拽。无新 API、数据库迁移、环境变量或 Docker 配置，生产只需更新 Web 产物。
+
+### 设计输入区接收会话生成图片拖拽（2026-10-08）
+
+- 与 AI 助手共用资产 UUID 拖拽协议，接收范围限定为当前项目/会话任务输出；不解析外链或历史签名 URL。数量来自当前能力 Schema 的有序图片槽位，而非按功能名硬编码；每次只填下一个空位，重复与满额拒绝。
+- `design-composer-drop.ts` 负责预检查、确认、资源读取/登记及异步后的再次校验。已保存输出经 `GET /assets/:id` 校验，暂存输出经用户确认调用既有 `POST /assets/:id/save`；后端继续执行项目权限与可用性校验。复用原资产 ID，不下载后重新上传；这与 AI 助手的个人附件复制链路不同。
+- 会话、项目、应用、业务模式与能力加载代次共同防止迟到结果写入新上下文；缓存仅在上下文匹配后更新，落位复用 `selectAsset`，清除换图后的区域标注并保存既有会话草稿。拖入不修改参数、不切换功能、不创建任务；少于必填图数继续由原提交校验拦截。无新增 API、数据库迁移或部署配置。

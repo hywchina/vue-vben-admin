@@ -6,6 +6,7 @@ import {
   requireIdentity,
   requirePermission,
 } from '~/utils/identity';
+import { isUserPublicId } from '~/utils/identity/business-ids';
 import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -20,7 +21,7 @@ export default apiHandler(async (event) => {
   if (!projectId) {
     throw new ApiError(400, 'PROJECT_ID_REQUIRED', '缺少项目编号');
   }
-  if (!userPublicId || !/^USR-\d{6}$/.test(userPublicId)) {
+  if (!userPublicId || !isUserPublicId(userPublicId)) {
     throw new ApiError(
       400,
       'PROJECT_MEMBER_ID_INVALID',
@@ -55,7 +56,7 @@ export default apiHandler(async (event) => {
       FROM project_members member
       JOIN users user_account ON user_account.id = member.user_id
       WHERE member.project_id = ${projectId}
-        AND user_account.public_id = ${userPublicId}
+        AND (user_account.public_id = ${userPublicId} OR user_account.id IN (SELECT entity_id FROM business_id_aliases WHERE entity_type = 'USR' AND legacy_id = ${userPublicId}))
       FOR UPDATE OF member
     `;
     if (!member) {

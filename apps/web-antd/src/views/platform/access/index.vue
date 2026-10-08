@@ -20,6 +20,8 @@ import {
 import { createUserApi, resetUserPasswordApi } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
+import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
 const platformStore = usePlatformStore();
@@ -37,7 +39,6 @@ const passwordResetUser = ref<null | PlatformUser>(null);
 const resetPassword = ref('');
 const createUserForm = ref({
   department: '',
-  email: '',
   password: '',
   realName: '',
   role: 'user' as 'admin' | 'user',
@@ -52,7 +53,7 @@ const filteredUsers = computed(() => {
   const normalized = keyword.value.trim().toLowerCase();
   if (!normalized) return platformStore.users;
   return platformStore.users.filter((user) =>
-    `${user.name}${user.publicId}${user.username}${user.email}${user.department}${user.roles.join('')}`
+    `${user.name}${user.publicId}${user.username}${user.department}${user.roles.join('')}`
       .toLowerCase()
       .includes(normalized),
   );
@@ -114,7 +115,6 @@ async function toggleStatus(user: PlatformUser) {
 function openCreateUser() {
   createUserForm.value = {
     department: '',
-    email: '',
     password: '',
     realName: '',
     role: 'user',
@@ -138,7 +138,6 @@ const canCreateUser = computed(() => {
   return Boolean(
     /^[\w.-]{3,32}$/.test(input.username.trim()) &&
     input.realName.trim() &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim()) &&
     hasValidPassword(input.password),
   );
 });
@@ -150,7 +149,6 @@ async function createUser() {
     const created = await createUserApi({
       ...createUserForm.value,
       department: createUserForm.value.department.trim(),
-      email: createUserForm.value.email.trim(),
       realName: createUserForm.value.realName.trim(),
       username: createUserForm.value.username.trim(),
     });
@@ -199,7 +197,7 @@ async function confirmResetPassword() {
     >
       <template #extra>
         <Button type="primary" @click="openCreateUser">
-          <IconifyIcon class="mr-1" icon="lucide:user-plus" />
+          <IconifyIcon class="mr-1" :icon="platformUiIcons.userPlus" />
           新增用户
         </Button>
       </template>
@@ -221,7 +219,7 @@ async function confirmResetPassword() {
                 placeholder="搜索用户 ID、姓名、部门或角色"
               >
                 <template #prefix>
-                  <IconifyIcon icon="lucide:search" />
+                  <IconifyIcon :icon="platformUiIcons.search" />
                 </template>
               </Input>
             </div>
@@ -254,10 +252,6 @@ async function confirmResetPassword() {
                     <small>
                       <b>用户名</b>
                       {{ user.username }}
-                    </small>
-                    <small>
-                      <b>邮箱</b>
-                      {{ user.email || '未登记' }}
                     </small>
                   </div>
                 </div>
@@ -296,7 +290,7 @@ async function confirmResetPassword() {
           </TabPane>
           <TabPane key="roles" tab="角色权限">
             <div class="role-overview-note">
-              <IconifyIcon icon="lucide:info" />
+              <IconifyIcon :icon="platformUiIcons.info" />
               <p>
                 平台角色决定账号可使用的菜单和管理操作；项目内的负责人、编辑和只读角色进一步限制具体项目的数据范围。系统角色由平台统一维护，不在此处逐项修改权限。
               </p>
@@ -309,7 +303,7 @@ async function confirmResetPassword() {
               >
                 <div class="role-card__head">
                   <span class="role-card__icon">
-                    <IconifyIcon icon="lucide:shield" />
+                    <IconifyIcon :icon="platformSemanticIcons.security" />
                   </span>
                   <Tag class="role-card__type">系统角色</Tag>
                 </div>
@@ -388,14 +382,6 @@ async function confirmResetPassword() {
         <label>
           <span>姓名</span>
           <Input v-model:value="createUserForm.realName" :maxlength="100" />
-        </label>
-        <label>
-          <span>企业邮箱</span>
-          <Input
-            v-model:value="createUserForm.email"
-            :maxlength="254"
-            autocomplete="off"
-          />
         </label>
         <label>
           <span>所属部门</span>

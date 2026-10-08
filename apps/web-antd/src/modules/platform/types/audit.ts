@@ -6,6 +6,7 @@ export interface PlatformAuditEvent {
   createdAt: string;
   durationMs?: null | number;
   id: string;
+  publicId?: string;
   ip: string;
   method?: null | string;
   module: string;

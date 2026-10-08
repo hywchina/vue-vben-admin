@@ -44,6 +44,7 @@ import StatusPill from '#/components/platform/status-pill.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 import { selectWorkspaceJobs } from '#/store/platform/helpers';
 
@@ -947,7 +948,7 @@ onBeforeUnmount(() => {
           shape="circle"
           @click="router.push('/design')"
         >
-          <IconifyIcon icon="lucide:arrow-left" />
+          <IconifyIcon :icon="platformUiIcons.arrowLeft" />
         </Button>
         <div class="capability-glyph">
           <IconifyIcon :icon="application.icon" />
@@ -985,7 +986,7 @@ onBeforeUnmount(() => {
           type="primary"
           @click="runCapability"
         >
-          <IconifyIcon icon="lucide:sparkles" />
+          <IconifyIcon :icon="platformUiIcons.sparkles" />
           开始运行
         </Button>
       </div>
@@ -996,7 +997,7 @@ onBeforeUnmount(() => {
         aria-label="能力执行链路"
       >
         <div>
-          <i><IconifyIcon icon="lucide:package-open" /></i>
+          <i><IconifyIcon :icon="platformUiIcons.packageOpen" /></i>
           <span>{{ routeLineLabel }}</span>
         </div>
         <b><em></em></b>
@@ -1029,7 +1030,7 @@ onBeforeUnmount(() => {
               </small>
             </h2>
           </div>
-          <IconifyIcon icon="lucide:sliders-horizontal" />
+          <IconifyIcon :icon="platformUiIcons.slidersHorizontal" />
         </div>
 
         <div class="deck-scroll">
@@ -1105,7 +1106,7 @@ onBeforeUnmount(() => {
               v-if="!basicFields.length && !cameraFields.length"
               class="parameter-empty"
             >
-              <IconifyIcon icon="lucide:mouse-pointer-click" />
+              <IconifyIcon :icon="platformUiIcons.mousePointerClick" />
               <p>该能力不需要额外文本参数，完成输入编组即可运行。</p>
             </div>
 
@@ -1255,14 +1256,14 @@ onBeforeUnmount(() => {
               完成参数和输入编组后提交。页面关闭不会中断任务，生成结果由你决定是否加入项目资产。
             </p>
             <Button type="primary" @click="runCapability">
-              <IconifyIcon icon="lucide:sparkles" />
+              <IconifyIcon :icon="platformUiIcons.sparkles" />
               开始运行
             </Button>
           </div>
         </div>
 
         <div class="security-strip">
-          <IconifyIcon icon="lucide:shield-check" />
+          <IconifyIcon :icon="platformSemanticIcons.security" />
           <p>
             浏览器只接触业务字段和项目资产；ComfyUI 地址、密钥、节点 ID 与 API
             JSON 仅保留在平台后端。
@@ -1303,7 +1304,7 @@ onBeforeUnmount(() => {
           />
 
           <div v-if="!mediaFields.length" class="no-input-card">
-            <IconifyIcon icon="lucide:braces" />
+            <IconifyIcon :icon="platformUiIcons.braces" />
             <h3>无资产输入</h3>
             <p>该能力仅使用受控业务参数，运行结果由你确认后再加入项目资产。</p>
           </div>
@@ -1320,7 +1321,7 @@ onBeforeUnmount(() => {
                 }}
               </p>
             </div>
-            <IconifyIcon icon="lucide:arrow-down" />
+            <IconifyIcon :icon="platformUiIcons.arrowDown" />
             <div>
               <strong>输出</strong>
               <p>

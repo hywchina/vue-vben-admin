@@ -13,7 +13,7 @@ import {
 } from 'vue';
 
 import { usePriorityValues, useSimpleLocale } from '@vben-core/composables';
-import { Expand, Shrink } from '@vben-core/icons';
+import { Maximize2, Minimize2 } from '@vben-core/icons';
 import {
   Dialog,
   DialogContent,
@@ -326,8 +326,8 @@ function handleClosed() {
         class="absolute top-3 right-10 flex-center size-6 rounded-full px-1 text-lg text-foreground/80 opacity-70 transition-opacity hover:bg-accent hover:text-accent-foreground hover:opacity-100 focus:outline-hidden disabled:pointer-events-none"
         @click="handleFullscreen"
       >
-        <Shrink v-if="fullscreen" class="size-3.5" />
-        <Expand v-else class="size-3.5" />
+        <Minimize2 v-if="fullscreen" class="size-3.5" />
+        <Maximize2 v-else class="size-3.5" />
       </VbenIconButton>
 
       <DialogFooter

@@ -73,7 +73,7 @@ async function main() {
 
   const [
     { closeDatabase, useDatabase },
-    { deleteObject },
+    { createDownloadUrl, deleteObject },
     { ComfyUiClient },
     { ComfyUiWorker },
   ] = await Promise.all([
@@ -90,6 +90,7 @@ async function main() {
   let jobId: null | string = null;
   let objectKey: null | string = null;
   const workspaceInstanceId = randomUUID();
+  const designConversationId = randomUUID();
   try {
     const [scope] = await sql<{ userId: string; workflowVersionId: string }[]>`
       SELECT
@@ -117,10 +118,14 @@ async function main() {
         'text-to-image', ${`Worker 集成会话 ${testMarker}`}
       )
     `;
+    await sql`
+      INSERT INTO design_conversations (id, user_id, project_id)
+      VALUES (${designConversationId}, ${scope.userId}, ${projectId})
+    `;
     const [job] = await sql<{ id: string }[]>`
       INSERT INTO jobs (
         project_id, app_key, name, parameters, created_by, status, stage,
-        workflow_version_id, workspace_instance_id
+        workflow_version_id, workspace_instance_id, design_conversation_id
       ) VALUES (
         ${projectId},
         'text-to-image',
@@ -137,7 +142,7 @@ async function main() {
         'queued',
         '等待 ComfyUI Worker 接收',
         ${scope.workflowVersionId},
-        ${workspaceInstanceId}
+        ${workspaceInstanceId}, ${designConversationId}
       )
       RETURNING id
     `;
@@ -178,9 +183,11 @@ async function main() {
     const [result] = await sql<
       {
         assetId: string;
+        assetName: string;
         executionStatus: string;
         jobStatus: string;
         objectKey: string;
+        originalFilename: string;
         receiptStatus: string;
         savedAt: Date | null;
       }[]
@@ -190,7 +197,9 @@ async function main() {
         je.status AS "executionStatus",
         jor.status AS "receiptStatus",
         jor.asset_id AS "assetId",
+        a.name AS "assetName",
         av.object_key AS "objectKey",
+        av.original_filename AS "originalFilename",
         a.saved_at AS "savedAt"
       FROM jobs j
       JOIN job_executions je ON je.job_id = j.id
@@ -213,6 +222,29 @@ async function main() {
     }
     assetId = result.assetId;
     objectKey = result.objectKey;
+    const [conversation] = await sql<{ publicId: string }[]>`
+      SELECT public_id AS "publicId" FROM design_conversations WHERE id = ${designConversationId}
+    `;
+    if (
+      !conversation ||
+      !result.assetName.startsWith(`${conversation.publicId}-`) ||
+      !/\d{8}-001\.png$/.test(result.assetName) ||
+      result.assetName !== result.originalFilename
+    )
+      throw new Error('生成资产标题和下载名称未按统一规则登记');
+    const downloadUrl = await createDownloadUrl(
+      objectKey,
+      result.originalFilename,
+    );
+    const downloaded = await fetch(downloadUrl);
+    if (
+      !downloaded.ok ||
+      !downloaded.headers
+        .get('content-disposition')
+        ?.includes(encodeURIComponent(result.originalFilename)) ||
+      !Buffer.from(await downloaded.arrayBuffer()).equals(pixelPng)
+    )
+      throw new Error('统一命名的真实下载文件名或内容不正确');
     console.warn(
       'ComfyUI Worker 端到端验收通过：提交、轮询、MinIO 与结果暂存。',
     );
@@ -227,6 +259,7 @@ async function main() {
       DELETE FROM workflow_workspace_instances
       WHERE id = ${workspaceInstanceId}
     `;
+    await sql`DELETE FROM generated_asset_name_counters WHERE context_id IN (${workspaceInstanceId}, ${designConversationId})`;
     await sql`DELETE FROM worker_heartbeats WHERE instance_id = ${workerId}`;
     await sql`DELETE FROM projects WHERE id = ${projectId}`;
     await new Promise<void>((resolve, reject) => {

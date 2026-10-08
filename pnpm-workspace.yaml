@@ -67,7 +67,6 @@ catalog:
   '@types/json-bigint': ^1.0.4
   '@types/lodash.clonedeep': ^4.5.9
   '@types/node': ^25.9.5
-  '@types/nodemailer': ^8.0.1
   '@types/nprogress': ^0.2.3
   '@types/qrcode': ^1.5.6
   '@types/qs': ^6.15.1
@@ -126,7 +125,6 @@ catalog:
   lefthook: ^2.1.10
   lodash.clonedeep: ^4.5.0
   nitropack: ^2.13.4
-  nodemailer: ^9.0.3
   nprogress: ^0.2.0
   ora: ^9.4.1
   oxfmt: ^0.60.0

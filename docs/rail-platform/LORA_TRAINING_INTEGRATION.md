@@ -6,15 +6,15 @@
 
 平台按任务动态替换任务名、基础模型键、项目数据集目录、触发词、步数、Repeat、rank、学习率、分辨率与预览提示词。基础模型是后端白名单参数：`GET /lora/status` 返回不含权重路径的模型目录，创建任务时只接受目录中的稳定键；当前只开放已经实训验证的 `flux2-klein-9b`。用户不能提交模型权重路径、VAE 路径、训练输出路径、GPU 路径或完整 AI Toolkit 配置。
 
-训练页参考 AI Toolkit `jobs/new` 和甲方截图组织为“左侧参数、右侧项目训练集”：基础区提供底模下拉、任务名、Repeat/Epoch 滑杆、总步数、触发词和预览提示词；“专业设置”按训练、样图、优化器、网络、打标和高级设置分类。只读项明确来自已验证模板，不用无后端映射的控件冒充可配置参数。
+训练页组织为“左侧参数、右侧项目训练集”：仅呈现普通 demo 的 72 项训练字段，6 项常用字段外显、66 项（含只读）进入专业设置，逐项提供问号说明。任务名是平台业务字段；新任务直接设置 steps，不再提供 Epoch。数据集不设固定 100 张上限，计数显示“已选 N 张”。详见 [LoRA 参数说明](LORA_TRAINING_PARAMETERS.md)。
 
 ## 2. 业务流程
 
 1. 用户进入 `/model-training`，选择当前项目已登记的图片，或先上传为项目图片资产。
 2. 用户为每张图片填写 caption；Worker 会在缺少触发词时自动在 caption 前追加触发词。
-3. 平台 API 校验项目写权限、图片状态、对象版本、重复图片、总容量与 `图片数 × Repeat × Epoch`（20～10000）。
+3. 平台 API 校验项目写权限、图片状态、对象版本、重复图片、逐图 caption、总容量与直接设定的 steps（20～10000）；不按图片数 × Repeat 计算新任务步数。
 4. 平台写入 `jobs`、`job_inputs` 和 `lora_training_executions`，页面关闭后任务仍继续。
-5. Worker 通过 AI Toolkit 创建受控数据集，上传同名图片/`.txt`，按平台任务业务 ID 设置 `job_ref`，创建任务并分别启动任务队列与 GPU 队列。
+5. Worker 通过 AI Toolkit 创建受控数据集，按最多 16 张/目标 32 MiB 顺序分批读取、上传图片及同名 `.txt`（单张大图单独传输），全部回执完整后按平台任务业务 ID 设置 `job_ref`，创建任务并分别启动任务队列与 GPU 队列。传输操作之间续租并检查取消；失败重试同目录、同名覆盖，不自动清空目录。
 6. Worker 每 5 秒同步 `queued/running/completed/error/stopped`、step、total_steps 和速度；页面通过平台 API 读取日志和 loss。
 7. 完成后 Worker 查询 `.safetensors`，最多登记最后 4 个 checkpoint；文件写入私有 MinIO，登记为 `model` 资产并写入 `job_outputs`、`lora`、`ai-toolkit` 和 `flux2-klein-9b` 标签。
 
@@ -77,3 +77,5 @@ pnpm dev:rail
 | `LORA_ARTIFACT_REGISTRATION_FAILED` | 模型下载、对象存储或资产登记失败 |
 
 AI Toolkit 当前仍是单机内网 Worker：使用全局 Token，部分写操作是 GET，`job_ref` 非唯一，文件下载路由不鉴权，删除任务会递归删除输出目录。平台不开放外部删除接口，也不把文件 URL 交给浏览器。算法效果、GPU 容量、模型许可证和训练服务器备份仍需上线前单独验收。
+
+数据集总容量仍由 `LORA_MAX_DATASET_BYTES` 控制，默认 2 GiB。取消固定张数不等于无限制输入：caption 长度、单文件规则、总容量、权限及步骤范围保持有效。分批传输不增加训练超参数或环境变量，不修改 demo YAML；重试从首批重传，不承诺断点续传。

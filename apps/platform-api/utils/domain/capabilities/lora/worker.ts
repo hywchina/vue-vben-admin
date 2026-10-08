@@ -1,15 +1,17 @@
 import type { LoraTrainingParameters } from './template';
 
 import { createHash, randomUUID } from 'node:crypto';
-import { extname, posix } from 'node:path';
+import { posix } from 'node:path';
 import process from 'node:process';
 
 import { getConfig } from '../../../config';
 import { useDatabase } from '../../../database';
 import { deleteObject, readObject, storeObject } from '../../../storage';
+import { allocateGeneratedAssetName } from '../../assets/generated-names';
 import { writeSystemAudit } from '../../audit/writer';
 import { createNotification } from '../../notifications/repository';
 import { AiToolkitClient, AiToolkitClientError } from './client';
+import { LoraDatasetError, uploadLoraDatasetBatches } from './dataset';
 import { buildLoraJobConfig } from './template';
 
 interface LoraExecutionRow {
@@ -41,13 +43,6 @@ function safeError(error: unknown) {
 
 function seconds(milliseconds: number) {
   return Math.max(1, Math.round(milliseconds / 1000));
-}
-
-function datasetFilename(index: number, filename: string) {
-  const extension = extname(filename)
-    .toLowerCase()
-    .replaceAll(/[^.a-z0-9]/g, '');
-  return `${String(index + 1).padStart(4, '0')}${extension || '.png'}`;
 }
 
 export class LoraTrainingWorker {
@@ -186,6 +181,22 @@ export class LoraTrainingWorker {
       `;
       return candidate.jobId;
     });
+  }
+
+  async #continueSubmission(jobId: string) {
+    const config = getConfig();
+    const sql = useDatabase();
+    const [execution] = await sql<{ status: string }[]>`
+      UPDATE lora_training_executions
+      SET lease_expires_at = now() + ${Math.max(config.loraWorkerLeaseSeconds, Math.ceil(config.loraTimeoutMs / 1000) * 2)} * interval '1 second',
+          updated_at = now()
+      WHERE job_id = ${jobId} AND lease_owner = ${this.#instanceId}
+        AND lease_expires_at > now()
+      RETURNING status
+    `;
+    if (!execution) throw new Error('LoRA 数据集传输租约已失效');
+    if (execution.status === 'cancel_requested')
+      throw new Error('LoRA 数据集传输已请求停止');
   }
 
   async #fail(job: LoraExecutionRow, code: string, message: string) {
@@ -333,12 +344,17 @@ export class LoraTrainingWorker {
     const stored = await storeObject(objectKey, mimeType, bytes);
     try {
       await sql.begin(async (transaction) => {
+        const generatedName = await allocateGeneratedAssetName(transaction, {
+          filename: originalFilename,
+          jobId: job.jobId,
+          mimeType,
+        });
         await transaction`
           INSERT INTO assets (
             id, project_id, name, description, kind, source, source_app_key,
             source_job_id, owner_id, status, saved_at
           ) VALUES (
-            ${assetId}, ${job.projectId}, ${`LoRA · ${originalFilename}`},
+            ${assetId}, ${job.projectId}, ${generatedName.filename},
             ${`由 ${job.jobName} 训练生成，可供同项目生成能力复用。`},
             'model', 'workflow', 'lora-training', ${job.jobId},
             ${job.createdBy}, 'available', now()
@@ -351,10 +367,10 @@ export class LoraTrainingWorker {
             created_by, completed_at
           ) VALUES (
             ${versionId}, ${assetId}, 1, 'object', ${objectKey},
-            ${originalFilename}, ${mimeType}, ${bytes.byteLength},
+            ${generatedName.filename}, ${mimeType}, ${bytes.byteLength},
             ${createHash('sha256').update(bytes).digest('hex')},
             ${stored.ETag?.replaceAll('"', '') ?? null}, 'available',
-            ${transaction.json({ aiToolkitJobId: job.externalJobId, model: job.parameters.baseModel })},
+            ${transaction.json({ aiToolkitJobId: job.externalJobId, generatedName, model: job.parameters.baseModel, originalFilename })},
             ${job.createdBy}, now()
           )
         `;
@@ -538,10 +554,12 @@ export class LoraTrainingWorker {
     const sql = useDatabase();
     await sql`
       UPDATE lora_training_executions
-      SET status = 'submitting', updated_at = now()
-      WHERE job_id = ${job.jobId}
+      SET status = CASE WHEN status = 'cancel_requested' THEN status ELSE 'submitting' END,
+          updated_at = now()
+      WHERE job_id = ${job.jobId} AND lease_owner = ${this.#instanceId}
     `;
     try {
+      await this.#continueSubmission(job.jobId);
       let external = await this.#client
         .getJobByRef(job.publicId)
         .catch((error) => {
@@ -550,43 +568,23 @@ export class LoraTrainingWorker {
           throw error;
         });
       if (!external) {
-        const captions = new Map(
-          job.parameters.datasetItems.map((item) => [
-            item.assetId,
-            item.caption,
-          ]),
-        );
-        const files: Array<{
-          bytes: Uint8Array;
-          filename: string;
-          mimeType: string;
-        }> = [];
-        for (const [index, asset] of job.inputAssets.entries()) {
-          const filename = datasetFilename(index, asset.filename);
-          const stem = filename.slice(0, -extname(filename).length);
-          const caption = captions.get(asset.id);
-          if (!caption) throw new Error(`训练图片 ${asset.id} 缺少 caption`);
-          const normalizedCaption = caption.includes(job.parameters.triggerWord)
-            ? caption
-            : `${job.parameters.triggerWord}, ${caption}`;
-          files.push(
-            {
-              bytes: await readObject(asset.objectKey),
-              filename,
-              mimeType: asset.mimeType,
-            },
-            {
-              bytes: new TextEncoder().encode(normalizedCaption),
-              filename: `${stem}.txt`,
-              mimeType: 'text/plain;charset=utf-8',
-            },
-          );
-        }
+        await this.#continueSubmission(job.jobId);
         const dataset = await this.#client.createDataset(job.datasetName);
-        await this.#client.uploadDataset(dataset.name, files);
+        const client = this.#client;
+        await uploadLoraDatasetBatches({
+          assets: job.inputAssets,
+          items: job.parameters.datasetItems,
+          maxDatasetBytes: getConfig().loraMaxDatasetBytes,
+          triggerWord: job.parameters.triggerWord,
+          read: readObject,
+          beforeOperation: () => this.#continueSubmission(job.jobId),
+          upload: (files) => client.uploadDataset(dataset.name, files),
+        });
+        await this.#continueSubmission(job.jobId);
         const datasetRoot = await this.#client
           .getDatasetRoot()
           .catch(() => getConfig().loraDatasetsRoot);
+        await this.#continueSubmission(job.jobId);
         const externalName = `rail_lora_${job.publicId.toLowerCase().replaceAll('-', '_')}`;
         try {
           external = await this.#client.createJob({
@@ -675,6 +673,21 @@ export class LoraTrainingWorker {
         targetType: 'job',
       });
     } catch (error) {
+      const [execution] = await sql<
+        { leaseOwner: null | string; status: string }[]
+      >`
+        SELECT lease_owner AS "leaseOwner", status FROM lora_training_executions
+        WHERE job_id = ${job.jobId}
+      `;
+      if (execution?.leaseOwner !== this.#instanceId) return;
+      if (execution.status === 'cancel_requested') {
+        await this.#cancel(job);
+        return;
+      }
+      if (error instanceof LoraDatasetError) {
+        await this.#fail(job, error.code, error.message);
+        return;
+      }
       await this.#retry(
         job,
         'LORA_SUBMISSION_FAILED',

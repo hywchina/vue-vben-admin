@@ -1,3 +1,5 @@
+import type { Page } from 'playwright';
+
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import process from 'node:process';
@@ -145,6 +147,33 @@ async function cleanupStaleAcceptanceData() {
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+async function chooseGenerationCategory(
+  page: Page,
+  category: 'image' | 'text',
+) {
+  const trigger = page.getByTestId('active-design-category');
+  if ((await trigger.getAttribute('data-generation-category')) === category)
+    return;
+  await trigger.click();
+  await page
+    .locator(
+      `.design-generation-menu:visible [data-generation-category="${category}"]`,
+    )
+    .click();
+  await page.waitForFunction(
+    (nextCategory) =>
+      document.querySelector<HTMLElement>(
+        '[data-testid="active-design-category"]',
+      )?.dataset.generationCategory === nextCategory,
+    category,
+  );
+  await page.waitForFunction(
+    () =>
+      document.querySelectorAll('.ant-spin-spinning, .ant-spin-blur').length ===
+      0,
+  );
 }
 
 function createTriangleGlb() {
@@ -1108,6 +1137,11 @@ async function runBrowserAcceptance() {
         rowCount:
           gridStyle?.gridTemplateRows.split(' ').filter(Boolean).length ?? 0,
         gridWidth: grid?.getBoundingClientRect().width ?? 0,
+        heroEntryGap:
+          hero && grid
+            ? grid.getBoundingClientRect().top -
+              hero.getBoundingClientRect().bottom
+            : 0,
         heroBackground: hero ? getComputedStyle(hero).backgroundImage : '',
         heroHeight: hero?.getBoundingClientRect().height ?? 0,
         metricValues,
@@ -1121,6 +1155,7 @@ async function runBrowserAcceptance() {
       homeLayout.columnCount === 3 &&
         homeLayout.rowCount === 2 &&
         homeLayout.heroHeight >= 300 &&
+        homeLayout.heroEntryGap >= 54 &&
         homeLayout.gridWidth >= 1200 &&
         homeLayout.heroBackground !== 'none' &&
         homeLayout.buttonBackground === 'rgb(255, 255, 255)' &&
@@ -2523,15 +2558,28 @@ async function runBrowserAcceptance() {
     `;
     await page.reload();
     await page.getByRole('button', { name: '停止生成' }).waitFor();
+    assert(
+      (await page.getByTestId('active-design-application').count()) === 0,
+      '文生图不应显示重复的第二级功能选择器',
+    );
+    await chooseGenerationCategory(page, 'image');
+    assert(
+      (await page
+        .locator('.composer-box:visible')
+        .getAttribute('data-effective-app-key')) === 'inpaint-single',
+      '图生图没有默认选中局部重绘',
+    );
     await page.getByRole('button', { name: '切换功能', exact: true }).click();
     const sharedFunctionKeys = await page
       .locator('.design-function-options button')
       .evaluateAll((buttons) => buttons.map((button) => button.dataset.appKey));
     assert(
-      sharedFunctionKeys.includes('text-to-image') &&
-        sharedFunctionKeys.includes('text-chat') &&
-        sharedFunctionKeys.length >= 18,
-      '功能列表未覆盖已发布的工作流',
+      !sharedFunctionKeys.includes('text-to-image') &&
+        !sharedFunctionKeys.includes('text-chat') &&
+        sharedFunctionKeys.includes('text-to-image-lora') &&
+        sharedFunctionKeys.includes('inpaint-single') &&
+        sharedFunctionKeys.length >= 16,
+      '图生图功能列表分类错误或没有保留 LoRA 工作流',
     );
     await page.getByRole('button', { name: '切换功能', exact: true }).click();
     await page.getByTestId('open-design-parameters').waitFor();
@@ -2578,11 +2626,15 @@ async function runBrowserAcceptance() {
     await page.getByTestId('conversation-sidebar-toggle').click();
     await page.waitForTimeout(250);
     const designModeCards = page.locator('.design-mode-switcher button');
+    const selectedModeLabel = await page
+      .locator('.design-mode-switcher button.active')
+      .textContent();
     assert(
       (await designModeCards.count()) === 4 &&
         (await page.locator('.design-mode-switcher button.active').count()) ===
-          0,
-      '设计业务模式没有默认保持四项均未选中',
+          1 &&
+        selectedModeLabel?.includes('客室效果生成'),
+      '设计业务模式没有默认选中客室效果生成',
     );
     const modeCardBackgrounds = await designModeCards.evaluateAll((cards) =>
       cards.map((card) => getComputedStyle(card).backgroundImage),
@@ -2865,8 +2917,11 @@ async function runBrowserAcceptance() {
       () => document.querySelectorAll('.design-page').length === 1,
     );
     assert(
-      (await page.getByTestId('active-design-application').count()) === 1,
-      '新会话没有显示默认选中的文生图功能',
+      (await page
+        .getByTestId('active-design-category')
+        .getAttribute('data-generation-category')) === 'text' &&
+        (await page.getByTestId('active-design-application').count()) === 0,
+      '新会话没有默认文生图类别或仍显示重复功能选择器',
     );
     assert(
       (await page
@@ -2874,7 +2929,7 @@ async function runBrowserAcceptance() {
         .getAttribute('data-effective-app-key')) === 'text-to-image',
       '默认执行目标不是文生图工作流',
     );
-    await page.getByTestId('active-design-application').waitFor();
+    await page.getByTestId('active-design-category').waitFor();
     await page.waitForFunction(
       () =>
         document.querySelectorAll('.ant-spin-spinning, .ant-spin-blur')
@@ -3071,30 +3126,30 @@ async function runBrowserAcceptance() {
       .first()
       .waitFor();
 
+    await chooseGenerationCategory(page, 'image');
     await page.getByRole('button', { name: '切换功能', exact: true }).click();
     await page
-      .locator('.design-function-options:visible [data-app-key="text-chat"]')
+      .locator(
+        '.design-function-options:visible [data-app-key="image-upscale"]',
+      )
       .click();
     const parameterDrawer = page.locator('.design-parameter-drawer');
     await page.getByTestId('open-design-parameters').click();
     await parameterDrawer.waitFor();
     await parameterDrawer
-      .getByText(/文本生成|文生文/)
+      .getByText(/图像放大/)
       .first()
       .waitFor();
     await page.locator('.ant-drawer:visible .ant-drawer-extra button').click();
-    await page.getByRole('button', { name: '切换功能', exact: true }).click();
-    await page
-      .locator(
-        '.design-function-options:visible [data-app-key="text-to-image"]',
-      )
-      .click();
-    await page.getByTestId('active-design-application').waitFor();
+    await chooseGenerationCategory(page, 'text');
+    await page.getByTestId('active-design-category').waitFor();
     assert(
       (await page.locator('.composer-application-shortcuts').count()) === 0,
       '选择应用后其他应用入口没有隐藏',
     );
-    await page.getByRole('button', { name: '切换功能', exact: true }).waitFor();
+    await page
+      .getByRole('button', { name: '切换生成类别', exact: true })
+      .waitFor();
     const moreParameterButton = page.getByTestId('open-design-parameters');
     const parameterBarBox = await page
       .locator('.parameter-chips')
@@ -3129,12 +3184,7 @@ async function runBrowserAcceptance() {
     await page.locator('.ant-drawer:visible .ant-drawer-extra button').click();
     await page.waitForTimeout(500);
     await page.screenshot({ fullPage: true, path: designScreenshotPath });
-    await page.getByRole('button', { name: '切换功能', exact: true }).click();
-    await page
-      .locator(
-        '.design-function-options:visible [data-app-key="text-to-image"]',
-      )
-      .click();
+    await chooseGenerationCategory(page, 'text');
 
     await page.getByRole('button', { name: '新建会话' }).click();
     await page.waitForFunction(

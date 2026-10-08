@@ -33,6 +33,7 @@ export default apiHandler(async (event) => {
       method: null | string;
       module: string;
       operator: string;
+      publicId: string;
       requestId: string;
       result: 'failed' | 'success';
       statusCode: null | number;
@@ -43,6 +44,7 @@ export default apiHandler(async (event) => {
   >`
     SELECT
       audit_event.id,
+      audit_event.public_id AS "publicId",
       audit_event.actor_id AS "actorId",
       COALESCE(audit_event.actor_real_name, '系统') AS operator,
       COALESCE(audit_event.actor_username, '-') AS username,

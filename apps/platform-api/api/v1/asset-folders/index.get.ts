@@ -20,11 +20,13 @@ export default apiHandler(async (event) => {
       kind: 'favorites' | 'normal';
       name: string;
       parentId: null | string;
+      publicId: string;
       updatedAt: Date;
     }>
   >`
     SELECT
       folder.id,
+      folder.public_id AS "publicId",
       folder.parent_id AS "parentId",
       folder.name,
       folder.kind,

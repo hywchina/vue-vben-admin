@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { Fullscreen, Minimize2 } from '@vben-core/icons';
+import { Maximize2, Minimize2 } from '@vben-core/icons';
 
 const screen = defineModel<boolean>('screen');
 
@@ -14,6 +14,6 @@ function toggleScreen() {
     @click="toggleScreen"
   >
     <Minimize2 v-if="screen" class="size-4" />
-    <Fullscreen v-else class="size-4" />
+    <Maximize2 v-else class="size-4" />
   </div>
 </template>

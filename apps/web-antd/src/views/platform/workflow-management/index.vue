@@ -28,7 +28,6 @@ import {
 } from 'ant-design-vue';
 
 import {
-  addWorkflowVersionApi,
   bindCapabilityWorkflowApi,
   createWorkflowApi,
   getWorkflowManagementApi,
@@ -36,11 +35,12 @@ import {
 } from '#/api/platform';
 
 import ParameterPresentationEditor from './parameter-presentation-editor.vue';
+import WorkflowJsonViewer from './workflow-json-viewer.vue';
 
 const presentationEditor =
   ref<InstanceType<typeof ParameterPresentationEditor>>();
 
-type EditorMode = 'create' | 'version';
+type EditorMode = 'create' | 'edit';
 
 const loading = ref(false);
 const submitting = ref(false);
@@ -116,24 +116,13 @@ function openCreateEditor() {
   editorModalApi.open();
 }
 
-function openVersionEditor(workflow: WorkflowDefinition) {
-  editorMode.value = 'version';
+function openEditEditor(workflow: WorkflowDefinition) {
+  editorMode.value = 'edit';
   selectedWorkflow.value = workflow;
   resetEditor();
-  const latest = workflow.versions[0];
   editor.code = workflow.code;
   editor.name = workflow.name;
   editor.description = workflow.description ?? '';
-  if (latest) {
-    editor.apiJson = JSON.stringify(latest.apiJson, null, 2);
-    editor.modelRequirements = JSON.stringify(
-      latest.modelRequirements,
-      null,
-      2,
-    );
-    editor.outputSchema = JSON.stringify(latest.outputSchema, null, 2);
-    editor.parameterSchema = JSON.stringify(latest.parameterSchema, null, 2);
-  }
   editorModalApi.open();
 }
 
@@ -146,36 +135,48 @@ function parseJson<T>(source: string, label: string): T {
 }
 
 async function submitEditor() {
+  const name = editor.name.trim();
+  if (!name) {
+    message.warning('请输入工作流中文名称');
+    return;
+  }
   submitting.value = true;
   try {
-    const versionPayload = {
-      apiJson: parseJson<Record<string, unknown>>(editor.apiJson, 'API 工作流'),
-      modelRequirements: parseJson<string[]>(
-        editor.modelRequirements,
-        '模型要求',
-      ),
-      outputSchema: parseJson<WorkflowOutputDefinition[]>(
-        editor.outputSchema,
-        '输出定义',
-      ),
-      parameterSchema: parseJson<WorkflowParameterDefinition[]>(
-        editor.parameterSchema,
-        '参数定义',
-      ),
-    };
-    if (editorMode.value === 'create') {
+    if (editorMode.value === 'edit') {
+      if (!selectedWorkflow.value) throw new Error('未选择要编辑的工作流');
+      await updateWorkflowApi(selectedWorkflow.value.id, {
+        description: editor.description.trim(),
+        name,
+      });
+    } else {
+      const versionPayload = {
+        apiJson: parseJson<Record<string, unknown>>(
+          editor.apiJson,
+          'API 工作流',
+        ),
+        modelRequirements: parseJson<string[]>(
+          editor.modelRequirements,
+          '模型要求',
+        ),
+        outputSchema: parseJson<WorkflowOutputDefinition[]>(
+          editor.outputSchema,
+          '输出定义',
+        ),
+        parameterSchema: parseJson<WorkflowParameterDefinition[]>(
+          editor.parameterSchema,
+          '参数定义',
+        ),
+      };
       await createWorkflowApi({
         code: editor.code,
         description: editor.description,
-        name: editor.name,
+        name,
         publish: editor.publish,
         version: versionPayload,
       });
-    } else if (selectedWorkflow.value) {
-      await addWorkflowVersionApi(selectedWorkflow.value.id, versionPayload);
     }
     message.success(
-      editorMode.value === 'create' ? '工作流已注册' : '新版本已保存',
+      editorMode.value === 'create' ? '工作流已注册' : '工作流信息已更新',
     );
     editorModalApi.close();
     await loadOverview();
@@ -220,7 +221,7 @@ onMounted(loadOverview);
   <ParameterPresentationEditor ref="presentationEditor" />
   <Page
     title="工作流管理"
-    description="注册 ComfyUI API 工作流、发布不可变版本，并将版本绑定到平台能力。"
+    description="注册 ComfyUI API 工作流、编辑中文名称和说明，并管理执行能力与发布状态。"
   >
     <div class="workflow-page">
       <Alert
@@ -281,6 +282,11 @@ onMounted(loadOverview);
         <template #extra>
           <Button type="primary" @click="openCreateEditor">注册工作流</Button>
         </template>
+        <p class="muted">
+          “标识”是系统内部唯一代码，不是 JSON 文件名。例如
+          flux2-klein-image-edit-kv 对应 image-edit-kv-v1.json。
+          编辑仅修改中文名称和说明，不改变标识、工作流 JSON、版本或功能绑定。
+        </p>
         <Spin :spinning="loading">
           <Table
             :columns="workflowColumns"
@@ -313,9 +319,9 @@ onMounted(loadOverview);
                 <Space wrap>
                   <Button
                     size="small"
-                    @click="openVersionEditor(workflowRecord(record))"
+                    @click="openEditEditor(workflowRecord(record))"
                   >
-                    新增版本
+                    编辑
                   </Button>
                   <Button
                     size="small"
@@ -340,70 +346,89 @@ onMounted(loadOverview);
 
     <EditorModal
       :confirm-loading="submitting"
-      :title="editorMode === 'create' ? '注册工作流' : '新增工作流版本'"
-      class="workflow-editor-modal"
+      :title="editorMode === 'create' ? '注册工作流' : '编辑工作流'"
+      class="workflow-editor-modal w-[min(720px,calc(100vw-32px))]"
     >
       <Form layout="vertical">
+        <Alert
+          v-if="editorMode === 'edit'"
+          show-icon
+          type="info"
+          message="仅修改中文展示名称和说明；标识、工作流 JSON、现有版本、发布状态和功能绑定保持不变。"
+        />
         <div class="form-grid">
           <Form.Item label="工作流标识" required>
             <Input
               v-model:value="editor.code"
-              :disabled="editorMode === 'version'"
+              :disabled="editorMode === 'edit'"
               placeholder="例如 flux-text-to-image"
             />
           </Form.Item>
-          <Form.Item label="版本策略">
+          <Form.Item v-if="editorMode === 'create'" label="版本策略">
             <Input value="自动递增且不可变" disabled />
           </Form.Item>
-          <Form.Item label="名称" required>
+          <Form.Item label="中文名称" required>
             <Input
               v-model:value="editor.name"
-              :disabled="editorMode === 'version'"
+              :maxlength="200"
+              placeholder="例如 客室双图编辑（KV）"
             />
           </Form.Item>
-          <Form.Item label="发布版本">
+          <Form.Item v-if="editorMode === 'create'" label="发布版本">
             <Switch v-model:checked="editor.publish" />
           </Form.Item>
         </div>
-        <Form.Item v-if="editorMode === 'create'" label="说明">
-          <Input.TextArea v-model:value="editor.description" :rows="2" />
-        </Form.Item>
-        <Form.Item label="ComfyUI API 工作流 JSON" required>
-          <Upload
-            accept=".json,application/json"
-            :before-upload="readWorkflowFile"
-            :show-upload-list="false"
-          >
-            <Button class="upload-button">读取 JSON 文件</Button>
-          </Upload>
+        <Form.Item label="说明">
           <Input.TextArea
-            v-model:value="editor.apiJson"
-            class="code-area"
-            :rows="10"
+            v-model:value="editor.description"
+            :rows="2"
+            :maxlength="2000"
           />
         </Form.Item>
-        <Form.Item label="参数映射 JSON" required>
-          <Input.TextArea
-            v-model:value="editor.parameterSchema"
-            class="code-area"
-            :rows="8"
-          />
-        </Form.Item>
-        <Form.Item label="输出映射 JSON" required>
-          <Input.TextArea
-            v-model:value="editor.outputSchema"
-            class="code-area"
-            :rows="6"
-          />
-        </Form.Item>
-        <Form.Item label="模型依赖 JSON">
-          <Input.TextArea
-            v-model:value="editor.modelRequirements"
-            class="code-area"
-            :rows="4"
-          />
-        </Form.Item>
+        <template v-if="editorMode === 'create'">
+          <Form.Item label="ComfyUI API 工作流 JSON" required>
+            <Upload
+              accept=".json,application/json"
+              :before-upload="readWorkflowFile"
+              :show-upload-list="false"
+            >
+              <Button class="upload-button">读取 JSON 文件</Button>
+            </Upload>
+            <Input.TextArea
+              v-model:value="editor.apiJson"
+              class="code-area"
+              :rows="10"
+            />
+          </Form.Item>
+          <Form.Item label="参数映射 JSON" required>
+            <Input.TextArea
+              v-model:value="editor.parameterSchema"
+              class="code-area"
+              :rows="8"
+            />
+          </Form.Item>
+          <Form.Item label="输出映射 JSON" required>
+            <Input.TextArea
+              v-model:value="editor.outputSchema"
+              class="code-area"
+              :rows="6"
+            />
+          </Form.Item>
+          <Form.Item label="模型依赖 JSON">
+            <Input.TextArea
+              v-model:value="editor.modelRequirements"
+              class="code-area"
+              :rows="4"
+            />
+          </Form.Item>
+        </template>
       </Form>
+      <WorkflowJsonViewer
+        v-if="editorMode === 'edit' && selectedWorkflow"
+        :key="selectedWorkflow.id"
+        :workflow="selectedWorkflow"
+        :capabilities="overview?.capabilities || []"
+      />
     </EditorModal>
   </Page>
 </template>

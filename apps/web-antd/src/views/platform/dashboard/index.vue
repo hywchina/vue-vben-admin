@@ -25,7 +25,9 @@ import {
   getDesignConversationsApi,
   getLoraStatusApi,
 } from '#/api';
+import DesignHistoryPreview from '#/components/platform/design-history-preview.vue';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
+import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
 const router = useRouter();
@@ -179,7 +181,7 @@ const filteredMyDesigns = computed(() => {
       (!historyProjectId.value ||
         conversation.projectId === historyProjectId.value) &&
       (!query ||
-        `${conversation.title}${conversation.projectName}${conversation.projectCode}`
+        `${conversation.title}${conversation.publicId ?? ''}${conversation.projectName}${conversation.projectCode}`
           .toLowerCase()
           .includes(query)) &&
       updatedAt >= start &&
@@ -439,13 +441,13 @@ onBeforeUnmount(() => {
           <span class="home-entry-card__action">
             {{ entry.cta }}
             <em v-if="entry.badge">{{ entry.badge }}</em>
-            <IconifyIcon v-else icon="lucide:arrow-right" />
+            <IconifyIcon v-else :icon="platformUiIcons.arrowRight" />
           </span>
         </button>
       </nav>
 
       <footer class="home-data-note">
-        <IconifyIcon icon="lucide:shield-check" />
+        <IconifyIcon :icon="platformSemanticIcons.security" />
         <span>以上数据按当前账号权限实时汇总</span>
         <i></i>
         <span v-if="dashboard?.currentProject">
@@ -503,7 +505,7 @@ onBeforeUnmount(() => {
           placeholder="搜索任务或设计名称"
         >
           <template #prefix>
-            <IconifyIcon icon="lucide:search" />
+            <IconifyIcon :icon="platformUiIcons.search" />
           </template>
         </Input>
         <label>
@@ -517,7 +519,10 @@ onBeforeUnmount(() => {
         <Button @click="clearHistoryFilters">清空</Button>
       </div>
       <div v-if="historyLoading" class="home-history-empty">
-        <IconifyIcon class="home-loading-icon" icon="lucide:loader-circle" />
+        <IconifyIcon
+          class="home-loading-icon"
+          :icon="platformUiIcons.loaderCircle"
+        />
         <span>正在加载全部设计会话</span>
       </div>
       <div v-else-if="filteredMyDesigns.length" class="home-history-list">
@@ -528,15 +533,16 @@ onBeforeUnmount(() => {
           @click="continueConversation(conversation)"
         >
           <span class="home-history-list__preview">
-            <img
-              v-if="previewUrl(conversation.previewAssetId)"
+            <DesignHistoryPreview
               :alt="`${conversation.title} 设计资产预览`"
               :src="previewUrl(conversation.previewAssetId)"
             />
-            <IconifyIcon v-else icon="lucide:image-off" />
           </span>
           <span>
             <strong>{{ conversation.title }}</strong>
+            <code v-if="conversation.publicId">
+              {{ conversation.publicId }}
+            </code>
             <small>
               {{ conversation.projectName }} · {{ conversation.roundCount }} 轮
             </small>
@@ -544,11 +550,11 @@ onBeforeUnmount(() => {
           <time :datetime="conversation.updatedAt">
             {{ formatTime(conversation.updatedAt) }}
           </time>
-          <IconifyIcon icon="lucide:chevron-right" />
+          <IconifyIcon :icon="platformUiIcons.chevronRight" />
         </button>
       </div>
       <div v-else class="home-history-empty">
-        <IconifyIcon icon="lucide:message-square-plus" />
+        <IconifyIcon :icon="platformUiIcons.messageSquarePlus" />
         <span>
           {{
             myDesigns.length
@@ -737,6 +743,7 @@ onBeforeUnmount(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+  margin-top: 32px;
 }
 
 .home-entry-grid button {
@@ -843,32 +850,10 @@ onBeforeUnmount(() => {
 }
 
 .home-history-list__preview {
-  display: grid;
-  place-items: center;
   width: 76px;
   height: 50px;
   overflow: hidden;
-  color: var(--rail-red);
-  background:
-    linear-gradient(135deg, rgb(199 25 56 / 8%), rgb(199 25 56 / 2%)),
-    var(--rail-theme-surface, #f5f7f9);
   border-radius: 10px;
-}
-
-.home-history-list__preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
-.home-history-list__preview:has(img) {
-  background: var(--rail-theme-surface, #fff);
-}
-
-.home-history-list__preview > svg {
-  width: 22px;
-  height: 22px;
-  opacity: 0.58;
 }
 
 .home-data-note {

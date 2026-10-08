@@ -52,9 +52,6 @@ export async function seedWorkflowCatalogEntry(
         ${actorId}
       )
       ON CONFLICT (code) DO UPDATE SET
-        name = EXCLUDED.name,
-        description = EXCLUDED.description,
-        status = 'published',
         updated_by = EXCLUDED.updated_by,
         updated_at = now()
       RETURNING id
@@ -209,6 +206,7 @@ export async function listWorkflowManagement() {
   >`
     SELECT
       wd.id,
+      wd.public_id AS "publicId",
       wd.code,
       wd.name,
       wd.description,
@@ -220,6 +218,7 @@ export async function listWorkflowManagement() {
         jsonb_agg(
           jsonb_build_object(
             'id', wv.id,
+            'publicId', wv.public_id,
             'version', wv.version,
             'apiJson', wv.api_json,
             'parameterSchema', wv.parameter_schema,
@@ -362,7 +361,7 @@ export async function updateWorkflowDefinition(
   input: {
     description: string;
     name: string;
-    status: 'disabled' | 'draft' | 'published';
+    status?: 'disabled' | 'draft' | 'published';
   },
   actorId: string,
 ) {
@@ -372,7 +371,7 @@ export async function updateWorkflowDefinition(
     SET
       name = ${input.name},
       description = ${input.description},
-      status = ${input.status},
+      status = COALESCE(${input.status ?? null}, status),
       updated_by = ${actorId},
       updated_at = now()
     WHERE id = ${id}
@@ -400,6 +399,7 @@ export async function addWorkflowVersion(
       )
       SELECT
         wd.id,
+      wd.public_id AS "publicId",
         COALESCE(max(wv.version), 0)::integer + 1,
         ${sql.json(JSON.parse(JSON.stringify(parsed.apiJson)))},
         ${sql.json(JSON.parse(JSON.stringify(parsed.parameterSchema)))},
