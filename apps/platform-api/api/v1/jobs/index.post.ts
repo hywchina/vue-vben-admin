@@ -8,6 +8,7 @@ import {
   deriveDesignConversationTitle,
 } from '~/utils/domain/design-conversation-titles';
 import { requireDesignConversation } from '~/utils/domain/design-conversations';
+import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
@@ -156,15 +157,12 @@ export default apiHandler(async (event) => {
         '同一资产不能重复占用多个输入位置',
       );
     }
-    const rows = await sql<{ id: string; kind: string }[]>`
-      SELECT id, kind
-      FROM assets
-      WHERE id IN ${sql(input.inputAssetIds)}
-        AND project_id = ${input.projectId}
-        AND status = 'available'
-        AND saved_at IS NOT NULL
-        AND deleted_at IS NULL
-    `;
+    const rows = await getDesignInputAssets({
+      assetIds: input.inputAssetIds,
+      conversationId: input.designConversationId,
+      projectId: input.projectId,
+      userId: identity.id,
+    });
     const byId = new Map(rows.map((asset) => [asset.id, asset]));
     for (const assetId of input.inputAssetIds) {
       const asset = byId.get(assetId);
@@ -174,7 +172,7 @@ export default apiHandler(async (event) => {
       throw new ApiError(
         400,
         'INVALID_JOB_ASSETS',
-        '输入资产不存在、未加入资产或不属于当前项目',
+        '输入不存在、已不可用，或既未入库也不属于当前设计会话',
       );
     }
   }

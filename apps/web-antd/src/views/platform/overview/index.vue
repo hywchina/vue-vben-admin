@@ -26,8 +26,18 @@ import {
   updateProjectMemberRoleApi,
 } from '#/api';
 import PageHeading from '#/components/platform/page-heading.vue';
+import {
+  filterProjects,
+  projectListTitle,
+  projectMemberOptions,
+} from '#/modules/platform/project-list';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
+import {
+  getUserPublicIdInputError,
+  normalizeUserPublicId,
+  USER_PUBLIC_ID_MAX_LENGTH,
+} from '#/modules/platform/user-public-id';
 import { usePlatformStore } from '#/store';
 import { copyTextToClipboard } from '#/utils/copy-text';
 
@@ -42,6 +52,7 @@ const route = useRoute();
 const platformStore = usePlatformStore();
 const userStore = useUserStore();
 const keyword = ref('');
+const memberFilter = ref<string>();
 const sortValue = ref('updatedAt-desc');
 const createOpen = ref(props.initialCreate);
 watch(
@@ -75,6 +86,10 @@ const memberPreviewKeyword = ref('');
 const memberPreviewMembers = ref<ProjectMember[]>([]);
 const canInviteMembers = ref(false);
 const inviteUserId = ref('');
+const inviteUserIdError = ref('');
+watch(inviteUserId, () => {
+  inviteUserIdError.value = '';
+});
 const inviteRole = ref<'editor' | 'viewer'>('editor');
 const viewMode = ref<'grid' | 'list'>('grid');
 const currentPage = ref(1);
@@ -90,17 +105,14 @@ const sortOptions = [
 
 const isPlatformAdmin = computed(() => userStore.userRoles.includes('admin'));
 const workbenchTools = computed(() => getWorkbenchTools(isPlatformAdmin.value));
+const projectTitle = computed(() => projectListTitle(isPlatformAdmin.value));
+const memberOptions = computed(() =>
+  projectMemberOptions(platformStore.projects),
+);
 
-const filteredProjects = computed(() => {
-  const query = keyword.value.trim().toLowerCase();
-  return platformStore.projects.filter(
-    (project) =>
-      !query ||
-      `${project.name}${project.publicId ?? project.code}${project.description}${(project.legacyCodes ?? []).join(' ')}`
-        .toLowerCase()
-        .includes(query),
-  );
-});
+const filteredProjects = computed(() =>
+  filterProjects(platformStore.projects, keyword.value, memberFilter.value),
+);
 const totalAssets = computed(() =>
   platformStore.projects.reduce(
     (total, project) => total + project.assetCount,
@@ -189,6 +201,10 @@ function syncProjectMemberPreviews(
   members: ProjectMember[],
 ) {
   project.members = members.length;
+  project.memberIdentities = members.map(({ name, publicId }) => ({
+    name,
+    publicId,
+  }));
   project.memberPreviews = members.slice(0, 3).map((member) => ({
     avatar: member.avatar,
     name: member.name,
@@ -242,6 +258,7 @@ async function openMembers(project: PlatformProject) {
   membersOpen.value = true;
   memberKeyword.value = '';
   inviteUserId.value = '';
+  inviteUserIdError.value = '';
   membersLoading.value = true;
   try {
     const result = await getProjectMembersApi(project.id);
@@ -276,8 +293,10 @@ async function toggleMemberPopover(project: PlatformProject, open: boolean) {
 
 async function inviteMember() {
   const project = actionProject.value;
-  const userPublicId = inviteUserId.value.trim().toUpperCase();
-  if (!project || !userPublicId) return;
+  if (!project || !canInviteMembers.value || submitting.value) return;
+  inviteUserIdError.value = getUserPublicIdInputError(inviteUserId.value);
+  if (inviteUserIdError.value) return;
+  const userPublicId = normalizeUserPublicId(inviteUserId.value);
   submitting.value = true;
   try {
     await inviteProjectMemberApi(project.id, {
@@ -402,7 +421,7 @@ watch(sortValue, async (value) => {
   currentPage.value = 1;
 });
 
-watch(keyword, () => {
+watch([keyword, memberFilter], () => {
   currentPage.value = 1;
 });
 
@@ -559,13 +578,27 @@ function confirmDeleteProject(project: PlatformProject) {
       <section class="platform-panel project-list-shell">
         <header class="project-overview-toolbar">
           <div class="project-list-title">
-            <strong>我的项目</strong>
+            <strong>{{ projectTitle }}</strong>
             <span>
               {{ filteredProjects.length }} /
               {{ platformStore.projects.length }}
             </span>
           </div>
           <div class="project-toolbar-controls">
+            <label class="project-member-filter-label">
+              <span>成员：</span>
+              <Select
+                v-model:value="memberFilter"
+                aria-label="按项目成员筛选"
+                allow-clear
+                show-search
+                option-filter-prop="label"
+                :options="memberOptions"
+                class="project-member-filter"
+                placeholder="全部成员"
+                title="按用户负责或参与的项目筛选"
+              />
+            </label>
             <label class="project-sort-label">
               <span>排序：</span>
               <Select
@@ -813,15 +846,26 @@ function confirmDeleteProject(project: PlatformProject) {
 
         <section v-else class="project-empty">
           <IconifyIcon :icon="platformUiIcons.folderSearch2" />
-          <h2>{{ keyword ? '没有匹配的项目' : '还没有项目' }}</h2>
+          <h2>
+            {{ keyword || memberFilter ? '没有匹配的项目' : '还没有项目' }}
+          </h2>
           <p>
             {{
-              keyword
-                ? '请调整搜索关键词。'
+              keyword || memberFilter
+                ? '请调整搜索关键词或成员筛选。'
                 : '创建项目后即可组织资产和设计会话。'
             }}
           </p>
-          <Button v-if="!keyword" type="primary" @click="createOpen = true">
+          <Button
+            v-if="keyword || memberFilter"
+            @click="
+              keyword = '';
+              memberFilter = undefined;
+            "
+          >
+            清除筛选
+          </Button>
+          <Button v-else type="primary" @click="createOpen = true">
             <IconifyIcon :icon="platformUiIcons.plus" />
             创建第一个项目
           </Button>
@@ -930,12 +974,27 @@ function confirmDeleteProject(project: PlatformProject) {
       width="760px"
     >
       <div v-if="canInviteMembers" class="member-invite">
-        <Input
-          v-model:value="inviteUserId"
-          :maxlength="10"
-          placeholder="输入用户 ID，例如 USR-00000002"
-          @press-enter="inviteMember"
-        />
+        <div class="member-invite-field">
+          <Input
+            v-model:value="inviteUserId"
+            :maxlength="USER_PUBLIC_ID_MAX_LENGTH"
+            :status="inviteUserIdError ? 'error' : undefined"
+            :aria-invalid="!!inviteUserIdError"
+            aria-label="邀请用户 ID"
+            aria-describedby="member-invite-id-help"
+            autocomplete="off"
+            placeholder="输入用户 ID，例如 USR-00000002"
+            @press-enter="inviteMember"
+          />
+          <p
+            id="member-invite-id-help"
+            class="member-invite-id-help"
+            :class="{ 'member-invite-id-help--error': inviteUserIdError }"
+            :role="inviteUserIdError ? 'alert' : undefined"
+          >
+            {{ inviteUserIdError || '支持完整用户 ID，可直接粘贴。' }}
+          </p>
+        </div>
         <Select
           v-model:value="inviteRole"
           :options="[
@@ -1076,11 +1135,28 @@ function confirmDeleteProject(project: PlatformProject) {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) 130px auto;
   gap: 10px;
+  align-items: start;
   padding: 14px;
   margin-bottom: 14px;
   background: var(--rail-theme-surface, #f7f8f9);
   border: 1px solid var(--rail-line);
   border-radius: 10px;
+}
+
+.member-invite-field {
+  min-width: 0;
+}
+
+.member-invite-id-help {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--rail-steel);
+  overflow-wrap: anywhere;
+}
+
+.member-invite-id-help--error {
+  color: var(--rail-danger, #d9363e);
 }
 
 .member-notice,
@@ -1540,6 +1616,7 @@ function confirmDeleteProject(project: PlatformProject) {
 .project-overview-toolbar,
 .project-list-title,
 .project-toolbar-controls,
+.project-member-filter-label,
 .project-sort-label,
 .project-view-switch,
 .project-list-pagination,
@@ -1550,6 +1627,8 @@ function confirmDeleteProject(project: PlatformProject) {
 }
 
 .project-overview-toolbar {
+  flex-wrap: wrap;
+  gap: 10px 20px;
   min-height: 56px;
   padding: 10px 16px 0;
   border-bottom: 1px solid var(--rail-theme-border, #e5e8ec);
@@ -1574,18 +1653,22 @@ function confirmDeleteProject(project: PlatformProject) {
 }
 
 .project-toolbar-controls {
+  flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
   padding-bottom: 10px;
   margin-left: auto;
 }
 
-.project-sort-label {
+.project-sort-label,
+.project-member-filter-label {
   flex-shrink: 0;
   gap: 8px;
 }
 
-.project-sort-label > span {
+.project-sort-label > span,
+.project-member-filter-label > span {
+  flex-shrink: 0;
   font-size: 13px;
   color: var(--rail-theme-secondary, #6f7a8d);
 }
@@ -1594,11 +1677,17 @@ function confirmDeleteProject(project: PlatformProject) {
   width: 212px;
 }
 
+.project-member-filter {
+  width: 240px;
+  min-width: 0;
+}
+
 .project-search {
   width: min(340px, 32vw);
 }
 
 .project-sort :deep(.ant-select-selector),
+.project-member-filter :deep(.ant-select-selector),
 .project-search :deep(.ant-input-affix-wrapper) {
   border-radius: 7px;
 }
@@ -2196,12 +2285,14 @@ function confirmDeleteProject(project: PlatformProject) {
   }
 
   .project-sort-label,
+  .project-member-filter-label,
   .project-search {
     grid-column: 1 / -1;
     width: 100%;
   }
 
-  .project-sort {
+  .project-sort,
+  .project-member-filter {
     flex: 1;
     width: auto;
   }

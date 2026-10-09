@@ -60,6 +60,10 @@ import {
   assetImageActions,
   assetImageActionUnavailable,
 } from '#/modules/platform/asset-image-actions';
+import {
+  PROJECT_PREVIEW_LIMIT,
+  projectListTitle,
+} from '#/modules/platform/project-list';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
@@ -71,6 +75,9 @@ import SectionItems from './section-items.vue';
 const router = useRouter();
 const store = usePlatformStore();
 const user = useUserStore();
+const projectTitle = computed(() =>
+  projectListTitle(user.userRoles.includes('admin')),
+);
 const tools = computed(() =>
   getWorkbenchTools(user.userRoles.includes('admin')),
 );
@@ -98,12 +105,14 @@ watch(
   },
   { immediate: true },
 );
-const definitions: Array<{
-  count: number;
-  key: WorkbenchSection;
-  note: string;
-  title: string;
-}> = [
+const definitions = computed<
+  Array<{
+    count: number;
+    key: WorkbenchSection;
+    note: string;
+    title: string;
+  }>
+>(() => [
   {
     key: 'designs',
     title: '我的设计',
@@ -112,9 +121,11 @@ const definitions: Array<{
   },
   {
     key: 'projects',
-    title: '我的项目',
-    note: '查看项目与管理协作',
-    count: 2,
+    title: projectTitle.value,
+    note: user.userRoles.includes('admin')
+      ? '查看所有用户的项目与管理协作'
+      : '查看我负责或参与的项目',
+    count: PROJECT_PREVIEW_LIMIT,
   },
   {
     key: 'tasks',
@@ -134,7 +145,7 @@ const definitions: Array<{
     note: '可访问项目中最近入库的资产',
     count: 3,
   },
-];
+]);
 interface SectionState extends WorkbenchPage {
   loading: boolean;
   error: boolean;
@@ -166,7 +177,7 @@ const list = reactive<SectionState>({
   version: 0,
 });
 const listTitle = computed(
-  () => definitions.find((item) => item.key === listSection.value)?.title,
+  () => definitions.value.find((item) => item.key === listSection.value)?.title,
 );
 let alive = true;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -177,7 +188,7 @@ async function loadSection(section: WorkbenchSection, quiet = false) {
   try {
     const result = await getWorkbenchApi(
       section,
-      definitions.find((item) => item.key === section)?.count ?? 3,
+      definitions.value.find((item) => item.key === section)?.count ?? 3,
       1,
       section === 'tasks' && activeOnly.value,
     );
@@ -190,7 +201,9 @@ async function loadSection(section: WorkbenchSection, quiet = false) {
   }
 }
 async function refresh(quiet = false) {
-  await Promise.all(definitions.map(({ key }) => loadSection(key, quiet)));
+  await Promise.all(
+    definitions.value.map(({ key }) => loadSection(key, quiet)),
+  );
 }
 async function loadList(page = 1) {
   const section = listSection.value;
@@ -575,7 +588,7 @@ async function action(actionName: string, item: WorkbenchItem) {
         <span>管理与记录</span>
       </div>
       <div class="wb-management__actions">
-        <Tooltip title="查看和管理全部项目">
+        <Tooltip :title="`查看和管理${projectTitle}`">
           <Button type="text" @click="openProjects()">
             <template #icon>
               <IconifyIcon :icon="platformSemanticIcons.projects" />
@@ -621,7 +634,19 @@ async function action(actionName: string, item: WorkbenchItem) {
                 {{ states[definition.key].total }}
               </span>
             </h2>
-            <p>{{ definition.note }}</p>
+            <p>
+              {{ definition.note }}
+              <template
+                v-if="
+                  definition.key === 'projects' &&
+                  !states.projects.error &&
+                  !states.projects.loading
+                "
+              >
+                · 展示 {{ states.projects.items.length }} /
+                {{ states.projects.total }} 个
+              </template>
+            </p>
           </div>
           <Button type="link" @click="openList(definition.key)">
             查看全部
@@ -663,7 +688,7 @@ async function action(actionName: string, item: WorkbenchItem) {
                   ? '正在加载'
                   : definition.key === 'tasks' && activeOnly
                     ? '当前没有进行中的任务'
-                    : `暂无${definition.title.replace('我的', '').replace('最近', '')}`
+                    : `暂无${definition.title.replace('我的', '').replace('最近', '').replace('全部', '')}`
               "
             />
           </div>
@@ -684,7 +709,7 @@ async function action(actionName: string, item: WorkbenchItem) {
     </div>
     <Modal
       :open="projectsOpen"
-      title="我的项目"
+      :title="projectTitle"
       :footer="null"
       width="1120px"
       :destroy-on-close="true"

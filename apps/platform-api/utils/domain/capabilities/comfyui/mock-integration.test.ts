@@ -1,9 +1,10 @@
+// @vitest-environment node
+
 import type { AddressInfo } from 'node:net';
 
 import { Buffer } from 'node:buffer';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { resolve } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -253,7 +254,10 @@ describe('comfyUI mock protocol integration', () => {
     for (const entry of WORKFLOW_CATALOG) {
       const apiJson = JSON.parse(
         await readFile(
-          resolve(process.cwd(), 'workflows/comfyui', entry.fileName),
+          new URL(
+            `../../../../workflows/comfyui/${entry.fileName}`,
+            import.meta.url,
+          ),
           'utf8',
         ),
       ) as unknown;

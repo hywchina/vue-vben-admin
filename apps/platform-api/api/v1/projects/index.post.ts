@@ -52,7 +52,11 @@ export default apiHandler(async (event) => {
         current_project_id = EXCLUDED.current_project_id,
         updated_at = now()
     `;
-    return created;
+    const members = await transaction<{ name: string; publicId: string }[]>`
+      SELECT real_name AS name, public_id AS "publicId"
+      FROM users WHERE id = ${identity.id}
+    `;
+    return { ...created, memberIdentities: members };
   });
 
   await writeAudit(event, {
@@ -73,6 +77,10 @@ export default apiHandler(async (event) => {
     isPinned: false,
     isOwner: true,
     jobCount: 0,
+    memberPreviews: project.memberIdentities.map((member) => ({
+      ...member,
+      avatar: null,
+    })),
     members: 1,
     ownerId: identity.id,
     updatedAt: project.updatedAt.toISOString(),

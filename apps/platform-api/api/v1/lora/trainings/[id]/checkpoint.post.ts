@@ -1,9 +1,9 @@
-import { getRouterParam } from 'h3';
 import { writeAudit } from '~/utils/audit';
 import {
   createAiToolkitClient,
   getLoraExecution,
 } from '~/utils/domain/capabilities/lora/access';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -11,7 +11,7 @@ import { ApiError, apiHandler } from '~/utils/response';
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:job:write');
-  const jobId = getRouterParam(event, 'id');
+  const jobId = getUuidParam(event);
   if (!jobId) throw new ApiError(400, 'JOB_ID_REQUIRED', '缺少任务编号');
   const execution = await getLoraExecution(jobId);
   await requireProjectAccess(identity, execution.projectId, 'write');

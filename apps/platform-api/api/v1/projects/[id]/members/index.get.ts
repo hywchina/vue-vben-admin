@@ -1,5 +1,5 @@
-import { getRouterParam } from 'h3';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { hasAdministrativeRole, requireIdentity } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -7,7 +7,7 @@ import { createPreviewUrl } from '~/utils/storage';
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const projectId = getRouterParam(event, 'id');
+  const projectId = getUuidParam(event);
   if (!projectId)
     throw new ApiError(400, 'PROJECT_ID_REQUIRED', '缺少项目编号');
   await requireProjectAccess(identity, projectId);

@@ -929,7 +929,8 @@ onBeforeUnmount(() => {
                       >
                         <strong>{{ conversation.title }}</strong>
                         <small>
-                          <span v-if="conversation.publicId">{{ conversation.publicId }} ·
+                          <span v-if="conversation.publicId">
+                            {{ conversation.publicId }} ·
                           </span>
                           {{ formatConversationDate(conversation) }}
                         </small>

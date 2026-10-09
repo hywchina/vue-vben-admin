@@ -1,13 +1,13 @@
-import { getRouterParam } from 'h3';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity } from '~/utils/identity';
 import { ApiError, apiHandler } from '~/utils/response';
 import { deleteObject } from '~/utils/storage';
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const attachmentId = getRouterParam(event, 'id');
+  const attachmentId = getUuidParam(event);
   if (!attachmentId) {
     throw new ApiError(400, 'AI_ATTACHMENT_ID_REQUIRED', '缺少附件编号');
   }

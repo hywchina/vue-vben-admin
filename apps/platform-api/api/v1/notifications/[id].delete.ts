@@ -1,11 +1,11 @@
-import { getRouterParam } from 'h3';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity } from '~/utils/identity';
 import { ApiError, apiHandler } from '~/utils/response';
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const notificationId = getRouterParam(event, 'id');
+  const notificationId = getUuidParam(event);
   if (!notificationId) {
     throw new ApiError(400, 'NOTIFICATION_ID_REQUIRED', '缺少通知编号');
   }

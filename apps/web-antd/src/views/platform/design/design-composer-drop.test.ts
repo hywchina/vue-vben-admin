@@ -53,9 +53,7 @@ function harness(count = 1) {
       fields: () => slots,
       selections: () => selections,
       isCurrent: () => true,
-      confirmSave: vi.fn(async () => true),
       getAsset: vi.fn(async () => ({ ...asset })),
-      saveOutput: vi.fn(async () => ({ ...asset })),
       commit,
     },
   };
@@ -84,8 +82,6 @@ describe('design composer generated-image drop', () => {
         `最多接收 ${count} 张`,
       );
       expect(selections).toEqual(before);
-      expect(options.confirmSave).not.toHaveBeenCalled();
-      expect(options.saveOutput).not.toHaveBeenCalled();
       expect(options.getAsset).toHaveBeenCalledTimes(count);
     },
   );
@@ -111,7 +107,6 @@ describe('design composer generated-image drop', () => {
       '不接受图片',
     );
     expect(options.getAsset).not.toHaveBeenCalled();
-    expect(options.saveOutput).not.toHaveBeenCalled();
   });
 
   it('rejects duplicate input before authorization or confirmation', async () => {
@@ -121,7 +116,6 @@ describe('design composer generated-image drop', () => {
       '请勿重复添加',
     );
     expect(options.getAsset).not.toHaveBeenCalled();
-    expect(options.confirmSave).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -139,24 +133,13 @@ describe('design composer generated-image drop', () => {
     expect(options.getAsset).not.toHaveBeenCalled();
   });
 
-  it('asks before registering a staged image and does not reupload it', async () => {
+  it('reuses a staged image via read only without registering or changing saved state', async () => {
     const { options } = harness();
     options.output.saved = false;
     await acceptComposerImageDrop(options);
-    expect(options.confirmSave).toHaveBeenCalledOnce();
-    expect(options.saveOutput).toHaveBeenCalledExactlyOnceWith(asset.id);
-    expect(options.getAsset).not.toHaveBeenCalled();
+    expect(options.getAsset).toHaveBeenCalledExactlyOnceWith(asset.id);
+    expect(options.output.saved).toBe(false);
     expect(options.commit).toHaveBeenCalledOnce();
-  });
-
-  it('cancellation keeps inputs and assets unchanged', async () => {
-    const { options, selections } = harness();
-    options.output.saved = false;
-    options.confirmSave.mockResolvedValue(false);
-    expect(await acceptComposerImageDrop(options)).toBe(false);
-    expect(selections).toEqual({});
-    expect(options.saveOutput).not.toHaveBeenCalled();
-    expect(options.commit).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -182,31 +165,24 @@ describe('design composer generated-image drop', () => {
     options.getAsset.mockRejectedValue(new Error('FORBIDDEN'));
     await expect(acceptComposerImageDrop(options)).rejects.toThrow('FORBIDDEN');
     expect(options.commit).not.toHaveBeenCalled();
-    expect(options.saveOutput).not.toHaveBeenCalled();
   });
 
-  it('save failure leaves selections untouched', async () => {
+  it('staged image read failure leaves selections and saved state untouched', async () => {
     const { options, selections } = harness();
     options.output.saved = false;
-    options.saveOutput.mockRejectedValue(new Error('SAVE_FAILED'));
+    options.getAsset.mockRejectedValue(new Error('READ_FAILED'));
     await expect(acceptComposerImageDrop(options)).rejects.toThrow(
-      'SAVE_FAILED',
+      'READ_FAILED',
     );
     expect(selections).toEqual({});
     expect(options.commit).not.toHaveBeenCalled();
   });
 
-  it('checks context after confirmation before saving', async () => {
+  it('rejects stale context before reading', async () => {
     const { options } = harness();
-    let current = true;
-    options.isCurrent = () => current;
-    options.output.saved = false;
-    options.confirmSave.mockImplementation(async () => {
-      current = false;
-      return true;
-    });
+    options.isCurrent = () => false;
     await expect(acceptComposerImageDrop(options)).rejects.toThrow('已切换');
-    expect(options.saveOutput).not.toHaveBeenCalled();
+    expect(options.getAsset).not.toHaveBeenCalled();
   });
 
   it('does not attach to a changed conversation/function after async read', async () => {

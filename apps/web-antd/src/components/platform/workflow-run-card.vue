@@ -240,6 +240,18 @@ function requestSaveOutput(output: PlatformJobOutput) {
   emit('save', output);
 }
 
+function requestFlowOutput(output: PlatformJobOutput) {
+  outputLightboxOpen.value = false;
+  emit('flow', output);
+}
+
+function requestMaskOutput(output: PlatformJobOutput) {
+  const previewUrl = previewUrls[output.assetId];
+  if (!previewUrl) return;
+  outputLightboxOpen.value = false;
+  emit('mask', output, previewUrl);
+}
+
 function triggerResultAction(action: DesignImageResultActionKey) {
   const output = activeOutput.value;
   if (!output || resultActionDisabled(action)) return;
@@ -838,9 +850,7 @@ onMounted(() => void loadPreviews());
             class="round-mask-trigger"
             title="打开遮罩编辑器"
             type="button"
-            @click.stop="
-              emit('mask', activeOutput, previewUrls[activeOutput.assetId]!)
-            "
+            @click.stop="requestMaskOutput(activeOutput)"
           >
             <ComfyMaskIcon :size="17" />
           </button>
@@ -949,12 +959,15 @@ onMounted(() => void loadPreviews());
                   <IconifyIcon :icon="platformSemanticIcons.assets" />
                 </button>
               </Tooltip>
-              <Tooltip :title="flowLabel ?? '流转到工作流'">
+              <Tooltip
+                v-if="activeOutput.kind !== 'model3d'"
+                :title="flowLabel ?? '流转到工作流'"
+              >
                 <button
                   :aria-label="flowLabel ?? '流转到工作流'"
                   class="round-action-button"
                   type="button"
-                  @click="emit('flow', activeOutput)"
+                  @click="requestFlowOutput(activeOutput)"
                 >
                   <IconifyIcon :icon="platformUiIcons.arrowRight" />
                 </button>
@@ -1064,9 +1077,7 @@ onMounted(() => void loadPreviews());
               aria-label="局部重绘"
               class="round-action-button"
               type="button"
-              @click="
-                emit('mask', activeOutput, previewUrls[activeOutput.assetId]!)
-              "
+              @click="requestMaskOutput(activeOutput)"
             >
               <ComfyMaskIcon :size="16" />
             </button>
@@ -1103,12 +1114,15 @@ onMounted(() => void loadPreviews());
               <IconifyIcon :icon="platformSemanticIcons.assets" />
             </button>
           </Tooltip>
-          <Tooltip :title="flowLabel ?? '流转到工作流'">
+          <Tooltip
+            v-if="activeOutput.kind !== 'model3d'"
+            :title="flowLabel ?? '流转到工作流'"
+          >
             <button
               :aria-label="flowLabel ?? '流转到工作流'"
               class="round-action-button"
               type="button"
-              @click="emit('flow', activeOutput)"
+              @click="requestFlowOutput(activeOutput)"
             >
               <IconifyIcon :icon="platformUiIcons.arrowRight" />
             </button>

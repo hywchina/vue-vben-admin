@@ -1,7 +1,7 @@
-import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -11,7 +11,7 @@ const schema = z.object({ pinned: z.boolean() });
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const projectId = getRouterParam(event, 'id');
+  const projectId = getUuidParam(event);
   if (!projectId)
     throw new ApiError(400, 'PROJECT_ID_REQUIRED', '缺少项目编号');
   const { pinned } = await parseBody(event, schema);

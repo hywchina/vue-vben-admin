@@ -343,6 +343,33 @@ async function run() {
   const admin = await login(adminAccount.username, adminAccount.password);
   const user4 = await login(account4.username, account4.password);
 
+  for (const path of [
+    '/assets/not-uuid',
+    '/assets/not-uuid/preview',
+    '/assets/not-uuid/download',
+    '/assets/not-uuid/versions',
+    '/projects/not-uuid/members',
+    '/assistant/conversations/not-uuid/messages',
+    '/assistant/attachments/not-uuid/preview',
+    '/lora/trainings/not-uuid',
+  ]) {
+    await apiRequest(path, { expectedStatus: 401 });
+    const invalid = await apiRequest(path, {
+      expectedStatus: 400,
+      session: user1,
+    });
+    assert(
+      invalid.envelope.code === 'RESOURCE_ID_INVALID',
+      '非法资源编号应返回稳定的参数错误',
+    );
+  }
+  for (const path of [
+    `/assets/${randomUUID()}`,
+    `/projects/${randomUUID()}/members`,
+    `/assistant/conversations/${randomUUID()}/messages`,
+  ])
+    await apiRequest(path, { expectedStatus: 404, session: user1 });
+
   const catalogEntry = WORKFLOW_CATALOG[0];
   assert(catalogEntry, '缺少工作流目录');
   const apiJson = JSON.parse(
@@ -741,6 +768,67 @@ async function run() {
     },
   );
   projectId = project.envelope.data.id;
+
+  // Complete member filter metadata must remain inside project visibility.
+  const filterProject = await apiRequest<{
+    id: string;
+    memberIdentities: Array<{ name: string; publicId: string }>;
+  }>('/projects', {
+    body: { name: `${runId}-member-filter`, description: runId },
+    session: user1,
+  });
+  disposableProjectIds.push(filterProject.envelope.data.id);
+  assert(
+    filterProject.envelope.data.memberIdentities.length === 1,
+    '新项目没有立即返回负责人的筛选信息',
+  );
+  for (const memberId of [user2.id, admin.id, user4.id]) {
+    await sql`INSERT INTO project_members (project_id, user_id, project_role)
+      VALUES (${filterProject.envelope.data.id}, ${memberId}, 'viewer')`;
+  }
+  interface FilterProject {
+    id: string;
+    memberIdentities: Array<{ name: string; publicId: string }>;
+    memberPreviews: unknown[];
+  }
+  for (const session of [admin, user4]) {
+    const visible = await apiRequest<{ items: FilterProject[] }>('/projects', {
+      session,
+    });
+    const filtered = visible.envelope.data.items.find(
+      (item) => item.id === filterProject.envelope.data.id,
+    );
+    assert(
+      filtered?.memberIdentities.length === 4 &&
+        filtered.memberPreviews.length === 3,
+      '项目筛选信息被前三个头像截断',
+    );
+    assert(
+      filtered.memberIdentities.every(
+        (member) =>
+          Object.keys(member).toSorted().join(',') === 'name,publicId',
+      ),
+      '成员筛选泄露了多余个人字段',
+    );
+    const preview = await apiRequest<{
+      items: Array<{ id: string }>;
+      total: number;
+    }>('/workbench?section=projects&pageSize=6', { session });
+    assert(
+      preview.envelope.data.total === visible.envelope.data.items.length &&
+        preview.envelope.data.items.length ===
+          Math.min(6, preview.envelope.data.total) &&
+        preview.envelope.data.items.every((item) =>
+          visible.envelope.data.items.some((entry) => entry.id === item.id),
+        ),
+      '工作台项目计数、预览和管理列表范围不一致',
+    );
+    if (session === user4)
+      assert(
+        !visible.envelope.data.items.some((item) => item.id === projectId),
+        '普通用户的成员筛选列表包含无权限项目',
+      );
+  }
 
   // LoRA parameter contract: failure paths never enqueue a GPU task.
   const loraInput = {
@@ -1779,6 +1867,100 @@ async function run() {
     session: user2,
   });
 
+  // Exercise the real CPU report worker, database and private object store.
+  // Template mode must not depend on Presenton/vLLM or enqueue GPU work.
+  for (const format of ['docx', 'pptx', 'md'] as const) {
+    const title = `模板报告回归 ${format}`;
+    const report = await apiRequest<{ id: string }>('/reports/generations', {
+      body: {
+        format,
+        generationMode: 'template',
+        name: `${runId}-report-${format}`,
+        projectId,
+        reportType: 'design-proposal',
+        title,
+        sections: [
+          {
+            title: '单图正文',
+            body: '客室方案说明',
+            images: [
+              { assetId: prepared.envelope.data.asset.id, caption: '测试图' },
+            ],
+          },
+          {
+            title: '单图展示',
+            images: [{ assetId: prepared.envelope.data.asset.id }],
+          },
+          {
+            title: '双图对照',
+            body: '相同测试图只验证双栏布局',
+            images: [
+              { assetId: prepared.envelope.data.asset.id },
+              { assetId: prepared.envelope.data.asset.id },
+            ],
+          },
+        ],
+      },
+      session: user1,
+    });
+    const deadline = Date.now() + 30_000;
+    let status = 'queued';
+    while (Date.now() < deadline) {
+      const [job] = await sql<{ status: string }[]>`
+        SELECT status FROM jobs WHERE id = ${report.envelope.data.id}
+      `;
+      status = job?.status ?? 'missing';
+      if (['cancelled', 'failed', 'succeeded'].includes(status)) break;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    assert(status === 'succeeded', `真实 ${format} 模板报告未成功：${status}`);
+    const jobs = await apiRequest<Array<{ id: string; outputAssetId: string }>>(
+      `/jobs?projectId=${projectId}`,
+      { session: user1 },
+    );
+    const outputId = jobs.envelope.data.find(
+      (job) => job.id === report.envelope.data.id,
+    )?.outputAssetId;
+    assert(outputId, '报告任务没有输出资产');
+    const asset = await apiRequest<{ type: string }>(`/assets/${outputId}`, {
+      session: user1,
+    });
+    const [stored] = await sql<{ saved: boolean }[]>`
+      SELECT saved_at IS NOT NULL AS saved FROM assets WHERE id = ${outputId}
+    `;
+    assert(
+      asset.envelope.data.type === (format === 'md' ? 'text' : 'document') &&
+        stored?.saved,
+      '报告未按格式登记为已入库资产',
+    );
+    const download = await apiRequest<{ url: string }>(
+      `/assets/${outputId}/download`,
+      { session: user1 },
+    );
+    const response = await fetch(download.envelope.data.url);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert(response.ok && bytes.length > 100, '报告对象为空或下载失败');
+    if (format === 'md') {
+      assert(
+        bytes.toString('utf8').includes(title) &&
+          bytes.toString('utf8').includes('data:image/png;base64,'),
+        'Markdown 报告缺少正文或内嵌图片',
+      );
+    } else {
+      assert(
+        bytes.subarray(0, 2).toString('ascii') === 'PK',
+        '报告不是有效的 OOXML 压缩包',
+      );
+    }
+    await apiRequest(`/assets/${outputId}/download`, {
+      expectedStatus: 404,
+      session: user2,
+    });
+  }
+  console.warn(
+    '模板报告集成通过：真实 CPU Worker、DOCX/PPTX/Markdown、单图/双图、自动入库及私有对象下载；未调用 AI/GPU。',
+  );
+
   const textWorkspace = await apiRequest<{ id: string }>(
     '/workflow-instances',
     {
@@ -2311,6 +2493,335 @@ async function run() {
     rejectedJobInput.envelope.code === 'INVALID_JOB_ASSETS',
     '未加入资产的工作流结果被任务接口当作正式输入使用',
   );
+  // An unsaved output from the caller's own conversation is an input, not an
+  // asset-center registration. Workspace outputs above remain saved-only.
+  const conversationOutputId = randomUUID();
+  const conversationOutputJobId = randomUUID();
+  await sql.begin(async (tx) => {
+    await tx`
+      INSERT INTO jobs (id, project_id, app_key, name, parameters, created_by,
+        status, progress, stage, design_conversation_id)
+      VALUES (${conversationOutputJobId}, ${projectId}, ${visibilityTarget.key},
+        ${`同会话结果复用 ${runId}`}, '{}', ${user1.id}, 'succeeded', 100,
+        '执行完成', ${designConversation.envelope.data.id})
+    `;
+    await tx`
+      INSERT INTO assets (id, project_id, name, kind, source, source_app_key,
+        source_job_id, owner_id, status, saved_at)
+      VALUES (${conversationOutputId}, ${projectId}, '不自动入库的会话生成图',
+        'image', 'workflow', ${visibilityTarget.key}, ${conversationOutputJobId},
+        ${user1.id}, 'available', NULL)
+    `;
+    await tx`
+      INSERT INTO asset_versions (id, asset_id, version, storage_kind, text_content,
+        original_filename, mime_type, size_bytes, status, created_by, completed_at)
+      VALUES (${randomUUID()}, ${conversationOutputId}, 1, 'inline', '会话输出验收',
+        'conversation.png', 'image/png', 24, 'available', ${user1.id}, now())
+    `;
+    await tx`INSERT INTO job_outputs (job_id, asset_id, position)
+      VALUES (${conversationOutputJobId}, ${conversationOutputId}, 0)`;
+  });
+  const reuseConversation = await apiRequest<{ id: string }>(
+    '/design-conversations',
+    {
+      body: { projectId, title: '跨会话边界验收' },
+      session: user1,
+    },
+  );
+  const inputPath = (id: string) =>
+    `/design-conversations/${id}/input-assets/${conversationOutputId}?projectId=${projectId}`;
+  const resolvedInput = await apiRequest<{ id: string }>(
+    inputPath(designConversation.envelope.data.id),
+    { session: user1 },
+  );
+  // Project membership (including admin) must not expose a private, unsaved
+  // generation through ordinary preview/download/version/publication routes.
+  await sql`INSERT INTO project_members (project_id, user_id, project_role)
+    VALUES (${projectId}, ${user4.id}, 'editor')`;
+  for (const session of [user4, admin]) {
+    for (const suffix of ['preview', 'download', 'versions'])
+      await apiRequest(`/assets/${conversationOutputId}/${suffix}`, {
+        expectedStatus: 404,
+        session,
+      });
+    await apiRequest(`/assets/${conversationOutputId}/save`, {
+      body: {},
+      expectedStatus: 404,
+      session,
+    });
+    for (const change of [
+      { suffix: '', method: 'PATCH', body: { name: '禁止更改私人结果' } },
+      { suffix: '/favorite', method: 'PATCH', body: { favorite: true } },
+      { suffix: '/complete', method: 'POST', body: {} },
+      { suffix: '/versions/1/complete', method: 'POST', body: {} },
+      {
+        suffix: '/versions/uploads',
+        method: 'POST',
+        body: { filename: 'private.png', mimeType: 'image/png', sizeBytes: 24 },
+      },
+    ]) {
+      await apiRequest(`/assets/${conversationOutputId}${change.suffix}`, {
+        body: change.body,
+        expectedStatus: 404,
+        method: change.method,
+        session,
+      });
+    }
+  }
+  await sql`DELETE FROM project_members WHERE project_id = ${projectId}
+    AND user_id = ${user4.id}`;
+  for (const suffix of ['preview', 'download', 'versions'])
+    await apiRequest(`/assets/${conversationOutputId}/${suffix}`, {
+      session: user1,
+    });
+  await apiRequest(
+    `/design-conversations/invalid/input-assets/${conversationOutputId}?projectId=${projectId}`,
+    { expectedStatus: 400, session: user1 },
+  );
+  assert(
+    resolvedInput.envelope.data.id === conversationOutputId,
+    '本会话未入库图片不能直接读取为输入',
+  );
+  await apiRequest(`/assets/${conversationOutputId}`, {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await apiRequest(`/assets/${conversationOutputId}`, {
+    expectedStatus: 404,
+    method: 'DELETE',
+    session: user1,
+  });
+  await apiRequest(inputPath(reuseConversation.envelope.data.id), {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await apiRequest(inputPath(designConversation.envelope.data.id), {
+    expectedStatus: 404,
+    session: admin,
+  });
+  await apiRequest(inputPath(designConversation.envelope.data.id), {
+    expectedStatus: 404,
+    session: user2,
+  });
+  const reuseBody = {
+    appKey: flowTarget.key,
+    designConversationId: designConversation.envelope.data.id,
+    inputAssetIds: [conversationOutputId],
+    name: '同会话直接编辑验收',
+    parameters: { prompt: '直接编辑，不加入资产中心' },
+    projectId,
+  };
+  const reusedJob = await apiRequest<{
+    id: string;
+    inputs: Array<{ assetId: string }>;
+  }>('/jobs', {
+    body: reuseBody,
+    session: user1,
+  });
+  assert(
+    reusedJob.envelope.data.inputs[0]?.assetId === conversationOutputId,
+    '继续编辑没有保留原始图片 ID',
+  );
+  await settleJobsForIntegration(
+    [reusedJob.envelope.data.id],
+    '同会话复用验收完成',
+  );
+  await apiRequest('/jobs', {
+    body: {
+      ...reuseBody,
+      designConversationId: reuseConversation.envelope.data.id,
+    },
+    expectedStatus: 400,
+    session: user1,
+  });
+  await apiRequest('/jobs', {
+    body: {
+      ...reuseBody,
+      inputAssetIds: [conversationOutputId, conversationOutputId],
+    },
+    expectedStatus: 400,
+    session: user1,
+  });
+  await apiRequest(designDraftPath, {
+    body: {
+      inputAssetIds: { 0: conversationOutputId },
+      parameterValues: reuseBody.parameters,
+      projectId,
+    },
+    method: 'PUT',
+    session: user1,
+  });
+  const restoredReuseDraft = await apiRequest<{
+    inputAssetIds: Record<string, string>;
+  }>(`${designDraftPath}?projectId=${projectId}`, { session: user1 });
+  assert(
+    restoredReuseDraft.envelope.data.inputAssetIds['0'] ===
+      conversationOutputId,
+    '刷新草稿丢失未入库输入',
+  );
+  await apiRequest(
+    `/design-conversations/${reuseConversation.envelope.data.id}/drafts/${flowTarget.key}`,
+    {
+      body: {
+        inputAssetIds: { 0: conversationOutputId },
+        parameterValues: reuseBody.parameters,
+        projectId,
+      },
+      expectedStatus: 400,
+      method: 'PUT',
+      session: user1,
+    },
+  );
+  // Availability and true source-output linkage cannot be forged by supplying
+  // a valid conversation ID. Restoring the fixture never changes saved_at.
+  await sql`UPDATE asset_versions SET status = 'pending' WHERE asset_id = ${conversationOutputId}`;
+  await apiRequest(inputPath(designConversation.envelope.data.id), {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await apiRequest('/jobs', {
+    body: reuseBody,
+    expectedStatus: 400,
+    session: user1,
+  });
+  const missingVersionDraft = await apiRequest<{
+    inputAssetIds: Record<string, string>;
+  }>(`${designDraftPath}?projectId=${projectId}`, { session: user1 });
+  assert(
+    !missingVersionDraft.envelope.data.inputAssetIds['0'],
+    '草稿没有滤除不可用版本',
+  );
+  await sql`UPDATE asset_versions SET status = 'available' WHERE asset_id = ${conversationOutputId}`;
+  await sql`UPDATE assets SET source_job_id = ${stagedJobId} WHERE id = ${conversationOutputId}`;
+  await apiRequest(inputPath(designConversation.envelope.data.id), {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await sql`UPDATE assets SET source_job_id = ${conversationOutputJobId} WHERE id = ${conversationOutputId}`;
+  await sql`UPDATE assets SET kind = 'video' WHERE id = ${conversationOutputId}`;
+  await apiRequest(inputPath(designConversation.envelope.data.id), {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await sql`UPDATE assets SET kind = 'image', deleted_at = now() WHERE id = ${conversationOutputId}`;
+  await apiRequest('/jobs', {
+    body: reuseBody,
+    expectedStatus: 400,
+    session: user1,
+  });
+  await sql`UPDATE assets SET deleted_at = NULL WHERE id = ${conversationOutputId}`;
+  await sql`UPDATE jobs SET created_by = ${admin.id} WHERE id = ${conversationOutputJobId}`;
+  await apiRequest(inputPath(designConversation.envelope.data.id), {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await sql`UPDATE jobs SET created_by = ${user1.id} WHERE id = ${conversationOutputJobId}`;
+  await sql`UPDATE design_conversations SET archived_at = now() WHERE id = ${designConversation.envelope.data.id}`;
+  await apiRequest(inputPath(designConversation.envelope.data.id), {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await sql`UPDATE design_conversations SET archived_at = NULL WHERE id = ${designConversation.envelope.data.id}`;
+  const derivedBody = {
+    derivedFromAssetId: conversationOutputId,
+    designConversationId: designConversation.envelope.data.id,
+    filename: 'mask.png',
+    kind: 'image',
+    mimeType: 'image/png',
+    name: '用户保存的遮罩',
+    projectId,
+    sizeBytes: avatarPng.length,
+  };
+  await apiRequest('/assets/uploads', {
+    body: {
+      ...derivedBody,
+      designConversationId: reuseConversation.envelope.data.id,
+    },
+    expectedStatus: 400,
+    session: user1,
+  });
+  const derivedFromStaged = await apiRequest<{
+    asset: { id: string };
+    upload: { headers: Record<string, string>; url: string };
+  }>('/assets/uploads', {
+    body: derivedBody,
+    session: user1,
+  });
+  const uploadedStagedMask = await fetch(
+    derivedFromStaged.envelope.data.upload.url,
+    {
+      method: 'PUT',
+      headers: derivedFromStaged.envelope.data.upload.headers,
+      body: avatarPng,
+    },
+  );
+  assert(uploadedStagedMask.ok, '暂存图片的遮罩上传失败');
+  await apiRequest(
+    `/assets/${derivedFromStaged.envelope.data.asset.id}/complete`,
+    { method: 'POST', session: user1 },
+  );
+  const reusedWithAnnotation = await apiRequest<{ id: string }>('/jobs', {
+    body: {
+      ...reuseBody,
+      inputAnnotations: [
+        { assetId: derivedFromStaged.envelope.data.asset.id, position: 0 },
+      ],
+    },
+    session: user1,
+  });
+  await settleJobsForIntegration(
+    [reusedWithAnnotation.envelope.data.id],
+    '暂存底图标记验收完成',
+  );
+  const [stillUnsaved] = await sql<
+    { savedAt: Date | null }[]
+  >`SELECT saved_at AS "savedAt" FROM assets WHERE id = ${conversationOutputId}`;
+  assert(
+    stillUnsaved?.savedAt === null,
+    '继续编辑或保存遮罩暗中把原图加入资产中心',
+  );
+  const reuseAssets = await apiRequest<Array<{ id: string }>>(
+    `/assets?projectId=${projectId}`,
+    { session: user1 },
+  );
+  assert(
+    !reuseAssets.envelope.data.some(
+      (asset) => asset.id === conversationOutputId,
+    ),
+    '继续编辑污染资产中心',
+  );
+  await apiRequest(`/assets/${conversationOutputId}/save`, {
+    body: {},
+    method: 'POST',
+    session: user1,
+  });
+  await sql`INSERT INTO project_members (project_id, user_id, project_role)
+    VALUES (${projectId}, ${user4.id}, 'viewer')`;
+  for (const suffix of ['preview', 'download', 'versions']) {
+    await apiRequest(`/assets/${conversationOutputId}/${suffix}`, {
+      session: user4,
+    });
+  }
+  await sql`DELETE FROM project_members WHERE project_id = ${projectId}
+    AND user_id = ${user4.id}`;
+  await apiRequest(inputPath(reuseConversation.envelope.data.id), {
+    session: user1,
+  });
+  const savedReuseJob = await apiRequest<{ id: string }>('/jobs', {
+    body: {
+      ...reuseBody,
+      designConversationId: reuseConversation.envelope.data.id,
+    },
+    session: user1,
+  });
+  await settleJobsForIntegration(
+    [savedReuseJob.envelope.data.id],
+    '主动入库跨会话复用验收完成',
+  );
+  console.warn(
+    '同会话图片复用验收通过：直接输入/草稿/标记血缘不入库，跨会话/用户/无效版本/伪造来源拒绝，主动入库后可跨会话复用。',
+  );
+
   const stagedOutputFolder = await apiRequest<{ id: string }>(
     '/asset-folders',
     {

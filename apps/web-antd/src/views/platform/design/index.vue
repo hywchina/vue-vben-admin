@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { CaptureSession } from '../workspace/capture-session';
+
 import type { DesignGenerationCategory } from '#/modules/platform/design-generation';
 import type { DesignModeKey } from '#/modules/platform/design-modes';
 import type { TemplateSize } from '#/modules/platform/image-dimensions';
@@ -6,6 +8,7 @@ import type {
   CapabilityField,
   DesignConversation,
   DesignPromptTemplateMode,
+  PlatformAsset,
   PlatformCapability,
   PlatformJob,
   PlatformJobInput,
@@ -48,11 +51,11 @@ import {
   getAssetPreviewApi,
   getCapabilityApi,
   getDesignConversationDraftApi,
+  getDesignConversationInputAssetApi,
   getDesignConversationsApi,
   getJobsApi,
   renameDesignConversationApi,
   saveDesignConversationDraftApi,
-  saveWorkflowOutputApi,
 } from '#/api';
 import {
   assetImageDragType,
@@ -95,6 +98,7 @@ import { selectDesignConversationJobs } from '#/store/platform/helpers';
 import AssetPickerModal from '../workspace/asset-picker-modal.vue';
 import CameraAngleControl from '../workspace/camera-angle-control.vue';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
+import { submitCaptureFrame } from '../workspace/capture-session';
 import { createRegionInputAnnotations } from '../workspace/region-annotation';
 import { acceptComposerImageDrop } from './design-composer-drop';
 import {
@@ -208,6 +212,45 @@ const draftReadyKey = ref('');
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let loadGeneration = 0;
+// Context-local display cache, never merged into the saved asset-center list.
+const conversationInputAssets = reactive<Record<string, PlatformAsset>>({});
+const availableInputAssets = computed(() => {
+  const prefix = `${platformStore.currentProjectId}:${activeConversationId.value}:`;
+  const assets = new Map(
+    platformStore.currentAssets.map((asset) => [asset.id, asset]),
+  );
+  for (const [key, asset] of Object.entries(conversationInputAssets)) {
+    if (key.startsWith(prefix) && !assets.has(asset.id))
+      assets.set(asset.id, asset);
+  }
+  return [...assets.values()];
+});
+function inputCacheKey(
+  projectId: string,
+  conversationId: string,
+  assetId: string,
+) {
+  return `${projectId}:${conversationId}:${assetId}`;
+}
+async function resolveConversationInput(assetId: string) {
+  const projectId = platformStore.currentProjectId;
+  const conversationId = activeConversationId.value;
+  if (!projectId || !conversationId) throw new Error('请先选择设计会话');
+  const asset = await getDesignConversationInputAssetApi(
+    conversationId,
+    projectId,
+    assetId,
+  );
+  if (
+    composerDisposed ||
+    projectId !== platformStore.currentProjectId ||
+    conversationId !== activeConversationId.value
+  )
+    throw new Error('会话已切换，请重新选择图片');
+  conversationInputAssets[inputCacheKey(projectId, conversationId, assetId)] =
+    asset;
+  return asset;
+}
 let hydratingDraft = false;
 let pageReady = false;
 
@@ -334,8 +377,19 @@ const mediaFields = computed(
       .toSorted((a, b) => (a.assetIndex ?? 0) - (b.assetIndex ?? 0)) ?? [],
 );
 const composerImageFields = computed(() =>
-  orderedImageMediaFields(mediaFields.value),
+  orderedImageMediaFields(additionalMediaFields.value),
 );
+const composerCaptureFields = computed(() =>
+  mediaFields.value.filter((field) => field.type === 'capture'),
+);
+const additionalMediaFields = computed(() =>
+  mediaFields.value.filter((field) => field.type !== 'capture'),
+);
+const captureContextKey = computed(
+  () =>
+    `${platformStore.currentProjectId}:${activeConversationId.value}:${effectiveApplicationKey.value}:${selectedModeKey.value}`,
+);
+const liveCaptureJobs = new Map<CaptureSession, string>();
 const scalarFields = computed(
   () =>
     capability.value?.fields.filter(
@@ -391,7 +445,7 @@ const composerInputs = computed(() =>
   composerImageFields.value.flatMap((field) => {
     if (field.assetIndex === undefined) return [];
     const assetId = selectedAssets[field.assetIndex];
-    const asset = platformStore.currentAssets.find(
+    const asset = availableInputAssets.value.find(
       (item) => item.id === assetId,
     );
     return asset ? [{ asset, field }] : [];
@@ -400,10 +454,13 @@ const composerInputs = computed(() =>
 const composerMediaProgress = computed(() =>
   mediaInputProgress(mediaFields.value, selectedAssets),
 );
-const composerCanAddMedia = computed(
-  () =>
-    composerMediaProgress.value.filled < composerMediaProgress.value.capacity,
-);
+const composerCanAddMedia = computed(() => {
+  const progress = mediaInputProgress(
+    composerImageFields.value,
+    selectedAssets,
+  );
+  return progress.filled < progress.capacity;
+});
 const cameraPreviewUrl = computed(() => {
   const source = composerInputs.value.find(
     ({ asset }) => asset.type === 'image',
@@ -514,7 +571,7 @@ function setQuickFieldValue(field: CapabilityField, value: unknown) {
 
 async function loadComposerPreview(assetId: string) {
   if (composerPreviewUrls[assetId]) return;
-  const asset = platformStore.currentAssets.find((item) => item.id === assetId);
+  const asset = availableInputAssets.value.find((item) => item.id === assetId);
   if (asset?.type !== 'image') return;
   try {
     const preview = await getAssetPreviewApi(assetId);
@@ -634,32 +691,12 @@ async function dropComposerImage(event: DragEvent) {
       fields: () => mediaFields.value,
       selections: () => selectedAssets,
       isCurrent,
-      confirmSave: () =>
-        new Promise<boolean>((resolve) => {
-          Modal.confirm({
-            title: '加入资产并用作输入',
-            content:
-              '该生成图片尚未加入资产中心。是否保存为当前项目资产，并添加到当前功能的输入区？',
-            okText: '加入并使用',
-            cancelText: '取消',
-            onOk: () => {
-              resolve(true);
-            },
-            onCancel: () => {
-              resolve(false);
-            },
-          });
-        }),
-      getAsset: getAssetApi,
-      saveOutput: saveWorkflowOutputApi,
+      getAsset: (id) =>
+        getDesignConversationInputAssetApi(conversationId, projectId, id),
       commit: async (asset, field) => {
-        // Update only the captured project's cache, after the async context check.
-        if (!platformStore.currentAssets.some((item) => item.id === asset.id)) {
-          platformStore.assets.unshift(asset);
-          if (platformStore.currentProject)
-            platformStore.currentProject.assetCount += 1;
-        }
-        if (output) output.saved = true;
+        conversationInputAssets[
+          inputCacheKey(projectId, conversationId, asset.id)
+        ] = asset;
         await selectAsset(field, asset.id);
       },
     });
@@ -915,6 +952,11 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
       appKey,
       mode,
     );
+    const draftAssets = await Promise.all(
+      Object.values(draft.inputAssetIds).map((id) =>
+        getDesignConversationInputAssetApi(conversationId, projectId, id),
+      ),
+    );
     if (
       generation !== loadGeneration ||
       draftMode.value !== mode ||
@@ -924,6 +966,10 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
       return;
     }
     capability.value = nextCapability;
+    for (const asset of draftAssets)
+      conversationInputAssets[
+        inputCacheKey(projectId, conversationId, asset.id)
+      ] = asset;
     hydratingDraft = true;
     resetDraftState(nextCapability);
     const scalarKeys = new Set(
@@ -1324,6 +1370,7 @@ async function prepareRegionAnnotations() {
       return platformStore.uploadAsset({
         description: `${capability.value?.name ?? application.value?.name} 分区标记输入快照`,
         derivedFromAssetId: originalAssetId,
+        designConversationId: activeConversationId.value,
         file,
         name: file.name.replace(/\.[^.]+$/, ''),
         tags: ['设计会话输入', '分区标记'],
@@ -1351,6 +1398,13 @@ async function clearSubmittedComposer() {
 }
 
 async function runCapability() {
+  await submitCapability();
+}
+
+async function submitCapability(
+  options: { isCurrent?: () => boolean; live?: boolean } = {},
+) {
+  if (options.isCurrent && !options.isCurrent()) return;
   if (composerImportingImage.value) {
     message.info('图片正在添加，请完成后再提交');
     return;
@@ -1391,8 +1445,11 @@ async function runCapability() {
     return;
   }
   submitting.value = true;
+  const contextKey = captureContextKey.value;
   try {
     const inputAnnotations = await prepareRegionAnnotations();
+    if (contextKey !== captureContextKey.value) return;
+    if (options.isCurrent && !options.isCurrent()) return;
     const job = await platformStore.runApplication(
       application.value.key,
       {
@@ -1404,15 +1461,28 @@ async function runCapability() {
       [],
       inputAnnotations,
     );
+    if (
+      contextKey !== captureContextKey.value ||
+      (options.isCurrent && !options.isCurrent())
+    )
+      return job;
     if (job?.status === 'failed') {
       message.warning(job.error?.message ?? '能力服务执行失败');
     } else if (job) {
-      await clearSubmittedComposer();
+      if (options.live) {
+        void refreshConversations().catch(() => {});
+        void hydrateTimelineCapabilities();
+        void scrollToLatestRound();
+        return job;
+      }
+      if (!options.live) await clearSubmittedComposer();
       await scrollToLatestRound();
-      message.success('任务已提交，可以切换到其他设计会话继续工作');
+      if (!options.live)
+        message.success('任务已提交，可以切换到其他设计会话继续工作');
     }
     await refreshConversations();
     void hydrateTimelineCapabilities();
+    return job;
   } finally {
     submitting.value = false;
   }
@@ -1444,14 +1514,12 @@ async function runJobSnapshot(
     message.warning('当前设计会话已有任务在运行，请等待完成或停止后再提交');
     return;
   }
-  const unavailableInput = job.inputs.find(
-    (input) =>
-      !platformStore.currentAssets.some((asset) => asset.id === input.assetId),
-  );
-  if (unavailableInput) {
-    message.error(
-      `历史输入“${unavailableInput.name || unavailableInput.assetId}”已不可用，无法重新发送`,
+  try {
+    await Promise.all(
+      job.inputs.map((input) => resolveConversationInput(input.assetId)),
     );
+  } catch {
+    message.error('历史输入已不可用或不属于当前会话，无法重新发送');
     return;
   }
   if (job.designMode) {
@@ -1512,14 +1580,23 @@ async function uploadMedia(
     tags?: string[];
   } = {},
 ) {
+  const contextKey = captureContextKey.value;
   const asset = await platformStore.uploadAsset({
     description: `${capability.value?.name ?? application.value?.name} 设计会话输入`,
     derivedFromAssetId: options.derivedFromAssetId,
+    designConversationId: options.derivedFromAssetId
+      ? activeConversationId.value
+      : undefined,
     file,
     name: file.name.replace(/\.[^.]+$/, ''),
     tags: options.tags ?? ['设计会话输入'],
     type: 'image',
   });
+  if (
+    field.type === 'capture' &&
+    (composerDisposed || contextKey !== captureContextKey.value)
+  )
+    return asset;
   await selectAsset(field, asset.id);
   if (!options.silent) message.success('图像已登记为当前项目资产');
   return asset;
@@ -1530,7 +1607,7 @@ async function saveInputMask(field: CapabilityField, file: File) {
   const selectedAsset =
     index === undefined
       ? undefined
-      : platformStore.currentAssets.find(
+      : availableInputAssets.value.find(
           (asset) => asset.id === selectedAssets[index],
         );
   await uploadMedia(field, file, {
@@ -1547,29 +1624,63 @@ function captureRefreshRate() {
   return typeof value === 'number' ? value : 500;
 }
 
-async function waitForJob(jobId: string) {
-  while (true) {
+async function waitForJob(jobId: string, isCurrent: () => boolean) {
+  while (isCurrent()) {
     await platformStore.refreshCurrentProjectData();
+    if (!isCurrent()) return false;
     const job = platformStore.currentJobs.find((item) => item.id === jobId);
     if (job && ['cancelled', 'failed', 'succeeded'].includes(job.status)) {
       return job.status === 'succeeded';
     }
     await new Promise((resolve) => window.setTimeout(resolve, 1000));
   }
+  return false;
 }
 
-async function runLiveCapture(field: CapabilityField, file: File) {
-  await uploadMedia(field, file, {
-    silent: true,
-    tags: ['设计会话输入', '实时捕获'],
+async function runLiveCapture(
+  field: CapabilityField,
+  file: File,
+  session: CaptureSession,
+) {
+  if (activeJob.value || submitting.value) {
+    message.warning('请等待当前任务完成后再开启实时生成');
+    return false;
+  }
+  if (
+    promptField.value?.required &&
+    !String(parameterValues[promptField.value.key] ?? '').trim()
+  ) {
+    message.warning(`请填写“${promptField.value.label}”后开始实时生成`);
+    return false;
+  }
+  const contextKey = captureContextKey.value;
+  const isCurrent = () =>
+    session.isCurrent() &&
+    !composerDisposed &&
+    contextKey === captureContextKey.value;
+  return submitCaptureFrame(isCurrent, {
+    upload: () =>
+      platformStore.uploadAsset({
+        description: `${capability.value?.name ?? application.value?.name} 设计会话输入`,
+        file,
+        name: file.name.replace(/\.[^.]+$/, ''),
+        tags: ['设计会话输入', '实时捕获'],
+        type: 'image',
+      }),
+    select: (assetId) => selectAsset(field, assetId),
+    submit: () => submitCapability({ isCurrent, live: true }),
+    track: (jobId) => {
+      if (jobId) liveCaptureJobs.set(session, jobId);
+      else liveCaptureJobs.delete(session);
+    },
+    wait: (jobId) => waitForJob(jobId, isCurrent),
+    cancel: (jobId) => platformStore.cancelJob(jobId),
   });
-  await runCapability();
-  const job = conversationJobs.value.at(-1);
-  return job ? await waitForJob(job.id) : false;
 }
 
-async function stopLiveCapture() {
-  if (activeJob.value) await platformStore.cancelJob(activeJob.value.id);
+async function stopLiveCapture(session?: CaptureSession) {
+  const jobId = session ? liveCaptureJobs.get(session) : undefined;
+  if (jobId) await platformStore.cancelJob(jobId);
 }
 
 async function saveOutput(output: PlatformJobOutput) {
@@ -1619,7 +1730,7 @@ function designModeForOutput(output: PlatformJobOutput) {
 
 async function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
   try {
-    await ensureWorkflowOutputAsset(output);
+    await resolveConversationInput(output.assetId);
     actionOutput.value = output;
     actionDesignMode.value = designModeForOutput(output);
     maskEditSourceAssetId.value = output.assetId;
@@ -1645,6 +1756,7 @@ async function saveOutputMask(file: File) {
   if (!maskEditSourceAssetId.value) throw new Error('当前没有可编辑的图片');
   const maskAsset = await platformStore.uploadAsset({
     derivedFromAssetId: maskEditDerivedFromAssetId.value || undefined,
+    designConversationId: activeConversationId.value,
     description: '设计会话图片遮罩编辑',
     file,
     name: file.name.replace(/\.[^.]+$/, ''),
@@ -1695,9 +1807,16 @@ async function continueDesign() {
     return;
   }
   continueSubmitting.value = true;
+  const projectId = platformStore.currentProjectId;
+  const conversationId = activeConversationId.value;
   try {
-    if (!output.saved) await platformStore.saveWorkflowOutput(output.assetId);
+    await resolveConversationInput(output.assetId);
     await chooseApplication(continueAppKey.value);
+    if (
+      projectId !== platformStore.currentProjectId ||
+      conversationId !== activeConversationId.value
+    )
+      throw new Error('会话已切换，请重新选择图片');
     const target = mediaFields.value.find(
       (field) => field.assetIndex === continueAssetIndex.value,
     );
@@ -1706,16 +1825,10 @@ async function continueDesign() {
     continueOpen.value = false;
     parameterDrawerOpen.value = false;
     mediaPickerOpen.value = false;
-    message.success('结果已加入资产并填入当前会话的目标应用');
+    message.success('结果已填入当前会话，未自动加入资产中心');
   } finally {
     continueSubmitting.value = false;
   }
-}
-
-async function ensureWorkflowOutputAsset(output: PlatformJobOutput) {
-  if (output.saved) return;
-  await platformStore.saveWorkflowOutput(output.assetId);
-  output.saved = true;
 }
 
 async function prepareOutputInComposer(
@@ -1724,9 +1837,16 @@ async function prepareOutputInComposer(
   modeKey = designModeForOutput(output),
   businessToolKey = '',
 ) {
-  await ensureWorkflowOutputAsset(output);
+  const projectId = platformStore.currentProjectId;
+  const conversationId = activeConversationId.value;
+  await resolveConversationInput(output.assetId);
   selectedModeKey.value = modeKey;
   await chooseApplication(appKey, businessToolKey);
+  if (
+    projectId !== platformStore.currentProjectId ||
+    conversationId !== activeConversationId.value
+  )
+    throw new Error('会话已切换，请重新选择图片');
   const target = mediaFields.value.find(
     (field) =>
       field.assetIndex !== undefined && field.acceptedKinds.includes('image'),
@@ -2357,7 +2477,7 @@ onBeforeUnmount(() => {
               :available-application-keys="allAvailableApplicationKeys"
               :fields="jobCapability(job)?.fields ?? []"
               conversation-layout
-              flow-label="深化设计"
+              flow-label="继续编辑"
               :job="job"
               :round="index + 1"
               :supports-image-comparison="
@@ -2399,6 +2519,33 @@ onBeforeUnmount(() => {
           >
             {{ composerImageDropHint }}
           </div>
+          <section
+            v-if="composerCaptureFields.length && !capabilityLoading"
+            class="composer-capture-fields"
+            data-testid="composer-capture-fields"
+          >
+            <CapabilityMediaField
+              v-for="field in composerCaptureFields"
+              :key="`${captureContextKey}:${field.key}`"
+              composer
+              :accent="application?.color ?? '#b91c32'"
+              :assets="platformStore.currentAssets"
+              :field="field"
+              :live-capture="
+                (file, session) => runLiveCapture(field, file, session)
+              "
+              :project-id="platformStore.currentProjectId"
+              :refresh-rate="captureRefreshRate()"
+              :selected-asset-id="
+                field.assetIndex === undefined
+                  ? undefined
+                  : selectedAssets[field.assetIndex]
+              "
+              :stop-live-capture="stopLiveCapture"
+              @select="selectAsset(field, $event)"
+              @upload="uploadMedia(field, $event)"
+            />
+          </section>
           <section
             v-if="composerImageFields.length"
             class="composer-media-tray"
@@ -2644,7 +2791,7 @@ onBeforeUnmount(() => {
                     @change="applyImageSize"
                   />
                   <button
-                    v-if="mediaFields.length"
+                    v-if="additionalMediaFields.length"
                     class="composer-media-summary"
                     type="button"
                     @click="openMediaPicker"
@@ -2675,21 +2822,58 @@ onBeforeUnmount(() => {
               </div>
             </div>
             <Button
-              :aria-label="activeJob ? '停止生成' : '发送'"
+              :aria-busy="
+                submitting || activeJob?.status === 'cancelling' || undefined
+              "
+              :aria-label="
+                submitting
+                  ? '正在发送'
+                  : activeJob?.status === 'cancelling'
+                    ? '正在停止生成'
+                    : activeJob
+                      ? '停止生成'
+                      : '发送'
+              "
               class="composer-submit"
-              :class="{ 'composer-submit--stop': activeJob }"
+              :class="{
+                'composer-submit--busy':
+                  submitting || activeJob?.status === 'cancelling',
+                'composer-submit--stop': activeJob,
+              }"
               :disabled="
                 !activeConversationId ||
+                submitting ||
                 activeJob?.status === 'cancelling' ||
                 composerImportingImage
               "
-              :loading="submitting || activeJob?.status === 'cancelling'"
               shape="circle"
               type="primary"
               @click="activeJob ? cancelActiveJob() : runCapability()"
             >
-              <span v-if="activeJob" class="composer-stop-mark"></span>
-              <IconifyIcon v-else :icon="platformUiIcons.send" />
+              <span class="composer-submit__stage" aria-hidden="true">
+                <Transition name="composer-submit-glyph">
+                  <span
+                    v-if="submitting || activeJob?.status === 'cancelling'"
+                    key="busy"
+                    class="composer-submit__glyph"
+                  >
+                    <span class="composer-submit__spinner"></span>
+                  </span>
+                  <span
+                    v-else-if="activeJob"
+                    key="stop"
+                    class="composer-submit__glyph"
+                  >
+                    <span class="composer-stop-mark"></span>
+                  </span>
+                  <span v-else key="send" class="composer-submit__glyph">
+                    <IconifyIcon
+                      class="composer-send-mark"
+                      :icon="platformUiIcons.send"
+                    />
+                  </span>
+                </Transition>
+              </span>
             </Button>
           </div>
         </div>
@@ -2756,12 +2940,11 @@ onBeforeUnmount(() => {
       </button>
       <div class="media-picker-fields">
         <CapabilityMediaField
-          v-for="field in mediaFields"
+          v-for="field in additionalMediaFields"
           :key="field.key"
           accent="#c51f3a"
-          :assets="platformStore.currentAssets"
+          :assets="availableInputAssets"
           :field="field"
-          :live-capture="(file) => runLiveCapture(field, file)"
           :open-editor-request="markerEditorRequest"
           :project-id="platformStore.currentProjectId"
           :refresh-rate="captureRefreshRate()"
@@ -2772,7 +2955,6 @@ onBeforeUnmount(() => {
               : selectedAssets[field.assetIndex]
           "
           :value="parameterValues[field.key]"
-          :stop-live-capture="stopLiveCapture"
           @select="selectAsset(field, $event)"
           @update:value="setFieldValue(field, $event)"
           @upload="uploadMedia(field, $event)"
@@ -2827,15 +3009,17 @@ onBeforeUnmount(() => {
             <em>{{ markdownAssets.length }} 个可用</em>
           </button>
         </div>
-        <div class="drawer-section" v-if="mediaFields.length">
+        <div v-if="composerCaptureFields.length" class="drawer-section">
+          <p>实时画面预览、共享与捕获操作已移至主输入框；此处调整高级参数。</p>
+        </div>
+        <div class="drawer-section" v-if="additionalMediaFields.length">
           <h3>输入内容</h3>
           <CapabilityMediaField
-            v-for="field in mediaFields"
+            v-for="field in additionalMediaFields"
             :key="field.key"
             :accent="application?.color ?? '#b91c32'"
-            :assets="platformStore.currentAssets"
+            :assets="availableInputAssets"
             :field="field"
-            :live-capture="(file) => runLiveCapture(field, file)"
             :project-id="platformStore.currentProjectId"
             :refresh-rate="captureRefreshRate()"
             :save-mask="(file) => saveInputMask(field, file)"
@@ -2845,7 +3029,6 @@ onBeforeUnmount(() => {
                 : selectedAssets[field.assetIndex]
             "
             :value="parameterValues[field.key]"
-            :stop-live-capture="stopLiveCapture"
             @select="selectAsset(field, $event)"
             @update:value="setFieldValue(field, $event)"
             @upload="uploadMedia(field, $event)"
@@ -2947,7 +3130,7 @@ onBeforeUnmount(() => {
       @ok="confirmSaveOutput"
     >
       <p class="continue-description">
-        请选择当前项目中的资产目录。保存后，结果才能作为同一项目内其他设计能力的输入继续使用。
+        请选择当前项目中的资产目录，用于保存、整理或共享。仅在本会话继续编辑时无需加入资产中心。
       </p>
       <Select
         v-model:value="saveOutputFolderId"
@@ -2961,12 +3144,12 @@ onBeforeUnmount(() => {
       v-model:open="continueOpen"
       :confirm-loading="continueSubmitting"
       :ok-button-props="{ disabled: continueAssetIndex === undefined }"
-      ok-text="加入资产并继续"
-      title="在本会话中深化设计"
+      ok-text="继续编辑"
+      title="在本会话中继续编辑"
       @ok="continueDesign"
     >
       <p class="continue-description">
-        结果会先登记为当前项目资产，再直接填入本会话所选应用；不需要选择其他应用会话，也不需要重复上传。
+        图片直接填入本会话所选功能，不会自动加入资产中心，也无需下载和重新上传。跨会话复用请先主动加入资产中心。
       </p>
       <Select
         v-model:value="continueAppKey"
@@ -4113,6 +4296,13 @@ main.design-page {
     0 14px 36px rgb(30 41 59 / 6%);
 }
 
+.composer-capture-fields {
+  max-height: min(40dvh, 300px);
+  margin-bottom: 8px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .design-page .composer-box--image-drop {
   border-color: var(--rail-theme-primary, #cf123b);
   box-shadow: 0 0 0 3px rgb(207 18 59 / 10%);
@@ -4310,23 +4500,64 @@ main.design-page {
 }
 
 .composer-submit.ant-btn {
-  display: inline-grid;
+  position: relative;
+  display: inline-flex;
   flex: 0 0 auto;
-  place-items: center;
+  align-items: center;
+  justify-content: center;
   width: 42px;
   min-width: 42px;
   height: 42px;
   padding: 0;
+  overflow: hidden;
+  line-height: 1;
+  vertical-align: middle;
   color: #fff;
   background: #c51f3a;
   border-color: var(--rail-theme-accent, #c51f3a);
   box-shadow: none;
+  transition:
+    color 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 120ms ease;
 }
 
-.composer-submit.ant-btn :deep(svg) {
-  width: 22px;
-  height: 22px;
-  stroke-width: 3;
+.composer-submit__stage,
+.composer-submit__glyph {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.composer-submit__stage {
+  line-height: 0;
+}
+
+.composer-send-mark {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.5;
+  transform: translate(-1px, -1px);
+}
+
+.composer-submit-glyph-enter-active,
+.composer-submit-glyph-leave-active {
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.composer-submit-glyph-enter-from {
+  opacity: 0;
+  transform: scale(0.72);
+}
+
+.composer-submit-glyph-leave-to {
+  opacity: 0;
+  transform: scale(1.12);
 }
 
 .composer-submit.ant-btn:not(:disabled):hover {
@@ -4343,16 +4574,60 @@ main.design-page {
 
 .composer-stop-mark {
   display: block;
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   background: currentcolor;
   border-radius: 2px;
+}
+
+.composer-submit__spinner {
+  display: block;
+  width: 17px;
+  height: 17px;
+  border: 2px solid currentcolor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: composer-submit-spin 700ms linear infinite;
 }
 
 .composer-submit.ant-btn:disabled {
   color: #fff;
   background: #e6a2ad;
   border-color: #e6a2ad;
+  opacity: 1;
+}
+
+.composer-submit--busy.ant-btn:disabled:not(.composer-submit--stop) {
+  background: #c51f3a;
+  border-color: var(--rail-theme-accent, #c51f3a);
+}
+
+.composer-submit--stop.ant-btn:disabled {
+  color: var(--rail-theme-text, #1f2428);
+  background: var(--rail-theme-surface, #f2f3f4);
+  border-color: var(--rail-theme-border, #e5e7e9);
+}
+
+.composer-submit.ant-btn:not(:disabled):active {
+  transform: scale(0.96);
+}
+
+@keyframes composer-submit-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-submit.ant-btn,
+  .composer-submit-glyph-enter-active,
+  .composer-submit-glyph-leave-active {
+    transition: none;
+  }
+
+  .composer-submit__spinner {
+    animation-duration: 1200ms;
+  }
 }
 
 .composer-media-tray {

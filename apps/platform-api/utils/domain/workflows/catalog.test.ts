@@ -1,5 +1,6 @@
+// @vitest-environment node
+
 import { readFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -20,7 +21,10 @@ describe('comfyUI workflow catalog', () => {
     for (const entry of WORKFLOW_CATALOG) {
       const apiJson = JSON.parse(
         await readFile(
-          resolve(process.cwd(), 'workflows/comfyui', entry.fileName),
+          new URL(
+            `../../../workflows/comfyui/${entry.fileName}`,
+            import.meta.url,
+          ),
           'utf8',
         ),
       ) as unknown;
@@ -95,7 +99,7 @@ describe('comfyUI workflow catalog', () => {
     const loadApiJson = async (fileName: string) =>
       JSON.parse(
         await readFile(
-          resolve(process.cwd(), 'workflows/comfyui', fileName),
+          new URL(`../../../workflows/comfyui/${fileName}`, import.meta.url),
           'utf8',
         ),
       ) as Record<
@@ -138,7 +142,10 @@ describe('comfyUI workflow catalog', () => {
     if (!multiview) throw new Error('缺少多视图生三维工作流目录');
     const workflow = JSON.parse(
       await readFile(
-        resolve(process.cwd(), 'workflows/comfyui', multiview.fileName),
+        new URL(
+          `../../../workflows/comfyui/${multiview.fileName}`,
+          import.meta.url,
+        ),
         'utf8',
       ),
     ) as Record<string, { inputs: Record<string, unknown> }>;
@@ -179,7 +186,7 @@ describe('comfyUI workflow catalog', () => {
     const loadWorkflow = async (fileName: string) =>
       JSON.parse(
         await readFile(
-          resolve(process.cwd(), 'workflows/comfyui', fileName),
+          new URL(`../../../workflows/comfyui/${fileName}`, import.meta.url),
           'utf8',
         ),
       ) as Record<
@@ -208,7 +215,10 @@ describe('comfyUI workflow catalog', () => {
     if (!outpaint) throw new Error('缺少智能扩图工作流目录');
     const apiJson = JSON.parse(
       await readFile(
-        resolve(process.cwd(), 'workflows/comfyui', outpaint.fileName),
+        new URL(
+          `../../../workflows/comfyui/${outpaint.fileName}`,
+          import.meta.url,
+        ),
         'utf8',
       ),
     ) as unknown;

@@ -55,8 +55,7 @@
 | 训练、报告与资料 | 现有 LoRA/报告执行器、报告渲染器和资产类型逻辑 | 保留已有支撑能力与文件类型表述，不将其等同于区域识别模型或专业评审 |
 | 部署与计划 | 已提交生产部署方案、合同阶段任务；未提交单镜像文件单列 | 按网络/服务/执行/数据/外部能力描述逻辑部署，不宣称本轮完成现场部署或压力测试 |
 
-EasyMark 的本机只读取证依赖为相邻 ComfyUI 仓库：
-`/home/huyanwei/projects/rail-system/code/ComfyUI`，HEAD `24257262af2873521da57804ca01b944723daca9`，提交时间 `2026-09-17T14:57:39+08:00`。节点文件 `custom_nodes/ComfyUI-Apt_Preset/NodeBasic/C_viewIO.py` 的 SHA-256 为 `5465d18d8f85fcace05ad2c854287050faf14b1b3ecc764cde79cac2703b10b3`；检查了 IO_EasyMark 输入、合成和返回逻辑。该仓库的 5 个 Manager 缓存 JSON 存在既有修改，本轮未改动；节点文件校验值用于独立固定实际阅读对象，不把主仓库 HEAD 当作所有外部插件版本。
+EasyMark 的本机只读取证依赖为相邻 ComfyUI 仓库： `/home/huyanwei/projects/rail-system/code/ComfyUI`，HEAD `24257262af2873521da57804ca01b944723daca9`，提交时间 `2026-09-17T14:57:39+08:00`。节点文件 `custom_nodes/ComfyUI-Apt_Preset/NodeBasic/C_viewIO.py` 的 SHA-256 为 `5465d18d8f85fcace05ad2c854287050faf14b1b3ecc764cde79cac2703b10b3`；检查了 IO_EasyMark 输入、合成和返回逻辑。该仓库的 5 个 Manager 缓存 JSON 存在既有修改，本轮未改动；节点文件校验值用于独立固定实际阅读对象，不把主仓库 HEAD 当作所有外部插件版本。
 
 上版“标记快照不替代原图”的资产管理表述继续成立，本版补清下游模型实际使用合成参考图的事实。技术响应中的四层思路在本版显式增加用户职责层形成五层逻辑图；这属于本报告的架构展开，不声称原技术响应直接写了五层。
 

@@ -2,11 +2,13 @@ import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { useDatabase } from '~/utils/database';
 import { requireDesignConversation } from '~/utils/domain/design-conversations';
+import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
 import {
   assertWorkspaceDraftParameterKeys,
   workspaceDraftAssetSelection,
 } from '~/utils/domain/workflows/drafts';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
+import { getUuidParam } from '~/utils/http/resource-id';
 import {
   hasAdministrativeRole,
   requireIdentity,
@@ -33,7 +35,7 @@ const schema = z.object({
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:job:write');
-  const conversationId = getRouterParam(event, 'id');
+  const conversationId = getUuidParam(event);
   const appKey = getRouterParam(event, 'appKey');
   if (!conversationId || !appKey) {
     throw new ApiError(
@@ -76,18 +78,12 @@ export default apiHandler(async (event) => {
     );
   }
   const assetIds = Object.values(input.inputAssetIds);
-  const assets =
-    assetIds.length === 0
-      ? []
-      : await sql<{ id: string; kind: string }[]>`
-        SELECT id, kind
-        FROM assets
-        WHERE id IN ${sql(assetIds)}
-          AND project_id = ${input.projectId}
-          AND status = 'available'
-          AND saved_at IS NOT NULL
-          AND deleted_at IS NULL
-      `;
+  const assets = await getDesignInputAssets({
+    assetIds,
+    conversationId,
+    projectId: input.projectId,
+    userId: identity.id,
+  });
   let inputAssetIds: Record<string, string>;
   try {
     inputAssetIds = workspaceDraftAssetSelection(

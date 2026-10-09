@@ -1,7 +1,7 @@
-import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import {
   hasAdministrativeRole,
   requireIdentity,
@@ -20,7 +20,7 @@ const schema = z.object({
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:project:write');
-  const projectId = getRouterParam(event, 'id');
+  const projectId = getUuidParam(event);
   if (!projectId) {
     throw new ApiError(400, 'PROJECT_ID_REQUIRED', '缺少项目编号');
   }

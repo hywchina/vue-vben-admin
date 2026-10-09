@@ -1,7 +1,7 @@
-import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -12,7 +12,7 @@ const schema = z.object({ name: z.string().trim().min(1).max(120) });
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:asset:write');
-  const folderId = getRouterParam(event, 'id');
+  const folderId = getUuidParam(event);
   if (!folderId)
     throw new ApiError(400, 'ASSET_FOLDER_ID_REQUIRED', '缺少文件夹编号');
   const { name } = await parseBody(event, schema);

@@ -42,38 +42,32 @@ jobs:
       DATABASE_URL: postgresql://rail_platform:rail_platform_dev@localhost:5432/rail_platform
       JWT_SECRET: development-only-ci-integration-secret
       NODE_ENV: development
-      S3_ACCESS_KEY: railminio
+      S3_ACCESS_KEY: rail-ci-minio
       S3_ENDPOINT: http://localhost:9000
       S3_PUBLIC_ENDPOINT: http://localhost:9000
-      S3_SECRET_KEY: railminio-dev-secret
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - uses: ./.github/actions/setup-node
+      - name: Configure disposable object storage credentials
+        run: |
+          node --input-type=module <<'JS'
+          import { randomUUID } from 'node:crypto';
+          import { appendFileSync, writeFileSync } from 'node:fs';
+          const secret = randomUUID() + randomUUID();
+          appendFileSync(process.env.GITHUB_ENV, `S3_SECRET_KEY=${secret}\n`);
+          writeFileSync('deploy/rail-platform/.env.minio.local', `MINIO_ROOT_USER=${process.env.S3_ACCESS_KEY}\nMINIO_ROOT_PASSWORD=${secret}\n`, { mode: 0o600 });
+          JS
       - name: Start infrastructure
         run: pnpm infra:rail:up
-      - name: Prepare database
-        run: pnpm db:rail:migrate && pnpm db:rail:seed
-      - name: Start API
-        run: |
-          pnpm --filter @rail/platform-api dev > /tmp/rail-platform-api.log 2>&1 &
-          echo $! > /tmp/rail-platform-api.pid
-          for attempt in $(seq 1 40); do
-            curl --fail --silent http://localhost:5320/api/v1/health/ready && exit 0
-            sleep 1
-          done
-          cat /tmp/rail-platform-api.log
-          exit 1
       - name: Run integration acceptance
         run: pnpm test:rail:integration
       - name: Diagnostics
         if: failure()
         run: |
-          cat /tmp/rail-platform-api.log || true
           docker compose -f deploy/rail-platform/compose.yaml logs || true
       - name: Stop infrastructure
         if: always()
         run: |
-          if [ -f /tmp/rail-platform-api.pid ]; then kill "$(cat /tmp/rail-platform-api.pid)" || true; fi
           pnpm infra:rail:down

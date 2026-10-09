@@ -1,13 +1,13 @@
-import { getRouterParam } from 'h3';
 import { getAssetView } from '~/utils/asset-repository';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const assetId = getRouterParam(event, 'id');
+  const assetId = getUuidParam(event);
   if (!assetId) throw new ApiError(400, 'ASSET_ID_REQUIRED', '缺少资产编号');
 
   const sql = useDatabase();

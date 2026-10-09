@@ -8,6 +8,7 @@ import { deleteObject, inspectObject } from '../../storage';
 import { writeAudit } from '../audit/writer';
 import { createNotification } from '../notifications/repository';
 import { requireProjectAccess } from '../projects/access';
+import { requireAssetContentAccess } from './content-access';
 import { getAssetView } from './repository';
 
 export async function completeObjectVersion(
@@ -39,6 +40,7 @@ export async function completeObjectVersion(
   if (!pending)
     throw new ApiError(404, 'ASSET_VERSION_NOT_FOUND', '资产版本不存在');
   await requireProjectAccess(identity, pending.projectId, 'write');
+  await requireAssetContentAccess(assetId, identity.id);
   if (pending.status === 'available') {
     return await getAssetView(assetId, identity.id);
   }

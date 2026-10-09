@@ -1,9 +1,21 @@
 import type {
   DesignConversation,
+  PlatformAsset,
   WorkflowWorkspaceDraft,
 } from '#/modules/platform/types';
 
 import { requestClient } from '#/api/request';
+
+export function getDesignConversationInputAssetApi(
+  conversationId: string,
+  projectId: string,
+  assetId: string,
+) {
+  return requestClient.get<PlatformAsset>(
+    `/design-conversations/${conversationId}/input-assets/${assetId}`,
+    { params: { projectId } },
+  );
+}
 
 export function getDesignConversationsApi(projectId: string) {
   return requestClient.get<DesignConversation[]>('/design-conversations', {

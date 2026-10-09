@@ -1,8 +1,8 @@
-import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
 import { requireAssistantConversation } from '~/utils/domain/assistant/conversations';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity } from '~/utils/identity';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
@@ -13,7 +13,7 @@ const schema = z.object({
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const conversationId = getRouterParam(event, 'id');
+  const conversationId = getUuidParam(event);
   if (!conversationId) {
     throw new ApiError(400, 'AI_CONVERSATION_ID_REQUIRED', '缺少对话编号');
   }

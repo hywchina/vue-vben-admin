@@ -35,14 +35,12 @@ interface ComposerImageDrop {
   fields: () => readonly CapabilityField[];
   selections: () => Readonly<Record<number, string>>;
   isCurrent: () => boolean;
-  confirmSave: () => Promise<boolean>;
   getAsset: (assetId: string) => Promise<PlatformAsset>;
-  saveOutput: (assetId: string) => Promise<PlatformAsset>;
   commit: (asset: PlatformAsset, field: CapabilityField) => Promise<void>;
 }
 
-// The drop is only an input action. Authorization and registration still use
-// platform APIs; neither signed URLs nor source-job parameters are reused.
+// Input actions are read-only: the conversation-scoped API authorizes reuse.
+// Registration is a separate, explicit asset-center action.
 export async function acceptComposerImageDrop(options: ComposerImageDrop) {
   const checkTarget = () => {
     if (!options.isCurrent()) {
@@ -61,13 +59,7 @@ export async function acceptComposerImageDrop(options: ComposerImageDrop) {
   ) {
     throw new Error('请拖入当前会话生成的图片');
   }
-  if (!options.output.saved) {
-    if (!(await options.confirmSave())) return false;
-    checkTarget();
-  }
-  const asset = options.output.saved
-    ? await options.getAsset(options.assetId)
-    : await options.saveOutput(options.assetId);
+  const asset = await options.getAsset(options.assetId);
   const target = checkTarget();
   if (
     asset.id !== options.assetId ||

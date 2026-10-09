@@ -13,6 +13,8 @@ export interface PlatformProject {
   isPinned: boolean;
   isOwner: boolean;
   jobCount: number;
+  /** All members for filtering; unlike the three-avatar preview, not truncated. */
+  memberIdentities: Array<{ name: string; publicId: string }>;
   memberPreviews: ProjectMemberPreview[];
   members: number;
   name: string;

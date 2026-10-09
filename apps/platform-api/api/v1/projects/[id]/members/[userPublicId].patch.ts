@@ -2,6 +2,7 @@ import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import {
   hasAdministrativeRole,
   requireIdentity,
@@ -18,7 +19,7 @@ const schema = z.object({ projectRole: z.enum(['editor', 'viewer']) });
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:project:write');
-  const projectId = getRouterParam(event, 'id');
+  const projectId = getUuidParam(event);
   const userPublicId = getRouterParam(event, 'userPublicId')
     ?.trim()
     .toUpperCase();

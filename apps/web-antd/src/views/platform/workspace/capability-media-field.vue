@@ -1,4 +1,6 @@
 <script lang="ts" setup>
+import type { CaptureCrop } from './capture-frame';
+import type { CaptureSession } from './capture-session';
 import type {
   RegionPoint as Point,
   RegionStroke as Stroke,
@@ -6,7 +8,15 @@ import type {
 
 import type { CapabilityField, PlatformAsset } from '#/modules/platform/types';
 
-import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue';
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onDeactivated,
+  reactive,
+  ref,
+  watch,
+} from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
@@ -21,32 +31,29 @@ import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 import AssetPickerModal from './asset-picker-modal.vue';
+import { createScreenCaptureOptions } from './capture-focus';
+import { drawCapturedFrame } from './capture-frame';
 import {
   drawRegionStroke,
   parseRegionStrokes,
   serializeRegionStrokes,
 } from './region-annotation';
 
-interface CaptureCrop {
-  height: number;
-  sourceHeight: number;
-  sourceWidth: number;
-  width: number;
-  x: number;
-  y: number;
-}
-
 const props = defineProps<{
   accent: string;
   assets: PlatformAsset[];
+  composer?: boolean;
   field: CapabilityField;
-  liveCapture?: (file: File) => Promise<boolean | undefined>;
+  liveCapture?: (
+    file: File,
+    session: CaptureSession,
+  ) => Promise<boolean | undefined>;
   openEditorRequest?: number;
   projectId?: string;
   refreshRate?: number;
   saveMask?: (file: File) => Promise<unknown>;
   selectedAssetId?: string;
-  stopLiveCapture?: () => Promise<void>;
+  stopLiveCapture?: (session?: CaptureSession) => Promise<void>;
   value?: unknown;
 }>();
 
@@ -78,10 +85,13 @@ const pickerOpen = ref(false);
 const lightboxOpen = ref(false);
 const selectedAssetDetail = ref<PlatformAsset>();
 const captureVideoRef = ref<HTMLVideoElement>();
+const capturePreviewCanvasRef = ref<HTMLCanvasElement>();
 const captureMode = ref<'camera' | 'screen'>('screen');
 const captureCrop = ref<CaptureCrop>();
 const captureActive = ref(false);
+const captureStarting = ref(false);
 const liveCapturing = ref(false);
+const liveSubmitting = ref(false);
 const areaOpen = ref(false);
 const areaCanvasRef = ref<HTMLCanvasElement>();
 const areaDraft = reactive({ height: 0, width: 0, x: 0, y: 0 });
@@ -90,6 +100,10 @@ let areaSnapshot: ImageData | undefined;
 let liveGeneration = 0;
 let previousFrame: Uint8ClampedArray | undefined;
 let captureStream: MediaStream | undefined;
+let previewAnimation: number | undefined;
+let captureGeneration = 0;
+let disposed = false;
+let liveSession: CaptureSession | undefined;
 
 const selectedAsset = computed(
   () =>
@@ -99,21 +113,21 @@ const selectedAsset = computed(
       : undefined),
 );
 const isDrawingField = computed(() => props.field.type === 'region');
-const capturePreviewStyle = computed(() => {
-  const crop = captureCrop.value;
-  return crop ? { aspectRatio: `${crop.width} / ${crop.height}` } : undefined;
-});
-const captureVideoStyle = computed(() => {
-  const crop = captureCrop.value;
-  if (!crop) return undefined;
-  return {
-    maxHeight: 'none',
-    maxWidth: 'none',
-    transform: `translate(${-((crop.x / crop.sourceWidth) * 100)}%, ${-((crop.y / crop.sourceHeight) * 100)}%)`,
-    transformOrigin: 'top left',
-    width: `${(crop.sourceWidth / crop.width) * 100}%`,
-  };
-});
+
+function renderCapturePreview() {
+  const video = captureVideoRef.value;
+  const canvas = capturePreviewCanvasRef.value;
+  if (!captureActive.value || !video || !canvas) return;
+  try {
+    if (video.videoWidth && video.videoHeight)
+      drawCapturedFrame(canvas, video, captureCrop.value, 480);
+  } catch (error) {
+    stopCapture();
+    message.error((error as Error).message);
+    return;
+  }
+  previewAnimation = requestAnimationFrame(renderCapturePreview);
+}
 
 async function loadPreview(assetId?: string) {
   previewUrl.value = '';
@@ -300,15 +314,25 @@ function restoreCaptureCrop() {
 
 function stopLive(cancelJob = true) {
   const wasLive = liveCapturing.value;
+  const session = liveSession;
+  liveSession = undefined;
   liveCapturing.value = false;
+  liveSubmitting.value = false;
   liveGeneration += 1;
   previousFrame = undefined;
   if (wasLive && cancelJob && props.stopLiveCapture) {
-    void props.stopLiveCapture();
+    void props
+      .stopLiveCapture(session)
+      .catch((error: Error) => message.error(error.message));
   }
 }
 
 function stopCapture() {
+  captureGeneration += 1;
+  captureStarting.value = false;
+  areaOpen.value = false;
+  if (previewAnimation !== undefined) cancelAnimationFrame(previewAnimation);
+  previewAnimation = undefined;
   stopLive();
   for (const track of captureStream?.getTracks() ?? []) track.stop();
   captureStream = undefined;
@@ -322,24 +346,57 @@ async function startCapture(mode: 'camera' | 'screen') {
     return;
   }
   stopCapture();
+  const generation = captureGeneration;
+  captureStarting.value = true;
   captureMode.value = mode;
+  let stream: MediaStream | undefined;
   try {
-    captureStream =
+    stream =
       mode === 'screen'
-        ? await navigator.mediaDevices.getDisplayMedia({ video: true })
+        ? await navigator.mediaDevices.getDisplayMedia(
+            createScreenCaptureOptions(),
+          )
         : await navigator.mediaDevices.getUserMedia({ video: true });
     await nextTick();
-    if (!captureVideoRef.value) return;
-    captureVideoRef.value.srcObject = captureStream;
+    if (
+      disposed ||
+      generation !== captureGeneration ||
+      !captureVideoRef.value
+    ) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    captureStream = stream;
+    captureVideoRef.value.srcObject = stream;
     await captureVideoRef.value.play();
+    if (disposed || generation !== captureGeneration) {
+      stream.getTracks().forEach((track) => track.stop());
+      return;
+    }
     captureActive.value = true;
     restoreCaptureCrop();
-    captureStream.getVideoTracks()[0]?.addEventListener('ended', stopCapture, {
-      once: true,
-    });
+    renderCapturePreview();
+    stream.getVideoTracks()[0]?.addEventListener(
+      'ended',
+      () => {
+        if (captureStream === stream) stopCapture();
+      },
+      {
+        once: true,
+      },
+    );
   } catch (error) {
-    stopCapture();
-    if ((error as Error).name !== 'NotAllowedError') throw error;
+    stream?.getTracks().forEach((track) => track.stop());
+    if (!disposed && generation === captureGeneration) {
+      stopCapture();
+      message.warning(
+        (error as Error).name === 'NotAllowedError'
+          ? '未授权画面捕获，可以重新选择或使用项目图片'
+          : (error as Error).message,
+      );
+    }
+  } finally {
+    if (generation === captureGeneration) captureStarting.value = false;
   }
 }
 
@@ -348,30 +405,8 @@ function captureFrameCanvas() {
   if (!video?.videoWidth || !video.videoHeight) {
     throw new Error('实时画面尚未就绪');
   }
-  const crop = captureCrop.value ?? {
-    height: video.videoHeight,
-    sourceHeight: video.videoHeight,
-    sourceWidth: video.videoWidth,
-    width: video.videoWidth,
-    x: 0,
-    y: 0,
-  };
   const canvas = document.createElement('canvas');
-  canvas.width = crop.width;
-  canvas.height = crop.height;
-  canvas
-    .getContext('2d')
-    ?.drawImage(
-      video,
-      crop.x,
-      crop.y,
-      crop.width,
-      crop.height,
-      0,
-      0,
-      crop.width,
-      crop.height,
-    );
+  drawCapturedFrame(canvas, video, captureCrop.value);
   return canvas;
 }
 
@@ -385,8 +420,10 @@ async function captureFrameFile() {
 }
 
 async function captureFrame() {
+  const generation = captureGeneration;
   try {
-    emit('upload', await captureFrameFile());
+    const file = await captureFrameFile();
+    if (!disposed && generation === captureGeneration) emit('upload', file);
   } catch (error) {
     message.warning((error as Error).message);
   }
@@ -542,19 +579,25 @@ function waitForNextFrame(milliseconds: number) {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-async function runLive(generation: number) {
-  while (liveCapturing.value && generation === liveGeneration) {
+async function runLive(session: CaptureSession) {
+  while (session.isCurrent()) {
     try {
       const current = frameSignature();
       if (frameChanged(current)) {
         previousFrame = current;
-        const succeeded = await props.liveCapture?.(await captureFrameFile());
+        const file = await captureFrameFile();
+        if (!session.isCurrent()) return;
+        liveSubmitting.value = true;
+        const succeeded = await props.liveCapture?.(file, session);
+        if (!session.isCurrent()) return;
+        liveSubmitting.value = false;
         if (succeeded === false) {
           stopLive(false);
           return;
         }
       }
     } catch (error) {
+      if (!session.isCurrent()) return;
       stopLive(false);
       message.error((error as Error).message);
       return;
@@ -577,7 +620,13 @@ async function toggleLive() {
   previousFrame = undefined;
   liveCapturing.value = true;
   liveGeneration += 1;
-  await runLive(liveGeneration);
+  const generation = liveGeneration;
+  const session: CaptureSession = {
+    isCurrent: () =>
+      !disposed && liveCapturing.value && generation === liveGeneration,
+  };
+  liveSession = session;
+  await runLive(session);
 }
 
 function handleFile(event: Event) {
@@ -623,11 +672,19 @@ watch(
     }
   },
 );
-onBeforeUnmount(stopCapture);
+onDeactivated(stopCapture);
+onBeforeUnmount(() => {
+  disposed = true;
+  stopCapture();
+});
 </script>
 
 <template>
-  <article class="media-field" :style="{ '--field-accent': accent }">
+  <article
+    class="media-field"
+    :class="{ 'media-field--composer': composer }"
+    :style="{ '--field-accent': accent }"
+  >
     <header>
       <div>
         <span>{{ field.label }}</span>
@@ -647,20 +704,20 @@ onBeforeUnmount(stopCapture);
     </header>
 
     <div v-if="field.type === 'capture'" class="capture-inline-panel">
-      <div
-        :class="{ cropped: captureCrop }"
-        :style="capturePreviewStyle"
-        class="capture-preview-frame inline"
-      >
+      <div class="capture-preview-frame inline">
         <video
-          v-show="captureActive"
+          v-show="false"
           ref="captureVideoRef"
           autoplay
           muted
           playsinline
-          :style="captureVideoStyle"
           @loadedmetadata="restoreCaptureCrop"
         ></video>
+        <canvas
+          v-show="captureActive"
+          ref="capturePreviewCanvasRef"
+          aria-label="当前捕获区域实时预览"
+        ></canvas>
         <img
           v-if="!captureActive && previewUrl"
           alt="已捕获画面"
@@ -673,68 +730,95 @@ onBeforeUnmount(stopCapture);
           <p>共享屏幕或打开摄像头后，可截取当前帧或持续实时运行。</p>
         </div>
       </div>
-      <div class="capture-direct-actions primary-row">
-        <Button
-          :type="
-            captureActive && captureMode === 'screen' ? 'primary' : 'default'
-          "
-          @click="startCapture('screen')"
-        >
-          <IconifyIcon :icon="platformUiIcons.monitorUp" />
-          共享屏幕
-        </Button>
-        <Button
-          :type="
-            captureActive && captureMode === 'camera' ? 'primary' : 'default'
-          "
-          @click="startCapture('camera')"
-        >
-          <IconifyIcon :icon="platformUiIcons.camera" />
-          摄像头
-        </Button>
-      </div>
-      <div class="capture-direct-actions">
-        <Button :disabled="!captureActive" @click="openAreaPicker">
-          <IconifyIcon :icon="platformUiIcons.scan" />
-          Set Area
-        </Button>
-        <Button
-          :danger="liveCapturing"
-          :disabled="!captureActive"
-          :type="liveCapturing ? 'primary' : 'default'"
-          @click="toggleLive"
-        >
-          <IconifyIcon
-            :icon="
-              liveCapturing ? platformUiIcons.square : platformUiIcons.radio
+      <div class="capture-controls">
+        <div class="capture-direct-actions primary-row">
+          <Button
+            :disabled="captureStarting"
+            :type="
+              captureActive && captureMode === 'screen' ? 'primary' : 'default'
             "
-          />
-          {{ liveCapturing ? '停止 Live' : 'Live On' }}
-        </Button>
-      </div>
-      <div class="capture-status">
-        <span v-if="liveCapturing">实时运行中：检测到画面变化后串行提交。</span>
-        <span v-else-if="captureCrop">
-          捕获区域 {{ captureCrop.width }} × {{ captureCrop.height }}
-        </span>
-        <span v-else>当前使用完整画面</span>
-      </div>
-      <div class="capture-direct-actions utility-row">
-        <Button class="asset-picker-button" @click="pickerOpen = true">
-          <IconifyIcon :icon="platformSemanticIcons.assets" />
-          项目资产
-        </Button>
-        <Button @click="fileInputRef?.click()">
-          <IconifyIcon :icon="platformUiIcons.upload" />
-          导入
-        </Button>
-        <Button
-          :disabled="!captureActive || liveCapturing"
-          @click="captureFrame"
-        >
-          捕获当前帧
-        </Button>
-        <Button v-if="captureActive" danger @click="stopCapture">停止</Button>
+            @click="startCapture('screen')"
+          >
+            <IconifyIcon :icon="platformUiIcons.monitorUp" />
+            共享屏幕
+          </Button>
+          <Button
+            :disabled="captureStarting"
+            :type="
+              captureActive && captureMode === 'camera' ? 'primary' : 'default'
+            "
+            @click="startCapture('camera')"
+          >
+            <IconifyIcon :icon="platformUiIcons.camera" />
+            摄像头
+          </Button>
+        </div>
+        <div class="capture-direct-actions">
+          <Button
+            :disabled="!captureActive || liveCapturing"
+            @click="openAreaPicker"
+          >
+            <IconifyIcon :icon="platformUiIcons.scan" />
+            选择区域
+          </Button>
+          <Button
+            :danger="liveCapturing"
+            :disabled="!captureActive || !liveCapture"
+            :type="liveCapturing ? 'primary' : 'default'"
+            @click="toggleLive"
+          >
+            <IconifyIcon
+              :icon="
+                liveCapturing ? platformUiIcons.square : platformUiIcons.radio
+              "
+            />
+            {{ liveCapturing ? '停止实时' : '开始实时' }}
+          </Button>
+        </div>
+        <div class="capture-status" role="status" aria-live="polite">
+          <span v-if="captureStarting">等待画面授权…</span>
+          <span v-else-if="liveSubmitting">
+            实时运行中：正在生成，完成后检测下一帧。
+          </span>
+          <span v-else-if="liveCapturing">实时运行中：等待画面变化。</span>
+          <span v-else-if="captureActive">画面已连接，尚未开启实时生成。</span>
+          <span v-else>选择画面来源，填写指令后开始。</span>
+          <span v-if="captureActive && captureCrop">
+            捕获区域 {{ captureCrop.width }} × {{ captureCrop.height }}
+          </span>
+          <span v-else-if="captureActive">当前使用完整画面</span>
+          <span v-if="captureActive">检测间隔 {{ refreshRate ?? 500 }} ms</span>
+        </div>
+        <div class="capture-direct-actions utility-row">
+          <Button
+            :disabled="captureStarting || captureActive"
+            class="asset-picker-button"
+            @click="pickerOpen = true"
+          >
+            <IconifyIcon :icon="platformSemanticIcons.assets" />
+            项目资产
+          </Button>
+          <Button
+            :disabled="captureStarting || captureActive"
+            @click="fileInputRef?.click()"
+          >
+            <IconifyIcon :icon="platformUiIcons.upload" />
+            导入
+          </Button>
+          <Button
+            :disabled="!captureActive || liveCapturing"
+            @click="captureFrame"
+          >
+            捕获当前帧
+          </Button>
+          <Button
+            danger
+            :disabled="!captureActive && !captureStarting"
+            @click="stopCapture"
+          >
+            停止共享
+          </Button>
+        </div>
       </div>
     </div>
 
@@ -780,7 +864,7 @@ onBeforeUnmount(stopCapture);
       </div>
     </div>
 
-    <p v-if="field.help" class="media-help">{{ field.help }}</p>
+    <p v-if="field.help && !composer" class="media-help">{{ field.help }}</p>
 
     <div v-if="field.type !== 'capture'" class="media-actions">
       <Button class="asset-picker-button" @click="pickerOpen = true">
@@ -800,7 +884,7 @@ onBeforeUnmount(stopCapture);
       @change="handleFile"
     />
 
-    <footer v-if="selectedAsset">
+    <footer v-if="selectedAsset && !composer">
       <span>{{ selectedAsset.name }}</span>
       <small>V{{ selectedAsset.version }}</small>
     </footer>
@@ -1326,7 +1410,7 @@ onBeforeUnmount(stopCapture);
   border-radius: 8px;
 }
 
-.capture-preview-frame.inline video,
+.capture-preview-frame.inline canvas,
 .capture-preview-frame.inline img {
   display: block;
   width: 100%;
@@ -1383,12 +1467,119 @@ onBeforeUnmount(stopCapture);
 }
 
 .capture-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
   padding: 7px 8px;
   margin-top: 7px;
   font-size: 12px;
   color: var(--rail-theme-muted, #8eb0bd);
   background: rgb(255 255 255 / 4%);
   border-radius: 7px;
+}
+
+.media-field--composer {
+  padding: 8px;
+  margin: 0;
+  container-type: inline-size;
+  background: var(--rail-theme-panel, #fff);
+}
+
+.media-field--composer .capture-inline-panel {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: 12px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+}
+
+.media-field--composer .capture-preview-frame.inline {
+  align-self: center;
+  height: 152px;
+  min-height: 0;
+  background: var(--rail-theme-surface, #f5f7fa);
+  border: 1px solid var(--rail-theme-border, #e1e5eb);
+}
+
+.media-field--composer .capture-preview-frame.inline canvas,
+.media-field--composer .capture-preview-frame.inline img {
+  width: 100%;
+  height: 100%;
+  max-height: 152px;
+  object-fit: contain;
+}
+
+.media-field--composer .capture-placeholder {
+  padding: 8px;
+}
+
+.media-field--composer .capture-placeholder p {
+  font-size: 12px;
+}
+
+.media-field--composer .capture-direct-actions.utility-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.media-field--composer .capture-direct-actions.primary-row {
+  margin-top: 0;
+}
+
+.media-field--composer .capture-direct-actions :deep(.ant-btn) {
+  color: var(--rail-theme-text, #253444);
+  background: var(--rail-theme-surface, #f5f7fa);
+  border-color: var(--rail-theme-border, #e1e5eb);
+}
+
+.media-field--composer .capture-direct-actions :deep(.ant-btn-primary) {
+  color: #fff;
+  background: var(--field-accent);
+  border-color: var(--field-accent);
+}
+
+.media-field--composer .capture-direct-actions :deep(.ant-btn:disabled) {
+  color: var(--rail-theme-muted, #8c99a6);
+}
+
+@container (min-width: 660px) {
+  .media-field--composer .capture-controls {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 7px;
+    align-self: center;
+  }
+
+  .media-field--composer .capture-direct-actions:not(.utility-row) {
+    display: contents;
+  }
+
+  .media-field--composer .capture-status,
+  .media-field--composer .capture-direct-actions.utility-row {
+    grid-column: 1 / -1;
+    margin-top: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .media-field--composer .capture-inline-panel {
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .media-field--composer .capture-direct-actions.utility-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .media-field--composer .capture-direct-actions :deep(.ant-btn) {
+    padding-inline: 3px;
+    font-size: 12px;
+  }
+
+  .media-field--composer .capture-direct-actions :deep(.ant-btn .anticon),
+  .media-field--composer .capture-direct-actions :deep(.ant-btn svg) {
+    display: none;
+  }
 }
 
 .area-guide {

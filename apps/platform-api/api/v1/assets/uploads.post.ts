@@ -8,6 +8,8 @@ import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
 import { ASSET_GENERATION_CATEGORIES } from '~/utils/domain/assets/query';
+import { requireDesignConversation } from '~/utils/domain/design-conversations';
+import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -17,6 +19,7 @@ import { parseBody } from '~/utils/validation';
 const uploadSchema = z.object({
   description: z.string().trim().max(2000).optional().default(''),
   derivedFromAssetId: z.string().uuid().optional(),
+  designConversationId: z.string().uuid().optional(),
   filename: z.string().trim().min(1).max(255),
   folderId: z.string().uuid().optional(),
   generationCategory: z.enum(ASSET_GENERATION_CATEGORIES).optional(),
@@ -82,21 +85,23 @@ export default apiHandler(async (event) => {
         '只有图片资产可以登记原始图片血缘',
       );
     }
-    const [sourceAsset] = await sql<{ id: string }[]>`
-      SELECT id
-      FROM assets
-      WHERE id = ${input.derivedFromAssetId}
-        AND project_id = ${input.projectId}
-        AND kind = 'image'
-        AND status = 'available'
-        AND saved_at IS NOT NULL
-        AND deleted_at IS NULL
-    `;
-    if (!sourceAsset) {
+    if (input.designConversationId)
+      await requireDesignConversation({
+        conversationId: input.designConversationId,
+        projectId: input.projectId,
+        userId: identity.id,
+      });
+    const [sourceAsset] = await getDesignInputAssets({
+      assetIds: [input.derivedFromAssetId],
+      conversationId: input.designConversationId,
+      projectId: input.projectId,
+      userId: identity.id,
+    });
+    if (!sourceAsset || sourceAsset.kind !== 'image') {
       throw new ApiError(
         400,
         'INVALID_DERIVED_ASSET',
-        '原始图片不存在、未加入资产或不属于当前项目',
+        '原始图片不存在、已不可用，或既未入库也不属于当前设计会话',
       );
     }
   }

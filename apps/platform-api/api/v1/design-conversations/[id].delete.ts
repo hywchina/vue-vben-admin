@@ -1,8 +1,8 @@
-import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
 import { requireDesignConversation } from '~/utils/domain/design-conversations';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -13,7 +13,7 @@ const querySchema = z.object({ projectId: z.string().uuid() });
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:job:write');
-  const conversationId = getRouterParam(event, 'id');
+  const conversationId = getUuidParam(event);
   if (!conversationId) {
     throw new ApiError(
       400,

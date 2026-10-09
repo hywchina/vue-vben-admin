@@ -13,7 +13,7 @@
     "dev:api": "node ../../scripts/run-with-env.mjs .env -- nitro dev --port 5320",
     "prepare": "nitro prepare",
     "test": "vitest run",
-    "test:integration": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/comfyui-worker-integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/generated-asset-naming-integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/business-id-integration-test.ts && node ../../scripts/run-with-env.mjs .env -- tsx scripts/lora-dataset-integration-test.ts",
+    "test:integration": "pnpm build && node ../../scripts/run-with-env.mjs .env -- tsx scripts/integration-suite.ts",
     "typecheck": "tsc --noEmit",
     "workflow:sync-parameters": "tsx scripts/sync-workflow-parameters.ts",
     "worker": "node ../../scripts/run-with-env.mjs .env -- tsx scripts/worker.ts",

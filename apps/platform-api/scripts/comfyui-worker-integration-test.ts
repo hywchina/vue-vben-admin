@@ -91,10 +91,12 @@ async function main() {
   let objectKey: null | string = null;
   const workspaceInstanceId = randomUUID();
   const designConversationId = randomUUID();
+  const testUserId = randomUUID();
+  const unrelatedJobId = randomUUID();
   try {
     const [scope] = await sql<{ userId: string; workflowVersionId: string }[]>`
       SELECT
-        (SELECT id FROM users ORDER BY created_at LIMIT 1) AS "userId",
+        ${testUserId}::uuid AS "userId",
         cw.workflow_version_id AS "workflowVersionId"
       FROM capability_workflows cw
       WHERE cw.capability_code = 'text-to-image' AND cw.active = true
@@ -103,6 +105,12 @@ async function main() {
     if (!scope?.userId || !scope.workflowVersionId) {
       throw new Error('模拟 Worker 集成测试需要已完成迁移和种子初始化');
     }
+    const { hashPassword } = await import('../utils/identity/password');
+    await sql`
+      INSERT INTO users (id, username, password_hash, real_name)
+      VALUES (${testUserId}, ${`worker_it_${testMarker.replaceAll('-', '')}`},
+        ${await hashPassword(randomUUID())}, 'Worker 临时验收用户')
+    `;
     await sql`
       INSERT INTO projects (id, code, name, owner_id)
       VALUES (
@@ -149,10 +157,24 @@ async function main() {
     if (!job) throw new Error('无法创建模拟 Worker 集成任务');
     jobId = job.id;
     await sql`
+      INSERT INTO jobs (id, project_id, app_key, name, parameters, created_by, status,
+        workflow_version_id, workspace_instance_id, design_conversation_id)
+      SELECT ${unrelatedJobId}, project_id, app_key, 'Worker 隔离哨兵', parameters, created_by, 'queued',
+        workflow_version_id, workspace_instance_id, design_conversation_id
+      FROM jobs WHERE id = ${jobId}
+    `;
+    await sql`
+      INSERT INTO job_executions (job_id, provider, workflow_version_id, status,
+        lease_owner, lease_expires_at, created_at)
+      VALUES (${unrelatedJobId}, 'comfyui', ${scope.workflowVersionId}, 'pending',
+        ${workerId}, now() + interval '10 minutes', now() - interval '1 day')
+    `;
+    await sql`
       INSERT INTO job_executions (
-        job_id, provider, workflow_version_id, status
+        job_id, provider, workflow_version_id, status, lease_owner, lease_expires_at
       ) VALUES (
-        ${jobId}, 'comfyui', ${scope.workflowVersionId}, 'pending'
+        ${jobId}, 'comfyui', ${scope.workflowVersionId}, 'pending',
+        ${workerId}, now() + interval '10 minutes'
       )
     `;
 
@@ -160,12 +182,25 @@ async function main() {
       apiUrl: process.env.COMFYUI_API_URL,
       timeoutMs: 2000,
     });
-    const worker = new ComfyUiWorker({ client, instanceId: workerId });
+    const worker = new ComfyUiWorker({
+      client,
+      instanceId: workerId,
+      jobIds: [jobId],
+    });
+    if (
+      await new ComfyUiWorker({
+        client,
+        instanceId: workerId,
+        jobIds: [],
+      }).runOnce()
+    )
+      throw new Error('空任务范围不能领取任何任务');
     const runPhase = async (label: string) => {
       for (let attempt = 0; attempt < 10; attempt += 1) {
         await sql`
           UPDATE job_executions
-          SET next_poll_at = now(), lease_expires_at = now()
+          SET next_poll_at = now(), lease_owner = ${workerId},
+              lease_expires_at = now() + interval '10 minutes'
           WHERE job_id = ${jobId}
         `;
         if (await worker.runOnce()) return;
@@ -179,6 +214,11 @@ async function main() {
     await runPhase('Worker 未领取模拟任务');
     await runPhase('Worker 未执行排队轮询');
     await runPhase('Worker 未执行完成轮询');
+    const [unrelated] = await sql<{ status: string }[]>`
+      SELECT status FROM job_executions WHERE job_id = ${unrelatedJobId}
+    `;
+    if (unrelated?.status !== 'pending')
+      throw new Error('模拟 Worker 领取了范围外任务');
 
     const [result] = await sql<
       {
@@ -249,23 +289,28 @@ async function main() {
       'ComfyUI Worker 端到端验收通过：提交、轮询、MinIO 与结果暂存。',
     );
   } finally {
-    if (objectKey) await deleteObject(objectKey).catch(() => undefined);
-    if (jobId) {
-      await sql`DELETE FROM audit_events WHERE target_id = ${jobId}`;
-      await sql`DELETE FROM jobs WHERE id = ${jobId}`;
-    }
-    if (assetId) await sql`DELETE FROM assets WHERE id = ${assetId}`;
-    await sql`
+    try {
+      if (objectKey) await deleteObject(objectKey).catch(() => undefined);
+      await sql`DELETE FROM jobs WHERE id = ${unrelatedJobId}`;
+      if (jobId) {
+        await sql`DELETE FROM audit_events WHERE target_id = ${jobId}`;
+        await sql`DELETE FROM jobs WHERE id = ${jobId}`;
+      }
+      if (assetId) await sql`DELETE FROM assets WHERE id = ${assetId}`;
+      await sql`
       DELETE FROM workflow_workspace_instances
       WHERE id = ${workspaceInstanceId}
     `;
-    await sql`DELETE FROM generated_asset_name_counters WHERE context_id IN (${workspaceInstanceId}, ${designConversationId})`;
-    await sql`DELETE FROM worker_heartbeats WHERE instance_id = ${workerId}`;
-    await sql`DELETE FROM projects WHERE id = ${projectId}`;
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
-    await closeDatabase();
+      await sql`DELETE FROM generated_asset_name_counters WHERE context_id IN (${workspaceInstanceId}, ${designConversationId})`;
+      await sql`DELETE FROM worker_heartbeats WHERE instance_id = ${workerId}`;
+      await sql`DELETE FROM projects WHERE id = ${projectId}`;
+      await sql`DELETE FROM users WHERE id = ${testUserId}`;
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+      await closeDatabase();
+    }
   }
 }
 

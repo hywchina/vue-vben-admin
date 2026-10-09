@@ -1,9 +1,9 @@
-import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import {
   createAiToolkitClient,
   getLoraExecution,
 } from '~/utils/domain/capabilities/lora/access';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -15,7 +15,7 @@ const querySchema = z.object({
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const jobId = getRouterParam(event, 'id');
+  const jobId = getUuidParam(event);
   if (!jobId) throw new ApiError(400, 'JOB_ID_REQUIRED', '缺少任务编号');
   const execution = await getLoraExecution(jobId);
   await requireProjectAccess(identity, execution.projectId);

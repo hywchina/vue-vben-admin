@@ -1,12 +1,12 @@
-import { getRouterParam } from 'h3';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity } from '~/utils/identity';
 import { ApiError, apiHandler } from '~/utils/response';
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
-  const transferId = getRouterParam(event, 'id');
+  const transferId = getUuidParam(event);
   if (!transferId) {
     throw new ApiError(400, 'WORKFLOW_TRANSFER_ID_REQUIRED', '缺少流转编号');
   }

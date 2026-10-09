@@ -445,16 +445,6 @@ onBeforeUnmount(() => {
           </span>
         </button>
       </nav>
-
-      <footer class="home-data-note">
-        <IconifyIcon :icon="platformSemanticIcons.security" />
-        <span>以上数据按当前账号权限实时汇总</span>
-        <i></i>
-        <span v-if="dashboard?.currentProject">
-          当前项目：{{ dashboard.currentProject.name }}
-        </span>
-        <span v-else>尚未选择项目</span>
-      </footer>
     </div>
 
     <Modal
@@ -854,28 +844,6 @@ onBeforeUnmount(() => {
   height: 50px;
   overflow: hidden;
   border-radius: 10px;
-}
-
-.home-data-note {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  align-items: center;
-  justify-content: flex-end;
-  min-height: 30px;
-  padding: 0 4px;
-  font-size: var(--rail-font-caption);
-  color: var(--rail-theme-secondary, #7d8790);
-}
-
-.home-data-note > svg {
-  color: #33835e;
-}
-
-.home-data-note > i {
-  width: 1px;
-  height: 12px;
-  background: var(--rail-theme-surface, #ced4d9);
 }
 
 .home-project-form,

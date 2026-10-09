@@ -1,6 +1,7 @@
-import { getRouterParam } from 'h3';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
+import { requireAssetContentAccess } from '~/utils/domain/assets/content-access';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -9,7 +10,7 @@ import { createPreviewUrl } from '~/utils/storage';
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:asset:read');
-  const assetId = getRouterParam(event, 'id');
+  const assetId = getUuidParam(event);
   if (!assetId) throw new ApiError(400, 'ASSET_ID_REQUIRED', '缺少资产编号');
 
   const sql = useDatabase();
@@ -40,6 +41,7 @@ export default apiHandler(async (event) => {
 
   if (!asset) throw new ApiError(404, 'ASSET_NOT_FOUND', '资产不存在');
   await requireProjectAccess(identity, asset.projectId);
+  await requireAssetContentAccess(assetId, identity.id);
   if (asset.status !== 'available') {
     throw new ApiError(409, 'ASSET_NOT_READY', '资产尚未完成上传');
   }

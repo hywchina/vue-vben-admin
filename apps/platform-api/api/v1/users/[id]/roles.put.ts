@@ -1,7 +1,7 @@
-import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { ApiError, apiHandler } from '~/utils/response';
 import { PLATFORM_ROLE_CODES } from '~/utils/roles';
@@ -15,7 +15,7 @@ const schema = z.object({
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:role:write');
-  const userId = getRouterParam(event, 'id');
+  const userId = getUuidParam(event);
   if (!userId) throw new ApiError(400, 'USER_ID_REQUIRED', '缺少用户编号');
   if (userId === identity.id) {
     throw new ApiError(

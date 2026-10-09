@@ -153,13 +153,17 @@ function wait(milliseconds: number) {
 export class ComfyUiWorker {
   readonly #client: ComfyUiClient | null;
   readonly #instanceId: string;
+  readonly #jobIds: readonly string[] | undefined;
 
   constructor(options?: {
     client?: ComfyUiClient | null;
     instanceId?: string;
+    /** Restrict this worker to explicit jobs (used by isolated acceptance runs). */
+    jobIds?: readonly string[];
   }) {
     const config = getConfig();
     this.#instanceId = options?.instanceId ?? `comfyui-${randomUUID()}`;
+    this.#jobIds = options?.jobIds ? [...options.jobIds] : undefined;
     this.#client =
       options?.client ??
       (config.comfyuiApiUrl
@@ -296,6 +300,7 @@ export class ComfyUiWorker {
           'pending', 'submitting', 'queued', 'running', 'finalizing', 'cancel_requested'
         )
           AND next_poll_at <= now()
+          AND (${this.#jobIds === undefined} OR job_id = ANY(${this.#jobIds ?? []}::uuid[]))
           AND (
             lease_expires_at IS NULL
             OR lease_expires_at < now()

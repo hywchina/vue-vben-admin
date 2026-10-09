@@ -338,6 +338,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
   async function uploadAsset(input: {
     derivedFromAssetId?: string;
     description?: string;
+    designConversationId?: string;
     file: File;
     folderId?: string;
     generationCategory?: AssetGenerationCategory;
@@ -349,6 +350,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     const asset = await uploadAssetApi({
       description: input.description ?? '',
       derivedFromAssetId: input.derivedFromAssetId,
+      designConversationId: input.designConversationId,
       file: input.file,
       folderId: input.folderId,
       generationCategory: input.generationCategory,

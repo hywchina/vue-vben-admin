@@ -21,6 +21,7 @@ interface ProjectRow {
   id: string;
   isPinned: boolean;
   jobCount: number;
+  memberIdentities: Array<{ name: string; publicId: string }>;
   memberPreviews: Array<{
     avatarMimeType: null | string;
     avatarObjectKey: null | string;
@@ -62,6 +63,14 @@ export default apiHandler(async (event) => {
       count(DISTINCT job.id) FILTER (
         WHERE job.status IN ('queued', 'running', 'cancelling')
       )::integer AS "activeJobCount",
+      COALESCE((
+        SELECT jsonb_agg(jsonb_build_object(
+          'name', u.real_name, 'publicId', u.public_id
+        ) ORDER BY u.public_id)
+        FROM project_members member_filter
+        JOIN users u ON u.id = member_filter.user_id
+        WHERE member_filter.project_id = p.id
+      ), '[]'::jsonb) AS "memberIdentities",
       COALESCE((
         SELECT jsonb_agg(to_jsonb(member_preview))
         FROM (

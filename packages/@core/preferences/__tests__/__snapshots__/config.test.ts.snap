@@ -36,7 +36,7 @@ exports[`defaultPreferences immutability test > should not modify the config obj
     "zIndex": 200,
   },
   "breadcrumb": {
-    "enable": false,
+    "enable": true,
     "hideOnlyOne": false,
     "showHome": false,
     "showIcon": true,
@@ -57,14 +57,14 @@ exports[`defaultPreferences immutability test > should not modify the config obj
     "height": 32,
   },
   "header": {
-    "enable": false,
+    "enable": true,
     "height": 50,
     "hidden": false,
     "menuAlign": "start",
     "mode": "fixed",
   },
   "logo": {
-    "enable": false,
+    "enable": true,
     "fit": "contain",
     "logoMode": "icon",
     "showText": true,
@@ -76,7 +76,7 @@ exports[`defaultPreferences immutability test > should not modify the config obj
     "styleType": "rounded",
   },
   "shortcutKeys": {
-    "enable": false,
+    "enable": true,
     "globalEscape": false,
     "globalLockScreen": true,
     "globalLogout": true,
@@ -90,7 +90,7 @@ exports[`defaultPreferences immutability test > should not modify the config obj
     "collapsedButton": true,
     "collapsedShowTitle": false,
     "draggable": true,
-    "enable": false,
+    "enable": true,
     "expandOnHover": true,
     "extraCollapse": false,
     "extraCollapsedWidth": 60,
@@ -101,7 +101,7 @@ exports[`defaultPreferences immutability test > should not modify the config obj
   },
   "tabbar": {
     "draggable": true,
-    "enable": false,
+    "enable": true,
     "height": 38,
     "keepAlive": true,
     "maxCount": 0,
@@ -129,7 +129,7 @@ exports[`defaultPreferences immutability test > should not modify the config obj
     "semiDarkSidebarSub": false,
   },
   "transition": {
-    "enable": false,
+    "enable": true,
     "loading": true,
     "name": "fade-slide",
     "progress": true,

@@ -769,8 +769,9 @@ async function renderPptx(input: RenderReportInput) {
       const showBody = Boolean(body);
       if (images.length > 0) {
         const singleImageWithBody = images.length === 1 && showBody;
-        const top = singleImageWithBody ? 1.72 : showBody ? 3.02 : 1.62;
+        let top = showBody ? 3.02 : 1.62;
         if (singleImageWithBody) {
+          top = 1.72;
           addNumberedPoints(slide, body, {
             h: 4.8,
             maximumPoints: 4,
@@ -789,17 +790,14 @@ async function renderPptx(input: RenderReportInput) {
         images.forEach((image, imageIndex) => {
           const asset = input.assets.get(image.assetId);
           if (!asset) throw new Error(`报告图片资产不存在：${image.assetId}`);
-          const boxWidth = singleImageWithBody
-            ? 6.55
-            : images.length === 1
-              ? 9.8
-              : 5.6;
-          const boxX = singleImageWithBody
-            ? 0.72
-            : images.length === 1
-              ? 1.76
-              : 0.72 + imageIndex * 6.05;
-          const boxHeight = singleImageWithBody ? 4.72 : showBody ? 3.22 : 4.65;
+          let boxWidth = images.length === 1 ? 9.8 : 5.6;
+          let boxX = images.length === 1 ? 1.76 : 0.72 + imageIndex * 6.05;
+          let boxHeight = showBody ? 3.22 : 4.65;
+          if (singleImageWithBody) {
+            boxWidth = 6.55;
+            boxX = 0.72;
+            boxHeight = 4.72;
+          }
           const dimensions = containedImageSize(asset.bytes, 1200, 800);
           const ratio = dimensions.width / dimensions.height;
           let width = boxWidth;

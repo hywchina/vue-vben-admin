@@ -1,8 +1,9 @@
-import { getRouterParam } from 'h3';
 import { z } from 'zod';
 import { getAssetView } from '~/utils/asset-repository';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { requireAssetContentAccess } from '~/utils/domain/assets/content-access';
+import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -13,7 +14,7 @@ const schema = z.object({ name: z.string().trim().min(1).max(200) });
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:asset:write');
-  const assetId = getRouterParam(event, 'id');
+  const assetId = getUuidParam(event);
   if (!assetId) throw new ApiError(400, 'ASSET_ID_REQUIRED', '缺少资产编号');
   const { name } = await parseBody(event, schema);
   const sql = useDatabase();
@@ -24,6 +25,7 @@ export default apiHandler(async (event) => {
   `;
   if (!asset) throw new ApiError(404, 'ASSET_NOT_FOUND', '资产不存在');
   await requireProjectAccess(identity, asset.projectId, 'write');
+  await requireAssetContentAccess(assetId, identity.id);
 
   if (asset.name !== name) {
     await sql`
