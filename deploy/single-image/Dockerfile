@@ -13,7 +13,9 @@ RUN --mount=type=cache,id=rail-pnpm,target=/pnpm/store \
 # The browser always calls the same origin; deployment URLs are runtime configuration.
 ENV VITE_GLOB_API_URL=/api/v1 VITE_BASE=/ VITE_PWA=false VITE_ARCHIVER=false
 RUN pnpm build:rail
-RUN pnpm --filter @rail/platform-api --prod deploy --legacy /runtime
+RUN --mount=type=cache,id=rail-pnpm,target=/pnpm/store \
+    pnpm --filter @rail/platform-api --store-dir=/pnpm/store \
+      --config.inject-workspace-packages=true --prod deploy /runtime
 
 FROM ${NODE_IMAGE} AS runtime
 RUN apt-get update \

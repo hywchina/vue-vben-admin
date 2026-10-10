@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>平台五层逻辑架构与实际技术对应</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: white;
+        color: #202020;
+        font-family:
+          Noto Sans CJK SC,
+          Microsoft YaHei,
+          sans-serif;
+      }
+      svg {
+        display: block;
+      }
+      .frame {
+        max-width: 1040px;
+        margin: auto;
+      }
+      .diagram-container {
+        overflow-x: auto;
+      }
+      svg {
+        min-width: 960px;
+      }
+      h1 {
+        font-family: 'Noto Serif CJK SC', serif;
+        font-size: 24px;
+        font-weight: 500;
+        margin: 24px 40px;
+      }
+      @media print {
+        h1 {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame">
+      <h1>平台五层逻辑架构与实际技术对应</h1>
+      <div class="diagram-container">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 960 864"
+          width="960"
+          height="864"
+          role="img"
+          aria-labelledby="figure-22-title figure-22-desc"
+          font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif"
+        >
+          <title id="figure-22-title">平台五层逻辑架构与实际技术对应</title>
+          <desc id="figure-22-desc">
+            用户层、应用层、软件支撑层、数据层与基础层按职责展开；明确实际软件栈和拟建研究能力，不代表每层为独立部署服务。
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#505050" />
+            </marker>
+            <marker
+              id="arrow-accent"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#202020" />
+            </marker>
+            <marker
+              id="arrow-link"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#505050" />
+            </marker>
+          </defs>
+          <rect width="960" height="864" fill="white" />
+          <path d="M40 808 H920" stroke="#b8b8b8" stroke-width="1" />
+          <path
+            d="M 552 152 L 552 184"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 552 296 L 552 328"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 552 440 L 552 472"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 552 584 L 552 616"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <rect
+            x="40"
+            y="40"
+            width="144"
+            height="112"
+            rx="0"
+            fill="#eeeeee"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="112"
+            y="104"
+            font-size="22"
+            font-weight="500"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            用户层
+          </text>
+          <rect
+            x="184"
+            y="40"
+            width="736"
+            height="112"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="552"
+            y="80"
+            font-size="22"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            设计使用 · 项目协作 · 平台管理 · 专业确认
+          </text>
+          <text
+            x="552"
+            y="120"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            用户职责按现有权限边界配置，结果由专业人员复核
+          </text>
+          <rect
+            x="40"
+            y="184"
+            width="144"
+            height="112"
+            rx="0"
+            fill="#eeeeee"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="112"
+            y="248"
+            font-size="22"
+            font-weight="500"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            应用层
+          </text>
+          <rect
+            x="184"
+            y="184"
+            width="736"
+            height="112"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="552"
+            y="224"
+            font-size="22"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            设计生成 · 资产中心 · 设计工作台 · 训练 / 报告
+          </text>
+          <text
+            x="552"
+            y="264"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            Vue 3 · TypeScript · Vite · Ant Design Vue / Vben
+          </text>
+          <rect
+            x="40"
+            y="328"
+            width="144"
+            height="112"
+            rx="0"
+            fill="#eeeeee"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="112"
+            y="392"
+            font-size="22"
+            font-weight="500"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            软件支撑层
+          </text>
+          <rect
+            x="184"
+            y="328"
+            width="736"
+            height="112"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="552"
+            y="368"
+            font-size="22"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            身份与范围 · 会话 / 任务 · 能力适配 · 失败恢复
+          </text>
+          <text
+            x="552"
+            y="408"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            Node.js · Nitro / H3 · 独立执行进程 · ComfyUI
+          </text>
+          <rect
+            x="40"
+            y="472"
+            width="144"
+            height="112"
+            rx="0"
+            fill="#eeeeee"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="112"
+            y="536"
+            font-size="22"
+            font-weight="500"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            数据层
+          </text>
+          <rect
+            x="184"
+            y="472"
+            width="736"
+            height="112"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="552"
+            y="512"
+            font-size="22"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            业务关系 · 输入 / 结果 · 来源追溯 · 个人附件
+          </text>
+          <text
+            x="552"
+            y="552"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            PostgreSQL · MinIO（S3 兼容私有文件）
+          </text>
+          <rect
+            x="40"
+            y="616"
+            width="144"
+            height="112"
+            rx="0"
+            fill="#eeeeee"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="112"
+            y="680"
+            font-size="22"
+            font-weight="500"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            基础层
+          </text>
+          <rect
+            x="184"
+            y="616"
+            width="736"
+            height="112"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="552"
+            y="656"
+            font-size="22"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            业务与模型运行环境 · 网络访问 · 持久化与备份
+          </text>
+          <text
+            x="552"
+            y="696"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            容器部署 · 业务服务与模型服务分离 · GPU 执行环境
+          </text>
+          <text
+            x="40"
+            y="784"
+            font-size="20"
+            font-weight="400"
+            text-anchor="start"
+            fill="#202020"
+          >
+            拟建扩展：候选分割确认 · 模块知识 · 工程规则 · 既有产品平台对接
+          </text>
+          <text
+            x="40"
+            y="840"
+            font-size="20"
+            font-weight="400"
+            text-anchor="start"
+            fill="#202020"
+          >
+            箭头表示业务依赖；个人图文助手独立，不触发 ComfyUI 设计任务。
+          </text>
+        </svg>
+      </div>
+    </main>
+  </body>
+</html>

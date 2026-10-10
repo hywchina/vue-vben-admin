@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ControlNet空间条件控制的原理示意</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: white;
+        color: #202020;
+        font-family:
+          Noto Sans CJK SC,
+          Microsoft YaHei,
+          sans-serif;
+      }
+      svg {
+        display: block;
+      }
+      .frame {
+        max-width: 1040px;
+        margin: auto;
+      }
+      .diagram-container {
+        overflow-x: auto;
+      }
+      svg {
+        min-width: 960px;
+      }
+      h1 {
+        font-family: 'Noto Serif CJK SC', serif;
+        font-size: 24px;
+        font-weight: 500;
+        margin: 24px 40px;
+      }
+      @media print {
+        h1 {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame">
+      <h1>ControlNet空间条件控制的原理示意</h1>
+      <div class="diagram-container">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 960 560"
+          width="960"
+          height="560"
+          role="img"
+          aria-labelledby="figure-18-title figure-18-desc"
+          font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif"
+        >
+          <title id="figure-18-title">ControlNet空间条件控制的原理示意</title>
+          <desc id="figure-18-desc">
+            空间条件经可训练控制分支与零初始化连接注入预训练扩散骨干；文字提供语义条件，本图为研究方法示意。
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#505050" />
+            </marker>
+            <marker
+              id="arrow-accent"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#202020" />
+            </marker>
+            <marker
+              id="arrow-link"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#505050" />
+            </marker>
+          </defs>
+          <rect width="960" height="560" fill="white" />
+          <path d="M40 504 H920" stroke="#b8b8b8" stroke-width="1" />
+          <path
+            d="M 264 116 L 352 116"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 576 116 L 664 116"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 792 160 L 792.0 236.0 Q 792 244 784.0 244.0 L 472.0 244.0 Q 464 244 464.0 252.0 L 464 336"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 264 384 L 352 384"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 576 384 L 664 384"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <rect
+            x="40"
+            y="72"
+            width="224"
+            height="88"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="152.0"
+            y="108"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            边缘 / 深度等
+          </text>
+          <text
+            x="152.0"
+            y="144"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            空间条件
+          </text>
+          <rect
+            x="352"
+            y="72"
+            width="224"
+            height="88"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="464.0"
+            y="124"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            可训练控制分支
+          </text>
+          <rect
+            x="664"
+            y="72"
+            width="256"
+            height="88"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="792.0"
+            y="108"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            零初始化连接
+          </text>
+          <text
+            x="792.0"
+            y="144"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            训练中学习条件注入
+          </text>
+          <rect
+            x="40"
+            y="336"
+            width="224"
+            height="96"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="152.0"
+            y="392"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            文字语义条件
+          </text>
+          <rect
+            x="352"
+            y="336"
+            width="224"
+            height="96"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="464.0"
+            y="376"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            预训练扩散骨干
+          </text>
+          <text
+            x="464.0"
+            y="412"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            结合条件迭代去噪
+          </text>
+          <rect
+            x="664"
+            y="336"
+            width="256"
+            height="96"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="792.0"
+            y="392"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            结构引导输出
+          </text>
+          <text
+            x="40"
+            y="536"
+            font-size="20"
+            font-weight="400"
+            text-anchor="start"
+            fill="#202020"
+          >
+            本项目作为候选比较路线；现有条件编辑采用 FLUX.2 工作流。
+          </text>
+        </svg>
+      </div>
+    </main>
+  </body>
+</html>

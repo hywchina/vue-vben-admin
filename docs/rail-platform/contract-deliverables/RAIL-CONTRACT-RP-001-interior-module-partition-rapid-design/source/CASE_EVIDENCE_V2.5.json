@@ -1,0 +1,227 @@
+{
+  "same_input_and_brush_data": true,
+  "input_figure": "assets/v2-5/case/input.png",
+  "input_sha256": "b1ada3725919cff09322af05e09d063f6c788760c2e96ab43a69a2c1469ce6cb",
+  "input_pixel_preserved": true,
+  "cases": [
+    {
+      "source": "/home/huyanwei/projects/rail-system/code/ComfyUI/output/Flux2-Klein_00196_.png",
+      "source_sha256": "d1a2e84aad1dce011e593dd1b12efad37d69230e380ca699d026795b13f600a8",
+      "figure": "assets/v2-5/case/result-196.png",
+      "figure_sha256": "e345e29fbad1697f8de74a4ca0b008d9321fcb9d63aedb9320ee0bcc7f1b160a",
+      "pixels_unchanged": true,
+      "size": [2544, 816],
+      "instruction": "1号区域替换成黄色布料材质，2号 区域替换为绿色皮革材质",
+      "graph": {
+        "277": {
+          "_meta": {
+            "title": "sum_高级加载"
+          },
+          "class_type": "sum_load_adv",
+          "inputs": {
+            "cfg": 1.0,
+            "neg": "worst quality, low quality",
+            "pos": "beautiful detailed glow,a girl",
+            "vae": "flux2-vae.safetensors",
+            "lora": "None",
+            "clip1": "qwen_3_8b_fp8mixed.safetensors",
+            "clip2": "None",
+            "clip3": "None",
+            "clip4": "None",
+            "steps": 4,
+            "width": 1024,
+            "height": 1024,
+            "preset": "clip2-flux/clip2-flux2-klein.toml",
+            "sampler": "euler",
+            "guidance": 3.5,
+            "ckpt_name": "None",
+            "clip_type": "flux2",
+            "scheduler": "normal",
+            "unet_name": "flux-2-klein-9b-fp8.safetensors",
+            "lora_strength": 1.0,
+            "unet_Weight_Dtype": "default"
+          }
+        },
+        "359": {
+          "_meta": {
+            "title": "sum_采样器"
+          },
+          "class_type": "sum_Ksampler",
+          "inputs": {
+            "seed": 396,
+            "context": ["363", 0],
+            "denoise": 1.0,
+            "image_output": "Preview"
+          }
+        },
+        "360": {
+          "_meta": {
+            "title": "Image_调整尺寸_总"
+          },
+          "class_type": "Image_Resize_sum",
+          "inputs": {
+            "image": ["362", 1],
+            "width": 512,
+            "height": 512,
+            "pad_color": "black",
+            "divisible_by": 16,
+            "crop_position": "center",
+            "get_image_size": ["362", 1],
+            "upscale_method": "bilinear",
+            "keep_proportion": "resize",
+            "pad_mask_remove": true
+          }
+        },
+        "362": {
+          "_meta": {
+            "title": "IO_简易打标记"
+          },
+          "class_type": "IO_EasyMark",
+          "inputs": {
+            "brush_data": "brush:square:24:1:255,0,0:1:964.11,136.07;1076.48,243.94|brush:square:24:1:255,0,0:2:1454.04,129.33;1539.43,243.94",
+            "brush_size": 4,
+            "image_base64": "case/input.png"
+          }
+        },
+        "363": {
+          "_meta": {
+            "title": "sum_Flux2Klein堆"
+          },
+          "class_type": "sum_stack_flux2_Klein",
+          "inputs": {
+            "prompt": "1号区域替换成黄色布料材质，2号 区域替换为绿色皮革材质",
+            "context": ["277", 0],
+            "latent_image": ["360", 0],
+            "img1_strength": 1.0,
+            "img2_strength": 1.0,
+            "img3_strength": 1.0,
+            "img4_strength": 1.0,
+            "img5_strength": 1.0,
+            "ref_latent_img1": ["360", 0],
+            "main_prompt_ratio": 0.5
+          }
+        },
+        "366": {
+          "_meta": {
+            "title": "保存图像"
+          },
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": ["359", 1],
+            "filename_prefix": "Flux2-Klein"
+          }
+        }
+      }
+    },
+    {
+      "source": "/home/huyanwei/projects/rail-system/code/ComfyUI/output/Flux2-Klein_00198_.png",
+      "source_sha256": "223704bbc03e791f059281c911459297e4ff1bb6c3858c7dfbef77bcc053f62d",
+      "figure": "assets/v2-5/case/result-198.png",
+      "figure_sha256": "abf5680234ef0fdc66bb6cfc4d0489b21f17938d4ab39bcab75ea9c1cbcf34a1",
+      "pixels_unchanged": true,
+      "size": [2544, 816],
+      "instruction": "1号区域头枕巾，替换成黄色布料材质，2号 区域头枕巾，替换为绿色皮革材质；注意仅仅替换布料区域，座椅的相关区域不要修改",
+      "graph": {
+        "277": {
+          "_meta": {
+            "title": "sum_高级加载"
+          },
+          "class_type": "sum_load_adv",
+          "inputs": {
+            "cfg": 1.0,
+            "neg": "worst quality, low quality",
+            "pos": "beautiful detailed glow,a girl",
+            "vae": "flux2-vae.safetensors",
+            "lora": "None",
+            "clip1": "qwen_3_8b_fp8mixed.safetensors",
+            "clip2": "None",
+            "clip3": "None",
+            "clip4": "None",
+            "steps": 4,
+            "width": 1024,
+            "height": 1024,
+            "preset": "clip2-flux/clip2-flux2-klein.toml",
+            "sampler": "euler",
+            "guidance": 3.5,
+            "ckpt_name": "None",
+            "clip_type": "flux2",
+            "scheduler": "normal",
+            "unet_name": "flux-2-klein-9b-fp8.safetensors",
+            "lora_strength": 1.0,
+            "unet_Weight_Dtype": "default"
+          }
+        },
+        "359": {
+          "_meta": {
+            "title": "sum_采样器"
+          },
+          "class_type": "sum_Ksampler",
+          "inputs": {
+            "seed": 396,
+            "context": ["363", 0],
+            "denoise": 1.0,
+            "image_output": "Preview"
+          }
+        },
+        "360": {
+          "_meta": {
+            "title": "Image_调整尺寸_总"
+          },
+          "class_type": "Image_Resize_sum",
+          "inputs": {
+            "image": ["362", 1],
+            "width": 512,
+            "height": 512,
+            "pad_color": "black",
+            "divisible_by": 16,
+            "crop_position": "center",
+            "get_image_size": ["362", 1],
+            "upscale_method": "bilinear",
+            "keep_proportion": "resize",
+            "pad_mask_remove": true
+          }
+        },
+        "362": {
+          "_meta": {
+            "title": "IO_简易打标记"
+          },
+          "class_type": "IO_EasyMark",
+          "inputs": {
+            "brush_data": "brush:square:24:1:255,0,0:1:964.11,136.07;1076.48,243.94|brush:square:24:1:255,0,0:2:1454.04,129.33;1539.43,243.94",
+            "brush_size": 4,
+            "image_base64": "case/input.png"
+          }
+        },
+        "363": {
+          "_meta": {
+            "title": "sum_Flux2Klein堆"
+          },
+          "class_type": "sum_stack_flux2_Klein",
+          "inputs": {
+            "prompt": "1号区域头枕巾，替换成黄色布料材质，2号 区域头枕巾，替换为绿色皮革材质；注意仅仅替换布料区域，座椅的相关区域不要修改",
+            "context": ["277", 0],
+            "latent_image": ["360", 0],
+            "img1_strength": 1.0,
+            "img2_strength": 1.0,
+            "img3_strength": 1.0,
+            "img4_strength": 1.0,
+            "img5_strength": 1.0,
+            "ref_latent_img1": ["360", 0],
+            "main_prompt_ratio": 0.5
+          }
+        },
+        "366": {
+          "_meta": {
+            "title": "保存图像"
+          },
+          "class_type": "SaveImage",
+          "inputs": {
+            "images": ["359", 1],
+            "filename_prefix": "Flux2-Klein"
+          }
+        }
+      }
+    }
+  ],
+  "limits": "Existing archived outputs; no timing, reviewer rating or automatic recognition measurement."
+}

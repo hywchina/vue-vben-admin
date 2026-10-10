@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>参考图像与文字指令的条件编辑过程</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: white;
+        color: #202020;
+        font-family:
+          Noto Sans CJK SC,
+          Microsoft YaHei,
+          sans-serif;
+      }
+      svg {
+        display: block;
+      }
+      .frame {
+        max-width: 1040px;
+        margin: auto;
+      }
+      .diagram-container {
+        overflow-x: auto;
+      }
+      svg {
+        min-width: 960px;
+      }
+      h1 {
+        font-family: 'Noto Serif CJK SC', serif;
+        font-size: 24px;
+        font-weight: 500;
+        margin: 24px 40px;
+      }
+      @media print {
+        h1 {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame">
+      <h1>参考图像与文字指令的条件编辑过程</h1>
+      <div class="diagram-container">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 960 528"
+          width="960"
+          height="528"
+          role="img"
+          aria-labelledby="figure-19-title figure-19-desc"
+          font-family="Noto Sans CJK SC, Microsoft YaHei, sans-serif"
+        >
+          <title id="figure-19-title">参考图像与文字指令的条件编辑过程</title>
+          <desc id="figure-19-desc">
+            原图及标记参考图与文字指令组织为编辑条件，经采样解码获得输出；结果需人工检查局部范围和非目标保持。
+          </desc>
+          <defs>
+            <marker
+              id="arrow"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#505050" />
+            </marker>
+            <marker
+              id="arrow-accent"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#202020" />
+            </marker>
+            <marker
+              id="arrow-link"
+              markerWidth="8"
+              markerHeight="6"
+              refX="7"
+              refY="3"
+              orient="auto"
+            >
+              <polygon points="0 0, 8 3, 0 6" fill="#505050" />
+            </marker>
+          </defs>
+          <rect width="960" height="528" fill="white" />
+          <path d="M40 472 H920" stroke="#b8b8b8" stroke-width="1" />
+          <path
+            d="M 256 100 L 296.0 100.0 Q 304 100 304.0 108.0 L 304.0 168.0 Q 304 176 312.0 176.0 L 352 176"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 256 292 L 296.0 292.0 Q 304 292 304.0 284.0 L 304.0 224.0 Q 304 216 312.0 216.0 L 352 216"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 568 196 L 688 196"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 804 240 L 804.0 284.0 Q 804 292 796.0 292.0 L 468.0 292.0 Q 460 292 460.0 300.0 L 460 344"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <path
+            d="M 568 384 L 688 384"
+            fill="none"
+            stroke="#505050"
+            stroke-width="1.6"
+            marker-end="url(#arrow)"
+          />
+          <rect
+            x="40"
+            y="56"
+            width="216"
+            height="88"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="148.0"
+            y="92"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            参考图像
+          </text>
+          <text
+            x="148.0"
+            y="128"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            原图 / 标记参考图
+          </text>
+          <rect
+            x="40"
+            y="248"
+            width="216"
+            height="88"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="148.0"
+            y="284"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            文字指令
+          </text>
+          <text
+            x="148.0"
+            y="320"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            对象 · 修改 · 保持
+          </text>
+          <rect
+            x="352"
+            y="152"
+            width="216"
+            height="88"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="460.0"
+            y="188"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            条件组织
+          </text>
+          <text
+            x="460.0"
+            y="224"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            图像与语义共同输入
+          </text>
+          <rect
+            x="688"
+            y="152"
+            width="232"
+            height="88"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="804.0"
+            y="188"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            条件采样
+          </text>
+          <text
+            x="804.0"
+            y="224"
+            font-size="20"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            模型生成编辑结果
+          </text>
+          <rect
+            x="352"
+            y="344"
+            width="216"
+            height="80"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="460.0"
+            y="392"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            图像解码
+          </text>
+          <rect
+            x="688"
+            y="344"
+            width="232"
+            height="80"
+            rx="0"
+            fill="white"
+            stroke="#505050"
+            stroke-width="1.2"
+          />
+          <text
+            x="804.0"
+            y="392"
+            font-size="24"
+            font-weight="400"
+            text-anchor="middle"
+            fill="#202020"
+          >
+            输出与人工比较
+          </text>
+          <text
+            x="40"
+            y="504"
+            font-size="20"
+            font-weight="400"
+            text-anchor="start"
+            fill="#202020"
+          >
+            概念流程；标记属于图像条件，不等同于硬遮罩或工程几何约束。
+          </text>
+        </svg>
+      </div>
+    </main>
+  </body>
+</html>

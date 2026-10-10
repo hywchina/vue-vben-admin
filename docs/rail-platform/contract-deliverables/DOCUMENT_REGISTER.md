@@ -1,16 +1,17 @@
 # 合同交付文档登记表
 
-> 最后更新：2026-09-18登记规则：一份文档可保留多个历史版本，但仅允许一个“当前”版本。
+> 最后更新：2026-10-09。登记规则：一份文档可保留多个历史版本，但仅允许一个“当前”版本。
 
 | 文档编号 | 文档名称 | 当前版本 | 状态 | 代码基线 | 编制日期 | 目录 |
 | --- | --- | --- | --- | --- | --- | --- |
-| RAIL-CONTRACT-RP-001 | 基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告 | V2.4 | 批注修订评审稿（当前，案例待补） | `codex/client-feedback-white-shell-20260901` / `6b047f2e`（内部留存） | 2026-09-18 | [`RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/) |
+| RAIL-CONTRACT-RP-001 | 基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告 | V2.5 | 会议意见定向修订评审稿（当前，5 项图例材料待补） | `dev-1001` / `5463e2ae`（内部留存） | 2026-10-09 | [`RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/) |
 
 ## 版本登记
 
 | 文档编号 | 版本 | 状态 | 完整提交哈希 | 取证时间 | 验证摘要 | 交付件 |
 | --- | --- | --- | --- | --- | --- | --- |
-| RAIL-CONTRACT-RP-001 | V2.4 | 当前批注修订评审稿 | `6b047f2e7c29a8184a11678f3419cd5e4f193b32`（未提交部署变更另列，不进入正式正文） | 2026-09-18T14:23:13+08:00 | 9 条逐项响应、结构调整及方法/实际工作流/五层架构补充，删除原第一章和两个附录；40 页、20,730 个汉字、15 图/13 表、14 目录项/28 链接、59 书签、9 条修订说明；真实页码、逐页视觉、结构/格式/内容与无障碍检查通过。企业现状与真实客室案例等待补，不标记全部关闭；旧版与原批注保留，未执行 Git 提交/推送 | [`DOCX`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/deliverables/基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告_V2.4.docx) · [`逐条响应`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REVIEW_RESPONSE_V2.4.md) |
+| RAIL-CONTRACT-RP-001 | V2.5 | 当前会议修订评审稿 | `5463e2ae0a7555ce0def829e3029fe268f7f4e3e`，dev-1001；既有未提交变更单列 | 2026-10-09T17:43:15+08:00 | 定向响应前四章，后八章仅顺延图号；52 页、约 2.3 万汉字、23 图/13 表、14 目录项/28 链接、63 书签、9 条修订说明、5 项红色待补图例；逐页视觉、结构、目录、图形及无障碍检查通过。真实案例失败如实说明；旧版保留，未 Git 提交/推送 | [DOCX](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/deliverables/基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告_V2.5.docx) · [逐条响应](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REVIEW_RESPONSE_V2.5.md) · [待补材料](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/MISSING_MATERIALS_V2.5.md) |
+| RAIL-CONTRACT-RP-001 | V2.4 | 历史批注修订评审稿 | `6b047f2e7c29a8184a11678f3419cd5e4f193b32`（未提交部署变更另列，不进入正式正文） | 2026-09-18T14:23:13+08:00 | 9 条逐项响应、结构调整及方法/实际工作流/五层架构补充，删除原第一章和两个附录；40 页、20,730 个汉字、15 图/13 表、14 目录项/28 链接、59 书签、9 条修订说明；真实页码、逐页视觉、结构/格式/内容与无障碍检查通过。企业现状与真实客室案例等待补，不标记全部关闭；旧版与原批注保留，未执行 Git 提交/推送 | [`DOCX`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/deliverables/基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告_V2.4.docx) · [`逐条响应`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REVIEW_RESPONSE_V2.4.md) |
 | RAIL-CONTRACT-RP-001 | V2.3 | 历史建设指导评审稿 | `51c4095ec269cde31b543dd6c8886802a9a8f452`（仅内部记录，未写入正式正文） | 2026-09-08T11:41:52+08:00 | 按合同、技术响应及实际实现校准能力边界，多模态限于助手图文问答简述；重绘 14 幅论文式技术图，研究内容 19,979 个汉字，38 页、12 张表；逐页复核、图形自检、16 个目录项/32 个内部链接、61 个标题书签及真实页码核验通过，正式内容扫描、页面格式、无障碍和压缩包检查通过；材料版本差异、字体环境及未执行的运行验收见内部取证记录 | [`DOCX`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/deliverables/基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告_V2.3.docx) |
 | RAIL-CONTRACT-RP-001 | V2.2 | 历史建设指导评审稿 | `51c4095ec269cde31b543dd6c8886802a9a8f452`（仅内部记录，未写入正式正文） | 2026-09-03 | 清除技术标书内容转化、投标响应、技术响应文件、资源配置等投标语境残留，将表 1 与图 1 改为独立的建设输入—研究任务表述；正式可见文字 19,758 个非空字符，全文 XML、可见正文及最终 PDF 的直接价格词和投标语境词扫描均为零命中；40 页逐页复核，15 幅图、14 张表、66 个目录项、132 个内部链接、页面参数、图表编号、无障碍和压缩包检查通过 | [`DOCX`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/deliverables/基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告_V2.2.docx) |
 | RAIL-CONTRACT-RP-001 | V2.1 | 历史建设指导评审稿 | `51c4095ec269cde31b543dd6c8886802a9a8f452`（仅内部记录，未写入正式正文） | 2026-09-03 | 重绘全部 15 幅技术图，总体架构扩展为六个技术层面与两条横向主线，其余图改用分层、泳道、矩阵和正交流程表达并消除交叉连线；正式可见文字 19,764 个非空字符；40 页逐页复核，14 张编号表、66 个目录项、132 个内部链接、页面参数、图表编号、无障碍和压缩包检查通过 | [`DOCX`](./RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/deliverables/基于轨道交通客运装备的内装模块分区识别与快速设计系统构建研究报告_V2.1.docx) |

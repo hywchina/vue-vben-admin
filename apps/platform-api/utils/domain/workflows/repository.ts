@@ -399,7 +399,6 @@ export async function addWorkflowVersion(
       )
       SELECT
         wd.id,
-      wd.public_id AS "publicId",
         COALESCE(max(wv.version), 0)::integer + 1,
         ${sql.json(JSON.parse(JSON.stringify(parsed.apiJson)))},
         ${sql.json(JSON.parse(JSON.stringify(parsed.parameterSchema)))},

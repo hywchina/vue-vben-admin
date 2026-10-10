@@ -1,5 +1,7 @@
 # 客运装备内装模块化分区快速设计平台：开发与复现指南
 
+2026-10-10 Ubuntu 整体交付：平台仍是一个 `rail-platform:2026.10.10` 镜像、一个 Web/API/Worker 容器。新服务器使用整体根目录 [DEPLOY_UBUNTU.md](../../../../DEPLOY_UBUNTU.md) 与 `deploy.sh`，权威编排为 `code/deployment/compose.yaml`；配置和密码在交付目录之外生成，模型事先准备、不下载。完整构建与本机真实业务验收见 [2026-10-10 验收记录](../../../../DEPLOY_VALIDATION_20261010.json)。下文源码开发默认账号与独立 Compose 不能作为新部署的生产密码或状态入口。
+
 2026-10-09 系统回归：非法 UUID 资源参数统一返回 400；未入库私有生成图的内容读取、保存及版本操作按本人真实输出校验，管理员不能绕过。发布须同步 API/Web 产物，无新迁移。完整范围见 [系统测试报告](SYSTEM_TEST_REPORT_2026-10-09.md)。`pnpm test:rail:integration` 自行构建并运行独立数据库/账号、随机端口 API、CPU 报告及模拟 Worker，需要数据库创建权限和符合生产校验的 MinIO 配置，不再依赖共享 API/Worker。
 
 2026-10-09 共享焦点策略：默认请求“共享后留在平台”。浏览器支持 `CaptureController.setFocusBehavior` 时，每次共享创建新控制器，在打开选择器前设为 `no-focus-change`；不支持或配置失败时自然降级为原有共享，焦点由浏览器决定，不强制抢焦点、不重复请求授权。此能力主要针对标签页/窗口，整屏共享不保证焦点不变；摄像头行为不变。实现依据见 [浏览器 API 说明](https://developer.mozilla.org/en-US/docs/Web/API/CaptureController/setFocusBehavior)。无需 API、迁移或 Docker 配置变更，生产只更新 Web。
@@ -28,7 +30,7 @@
 
 2026-08-20 甲方前端意见的原始需求、提交映射、验证证据、已知问题和后续检查清单见 [`customer-feedback/20260820/ITERATION_HANDOFF.md`](customer-feedback/20260820/ITERATION_HANDOFF.md)。面向甲方确认的逐条需求、22 张配图说明、疑问与不合理项见 [`customer-feedback/20260820/CUSTOMER_REQUIREMENTS_ANALYSIS.md`](customer-feedback/20260820/CUSTOMER_REQUIREMENTS_ANALYSIS.md)，同目录提供已完成全页渲染检查的 PDF 版本。
 
-合同要求的研究报告、说明书及后续交付文档统一存放于 [`contract-deliverables/`](contract-deliverables/README.md)，每版在内部登记代码提交、取证时间、工作区状态和验证范围。当前研究报告为 V2.4 批注修订评审稿：先形成 9 条批注的意图、依据、修改方案及缺失材料清单，再调整正文；40 页、研究内容约 2.07 万汉字、15 图、13 表，保留可点击目录及指定版式。新增模块化与识别方法比较、实际标记编辑链路和五层架构；助手图文问答仍单独简述。企业现状及同源真实客室案例等尚待补充，未宣称所有批注关闭。旧版及原批注归档保留，正式正文不含报价或代码说明；详见文档目录内 `source/REVIEW_RESPONSE_V2.4.md` 和 `source/EVIDENCE_V2.4.md`。
+合同要求的研究报告、说明书及后续交付文档统一存放于 [`contract-deliverables/`](contract-deliverables/README.md)，每版在内部登记代码提交、取证时间、工作区状态和验证范围。当前研究报告为 V2.5 会议意见定向修订评审稿：52 页、23 图、13 表、14 个目录入口、28 个链接、63 个书签和九条修订说明，保留十二章顺序及同源既有案例；五项图例材料 M01—M05 仍待补充，不宣称全部意见关闭。旧版及原批注保留，正式正文不含报价或代码说明，原取证基线不因后续源码推送改写；详见文档目录内 `source/REVIEW_RESPONSE_V2.5.md` 和 `source/EVIDENCE_V2.5.md`。
 
 ## 1. 当前系统组成
 
@@ -291,7 +293,7 @@ pnpm build:rail
 - `S3_PUBLIC_ENDPOINT` 必须是用户浏览器能够访问的对象存储地址；`S3_ENDPOINT` 可以使用仅后端可访问的内部地址。
 - PostgreSQL 和对象存储必须分别纳入备份、恢复演练和容量监控。
 - 为 API 配置独立的高熵 `JWT_SECRET`，并通过部署系统注入所有密钥。
-- 无需配置企业 SMTP 或管理员邮箱；生产 Compose 不部署 Mailpit，旧环境邮件沙箱不被业务使用。
+- 无需配置企业 SMTP 或管理员邮箱；平台独立生产 Compose 不部署 Mailpit，整体 Ubuntu 编排为兼容保留它，但不被业务使用。
 - 配置内网 vLLM 的 `AI_ASSISTANT_API_URL`、模型名、超时和密钥；源码模式使用宿主机 `127.0.0.1:18081`，生产 Compose 网络使用服务名和容器端口，例如 `http://vllm:8000/v1/chat/completions`。
 - 生产环境建议关闭自助注册，使用管理员创建账号或接入后续企业身份源。
 
