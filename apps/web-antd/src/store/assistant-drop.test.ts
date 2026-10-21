@@ -54,7 +54,17 @@ beforeEach(() => {
   });
   api.createAiConversationApi.mockResolvedValue({ id: 'test-conversation' });
   api.uploadAiAttachmentApi.mockResolvedValue({ id: 'test-attachment' });
-  api.sendAiMessageApi.mockResolvedValue({ serviceError: null });
+  api.sendAiMessageApi.mockResolvedValue({
+    serviceError: null,
+    userMessageId: 'user-message',
+    assistantMessage: {
+      id: 'reply',
+      role: 'assistant',
+      content: '回答',
+      attachments: [],
+      status: 'completed',
+    },
+  });
   vi.stubGlobal(
     'fetch',
     vi
@@ -74,6 +84,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   dispose();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
 });
 
@@ -137,10 +148,101 @@ describe('assistant image drop interaction', () => {
       expect(api.sendAiMessageApi).toHaveBeenCalledWith('test-conversation', {
         attachmentIds: ['test-attachment'],
         content: '分析客室材质',
+        clientMessageId: expect.any(String),
       }),
     );
     expect(api.uploadAiAttachmentApi.mock.calls[0]?.[1].name).toBe('客室0.png');
     await vi.waitFor(() => expect(pendingCount()).toBe(0));
+  });
+  it('keeps waiting for a slow reply beyond ten seconds without restoring the draft', async () => {
+    await open();
+    vi.useFakeTimers();
+    api.sendAiMessageApi.mockImplementation(
+      (_id, input) =>
+        new Promise((resolve) => {
+          setTimeout(
+            () =>
+              resolve({
+                userMessageId: input.clientMessageId,
+                serviceError: null,
+                assistantMessage: {
+                  id: 'slow-reply',
+                  createdAt: new Date().toISOString(),
+                  errorCode: null,
+                  role: 'assistant',
+                  content: '完成',
+                  status: 'completed',
+                  attachments: [],
+                },
+              }),
+            15_000,
+          );
+        }),
+    );
+    const input = required(
+      document.querySelector<HTMLTextAreaElement>(
+        '.rail-ai-input-shell textarea',
+      ),
+    );
+    input.value = '慢回复测试';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    button('发送消息').click();
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(
+      document.querySelector('.rail-ai-send-button')?.getAttribute('disabled'),
+    ).not.toBeNull();
+    expect(input.value).toBe('');
+    expect(notices.error).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(api.sendAiMessageApi).toHaveBeenCalledOnce();
+    expect(notices.error).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+  it('reconciles a disconnected send and does not submit it twice', async () => {
+    await open();
+    api.sendAiMessageApi.mockImplementation(async (_id, input) => {
+      api.getAiMessagesApi.mockResolvedValue([
+        {
+          id: input.clientMessageId,
+          createdAt: new Date().toISOString(),
+          errorCode: null,
+          role: 'user',
+          content: input.content,
+          attachments: [],
+          status: 'completed',
+        },
+        {
+          id: 'recovered-reply',
+          createdAt: new Date().toISOString(),
+          errorCode: null,
+          role: 'assistant',
+          content: '完成',
+          attachments: [],
+          status: 'completed',
+        },
+      ]);
+      throw new Error('timeout of 240000ms exceeded');
+    });
+    const input = required(
+      document.querySelector<HTMLTextAreaElement>(
+        '.rail-ai-input-shell textarea',
+      ),
+    );
+    input.value = '连接恢复测试';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    button('发送消息').click();
+    await vi.waitFor(() =>
+      expect(api.getAiMessagesApi).toHaveBeenCalledWith(
+        'test-conversation',
+        true,
+      ),
+    );
+    await nextTick();
+    expect(api.sendAiMessageApi).toHaveBeenCalledOnce();
+    expect(input.value).toBe('');
+    expect(notices.error).not.toHaveBeenCalled();
   });
   it('deduplicates dragged assets and enforces the configured image limit', async () => {
     await open();
@@ -181,7 +283,9 @@ describe('assistant image drop interaction', () => {
     );
     drag();
     await nextTick();
-    expect(button('发送消息').disabled).toBe(true);
+    expect(
+      document.querySelector('.rail-ai-send-button')?.getAttribute('disabled'),
+    ).not.toBeNull();
     expect(button('新建对话').disabled).toBe(true);
     expect(button('选择历史对话').disabled).toBe(true);
     resolve({ mode: 'url', mimeType: 'image/png', url: '/fresh-url' });

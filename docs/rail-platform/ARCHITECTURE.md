@@ -1,10 +1,12 @@
 # 当前系统架构说明
 
+2026-10-21：报告可引用用户可访问项目的已入库 PNG/JPEG 图片；目标项目仍须写权限，来源只须读权限，Worker 在执行和保存前复核。助手发送独立等待 240 秒，以客户端生成的用户消息 UUID 核对断线后的持久化回复，仅重查、不自动重发；无新增数据库迁移。
+
 ## Ubuntu 整体部署边界 2026-10-10
 
-当前发布使用整体 `code/deployment/compose.yaml`，业务镜像统一 `2026.10.10`。平台容器内部为 Nginx/Vue、Nitro API、Worker 三进程，不新增平台 GPU；能力服务保持独立。全量 9 个容器包含无状态 ingress，只有 ingress 发布 Web/S3 端口，业务网为 internal。基础模型只读，ComfyUI/LoRA/vLLM 各选独立物理 GPU，容器内为 CUDA 0；单卡按模式分时。
+当前发布使用整体 `config/compose.yaml`，业务镜像统一 `2026.10.10`。平台容器内部为 Nginx/Vue、Nitro API、Worker 三进程，不新增平台 GPU；能力服务保持独立。全量 9 个容器包含无状态 ingress，只有 ingress 发布 Web/S3 端口，业务网为 internal。基础模型只读，ComfyUI/LoRA/vLLM 各指定物理 GPU（可共享，容量需实测），容器内为 CUDA 0；单卡按模式分时。
 
-`rail-system` 是唯一代码源，交付目录保留文件同路径同内容；密码、配置、日志和备份在代码之外。新机部署及当前验收边界见 [Ubuntu 手册](../../../../DEPLOY_UBUNTU.md) 与 [验收记录](../../../../DEPLOY_VALIDATION_20261010.json)。业务权限、数据库和原始工作流不因部署方案改变。
+`rail-system` 是唯一代码源，交付目录保留文件同路径同内容；密码、配置、日志和备份在代码之外。新机部署及当前验收边界见 [Ubuntu 手册](../../../../doc/DEPLOY.md) 与 [验收记录](../../../../doc/validation/DEPLOY_VALIDATION_20261010.json)。业务权限、数据库和原始工作流不因部署方案改变。
 
 ## 同会话继续编辑与资产中心分离（2026-10-09）
 

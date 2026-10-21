@@ -26,6 +26,8 @@ type ExtendOptions<T = any> = {
    * - data: 解构响应的BODY数据，只返回其中的data节点数据（会检查status和code是否为成功状态）。
    */
   responseReturn?: 'body' | 'data' | 'raw';
+  /** Let a caller that reconciles uncertain results render its own errors. */
+  showErrorMessage?: boolean;
 };
 type RequestClientConfig<T = any> = AxiosRequestConfig<T> & ExtendOptions<T>;
 

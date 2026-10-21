@@ -1,6 +1,6 @@
 # 客运装备内装模块化分区快速设计平台：开发与复现指南
 
-2026-10-10 Ubuntu 整体交付：平台仍是一个 `rail-platform:2026.10.10` 镜像、一个 Web/API/Worker 容器。新服务器使用整体根目录 [DEPLOY_UBUNTU.md](../../../../DEPLOY_UBUNTU.md) 与 `deploy.sh`，权威编排为 `code/deployment/compose.yaml`；配置和密码在交付目录之外生成，模型事先准备、不下载。完整构建与本机真实业务验收见 [2026-10-10 验收记录](../../../../DEPLOY_VALIDATION_20261010.json)。下文源码开发默认账号与独立 Compose 不能作为新部署的生产密码或状态入口。
+2026-10-10 Ubuntu 整体交付：平台仍是一个 `rail-platform:2026.10.10` 镜像、一个 Web/API/Worker 容器。新服务器使用整体根目录 [doc/DEPLOY.md](../../../../doc/DEPLOY.md) 与 `scripts/deploy.sh`，权威编排为 `config/compose.yaml`；配置和密码在交付目录之外生成，模型事先准备、不下载。完整构建与本机真实业务验收见 [2026-10-10 验收记录](../../../../doc/validation/DEPLOY_VALIDATION_20261010.json)。下文源码开发默认账号与独立 Compose 不能作为新部署的生产密码或状态入口。
 
 2026-10-09 系统回归：非法 UUID 资源参数统一返回 400；未入库私有生成图的内容读取、保存及版本操作按本人真实输出校验，管理员不能绕过。发布须同步 API/Web 产物，无新迁移。完整范围见 [系统测试报告](SYSTEM_TEST_REPORT_2026-10-09.md)。`pnpm test:rail:integration` 自行构建并运行独立数据库/账号、随机端口 API、CPU 报告及模拟 Worker，需要数据库创建权限和符合生产校验的 MinIO 配置，不再依赖共享 API/Worker。
 

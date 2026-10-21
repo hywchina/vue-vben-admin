@@ -73,25 +73,29 @@ watch(
 
 <template>
   <div v-if="activeImage" class="image-result-gallery" :style="galleryStyle">
-    <button
-      class="gallery-main"
-      type="button"
-      draggable="true"
-      title="可拖拽到设计输入区或 AI 助手"
-      :aria-label="`全屏查看${activeImage.name}`"
-      @dragstart="beginAssetImageDrag($event, activeImage.id, activeImage.name)"
-      @click="emit('open', activeImage.id)"
-    >
-      <img :src="activeImage.url" :alt="activeImage.name" draggable="false" />
-      <span v-if="activeImage.camera" class="gallery-camera-badge">
-        <strong>
-          镜头 {{ activeIndex + 1 }} ·
-          {{ activeImage.camera.horizontalLabel }}
-        </strong>
-        <small>{{ activeImage.camera.verticalLabel }}</small>
-        <small>{{ activeImage.camera.distanceLabel }}</small>
-      </span>
-    </button>
+    <slot name="main" :image="activeImage">
+      <button
+        class="gallery-main"
+        type="button"
+        draggable="true"
+        title="可拖拽到设计输入区或 AI 助手"
+        :aria-label="`全屏查看${activeImage.name}`"
+        @dragstart="
+          beginAssetImageDrag($event, activeImage.id, activeImage.name)
+        "
+        @click="emit('open', activeImage.id)"
+      >
+        <img :src="activeImage.url" :alt="activeImage.name" draggable="false" />
+        <span v-if="activeImage.camera" class="gallery-camera-badge">
+          <strong>
+            镜头 {{ activeIndex + 1 }} ·
+            {{ activeImage.camera.horizontalLabel }}
+          </strong>
+          <small>{{ activeImage.camera.verticalLabel }}</small>
+          <small>{{ activeImage.camera.distanceLabel }}</small>
+        </span>
+      </button>
+    </slot>
     <nav class="gallery-thumbnails" aria-label="生成图片列表">
       <button
         v-for="(image, index) in images"

@@ -45,6 +45,7 @@ import {
 } from './asset-image-drag';
 import assistantLogo from './assistant-logo.svg';
 import { assistantPanelSize, clampFloatingPosition } from './floating-position';
+import { recoverAssistantReply } from './message-recovery';
 
 interface PendingFile {
   sourceAssetId?: string;
@@ -190,6 +191,7 @@ const initialized = ref(false);
 const initializing = ref(false);
 const loadingMessages = ref(false);
 const sending = ref(false);
+const recovering = ref(false);
 const importingAsset = ref(false);
 const dropDepth = ref(0);
 let disposed = false;
@@ -684,31 +686,74 @@ async function handleSend() {
   if (!canSend.value) return;
   const submittedDraft = draft.value;
   const optimisticMessage = createOptimisticMessage(submittedDraft);
+  const userMessageId = crypto.randomUUID();
   draft.value = '';
   sending.value = true;
   messages.value.push(optimisticMessage);
   await scrollToLatest();
+  let conversationId = '';
+  let submitted = false;
   try {
-    const conversationId = await ensureConversation();
+    conversationId = await ensureConversation();
     const attachmentIds = await uploadPendingFiles(conversationId);
+    submitted = true;
     const result = await sendAiMessageApi(conversationId, {
       attachmentIds,
       content: submittedDraft,
+      clientMessageId: userMessageId,
     });
     releasePendingFiles();
-    await Promise.all([loadMessages(conversationId), refreshConversations()]);
-    if (result.serviceError) {
-      message.warning(result.serviceError.message);
+    if (activeConversationId.value === conversationId && !disposed) {
+      messages.value = [
+        ...messages.value.filter((item) => item.id !== optimisticMessage.id),
+        { ...optimisticMessage, id: result.userMessageId, uiState: undefined },
+        result.assistantMessage,
+      ];
+      if (result.serviceError) message.warning(result.serviceError.message);
     }
+    // A successful send stays successful even if the history refresh fails.
+    await Promise.allSettled([
+      loadMessages(conversationId),
+      refreshConversations(),
+    ]);
   } catch (error) {
-    messages.value = messages.value.filter(
-      (item) => item.id !== optimisticMessage.id,
-    );
-    if (!draft.value) draft.value = submittedDraft;
-    if (error instanceof Error && error.message.startsWith('附件上传失败')) {
-      message.error(error.message);
+    const connectionError =
+      error instanceof Error &&
+      /timeout|network|failed to fetch|networkerror/i.test(error.message);
+    if (submitted && connectionError) {
+      recovering.value = true;
+      const reply = await recoverAssistantReply({
+        userMessageId,
+        shouldStop: () =>
+          disposed || activeConversationId.value !== conversationId,
+        readMessages: () => getAiMessagesApi(conversationId, true),
+        onMessages: (result) => {
+          messages.value = result;
+          if (result.some((item) => item.id === userMessageId))
+            releasePendingFiles();
+          void loadImagePreviews(result, conversationId);
+          void scrollToLatest();
+        },
+      });
+      if (reply?.status === 'failed') message.warning(reply.content);
+      else if (!reply && !disposed)
+        message.warning(
+          '连接中断，回复状态尚未确认。请稍后重新打开此会话查看，避免重复发送。',
+        );
+      await refreshConversations().catch(() => undefined);
+    } else {
+      messages.value = messages.value.filter(
+        (item) => item.id !== optimisticMessage.id,
+      );
+      if (!draft.value) draft.value = submittedDraft;
+      message.error(
+        error instanceof Error
+          ? error.message
+          : '消息发送失败，请检查连接后重试',
+      );
     }
   } finally {
+    recovering.value = false;
     sending.value = false;
     await scrollToLatest();
     await nextTick();
@@ -982,6 +1027,9 @@ onBeforeUnmount(() => {
           </div>
         </header>
 
+        <p v-if="recovering" class="rail-ai-loading" role="status">
+          连接中断，正在核对回复，请勿重复发送…
+        </p>
         <main ref="messageViewport" class="rail-ai-messages" aria-live="polite">
           <div v-if="initializing || loadingMessages" class="rail-ai-loading">
             <span></span>

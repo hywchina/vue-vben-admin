@@ -258,7 +258,7 @@ async function cleanup() {
       SELECT version.object_key AS "objectKey"
       FROM asset_versions version
       JOIN assets asset ON asset.id = version.asset_id
-      WHERE asset.project_id = ${projectId}
+      WHERE asset.project_id = ANY(${[projectId, ...disposableProjectIds]})
         AND version.object_key IS NOT NULL
     `;
     for (const object of objects) {
@@ -270,9 +270,13 @@ async function cleanup() {
   if (conversationId) {
     await sql`DELETE FROM ai_conversations WHERE id = ${conversationId}`;
   }
-  if (projectId) await sql`DELETE FROM projects WHERE id = ${projectId}`;
-  if (disposableProjectIds.length > 0) {
-    await sql`DELETE FROM projects WHERE id = ANY(${disposableProjectIds})`;
+  const allProjectIds = [
+    ...(projectId ? [projectId] : []),
+    ...disposableProjectIds,
+  ];
+  if (allProjectIds.length > 0) {
+    await sql`DELETE FROM jobs WHERE project_id = ANY(${allProjectIds})`;
+    await sql`DELETE FROM projects WHERE id = ANY(${allProjectIds})`;
   }
   if (notificationIds.length > 0) {
     await sql`DELETE FROM notifications WHERE id = ANY(${notificationIds})`;
@@ -1959,6 +1963,73 @@ async function run() {
   }
   console.warn(
     '模板报告集成通过：真实 CPU Worker、DOCX/PPTX/Markdown、单图/双图、自动入库及私有对象下载；未调用 AI/GPU。',
+  );
+
+  // Read access to a source project is enough; output still belongs to a writable target.
+  const reportDestination = await apiRequest<{ id: string }>('/projects', {
+    body: { name: `${runId}-cross-report`, description: '跨项目报告验收' },
+    session: user1,
+  });
+  const reportProjectId = reportDestination.envelope.data.id;
+  disposableProjectIds.push(reportProjectId);
+  await sql`UPDATE project_members SET project_role = 'viewer' WHERE project_id = ${projectId} AND user_id = ${user1.id}`;
+  const crossInput = {
+    format: 'pptx',
+    generationMode: 'template',
+    name: `${runId}-cross-report`,
+    projectId: reportProjectId,
+    reportType: 'design-proposal',
+    title: '跨项目图片报告',
+    sections: [
+      {
+        title: '来源图片',
+        images: [{ assetId: prepared.envelope.data.asset.id }],
+      },
+    ],
+  };
+  const crossReport = await apiRequest<{ id: string }>('/reports/generations', {
+    body: crossInput,
+    session: user1,
+  });
+  const crossDeadline = Date.now() + 30_000;
+  let crossStatus = 'queued';
+  while (Date.now() < crossDeadline) {
+    const [job] = await sql<
+      { status: string }[]
+    >`SELECT status FROM jobs WHERE id = ${crossReport.envelope.data.id}`;
+    crossStatus = job?.status ?? 'missing';
+    if (['failed', 'succeeded'].includes(crossStatus)) break;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  assert(
+    crossStatus === 'succeeded',
+    `跨项目只读来源 PPT 生成失败：${crossStatus}`,
+  );
+  const [crossOutput] = await sql<{ projectId: string }[]>`
+    SELECT asset.project_id AS "projectId" FROM job_outputs output JOIN assets asset ON asset.id = output.asset_id
+    WHERE output.job_id = ${crossReport.envelope.data.id}`;
+  assert(crossOutput?.projectId === reportProjectId, '跨项目报告输出归属错误');
+  await apiRequest('/reports/generations', {
+    body: { ...crossInput, projectId },
+    session: user1,
+    expectedStatus: 403,
+  });
+  await sql`DELETE FROM project_members WHERE project_id = ${projectId} AND user_id = ${user1.id}`;
+  await apiRequest('/reports/generations', {
+    body: crossInput,
+    session: user1,
+    expectedStatus: 404,
+  });
+  await sql`INSERT INTO project_members (project_id, user_id, project_role) VALUES (${projectId}, ${user1.id}, 'owner')`;
+  await sql`UPDATE assets SET saved_at = NULL WHERE id = ${prepared.envelope.data.asset.id}`;
+  await apiRequest('/reports/generations', {
+    body: crossInput,
+    session: user1,
+    expectedStatus: 400,
+  });
+  await sql`UPDATE assets SET saved_at = now() WHERE id = ${prepared.envelope.data.asset.id}`;
+  console.warn(
+    '跨项目报告：只读来源成功、输出归属正确、只读目标/越权来源/未入库图片拒绝。',
   );
 
   const textWorkspace = await apiRequest<{ id: string }>(

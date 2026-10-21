@@ -113,6 +113,7 @@ const imageGalleryItems = computed(() =>
 const showConversationImageGallery = computed(
   () =>
     props.conversationLayout &&
+    activeOutput.value?.kind === 'image' &&
     imageOutputs.value.length > 0 &&
     (imageOutputs.value.length > 1 || cameraViews.value.length > 0),
 );
@@ -166,6 +167,36 @@ const comparisonAvailable = computed(
       previewUrls[comparisonSourceAssetId.value] &&
       previewUrls[activeOutput.value.assetId],
     ),
+);
+const imageComparison = computed(() => {
+  const sourceId = comparisonSourceAssetId.value;
+  const beforeSrc = sourceId ? previewUrls[sourceId] : undefined;
+  const afterSrc = activeOutput.value
+    ? previewUrls[activeOutput.value.assetId]
+    : undefined;
+  if (
+    !comparisonAvailable.value ||
+    !comparisonMode.value ||
+    !beforeSrc ||
+    !afterSrc
+  )
+    return undefined;
+  let beforeLabel = '原始输入';
+  let afterLabel = '生成结果';
+  if (comparesMaskedInput.value) {
+    beforeLabel = '遮罩前原图';
+    afterLabel = '遮罩生成结果';
+  } else if (comparesRegionInput.value) {
+    beforeLabel = '标记前原图';
+    afterLabel = '分区生成结果';
+  }
+  return { afterLabel, afterSrc, beforeLabel, beforeSrc };
+});
+const showInlineResultActions = computed(
+  () =>
+    !showConversationImageGallery.value ||
+    Boolean(imageComparison.value) ||
+    imageOutputs.value.length <= 1,
 );
 const promptEntry = computed(() => {
   if (cameraViews.value.length > 0) return undefined;
@@ -688,7 +719,11 @@ onMounted(() => void loadPreviews());
       <div v-else-if="activeOutput" class="round-output">
         <div class="round-output__toolbar">
           <div
-            v-if="job.outputs.length > 1 && imageOutputs.length <= 1"
+            v-if="
+              job.outputs.length > 1 &&
+              (imageOutputs.length <= 1 ||
+                job.outputs.some((output) => output.kind !== 'image'))
+            "
             class="round-output-selector"
           >
             <button
@@ -704,6 +739,7 @@ onMounted(() => void loadPreviews());
           <div v-if="comparisonAvailable" class="round-view-switch">
             <button
               :class="{ active: comparisonMode }"
+              :aria-pressed="comparisonMode"
               type="button"
               @click="comparisonMode = true"
             >
@@ -712,6 +748,7 @@ onMounted(() => void loadPreviews());
             </button>
             <button
               :class="{ active: !comparisonMode }"
+              :aria-pressed="!comparisonMode"
               type="button"
               @click="comparisonMode = false"
             >
@@ -737,37 +774,16 @@ onMounted(() => void loadPreviews());
             activeOutputAssetId = $event;
             outputLightboxOpen = true;
           "
-        />
-        <div
-          v-else-if="
-            comparisonAvailable &&
-            comparisonMode &&
-            comparisonSourceAssetId &&
-            previewUrls[activeOutput.assetId]
-          "
-          class="round-comparison-shell"
         >
-          <ImageComparisonSlider
-            :after-label="
-              comparesMaskedInput
-                ? '遮罩生成结果'
-                : comparesRegionInput
-                  ? '分区生成结果'
-                  : '生成结果'
-            "
-            :after-src="previewUrls[activeOutput.assetId]!"
-            :before-label="
-              comparesMaskedInput
-                ? '遮罩前原图'
-                : comparesRegionInput
-                  ? '标记前原图'
-                  : '原始输入'
-            "
-            :before-src="previewUrls[comparisonSourceAssetId]!"
-          />
+          <template v-if="imageComparison" #main>
+            <ImageComparisonSlider v-bind="imageComparison" />
+          </template>
+        </ImageResultGallery>
+        <div v-else-if="imageComparison" class="round-comparison-shell">
+          <ImageComparisonSlider v-bind="imageComparison" />
         </div>
         <div
-          v-else-if="imageOutputs.length > 1"
+          v-else-if="activeOutput.kind === 'image' && imageOutputs.length > 1"
           :data-count="Math.min(imageOutputs.length, 3)"
           class="round-output-gallery"
         >
@@ -856,11 +872,8 @@ onMounted(() => void loadPreviews());
           </button>
         </div>
 
-        <footer
-          v-if="!conversationLayout || imageOutputs.length <= 1"
-          class="round-output__footer"
-        >
-          <template v-if="!conversationLayout || imageOutputs.length <= 1">
+        <footer v-if="showInlineResultActions" class="round-output__footer">
+          <template v-if="showInlineResultActions">
             <div
               v-if="isBusinessImageResult"
               class="round-output-actions round-output-actions--business"
@@ -1023,7 +1036,11 @@ onMounted(() => void loadPreviews());
       @previous="moveOutputImage(-1)"
     >
       <template
-        v-if="conversationLayout && imageOutputs.length > 1 && activeOutput"
+        v-if="
+          conversationLayout &&
+          imageOutputs.length > 1 &&
+          activeOutput?.kind === 'image'
+        "
         #actions
       >
         <div
@@ -1082,17 +1099,6 @@ onMounted(() => void loadPreviews());
               <ComfyMaskIcon :size="16" />
             </button>
           </Tooltip>
-          <Tooltip v-if="activeOutput.kind === 'text'" title="复制 Markdown">
-            <button
-              aria-label="复制 Markdown"
-              class="round-action-button"
-              :disabled="!textContents[activeOutput.assetId]"
-              type="button"
-              @click="copyOutput(activeOutput)"
-            >
-              <IconifyIcon :icon="platformUiIcons.copy" />
-            </button>
-          </Tooltip>
           <Tooltip title="下载或查看结果">
             <button
               aria-label="下载或查看结果"
@@ -1114,10 +1120,7 @@ onMounted(() => void loadPreviews());
               <IconifyIcon :icon="platformSemanticIcons.assets" />
             </button>
           </Tooltip>
-          <Tooltip
-            v-if="activeOutput.kind !== 'model3d'"
-            :title="flowLabel ?? '流转到工作流'"
-          >
+          <Tooltip :title="flowLabel ?? '流转到工作流'">
             <button
               :aria-label="flowLabel ?? '流转到工作流'"
               class="round-action-button"

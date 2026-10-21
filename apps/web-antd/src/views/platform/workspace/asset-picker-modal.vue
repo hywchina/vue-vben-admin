@@ -9,7 +9,16 @@ import { computed, reactive, ref, watch } from 'vue';
 
 import { IconifyIcon } from '@vben/icons';
 
-import { Button, Empty, Input, Modal, Select, Spin, Tag } from 'ant-design-vue';
+import {
+  Alert,
+  Button,
+  Empty,
+  Input,
+  Modal,
+  Select,
+  Spin,
+  Tag,
+} from 'ant-design-vue';
 
 import {
   getAssetApi,
@@ -28,10 +37,12 @@ import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 const props = defineProps<{
   acceptedKinds: AssetType[];
+  acceptedMimeTypes?: string[];
   assets: PlatformAsset[];
   multiple?: boolean;
   open: boolean;
   projectId?: string;
+  projects?: Array<{ id: string; name: string }>;
   selectedAssetId?: string;
   selectedAssetIds?: string[];
 }>();
@@ -42,6 +53,21 @@ const emit = defineEmits<{
   'update:open': [open: boolean];
 }>();
 const keyword = ref('');
+const sourceProjectId = ref('all');
+const loadError = ref('');
+const sourceProject = computed(() =>
+  props.projects ? sourceProjectId.value : props.projectId,
+);
+const projectOptions = computed(() => [
+  { label: '全部可访问项目', value: 'all' },
+  ...(props.projects ?? []).map((project) => ({
+    label: project.name,
+    value: project.id,
+  })),
+]);
+function projectName(id: string) {
+  return props.projects?.find((project) => project.id === id)?.name ?? '';
+}
 const selected = ref<string[]>([]);
 const currentFolderId = ref<null | string>(null);
 const typeFilter = ref<'all' | AssetType>('all');
@@ -81,7 +107,10 @@ const currentFolders = computed(() =>
 );
 const breadcrumbs = computed(() => {
   const items: Array<{ id: null | string; name: string }> = [
-    { id: null, name: '项目资产' },
+    {
+      id: null,
+      name: sourceProject.value === 'all' ? '全部可访问图片' : '项目资产',
+    },
   ];
   const chain: Array<{ id: string; name: string }> = [];
   const visited = new Set<string>();
@@ -102,6 +131,8 @@ const compatibleAssets = computed(() => {
     (asset) =>
       (props.acceptedKinds.length === 0 ||
         props.acceptedKinds.includes(asset.type)) &&
+      (!props.acceptedMimeTypes ||
+        props.acceptedMimeTypes.includes(asset.mimeType ?? '')) &&
       (typeFilter.value === 'all' || asset.type === typeFilter.value) &&
       (!query ||
         `${asset.name} ${asset.publicId} ${asset.tags.join(' ')}`
@@ -126,8 +157,9 @@ async function loadPreviews() {
 async function loadFolderAssets() {
   const generation = ++loadGeneration;
   loading.value = true;
+  loadError.value = '';
   try {
-    if (!props.projectId) {
+    if (!sourceProject.value) {
       displayedAssets.value = props.assets.filter(
         (asset) => (asset.folderId ?? null) === currentFolderId.value,
       );
@@ -137,14 +169,44 @@ async function loadFolderAssets() {
       'createdAt' | 'name' | 'type',
       'asc' | 'desc',
     ];
-    const assets = await getAssetsApi(props.projectId, {
-      folderId: currentFolderId.value ?? 'root',
-      sortBy,
-      sortOrder,
-    });
+    const allProjects = sourceProject.value === 'all' && props.projects;
+    const ids = allProjects
+      ? allProjects.map((project) => project.id)
+      : [sourceProject.value ?? ''];
+    const results = await Promise.all(
+      ids.map((projectId) =>
+        getAssetsApi(projectId, {
+          folderId: allProjects ? undefined : (currentFolderId.value ?? 'root'),
+          kind:
+            props.acceptedKinds.length === 1
+              ? props.acceptedKinds[0]
+              : undefined,
+          sortBy,
+          sortOrder,
+        }),
+      ),
+    );
+    const direction = sortOrder === 'asc' ? 1 : -1;
+    const assets = results
+      .flat()
+      .toSorted(
+        (left, right) =>
+          direction *
+          (sortBy === 'createdAt'
+            ? Date.parse(left.createdAt) - Date.parse(right.createdAt)
+            : (sortBy === 'name' ? left.name : left.type).localeCompare(
+                sortBy === 'name' ? right.name : right.type,
+                'zh-CN',
+              )),
+      );
     if (generation !== loadGeneration) return;
     displayedAssets.value = assets;
     void loadPreviews();
+  } catch (error) {
+    if (generation !== loadGeneration) return;
+    displayedAssets.value = [];
+    loadError.value =
+      error instanceof Error ? error.message : '资产加载失败，请重试';
   } finally {
     if (generation === loadGeneration) loading.value = false;
   }
@@ -157,15 +219,16 @@ async function initializePicker() {
     selected.value = props.selectedAssetId ? [props.selectedAssetId] : [];
   }
   keyword.value = '';
+  sourceProjectId.value = 'all';
   typeFilter.value = 'all';
   currentFolderId.value = null;
   displayedAssets.value = [];
-  if (props.projectId) {
-    folders.value = await getAssetFoldersApi(props.projectId);
+  if (sourceProject.value && sourceProject.value !== 'all') {
+    folders.value = await getAssetFoldersApi(sourceProject.value);
     if (props.selectedAssetId) {
       try {
         const selectedAsset = await getAssetApi(props.selectedAssetId);
-        if (selectedAsset.projectId === props.projectId) {
+        if (selectedAsset.projectId === sourceProject.value) {
           currentFolderId.value = selectedAsset.folderId ?? null;
         }
       } catch {
@@ -176,6 +239,21 @@ async function initializePicker() {
     folders.value = [];
   }
   await loadFolderAssets();
+}
+
+async function changeSourceProject() {
+  currentFolderId.value = null;
+  folders.value = [];
+  displayedAssets.value = [];
+  try {
+    if (sourceProject.value && sourceProject.value !== 'all') {
+      folders.value = await getAssetFoldersApi(sourceProject.value);
+    }
+    await loadFolderAssets();
+  } catch (error) {
+    loadError.value =
+      error instanceof Error ? error.message : '资产加载失败，请重试';
+  }
 }
 
 function enterFolder(folderId: null | string) {
@@ -225,16 +303,33 @@ watch(compatibleAssets, () => {
 <template>
   <Modal
     :open="open"
-    title="从当前项目资产选择"
+    :title="projects ? '从可访问图片选择' : '从当前项目资产选择'"
     width="960px"
     @cancel="emit('update:open', false)"
   >
+    <Select
+      v-if="projects"
+      v-model:value="sourceProjectId"
+      :options="projectOptions"
+      aria-label="图片来源项目"
+      style="width: 100%; margin-bottom: 12px"
+      @change="changeSourceProject"
+    />
+    <Alert v-if="loadError" :message="loadError" type="error" show-icon>
+      <template #action>
+        <Button @click="changeSourceProject">重试</Button>
+      </template>
+    </Alert>
     <div class="asset-picker-toolbar">
       <Input
         v-model:value="keyword"
         allow-clear
         class="asset-picker-search"
-        placeholder="搜索当前文件夹中的名称、编号或标签"
+        :placeholder="
+          sourceProject === 'all'
+            ? '搜索所有可访问图片的名称、编号或标签'
+            : '搜索当前文件夹中的名称、编号或标签'
+        "
       >
         <template #prefix>
           <IconifyIcon :icon="platformUiIcons.search" />
@@ -323,6 +418,7 @@ watch(compatibleAssets, () => {
               <Tag>{{ assetTypeLabels[asset.type] }}</Tag>
             </div>
             <strong>{{ asset.name }}</strong>
+            <small v-if="projects">{{ projectName(asset.projectId) }}</small>
             <small>
               {{ asset.publicId }} · V{{ asset.version }} · {{ asset.format }}
             </small>
@@ -330,7 +426,11 @@ watch(compatibleAssets, () => {
         </div>
         <Empty
           v-else-if="!currentFolders.length && !loading"
-          description="当前文件夹没有兼容资产"
+          :description="
+            sourceProject === 'all'
+              ? '没有可访问的兼容图片'
+              : '当前文件夹没有兼容资产'
+          "
         />
       </div>
     </Spin>

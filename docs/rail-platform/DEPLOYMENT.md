@@ -1,8 +1,10 @@
 # 跨平台部署手册
 
-> 2026-10-10 Ubuntu 联网依赖/本地模型交付：整个系统新增根目录 `deploy.sh`，安装缺失的 Docker/Compose/Buildx/Container Toolkit，从当前 Dockerfile 构建五个业务镜像，支持 ComfyUI、LoRA、vLLM 独立物理 GPU。平台仍为一个 Web/API/Worker 容器。详见整体仓库 [DEPLOY_UBUNTU.md](../../../../DEPLOY_UBUNTU.md)。模型完整校验、只读挂载且运行网络禁外连；缺失模型直接失败。单镜像 Dockerfile 的 pnpm 11 生产 deploy 改为注入 workspace 包的受支持方式，不再使用已移除的 `--legacy`。本轮构建/实机验收以交付验收记录为准，不能将三 GPU 配置测试当作本机三 GPU 实测。
+> 2026-10-15 HTTPS 交付更新：整体项目的服务器入口由 `scripts/deploy.sh` 自动识别业务 IP、维护每项目本地 CA 与服务证书，平台和对象存储统一 HTTPS。单镜像 Nginx 保留可信入口传入的协议及带端口 Host；入口和平台镜像需要重建。客户端首次必须信任目标服务器 CA 公钥，不能分发私钥。流程和旧 HTTP 升级方式以整体仓库 `doc/DEPLOY.md` 为准；下文历史 Compose 示例不等于当前服务器 HTTPS 入口。
 
-> 2026-10-09 两目录离线迁移历史方案：整个系统只携带 `code/` 与 `models/`，构建依赖归档、独立 Registry/BuildKit 禁网重建、初始化及 GPU 分时运行入口见 [code/deployment/README.md](../../../deployment/README.md)。该方式不复用旧业务镜像或虚拟环境；当时新镜像验收尚在执行。当前 Ubuntu 新交付已完成本机串行构建及业务验收，仍需目标机器验收，见上方入口。
+> 2026-10-10 Ubuntu 联网依赖/本地模型交付：整个系统新增根目录 `scripts/deploy.sh`，安装缺失的 Docker/Compose/Buildx/Container Toolkit，从当前 Dockerfile 构建五个业务镜像，支持 ComfyUI、LoRA、vLLM 独立物理 GPU。平台仍为一个 Web/API/Worker 容器。详见整体仓库 [doc/DEPLOY.md](../../../../doc/DEPLOY.md)。模型完整校验、只读挂载且运行网络禁外连；缺失模型直接失败。单镜像 Dockerfile 的 pnpm 11 生产 deploy 改为注入 workspace 包的受支持方式，不再使用已移除的 `--legacy`。本轮构建/实机验收以交付验收记录为准，不能将三 GPU 配置测试当作本机三 GPU 实测。
+
+> 2026-10-09 两目录离线迁移历史方案：整个系统只携带 `code/` 与 `models/`，构建依赖归档、独立 Registry/BuildKit 禁网重建、初始化及 GPU 分时运行入口见 [scripts/deployment/README.md](../../../../scripts/deployment/README.md)。该方式不复用旧业务镜像或虚拟环境；当时新镜像验收尚在执行。当前 Ubuntu 新交付已完成本机串行构建及业务验收，仍需目标机器验收，见上方入口。
 
 > 2026-09-21 新增企业内网单镜像方式：见 [deploy/single-image/README.md](../../deploy/single-image/README.md)。该方式使用一个 Web/API/Worker 业务镜像，支持 `config.env` 配置、一键 Compose 启动、模型外置和离线镜像导出。以下原多镜像方案继续保留；两种方式不要连接同一个测试库同时运行 Worker。
 

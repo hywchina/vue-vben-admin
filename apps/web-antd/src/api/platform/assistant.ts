@@ -81,21 +81,25 @@ export function renameAiConversationApi(conversationId: string, title: string) {
   });
 }
 
-export function getAiMessagesApi(conversationId: string) {
+export function getAiMessagesApi(conversationId: string, quiet = false) {
   return requestClient.get<AiMessage[]>(
     `/assistant/conversations/${conversationId}/messages`,
+    { showErrorMessage: !quiet },
   );
 }
 
 export function sendAiMessageApi(
   conversationId: string,
-  input: { attachmentIds: string[]; content: string },
+  input: { attachmentIds: string[]; clientMessageId?: string; content: string },
 ) {
   return requestClient.post<{
     assistantMessage: AiMessage;
     serviceError: null | { code: string; message: string };
     userMessageId: string;
-  }>(`/assistant/conversations/${conversationId}/messages`, input);
+  }>(`/assistant/conversations/${conversationId}/messages`, input, {
+    timeout: 240_000,
+    showErrorMessage: false,
+  });
 }
 
 export function clearAiMessagesApi(conversationId: string) {

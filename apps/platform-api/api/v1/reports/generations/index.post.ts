@@ -2,11 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { loadReportImages } from '~/utils/domain/capabilities/report/inputs';
 import {
   createReportSchema,
   orderedReportAssetIds,
   REPORT_APPLICATION_KEY,
-  REPORT_SUPPORTED_IMAGE_MIME_TYPES,
 } from '~/utils/domain/capabilities/report/schema';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { getConfig } from '~/utils/infrastructure/config';
@@ -14,8 +14,6 @@ import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
-
-const MAX_INPUT_BYTES = 100 * 1024 * 1024;
 
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
@@ -35,55 +33,8 @@ export default apiHandler(async (event) => {
 
   const sql = useDatabase();
   const assetIds = orderedReportAssetIds(input);
-  const assets =
-    assetIds.length > 0
-      ? await sql<{ id: string; mimeType: string; sizeBytes: number }[]>`
-        SELECT
-          asset.id,
-          version.mime_type AS "mimeType",
-          version.size_bytes::float8 AS "sizeBytes"
-        FROM assets asset
-        JOIN asset_versions version
-          ON version.asset_id = asset.id AND version.version = asset.current_version
-        WHERE asset.id IN ${sql(assetIds)}
-          AND asset.project_id = ${input.projectId}
-          AND asset.kind = 'image'
-          AND asset.status = 'available'
-          AND asset.saved_at IS NOT NULL
-          AND asset.deleted_at IS NULL
-          AND version.status = 'available'
-          AND version.storage_kind = 'object'
-      `
-      : [];
-  if (assets.length !== assetIds.length) {
-    throw new ApiError(
-      400,
-      'REPORT_IMAGE_ASSET_INVALID',
-      '报告图片不存在、未加入资产或不属于当前项目',
-    );
-  }
-  if (
-    assets.some(
-      (asset) =>
-        !REPORT_SUPPORTED_IMAGE_MIME_TYPES.includes(
-          asset.mimeType as (typeof REPORT_SUPPORTED_IMAGE_MIME_TYPES)[number],
-        ),
-    )
-  ) {
-    throw new ApiError(
-      400,
-      'REPORT_IMAGE_FORMAT_UNSUPPORTED',
-      '报告当前仅支持 PNG 和 JPEG 图片',
-    );
-  }
+  const assets = await loadReportImages(identity, assetIds);
   const inputBytes = assets.reduce((sum, asset) => sum + asset.sizeBytes, 0);
-  if (inputBytes > MAX_INPUT_BYTES) {
-    throw new ApiError(
-      413,
-      'REPORT_INPUT_TOO_LARGE',
-      '报告图片总大小超过 100 MiB',
-    );
-  }
 
   const jobId = randomUUID();
   const outputAssetId = randomUUID();

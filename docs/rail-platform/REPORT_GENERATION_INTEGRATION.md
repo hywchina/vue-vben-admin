@@ -2,11 +2,11 @@
 
 ## 1. 能力范围
 
-`/report-generation` 将当前项目中的结构化文字与图片资产编排为 Word（`.docx`）、PowerPoint（`.pptx`）或 Markdown（`.md`）文件。报告不是浏览器静态导出：提交后创建真实任务，由平台 Worker 生成文件、写入 MinIO，并登记为当前项目资产和 `job_outputs`。DOCX/PPTX 使用 `document` 类型，Markdown 使用 `text` 类型。
+`/report-generation` 将结构化文字与当前用户可访问项目的图片资产编排为 Word（`.docx`）、PowerPoint（`.pptx`）或 Markdown（`.md`）文件。报告不是浏览器静态导出：提交后创建真实任务，由平台 Worker 生成文件、写入 MinIO，并登记为当前项目资产和 `job_outputs`。DOCX/PPTX 使用 `document` 类型，Markdown 使用 `text` 类型。
 
 页面提供“模板生成”和“AI 生成”两种方式，三种交付格式都可选择任一方式。模板生成使用平台内置 `rail-design-standard-v1` 渲染器；AI 生成由后端适配器调用独立的 `generate-file` 服务。两条路径共用平台任务、权限、项目资产、对象存储、审计和输出资产协议，浏览器不会获得外部服务地址。
 
-报告由标题、摘要和最多 8 个有序章节组成。每章包含正文和最多 8 张图片，整份报告最多 24 张图片；图片只接受已登记到当前项目的 PNG/JPEG 资产。页面也可上传本地 PNG/JPEG，上传完成后先登记为项目 `image` 资产，再加入章节。
+报告由标题、摘要和最多 8 个有序章节组成。每章包含正文和最多 8 张图片，整份报告最多 24 张图片；图片接受当前用户有权读取的所有未归档项目中已登记的 PNG/JPEG 资产，选图默认展示全部可访问项目，可按来源项目筛选并浏览文件夹。报告输出仍存入当前项目；提交者必须有目标项目写权限，来源项目只需读权限。页面也可上传本地 PNG/JPEG，上传完成后先登记为项目 `image` 资产，再加入章节。
 
 ## 2. 接口契约
 
@@ -24,10 +24,10 @@
 
 迁移 `027_report_generation.sql` 新增 `report_generation_executions`。任务创建时预分配输出资产 ID 和对象键，Worker 重试始终复用同一目标，避免重复创建报告资产。
 
-1. API 校验登录、`platform:job:write`、项目写权限、图片项目归属、登记状态、对象版本、MIME 和总容量。
+1. API 校验登录、`platform:job:write`、项目写权限、每张图片来源项目的读权限、登记状态、对象版本、MIME 和总容量。
 2. API 在事务中创建或复用个人报告工作区，写入 `jobs`、有序 `job_inputs` 和报告执行记录。
-3. Worker 使用租约领取任务，从 MinIO 读取输入图片；`template` 调用内置模板渲染器，`ai` 调用受控外部报告适配器。
-4. 渲染器生成 Word、PowerPoint 或 UTF-8 Markdown 字节；Worker 写入私有对象存储。
+3. Worker 使用租约领取任务，复核创建者启用状态、目标项目写权限与全部来源图片读权限/有效性后，从 MinIO 读取输入图片；`template` 调用内置模板渲染器，`ai` 调用受控外部报告适配器。
+4. 渲染器生成 Word、PowerPoint 或 UTF-8 Markdown 字节；Worker 保存前再次复核项目权限与输入有效性，再写入私有对象存储。
 5. Worker 在事务中创建 `document` 或 `text` 资产、版本、标签和 `job_outputs`，再将任务标记为成功。
 6. 若对象存储成功而数据库事务失败，Worker 删除本轮对象并重试；连续 3 次失败后使用 `REPORT_GENERATION_FAILED` 结束任务。
 

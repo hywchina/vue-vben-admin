@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { z } from 'zod';
 import {
   deriveAssistantConversationTitle,
@@ -19,6 +21,7 @@ const schema = z
   .object({
     attachmentIds: z.array(z.string().uuid()).max(8).default([]),
     content: z.string().max(20_000).default(''),
+    clientMessageId: z.string().uuid().optional(),
   })
   .refine(
     (input) =>
@@ -105,11 +108,17 @@ export default apiHandler(async (event) => {
     const [message] = await transaction<
       { createdAt: Date; id: string; publicId: string }[]
     >`
-      INSERT INTO ai_messages (conversation_id, role, content)
-      VALUES (${conversationId}, 'user', ${content})
+      INSERT INTO ai_messages (id, conversation_id, role, content)
+      VALUES (${input.clientMessageId ?? randomUUID()}, ${conversationId}, 'user', ${content})
+      ON CONFLICT (id) DO NOTHING
       RETURNING id, public_id AS "publicId", created_at AS "createdAt"
     `;
-    if (!message) throw new Error('创建 AI 用户消息失败');
+    if (!message)
+      throw new ApiError(
+        409,
+        'AI_MESSAGE_ALREADY_SUBMITTED',
+        '这条消息已提交，请查看会话中的回复，不要重复发送',
+      );
     if (attachmentIds.length > 0) {
       const linkedAttachments = await transaction<{ id: string }[]>`
         UPDATE ai_attachments

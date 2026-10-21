@@ -5,14 +5,18 @@ import { createHash, randomUUID } from 'node:crypto';
 import process from 'node:process';
 
 import { useDatabase } from '../../../database';
+import { loadIdentity, requirePermission } from '../../../identity';
 import { getConfig } from '../../../infrastructure/config';
+import { ApiError } from '../../../response';
 import { deleteObject, readObject, storeObject } from '../../../storage';
 import { allocateGeneratedAssetName } from '../../assets/generated-names';
 import { writeSystemAudit } from '../../audit/writer';
 import { createNotification } from '../../notifications/repository';
+import { requireProjectAccess } from '../../projects/access';
 import { generateAiReportArtifact, ReportAiAdapterError } from './ai-adapter';
+import { loadReportImages } from './inputs';
 import { renderReportArtifact } from './renderer';
-import { reportTypeLabels } from './schema';
+import { orderedReportAssetIds, reportTypeLabels } from './schema';
 
 const MAX_ATTEMPTS = 3;
 const LEASE_SECONDS = 60;
@@ -22,13 +26,6 @@ interface ReportExecutionRow {
   createdAt: Date;
   createdBy: string;
   generationMode: 'ai' | 'template';
-  inputAssets: Array<{
-    filename: string;
-    id: string;
-    mimeType: 'image/jpeg' | 'image/png';
-    name: string;
-    objectKey: string;
-  }>;
   jobId: string;
   jobName: string;
   objectKey: string;
@@ -127,11 +124,11 @@ export class ReportGenerationWorker {
     const sql = useDatabase();
     const message = safeError(error);
     const code =
-      error instanceof ReportAiAdapterError
+      error instanceof ReportAiAdapterError || error instanceof ApiError
         ? error.code
         : 'REPORT_GENERATION_FAILED';
     const attemptCount = job.attemptCount;
-    if (attemptCount < MAX_ATTEMPTS) {
+    if (attemptCount < MAX_ATTEMPTS && !(error instanceof ApiError)) {
       await sql.begin(async (transaction) => {
         await transaction`
           UPDATE report_generation_executions
@@ -212,8 +209,21 @@ export class ReportGenerationWorker {
     });
 
     try {
+      const identity = await loadIdentity(job.createdBy);
+      if (!identity)
+        throw new ApiError(
+          403,
+          'REPORT_REQUESTER_DISABLED',
+          '报告创建者已停用或不存在',
+        );
+      requirePermission(identity, 'platform:job:write');
+      await requireProjectAccess(identity, job.projectId, 'write');
+      const inputs = await loadReportImages(
+        identity,
+        orderedReportAssetIds(job.parameters),
+      );
       const assets = new Map<string, ReportImageAsset>();
-      for (const asset of job.inputAssets) {
+      for (const asset of inputs) {
         assets.set(asset.id, {
           bytes: await readObject(asset.objectKey),
           filename: asset.filename,
@@ -272,6 +282,8 @@ export class ReportGenerationWorker {
         SET progress = 75, stage = '正在保存报告到项目资产', updated_at = now()
         WHERE id = ${job.jobId}
       `;
+      await requireProjectAccess(identity, job.projectId, 'write');
+      await loadReportImages(identity, orderedReportAssetIds(job.parameters));
       const stored = await storeObject(
         job.objectKey,
         artifact.mimeType,
@@ -418,21 +430,7 @@ export class ReportGenerationWorker {
         execution.generation_mode AS "generationMode",
         execution.output_asset_id AS "outputAssetId",
         execution.object_key AS "objectKey",
-        execution.template_key AS "templateKey",
-        COALESCE((
-          SELECT jsonb_agg(
-            jsonb_build_object(
-              'id', asset.id, 'name', asset.name,
-              'filename', version.original_filename,
-              'mimeType', version.mime_type, 'objectKey', version.object_key
-            ) ORDER BY input.position
-          )
-          FROM job_inputs input
-          JOIN assets asset ON asset.id = input.asset_id
-          JOIN asset_versions version
-            ON version.asset_id = asset.id AND version.version = asset.current_version
-          WHERE input.job_id = job.id
-        ), '[]'::jsonb) AS "inputAssets"
+        execution.template_key AS "templateKey"
       FROM report_generation_executions execution
       JOIN jobs job ON job.id = execution.job_id
       JOIN projects project ON project.id = job.project_id

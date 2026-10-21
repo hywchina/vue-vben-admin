@@ -779,6 +779,8 @@ onBeforeUnmount(() => {
     <AssetPickerModal
       v-model:open="pickerOpen"
       :accepted-kinds="['image']"
+      :accepted-mime-types="status?.supportedImageMimeTypes"
+      :projects="platformStore.projects"
       :assets="platformStore.currentAssets"
       multiple
       :project-id="platformStore.currentProjectId"
