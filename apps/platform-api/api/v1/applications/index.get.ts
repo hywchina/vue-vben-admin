@@ -53,8 +53,26 @@ export default apiHandler(async (event) => {
     WHERE applications.visible = true OR ${canManageVisibility}
     ORDER BY applications.created_at
   `;
+  const modes = await sql<
+    {
+      applicationKeys: string[];
+      defaultImageApplicationKey: string;
+      designMode: string;
+    }[]
+  >`SELECT design_mode AS "designMode", application_keys AS "applicationKeys", default_image_application_key AS "defaultImageApplicationKey" FROM design_mode_applications`;
   return applications.map((application) => ({
     ...application,
+    designModes: Object.fromEntries(
+      modes
+        .filter((mode) => mode.applicationKeys.includes(application.key))
+        .map((mode) => [
+          mode.designMode,
+          {
+            order: mode.applicationKeys.indexOf(application.key),
+            defaultImage: mode.defaultImageApplicationKey === application.key,
+          },
+        ]),
+    ),
     adapterConfigured: application.capabilityCode
       ? application.capabilityReady && Boolean(getConfig().comfyuiApiUrl)
       : application.adapterEnabled,

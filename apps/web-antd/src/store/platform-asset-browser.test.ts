@@ -5,11 +5,20 @@ import { describe, expect, it } from 'vitest';
 import {
   assetCategoryLabel,
   assetDateBoundary,
+  assetGenerationModules,
   sortBrowserAssets,
 } from '#/modules/platform/asset-browser';
 import platformRoutes from '#/router/routes/modules/platform';
 
 describe('asset browser display rules', () => {
+  it('orders business modules cabin, component, CMF, report', () => {
+    expect(assetGenerationModules.slice(0, 4).map((item) => item.key)).toEqual([
+      'cabin',
+      'component',
+      'cmf',
+      'report',
+    ]);
+  });
   it('keeps the asset page instance when the detail deep link changes', () => {
     expect(
       platformRoutes.find((route) => route.name === 'PlatformAssets')?.meta

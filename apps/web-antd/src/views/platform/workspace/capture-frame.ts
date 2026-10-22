@@ -42,3 +42,58 @@ export function drawCapturedFrame(
     height,
   );
 }
+
+// Preserve the edited mask's alpha while replacing RGB with the next captured frame.
+export function copyCaptureMaskAlpha(
+  frame: Uint8ClampedArray,
+  mask: Uint8ClampedArray,
+) {
+  if (frame.length !== mask.length) throw new Error('实时画面与遮罩尺寸不匹配');
+  for (let index = 3; index < frame.length; index += 4)
+    frame[index] = mask[index] ?? 255;
+}
+
+export async function applyCaptureMask(frame: File, maskUrl: string) {
+  const load = (url: string) =>
+    new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      image.crossOrigin = 'anonymous';
+      image.addEventListener('load', () => resolve(image), { once: true });
+      image.addEventListener(
+        'error',
+        () => reject(new Error('实时遮罩读取失败')),
+        { once: true },
+      );
+      image.src = url;
+    });
+  const url = URL.createObjectURL(frame);
+  try {
+    const [image, mask] = await Promise.all([load(url), load(maskUrl)]);
+    if (
+      image.naturalWidth !== mask.naturalWidth ||
+      image.naturalHeight !== mask.naturalHeight
+    )
+      throw new Error('捕获尺寸已变化，请重新捕获当前帧并编辑遮罩');
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('浏览器无法应用实时遮罩');
+    context.drawImage(mask, 0, 0);
+    const alpha = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+    copyCaptureMaskAlpha(pixels.data, alpha);
+    context.putImageData(pixels, 0, 0);
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, 'image/png'),
+    );
+    if (!blob) throw new Error('实时遮罩生成失败');
+    return new File([blob], `live-mask-${Date.now()}.png`, {
+      type: 'image/png',
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

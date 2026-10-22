@@ -2,7 +2,7 @@ import type { CaptureCrop } from './capture-frame';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { drawCapturedFrame } from './capture-frame';
+import { copyCaptureMaskAlpha, drawCapturedFrame } from './capture-frame';
 
 describe('capture preview and submitted frame coordinates', () => {
   it.each([
@@ -57,5 +57,21 @@ describe('capture preview and submitted frame coordinates', () => {
       sourceHeight: 1440,
     });
     expect(draw).toHaveBeenCalledWith(video, 0, 0, 640, 480, 0, 0, 640, 480);
+  });
+});
+
+describe('live mask preservation', () => {
+  it('keeps the new frame RGB and uses the edited mask alpha', () => {
+    const frame = new Uint8ClampedArray([10, 20, 30, 255, 40, 50, 60, 255]);
+    copyCaptureMaskAlpha(
+      frame,
+      new Uint8ClampedArray([0, 0, 0, 0, 255, 255, 255, 128]),
+    );
+    expect([...frame]).toEqual([10, 20, 30, 0, 40, 50, 60, 128]);
+  });
+  it('rejects a changed mask size', () => {
+    expect(() =>
+      copyCaptureMaskAlpha(new Uint8ClampedArray(4), new Uint8ClampedArray(8)),
+    ).toThrow('实时画面与遮罩尺寸不匹配');
   });
 });

@@ -77,6 +77,23 @@ describe('design generation categories', () => {
     expect(isDesignGenerationApplication('text-to-image-lora')).toBe(true);
   });
 
+  it('uses the module administrator default and excludes standalone capture', () => {
+    const apps = [
+      application('multi-image-edit', {
+        designModes: { cmf: { order: 0, defaultImage: true } },
+      }),
+      application('inpaint-single', {
+        designModes: { cmf: { order: 1, defaultImage: false } },
+      }),
+    ];
+    expect(defaultGenerationApplicationKey(apps, 'image', 'cmf')).toBe(
+      'multi-image-edit',
+    );
+    expect(
+      defaultGenerationApplicationKey(apps, 'image', 'cabin'),
+    ).toBeUndefined();
+    expect(isDesignGenerationApplication('screen-capture-edit')).toBe(false);
+  });
   it('always defaults image-to-image to inpaint rather than the first list item', () => {
     expect(defaultGenerationApplicationKey(applications, 'image')).toBe(
       'inpaint-single',
@@ -114,7 +131,7 @@ describe('design generation categories', () => {
     }
   });
 
-  it('preserves the same published image function list across all three business modes', () => {
+  it('keeps shared fallback functions available across image modes', () => {
     const keys = (mode: 'cabin' | 'cmf' | 'component') =>
       generationApplications(
         applicationsForDesignMode(applications, getDesignMode(mode)),

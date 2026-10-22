@@ -8,9 +8,9 @@ export const assetGenerationModules: Array<{
   key: 'all' | 'favorites' | 'unclassified' | AssetGenerationCategory;
   label: string;
 }> = [
-  { key: 'cmf', label: 'CMF', icon: platformSemanticIcons.cmf },
-  { key: 'component', label: '零部件', icon: platformSemanticIcons.component },
   { key: 'cabin', label: '客室', icon: platformSemanticIcons.cabin },
+  { key: 'component', label: '零部件', icon: platformSemanticIcons.component },
+  { key: 'cmf', label: 'CMF', icon: platformSemanticIcons.cmf },
   { key: 'report', label: '报告', icon: platformSemanticIcons.report },
   { key: 'all', label: '全部', icon: platformUiIcons.layoutGrid },
   { key: 'favorites', label: '收藏', icon: platformUiIcons.star },

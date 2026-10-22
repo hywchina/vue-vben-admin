@@ -1074,6 +1074,103 @@ async function run() {
       visible: boolean;
     }>
   >('/applications', { session: admin });
+  const modeConfigs = await apiRequest<
+    Array<{
+      applicationKeys: string[];
+      defaultImageApplicationKey: string;
+      designMode: string;
+      revision: number;
+    }>
+  >('/design-modes', { session: admin });
+  const originalCmf = modeConfigs.envelope.data.find(
+    (item) => item.designMode === 'cmf',
+  );
+  assert(
+    originalCmf && !originalCmf.applicationKeys.includes('multiview-to-3d'),
+    'CMF 默认目录不应显示三维生成',
+  );
+  const modeInput = {
+    applicationKeys: ['multi-image-edit', 'single-image-edit', 'text-to-image'],
+    defaultImageApplicationKey: 'single-image-edit',
+    expectedRevision: originalCmf.revision,
+  };
+  await apiRequest('/design-modes/cmf', {
+    method: 'PUT',
+    session: user1,
+    body: modeInput,
+    expectedStatus: 403,
+  });
+  await apiRequest('/design-modes/cmf', {
+    method: 'PUT',
+    body: modeInput,
+    expectedStatus: 401,
+  });
+  await apiRequest('/design-modes/invalid', {
+    method: 'PUT',
+    session: admin,
+    body: modeInput,
+    expectedStatus: 400,
+  });
+  for (const invalid of [
+    {
+      ...modeInput,
+      applicationKeys: ['single-image-edit', 'single-image-edit'],
+    },
+    { ...modeInput, applicationKeys: ['unknown'] },
+    { ...modeInput, defaultImageApplicationKey: 'text-to-image' },
+    { ...modeInput, defaultImageApplicationKey: 'inpaint-single' },
+    {
+      ...modeInput,
+      applicationKeys: ['screen-capture-edit'],
+      defaultImageApplicationKey: 'screen-capture-edit',
+    },
+  ])
+    await apiRequest('/design-modes/cmf', {
+      method: 'PUT',
+      session: admin,
+      body: invalid,
+      expectedStatus: 400,
+    });
+  const modeSaved = await apiRequest<{ revision: number }>(
+    '/design-modes/cmf',
+    { method: 'PUT', session: admin, body: modeInput },
+  );
+  await apiRequest('/design-modes/cmf', {
+    method: 'PUT',
+    session: admin,
+    body: modeInput,
+    expectedStatus: 409,
+  });
+  const configuredApps = await apiRequest<
+    Array<{
+      designModes: Record<string, { defaultImage: boolean; order: number }>;
+      key: string;
+    }>
+  >('/applications', { session: user1 });
+  assert(
+    configuredApps.envelope.data.find((app) => app.key === 'single-image-edit')
+      ?.designModes.cmf?.defaultImage,
+    '图生图默认功能未从持久配置返回',
+  );
+  assert(
+    configuredApps.envelope.data.find((app) => app.key === 'multi-image-edit')
+      ?.designModes.cmf?.order === 0,
+    '模块排序未持久化',
+  );
+  assert(
+    !configuredApps.envelope.data.find((app) => app.key === 'inpaint-single')
+      ?.designModes.cmf,
+    '隐藏功能仍出现在 CMF 配置',
+  );
+  await apiRequest('/design-modes/cmf', {
+    method: 'PUT',
+    session: admin,
+    body: {
+      applicationKeys: originalCmf.applicationKeys,
+      defaultImageApplicationKey: originalCmf.defaultImageApplicationKey,
+      expectedRevision: modeSaved.envelope.data.revision,
+    },
+  });
   const presentationCode = 'text-to-image';
   const presentationPath = `/capabilities/${presentationCode}/presentation`;
   const presentationCapability = await apiRequest<{

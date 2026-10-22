@@ -16,6 +16,12 @@ export interface PlatformApplication {
   category: ApplicationCategory;
   color: string;
   description: string;
+  designModes?: Partial<
+    Record<
+      'cabin' | 'cmf' | 'component',
+      { defaultImage: boolean; order: number }
+    >
+  >;
   icon: string;
   key: string;
   name: string;

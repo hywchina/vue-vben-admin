@@ -84,6 +84,43 @@ describe('comfyUI workflow catalog', () => {
     );
   });
 
+  it.each(['region-edit', 'region-marker-edit'])(
+    'uses region marks as guidance and asks for a clean output: %s',
+    async (key) => {
+      const entry = WORKFLOW_CATALOG.find(
+        (item) => item.application.key === key,
+      );
+      if (!entry) throw new Error('Missing workflow');
+      const original = JSON.parse(
+        await readFile(
+          new URL(
+            `../../../workflows/comfyui/${entry.fileName}`,
+            import.meta.url,
+          ),
+          'utf8',
+        ),
+      );
+      const promptField = parseWorkflowVersion({
+        apiJson: original,
+        ...entry.version,
+      }).parameterSchema.find((field) => field.key === 'prompt');
+      if (!promptField?.nodeId) throw new Error('Missing prompt');
+      const result = materializeWorkflow(
+        original,
+        entry.version.parameterSchema,
+        { prompt: '座椅改成红色' },
+      );
+      expect(result[promptField.nodeId]?.inputs.prompt).toContain(
+        '移除这些辅助标记',
+      );
+      expect(result[promptField.nodeId]?.inputs.prompt).toContain(
+        '座椅改成红色',
+      );
+      expect(original[promptField.nodeId].inputs.prompt).not.toContain(
+        '移除这些辅助标记',
+      );
+    },
+  );
   it('maps dedicated camera and EasyMark controls into their real nodes', async () => {
     const camera = WORKFLOW_CATALOG.find(
       (entry) => entry.application.key === 'camera-control-single',

@@ -41,7 +41,6 @@ const defaultDesignMode: DesignModeDefinition = {
     'text-chat',
     'outpaint',
     'text-to-image-lora',
-    'screen-capture-edit',
     'inpaint-reference',
     'region-edit',
     'camera-control-single',
@@ -127,7 +126,6 @@ export const designModes: readonly DesignModeDefinition[] = [
       'outpaint',
       'text-to-image-lora',
       'single-image-edit',
-      'screen-capture-edit',
       'inpaint-reference',
     ],
     backgroundImage: '/design-modes/component.webp',
@@ -274,30 +272,23 @@ export function applicationsForDesignMode(
   mode: DesignModeDefinition,
 ) {
   const positions = new Map(
-    (mode.standalonePath
-      ? mode.applicationKeys
-      : [
-          ...new Set(
-            designModes
-              .filter((item) => !item.standalonePath)
-              .flatMap((item) => item.applicationKeys),
-          ),
-        ]
-    ).map((applicationKey, index) => [applicationKey, index]),
+    mode.applicationKeys.map((key, index) => [key, index]),
   );
-
+  const configuredPosition = (app: PlatformApplication) =>
+    app.designModes && mode.key !== 'report'
+      ? app.designModes[mode.key]?.order
+      : positions.get(app.key);
   return applications
     .filter(
-      (application) =>
-        application.visible &&
-        application.capabilityCode &&
-        (!mode.standalonePath || positions.has(application.key)),
+      (app) =>
+        app.visible &&
+        app.capabilityCode &&
+        !['screen-capture-edit', 'text-chat'].includes(app.key) &&
+        configuredPosition(app) !== undefined,
     )
-    .toSorted((left, right) => {
-      const leftPosition = positions.get(left.key) ?? Number.MAX_SAFE_INTEGER;
-      const rightPosition = positions.get(right.key) ?? Number.MAX_SAFE_INTEGER;
-      return leftPosition - rightPosition;
-    });
+    .toSorted(
+      (a, b) => (configuredPosition(a) ?? 0) - (configuredPosition(b) ?? 0),
+    );
 }
 
 // 模式预设仅用于该模式尚未保存草稿的首次加载，不覆盖已保存的用户输入。

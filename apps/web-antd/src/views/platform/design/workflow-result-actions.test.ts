@@ -388,12 +388,14 @@ describe('result view selection', () => {
         comparison: kind === 'mask',
         job: { inputs: [input] },
       });
-      const label = kind === 'mask' ? '遮罩前原图' : '标记前原图';
+      const label = kind === 'mask' ? '遮罩前原图' : '带标记输入图';
       expect(
         root
           .querySelector(`[data-image-comparison] img[alt="${label}"]`)
           ?.getAttribute('src'),
-      ).toBe(`/preview/${kind === 'mask' ? 'original-image' : 'source-image'}`);
+      ).toBe(
+        `/preview/${kind === 'mask' ? 'original-image' : 'annotation-image'}`,
+      );
     },
   );
 });

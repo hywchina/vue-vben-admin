@@ -99,6 +99,7 @@ import { selectDesignConversationJobs } from '#/store/platform/helpers';
 import AssetPickerModal from '../workspace/asset-picker-modal.vue';
 import CameraAngleControl from '../workspace/camera-angle-control.vue';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
+import { applyCaptureMask } from '../workspace/capture-frame';
 import { submitCaptureFrame } from '../workspace/capture-session';
 import { createRegionInputAnnotations } from '../workspace/region-annotation';
 import { acceptComposerImageDrop } from './design-composer-drop';
@@ -206,6 +207,12 @@ const threeDFiles = ref<File[]>([]);
 const threeDSubmitting = ref(false);
 const mediaEditorRequest = ref(0);
 const mediaEditorFieldKey = ref('');
+const directMediaEditor = ref(false);
+const activeAutoEditorKey = ref('');
+const pendingInputEditors: string[] = [];
+const inputSourceFieldKey = ref('');
+const liveInputFieldKey = ref('');
+const liveRefreshRate = ref(500);
 const draftReadyKey = ref('');
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -338,11 +345,14 @@ const application = computed(() =>
     (item) => item.key === effectiveApplicationKey.value,
   ),
 );
-const allAvailableApplicationKeys = computed(() =>
-  platformStore.applications
-    .filter((item) => item.visible && item.capabilityCode)
-    .map((item) => item.key),
-);
+function availableApplicationKeysForMode(mode: DesignModeKey) {
+  return applicationsForDesignMode(
+    platformStore.applications,
+    getDesignMode(mode),
+  )
+    .filter((app) => isDesignGenerationApplication(app.key))
+    .map((app) => app.key);
+}
 const activeModePrimaryTools = computed(
   () => activeDesignMode.value.primaryTools ?? [],
 );
@@ -377,8 +387,18 @@ const mediaFields = computed(
 const composerImageFields = computed(() =>
   orderedImageMediaFields(additionalMediaFields.value),
 );
+const composerSlots = computed(() =>
+  composerImageFields.value.map((field) => ({
+    field,
+    asset: composerInputs.value.find((item) => item.field.key === field.key)
+      ?.asset,
+  })),
+);
 const composerCaptureFields = computed(() =>
-  mediaFields.value.filter((field) => field.type === 'capture'),
+  mediaFields.value.filter(
+    (field) =>
+      field.type === 'capture' || field.key === liveInputFieldKey.value,
+  ),
 );
 const additionalMediaFields = computed(() =>
   mediaFields.value.filter((field) => field.type !== 'capture'),
@@ -468,7 +488,7 @@ const cameraPreviewUrl = computed(() => {
 const continueDestinations = computed(() => {
   const kind = actionOutput.value?.kind;
   if (!kind) return [];
-  return platformStore.applications
+  return designApplications.value
     .filter(
       (item) =>
         item.visible &&
@@ -580,6 +600,7 @@ async function loadComposerPreview(assetId: string) {
 }
 
 function openMediaPicker() {
+  directMediaEditor.value = false;
   if (mediaFields.value.length === 0 && !promptField.value) {
     message.info('当前应用不需要输入素材');
     return;
@@ -696,6 +717,7 @@ async function dropComposerImage(event: DragEvent) {
           inputCacheKey(projectId, conversationId, asset.id)
         ] = asset;
         await selectAsset(field, asset.id);
+        queueInputEditor(field);
       },
     });
     if (added && isCurrent()) showComposerMediaProgress();
@@ -710,6 +732,16 @@ async function dropComposerImage(event: DragEvent) {
 }
 
 async function addComposerAssetIds(assetIds: string[]) {
+  const targetField = composerImageFields.value.find(
+    (field) => field.key === inputSourceFieldKey.value,
+  );
+  if (targetField && assetIds[0]) {
+    await selectAsset(targetField, assetIds[0]);
+    composerAssetPickerOpen.value = false;
+    queueInputEditor(targetField);
+    return;
+  }
+  const before = { ...selectedAssets };
   const result = assignMediaAssetIds(
     mediaFields.value,
     selectedAssets,
@@ -726,8 +758,23 @@ async function addComposerAssetIds(assetIds: string[]) {
     message.warning('已忽略重复选择的图片');
   }
   if (result.acceptedAssetIds.length > 0) showComposerMediaProgress();
+  for (const field of composerImageFields.value)
+    if (
+      field.assetIndex !== undefined &&
+      selectedAssets[field.assetIndex] !== before[field.assetIndex]
+    )
+      queueInputEditor(field);
 }
 
+function chooseComposerSlot(field: CapabilityField) {
+  inputSourceFieldKey.value = field.key;
+  composerSourcePickerOpen.value = true;
+}
+function openLiveInput(field: CapabilityField) {
+  inputSourceFieldKey.value = '';
+  composerSourcePickerOpen.value = false;
+  liveInputFieldKey.value = field.key;
+}
 function chooseComposerLocalFiles() {
   composerSourcePickerOpen.value = false;
   composerFileInputRef.value?.click();
@@ -748,10 +795,15 @@ async function uploadComposerFiles(event: Event) {
     message.warning('请选择图片文件');
     return;
   }
-  const emptyFields = composerImageFields.value.filter(
-    (field) =>
-      field.assetIndex !== undefined && !selectedAssets[field.assetIndex],
+  const targetField = composerImageFields.value.find(
+    (field) => field.key === inputSourceFieldKey.value,
   );
+  const emptyFields = targetField
+    ? [targetField]
+    : composerImageFields.value.filter(
+        (field) =>
+          field.assetIndex !== undefined && !selectedAssets[field.assetIndex],
+      );
   const retainedFiles = selectedFiles.slice(0, emptyFields.length);
   const discardedCount = selectedFiles.length - retainedFiles.length;
   if (retainedFiles.length === 0) {
@@ -779,6 +831,7 @@ async function uploadComposerFiles(event: Event) {
       `本次选择 ${selectedFiles.length} 张，当前工作流仅剩 ${retainedFiles.length} 个位置，已只保留前 ${retainedFiles.length} 张`,
     );
   }
+  inputSourceFieldKey.value = '';
   if (uploadedCount > 0) showComposerMediaProgress();
 }
 
@@ -811,12 +864,75 @@ async function openComposerInputEditor(field: CapabilityField) {
   if (field.assetIndex === undefined || !selectedAssets[field.assetIndex])
     return;
   const contextKey = captureContextKey.value;
+  directMediaEditor.value = true;
   mediaEditorFieldKey.value = field.key;
   mediaPickerOpen.value = true;
   await nextTick();
   if (contextKey === captureContextKey.value && mediaPickerOpen.value)
     mediaEditorRequest.value += 1;
 }
+
+function queueInputEditor(field: CapabilityField) {
+  if (
+    !['mask', 'region'].includes(field.type) ||
+    field.assetIndex === undefined ||
+    !selectedAssets[field.assetIndex]
+  )
+    return;
+  if (
+    !pendingInputEditors.includes(field.key) &&
+    activeAutoEditorKey.value !== field.key
+  )
+    pendingInputEditors.push(field.key);
+  void openNextInputEditor();
+}
+async function openNextInputEditor() {
+  if (activeAutoEditorKey.value || pendingInputEditors.length === 0) return;
+  const key = pendingInputEditors.shift();
+  const field = mediaFields.value.find((item) => item.key === key);
+  if (
+    !field ||
+    field.assetIndex === undefined ||
+    !selectedAssets[field.assetIndex]
+  ) {
+    void openNextInputEditor();
+    return;
+  }
+  activeAutoEditorKey.value = field.key;
+  await openComposerInputEditor(field);
+}
+function inputEditorClosed(field: CapabilityField) {
+  if (activeAutoEditorKey.value === field.key) {
+    activeAutoEditorKey.value = '';
+    if (pendingInputEditors.length > 0) {
+      void nextTick().then(openNextInputEditor);
+      return;
+    }
+  } else if (
+    !directMediaEditor.value ||
+    mediaEditorFieldKey.value !== field.key
+  )
+    return;
+  directMediaEditor.value = false;
+  mediaPickerOpen.value = false;
+}
+
+watch(mediaPickerOpen, (open) => {
+  if (!open) {
+    pendingInputEditors.length = 0;
+    activeAutoEditorKey.value = '';
+    mediaEditorFieldKey.value = '';
+    directMediaEditor.value = false;
+  }
+});
+watch(captureContextKey, () => {
+  liveInputFieldKey.value = '';
+  inputSourceFieldKey.value = '';
+  pendingInputEditors.length = 0;
+  activeAutoEditorKey.value = '';
+  mediaEditorFieldKey.value = '';
+  mediaPickerOpen.value = false;
+});
 
 async function loadMarkdownAsset(assetId: string) {
   const field = promptField.value;
@@ -1113,9 +1229,13 @@ async function selectConversation(
 }
 
 async function chooseApplication(appKey: string, businessToolKey = '') {
+  if (!designApplications.value.some((app) => app.key === appKey)) {
+    message.info('当前模块未启用该功能');
+    return false;
+  }
   if (!isDesignGenerationApplication(appKey)) {
     message.info('文本生成功能暂不接入设计工作台，历史结果仍可查看');
-    return;
+    return false;
   }
   generationMenuOpen.value = false;
   functionMenuOpen.value = false;
@@ -1124,7 +1244,7 @@ async function chooseApplication(appKey: string, businessToolKey = '') {
   mediaPickerOpen.value = false;
   if (appKey === selectedAppKey.value && capability.value) {
     selectedBusinessToolKey.value = businessToolKey;
-    return;
+    return true;
   }
   await saveDraftNow();
   selectedModeKey.value = designModeForApplication(
@@ -1134,6 +1254,7 @@ async function chooseApplication(appKey: string, businessToolKey = '') {
   selectedBusinessToolKey.value = businessToolKey;
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
+  return effectiveApplicationKey.value === appKey && Boolean(capability.value);
 }
 
 async function chooseGenerationCategory(category: DesignGenerationCategory) {
@@ -1142,12 +1263,13 @@ async function chooseGenerationCategory(category: DesignGenerationCategory) {
   const appKey = defaultGenerationApplicationKey(
     designApplications.value,
     category,
+    selectedModeKey.value,
   );
   if (!appKey) {
     message.info(
       category === 'text'
         ? '文生图工作流尚未接入或不可用'
-        : '局部重绘工作流尚未接入或不可用',
+        : '配置的图生图默认功能尚未接入或不可用',
     );
     return;
   }
@@ -1169,15 +1291,19 @@ async function chooseDesignMode(modeKey: DesignModeKey) {
     return;
   }
   if (modeKey === selectedModeKey.value) return;
+  const preferredKey = defaultGenerationApplicationKey(
+    applications,
+    generationCategory.value,
+    mode.key,
+  );
+  if (!preferredKey) {
+    message.info(`${mode.label}当前分类的默认功能不可用，请先检查模块配置`);
+    return;
+  }
   await saveDraftNow();
   selectedModeKey.value = modeKey;
   selectedBusinessToolKey.value = '';
-  const preferredKey =
-    selectedAppKey.value || mode.defaultApplicationKey || DEFAULT_APP_KEY;
-  const nextKey =
-    applications.find((item) => item.key === preferredKey)?.key ??
-    applications[0]?.key;
-  if (!nextKey) return;
+  const nextKey = preferredKey;
   selectedAppKey.value = nextKey;
   await loadCapability(nextKey);
 }
@@ -1407,6 +1533,14 @@ async function submitCapability(
     return;
   }
   if (!isDesignGenerationApplication(effectiveApplicationKey.value)) return;
+  if (
+    !designApplications.value.some(
+      (app) => app.key === effectiveApplicationKey.value,
+    )
+  ) {
+    message.warning('当前模块未启用此功能，请重新选择功能');
+    return;
+  }
   if (!application.value || !capability.value || !activeConversationId.value) {
     return;
   }
@@ -1507,6 +1641,15 @@ async function runJobSnapshot(
     message.info('文本生成功能暂不接入设计工作台，历史结果仍可查看');
     return;
   }
+  const replayMode = getDesignMode(job.designMode ?? selectedModeKey.value);
+  if (
+    !applicationsForDesignMode(platformStore.applications, replayMode).some(
+      (app) => app.key === job.appKey,
+    )
+  ) {
+    message.info('该历史功能未在当前模块启用，请先调整模块功能设置');
+    return;
+  }
   if (activeJob.value) {
     message.warning('当前设计会话已有任务在运行，请等待完成或停止后再提交');
     return;
@@ -1522,7 +1665,7 @@ async function runJobSnapshot(
   if (job.designMode) {
     selectedModeKey.value = job.designMode;
   }
-  await chooseApplication(job.appKey);
+  if (!(await chooseApplication(job.appKey))) return;
   hydratingDraft = true;
   try {
     resetDraftState(capability.value ?? undefined);
@@ -1551,7 +1694,11 @@ async function editAndRerunJob(
   await runJobSnapshot(job, { parameterKey, value });
 }
 
-async function selectAsset(field: CapabilityField, assetId: string) {
+async function selectAsset(
+  field: CapabilityField,
+  assetId: string,
+  preserveRegion = false,
+) {
   if (field.assetIndex === undefined) return;
   const occupied = Object.entries(selectedAssets).find(
     ([index, id]) => Number(index) !== field.assetIndex && id === assetId,
@@ -1562,7 +1709,11 @@ async function selectAsset(field: CapabilityField, assetId: string) {
   }
   const previousAssetId = selectedAssets[field.assetIndex];
   selectedAssets[field.assetIndex] = assetId;
-  if (field.type === 'region' && previousAssetId !== assetId) {
+  if (
+    !preserveRegion &&
+    field.type === 'region' &&
+    previousAssetId !== assetId
+  ) {
     parameterValues[field.key] = '';
   }
   await saveDraftNow();
@@ -1589,12 +1740,9 @@ async function uploadMedia(
     tags: options.tags ?? ['设计会话输入'],
     type: 'image',
   });
-  if (
-    field.type === 'capture' &&
-    (composerDisposed || contextKey !== captureContextKey.value)
-  )
-    return asset;
+  if (composerDisposed || contextKey !== captureContextKey.value) return asset;
   await selectAsset(field, asset.id);
+  if (!options.derivedFromAssetId) queueInputEditor(field);
   if (!options.silent) message.success('图像已登记为当前项目资产');
   return asset;
 }
@@ -1614,6 +1762,8 @@ async function saveInputMask(field: CapabilityField, file: File) {
 }
 
 function captureRefreshRate() {
+  if (!mediaFields.value.some((field) => field.type === 'capture'))
+    return liveRefreshRate.value;
   return captureRefreshRateValue(
     capability.value?.fields ?? [],
     parameterValues,
@@ -1649,21 +1799,70 @@ async function runLiveCapture(
     message.warning(`请填写“${promptField.value.label}”后开始实时生成`);
     return false;
   }
+  const missingReference = composerImageFields.value.find(
+    (item) =>
+      item.required &&
+      item.key !== field.key &&
+      (item.assetIndex === undefined || !selectedAssets[item.assetIndex]),
+  );
+  if (missingReference) {
+    message.warning(`请先添加“${missingReference.label}”`);
+    return false;
+  }
+  if (
+    field.type === 'region' &&
+    !String(parameterValues[field.key] ?? '').trim()
+  ) {
+    message.warning('请先捕获当前帧并完成分区标记');
+    return false;
+  }
   const contextKey = captureContextKey.value;
   const isCurrent = () =>
     session.isCurrent() &&
     !composerDisposed &&
     contextKey === captureContextKey.value;
+  let maskUrl: string | undefined;
+  if (field.type === 'mask') {
+    const selectedId =
+      field.assetIndex === undefined
+        ? undefined
+        : selectedAssets[field.assetIndex];
+    const selected = availableInputAssets.value.find(
+      (asset) => asset.id === selectedId,
+    );
+    if (!selected?.derivedFromAssetId) {
+      message.warning('请先捕获当前帧并完成遮罩编辑');
+      return false;
+    }
+    const preview = await getAssetPreviewApi(selected.id);
+    if (!isCurrent()) return false;
+    if (preview.mode !== 'url') throw new Error('遮罩图片暂不可用');
+    maskUrl = preview.url;
+  }
+  const maskedFile = maskUrl
+    ? await applyCaptureMask(file, maskUrl)
+    : undefined;
+  if (!isCurrent()) return false;
   return submitCaptureFrame(isCurrent, {
-    upload: () =>
-      platformStore.uploadAsset({
+    upload: async () => {
+      const original = await platformStore.uploadAsset({
         description: `${capability.value?.name ?? application.value?.name} 设计会话输入`,
         file,
         name: file.name.replace(/\.[^.]+$/, ''),
         tags: ['设计会话输入', '实时捕获'],
         type: 'image',
-      }),
-    select: (assetId) => selectAsset(field, assetId),
+      });
+      if (!maskedFile || !isCurrent()) return original;
+      return platformStore.uploadAsset({
+        file: maskedFile,
+        type: 'image',
+        name: maskedFile.name,
+        tags: ['设计会话输入', '遮罩', '实时捕获'],
+        derivedFromAssetId: original.id,
+        designConversationId: activeConversationId.value,
+      });
+    },
+    select: (assetId) => selectAsset(field, assetId, true),
     submit: () => submitCapability({ isCurrent, live: true }),
     track: (jobId) => {
       if (jobId) liveCaptureJobs.set(session, jobId);
@@ -1761,7 +1960,8 @@ async function saveOutputMask(file: File) {
   });
   if (actionOutput.value) {
     selectedModeKey.value = actionDesignMode.value;
-    await chooseApplication('inpaint-single');
+    if (!(await chooseApplication('inpaint-single')))
+      throw new Error('当前模块未启用局部重绘');
     const maskField = mediaFields.value.find(
       (field) => field.type === 'mask' && field.assetIndex !== undefined,
     );
@@ -1807,7 +2007,7 @@ async function continueDesign() {
   const conversationId = activeConversationId.value;
   try {
     await resolveConversationInput(output.assetId);
-    await chooseApplication(continueAppKey.value);
+    if (!(await chooseApplication(continueAppKey.value))) return;
     if (
       projectId !== platformStore.currentProjectId ||
       conversationId !== activeConversationId.value
@@ -1837,7 +2037,8 @@ async function prepareOutputInComposer(
   const conversationId = activeConversationId.value;
   await resolveConversationInput(output.assetId);
   selectedModeKey.value = modeKey;
-  await chooseApplication(appKey, businessToolKey);
+  if (!(await chooseApplication(appKey, businessToolKey)))
+    throw new Error('当前模块未启用目标功能');
   if (
     projectId !== platformStore.currentProjectId ||
     conversationId !== activeConversationId.value
@@ -2258,7 +2459,8 @@ async function importAssetAction() {
       if (sourceJob.designMode && sourceJob.designMode !== 'report') {
         selectedModeKey.value = sourceJob.designMode;
       }
-      await chooseApplication(sourceJob.appKey);
+      if (!(await chooseApplication(sourceJob.appKey)))
+        throw new Error('当前模块未启用来源任务的功能');
       for (const [key, value] of Object.entries(sourceJob.parameters))
         parameterValues[key] = value;
       for (const input of sourceJob.inputs)
@@ -2470,7 +2672,11 @@ onBeforeUnmount(() => {
               v-for="(job, index) in conversationJobs"
               :key="job.id"
               :accent="jobApplication(job)?.color ?? '#b91c32'"
-              :available-application-keys="allAvailableApplicationKeys"
+              :available-application-keys="
+                availableApplicationKeysForMode(
+                  job.designMode ?? selectedModeKey,
+                )
+              "
               :fields="jobCapability(job)?.fields ?? []"
               conversation-layout
               flow-label="继续编辑"
@@ -2520,10 +2726,28 @@ onBeforeUnmount(() => {
             class="composer-capture-fields"
             data-testid="composer-capture-fields"
           >
+            <div class="composer-live-heading">
+              <strong>实时输入</strong>
+              <label>
+                检测间隔
+                <Select
+                  v-model:value="liveRefreshRate"
+                  aria-label="实时输入检测间隔"
+                  :options="[
+                    { value: 500, label: '0.5秒' },
+                    { value: 1000, label: '1秒' },
+                    { value: 2000, label: '2秒' },
+                  ]"
+                />
+              </label>
+              <Button @click="liveInputFieldKey = ''">关闭实时输入</Button>
+            </div>
             <CapabilityMediaField
               v-for="field in composerCaptureFields"
               :key="`${captureContextKey}:${field.key}`"
               composer
+              capture-input
+              :capture-scope="captureContextKey"
               :accent="application?.color ?? '#b91c32'"
               :assets="platformStore.currentAssets"
               :field="field"
@@ -2538,7 +2762,10 @@ onBeforeUnmount(() => {
                   : selectedAssets[field.assetIndex]
               "
               :stop-live-capture="stopLiveCapture"
-              @select="selectAsset(field, $event)"
+              @editor-closed="inputEditorClosed(field)"
+              @select="
+                selectAsset(field, $event).then(() => queueInputEditor(field))
+              "
               @upload="uploadMedia(field, $event)"
             />
           </section>
@@ -2551,116 +2778,105 @@ onBeforeUnmount(() => {
               class="composer-input-assets"
               data-testid="composer-input-assets"
             >
-              <article
-                v-for="item in composerInputs"
-                :key="`${item.field.key}:${item.asset.id}`"
-                class="composer-input-asset"
+              <div
+                v-for="item in composerSlots"
+                :key="item.field.key"
+                class="composer-slot-card"
               >
-                <button
-                  :aria-label="`${composerInputEditorLabel(item.field)}：${item.asset.name}`"
-                  class="composer-input-asset__preview"
-                  :title="`点击进入${composerInputEditorLabel(item.field)}`"
-                  type="button"
-                  @click="openComposerInputEditor(item.field)"
-                >
-                  <img
-                    v-if="composerPreviewUrls[item.asset.id]"
-                    :alt="item.asset.name"
-                    :src="composerPreviewUrls[item.asset.id]"
-                  />
-                  <IconifyIcon v-else :icon="assetTypeIcons.image" />
-                </button>
-                <div class="composer-input-asset__move-actions">
+                <article v-if="item.asset" class="composer-input-asset">
+                  <span class="composer-input-role">
+                    图片{{ (item.field.assetIndex ?? 0) + 1 }} ·
+                    {{ item.field.label }}
+                  </span>
                   <button
-                    :aria-label="`左移${item.asset.name}`"
-                    :disabled="composerInputPosition(item.field) === 0"
-                    title="左移"
+                    :aria-label="`${composerInputEditorLabel(item.field)}：${item.asset.name}`"
+                    class="composer-input-asset__preview"
+                    :title="`点击进入${composerInputEditorLabel(item.field)}`"
                     type="button"
-                    @click="moveComposerInput(item.field, -1)"
+                    @click="openComposerInputEditor(item.field)"
                   >
-                    <IconifyIcon :icon="platformUiIcons.arrowLeft" />
-                  </button>
-                  <button
-                    :aria-label="`编辑${item.asset.name}`"
-                    :title="composerInputEditorLabel(item.field)"
-                    type="button"
-                    @click.stop="openComposerInputEditor(item.field)"
-                  >
-                    <IconifyIcon
-                      :icon="
-                        item.field.type === 'region'
-                          ? platformUiIcons.scanLine
-                          : item.field.type === 'mask'
-                            ? platformSemanticIcons.mask
-                            : platformUiIcons.maximize2
-                      "
+                    <img
+                      v-if="composerPreviewUrls[item.asset.id]"
+                      :alt="item.asset.name"
+                      :src="composerPreviewUrls[item.asset.id]"
                     />
+                    <IconifyIcon v-else :icon="assetTypeIcons.image" />
                   </button>
-                  <button
-                    :aria-label="`右移${item.asset.name}`"
-                    :disabled="
-                      composerInputPosition(item.field) ===
-                      composerInputs.length - 1
-                    "
-                    title="右移"
-                    type="button"
-                    @click="moveComposerInput(item.field, 1)"
-                  >
-                    <IconifyIcon :icon="platformUiIcons.arrowRight" />
-                  </button>
-                </div>
-                <button
-                  :aria-label="`移除${item.asset.name}`"
-                  class="composer-input-asset__remove"
-                  title="移除"
-                  type="button"
-                  @click="removeSelectedAsset(item.field)"
-                >
-                  <IconifyIcon :icon="platformUiIcons.close" />
-                </button>
-              </article>
-
-              <Popover
-                v-if="composerCanAddMedia"
-                v-model:open="composerSourcePickerOpen"
-                placement="topLeft"
-                trigger="click"
-              >
-                <template #content>
-                  <div class="composer-media-source-menu">
-                    <button type="button" @click="chooseComposerLocalFiles">
-                      <IconifyIcon :icon="platformUiIcons.upload" />
-                      <span>
-                        <strong>本地上传</strong>
-                        <small>可一次选择多张图片</small>
-                      </span>
+                  <div class="composer-input-asset__move-actions">
+                    <button
+                      :aria-label="`左移${item.asset.name}`"
+                      :disabled="composerInputPosition(item.field) === 0"
+                      title="左移"
+                      type="button"
+                      @click="moveComposerInput(item.field, -1)"
+                    >
+                      <IconifyIcon :icon="platformUiIcons.arrowLeft" />
                     </button>
-                    <button type="button" @click="chooseComposerProjectAssets">
-                      <IconifyIcon :icon="platformSemanticIcons.assets" />
-                      <span>
-                        <strong>从资产中心选择</strong>
-                        <small>支持多选当前项目图片</small>
-                      </span>
+                    <button
+                      :aria-label="`编辑${item.asset.name}`"
+                      :title="composerInputEditorLabel(item.field)"
+                      type="button"
+                      @click.stop="openComposerInputEditor(item.field)"
+                    >
+                      <IconifyIcon
+                        :icon="
+                          item.field.type === 'region'
+                            ? platformUiIcons.scanLine
+                            : item.field.type === 'mask'
+                              ? platformSemanticIcons.mask
+                              : platformUiIcons.maximize2
+                        "
+                      />
+                    </button>
+                    <button
+                      :aria-label="`右移${item.asset.name}`"
+                      :disabled="
+                        composerInputPosition(item.field) ===
+                        composerInputs.length - 1
+                      "
+                      title="右移"
+                      type="button"
+                      @click="moveComposerInput(item.field, 1)"
+                    >
+                      <IconifyIcon :icon="platformUiIcons.arrowRight" />
                     </button>
                   </div>
-                </template>
+                  <button
+                    :aria-label="`移除${item.asset.name}`"
+                    class="composer-input-asset__remove"
+                    title="移除"
+                    type="button"
+                    @click="removeSelectedAsset(item.field)"
+                  >
+                    <IconifyIcon :icon="platformUiIcons.close" />
+                  </button>
+                </article>
+
                 <button
-                  aria-label="添加输入图片"
+                  v-else
+                  class="composer-input-slot"
+                  :aria-label="`添加图片${(item.field.assetIndex ?? 0) + 1}：${item.field.label}`"
                   :disabled="composerUploading || composerImportingImage"
-                  class="composer-input-asset__add"
-                  data-testid="composer-add-image"
                   type="button"
+                  @click="chooseComposerSlot(item.field)"
                 >
-                  <IconifyIcon
-                    :icon="
-                      composerUploading
-                        ? platformUiIcons.loaderCircle
-                        : platformUiIcons.plus
-                    "
-                  />
-                  <span>{{ composerUploading ? '上传中' : '添加图片' }}</span>
+                  <IconifyIcon :icon="platformUiIcons.plus" />
+                  <strong>
+                    添加图片{{ (item.field.assetIndex ?? 0) + 1 }}
+                  </strong>
+                  <span>{{ item.field.label }}</span>
+                  <small>{{ item.field.required ? '必填' : '选填' }}</small>
                 </button>
-              </Popover>
+                <button
+                  :aria-label="`实时输入：${item.field.label}`"
+                  class="composer-live-entry"
+                  type="button"
+                  @click="openLiveInput(item.field)"
+                >
+                  <IconifyIcon :icon="platformUiIcons.monitorUp" />
+                  <span>实时输入</span>
+                </button>
+              </div>
             </div>
             <input
               ref="composerFileInputRef"
@@ -2919,6 +3135,27 @@ onBeforeUnmount(() => {
     </section>
 
     <Modal
+      v-model:open="composerSourcePickerOpen"
+      title="添加图片"
+      :footer="null"
+      width="min(420px, 94vw)"
+    >
+      <p>
+        {{
+          composerImageFields.find((field) => field.key === inputSourceFieldKey)
+            ?.label ?? '按工作流输入顺序添加图片'
+        }}
+      </p>
+      <div class="composer-media-source-menu">
+        <button type="button" @click="chooseComposerLocalFiles">
+          本地上传
+        </button>
+        <button type="button" @click="chooseComposerProjectAssets">
+          从资产中心选择
+        </button>
+      </div>
+    </Modal>
+    <Modal
       v-model:open="mediaPickerOpen"
       :footer="null"
       title="添加输入素材"
@@ -2961,7 +3198,10 @@ onBeforeUnmount(() => {
               : selectedAssets[field.assetIndex]
           "
           :value="parameterValues[field.key]"
-          @select="selectAsset(field, $event)"
+          @editor-closed="inputEditorClosed(field)"
+          @select="
+            selectAsset(field, $event).then(() => queueInputEditor(field))
+          "
           @update:value="setFieldValue(field, $event)"
           @upload="uploadMedia(field, $event)"
         />
@@ -3035,7 +3275,10 @@ onBeforeUnmount(() => {
                 : selectedAssets[field.assetIndex]
             "
             :value="parameterValues[field.key]"
-            @select="selectAsset(field, $event)"
+            @editor-closed="inputEditorClosed(field)"
+            @select="
+              selectAsset(field, $event).then(() => queueInputEditor(field))
+            "
             @update:value="setFieldValue(field, $event)"
             @upload="uploadMedia(field, $event)"
           />
@@ -3394,6 +3637,71 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.composer-slot-card {
+  display: flex;
+  flex: 0 0 130px;
+  flex-direction: column;
+  gap: 6px;
+  width: 130px;
+}
+
+.composer-input-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  width: 130px;
+  min-height: 116px;
+  padding: 12px;
+  color: #655c60;
+  background: #faf7f8;
+  border: 1px dashed #d8cbd0;
+  border-radius: 12px;
+}
+
+.composer-input-slot span {
+  max-width: 100%;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.composer-input-slot small {
+  font-size: 12px;
+  color: #8c7d83;
+}
+
+.composer-input-role {
+  display: block;
+  max-width: 140px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #62585e;
+  overflow-wrap: anywhere;
+}
+
+.composer-live-entry {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 10px;
+  font-size: 12px;
+  color: #8f3450;
+  background: #fff7fa;
+  border: 1px solid #ead8df;
+  border-radius: 10px;
+}
+
+.composer-live-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
 .design-page {
   --design-border: var(--rail-theme-border, #e3e6e8);
   --design-content-width: 1120px;
@@ -4636,6 +4944,7 @@ main.design-page {
 .composer-input-assets {
   display: flex;
   gap: 9px;
+  align-items: flex-start;
   min-height: 82px;
   padding: 1px 0 3px;
   overflow-x: auto;
@@ -4644,17 +4953,18 @@ main.design-page {
 
 .composer-input-asset {
   position: relative;
-  flex: 0 0 78px;
-  width: 78px;
-  height: 78px;
+  flex: 0 0 130px;
+  width: 130px;
+  height: auto;
+  min-height: 116px;
 }
 
 .composer-input-asset__preview {
   position: relative;
   display: grid;
   place-items: center;
-  width: 78px;
-  height: 78px;
+  width: 130px;
+  height: 88px;
   padding: 0;
   overflow: hidden;
   color: var(--rail-theme-secondary, #52606d);

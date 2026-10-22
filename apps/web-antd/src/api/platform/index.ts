@@ -4,6 +4,7 @@ export * from './assistant';
 export * from './audit';
 export * from './dashboard';
 export * from './design-conversations';
+export * from './design-modes';
 export * from './design-prompt-templates';
 export * from './jobs';
 export * from './lora';

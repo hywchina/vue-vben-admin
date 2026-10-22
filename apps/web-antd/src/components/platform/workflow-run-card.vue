@@ -148,6 +148,7 @@ const requestsImageComparison = computed(
 const comparisonSourceAssetId = computed(() => {
   const input = firstImageInput.value;
   if (!input) return undefined;
+  if (comparesRegionInput.value) return input.annotationAssetId;
   if (comparesMaskedInput.value) return input.derivedFromAssetId;
   return input.assetId;
 });
@@ -187,7 +188,7 @@ const imageComparison = computed(() => {
     beforeLabel = '遮罩前原图';
     afterLabel = '遮罩生成结果';
   } else if (comparesRegionInput.value) {
-    beforeLabel = '标记前原图';
+    beforeLabel = '带标记输入图';
     afterLabel = '分区生成结果';
   }
   return { afterLabel, afterSrc, beforeLabel, beforeSrc };
@@ -757,10 +758,17 @@ onMounted(() => void loadPreviews());
             </button>
           </div>
           <span
-            v-else-if="missingMaskComparisonSource"
+            v-else-if="
+              missingMaskComparisonSource ||
+              (comparesRegionInput && !firstImageInput?.annotationAssetId)
+            "
             class="round-comparison-unavailable"
           >
-            历史任务未记录遮罩前原图，无法准确对比
+            {{
+              comparesRegionInput
+                ? '历史任务未记录带标记输入图，无法准确对比'
+                : '历史任务未记录遮罩前原图，无法准确对比'
+            }}
           </span>
         </div>
 

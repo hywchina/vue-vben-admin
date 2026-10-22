@@ -370,6 +370,13 @@ export function materializeWorkflow(
       applyGenerationQuantityPolicy(definition),
       parameters[definition.key],
     );
+    // Region marks guide the edit; they are never desired content in the output.
+    if (
+      definition.key === 'prompt' &&
+      typeof value === 'string' &&
+      definitions.some((field) => field.type === 'region')
+    )
+      value = `${value}\n仅将输入中的颜色区域、编号、框线作为编辑指引，完成指定修改后移除这些辅助标记。最终只输出自然、干净的设计图片，不保留或生成编号、色块、框线、文字标签。`;
     if (
       value !== undefined &&
       typeof value === 'string' &&

@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('vue-router', () => ({
   useRoute: () => ({
-    query: { conversationId: 'conversation', appKey: 'screen-capture-edit' },
+    query: { conversationId: 'conversation', appKey: 'single-image-edit' },
   }),
   useRouter: () => ({
     replace: vi.fn().mockResolvedValue(undefined),
@@ -33,6 +33,16 @@ vi.mock('#/store', () => ({ usePlatformStore: () => mocks.store }));
 vi.mock('#/api', () => ({
   getCapabilityApi: mocks.capability,
   getDesignConversationDraftApi: mocks.draft,
+  getDesignConversationInputAssetApi: (
+    _conversation: string,
+    _project: string,
+    id: string,
+  ) =>
+    Promise.resolve(
+      mocks.store.currentAssets.find(
+        (asset: { id: string }) => asset.id === id,
+      ),
+    ),
   getDesignConversationsApi: mocks.conversations,
   saveDesignConversationDraftApi: mocks.save,
   archiveDesignConversationApi: vi.fn(),
@@ -87,12 +97,25 @@ vi.mock('ant-design-vue', () => {
     },
   };
 });
+vi.mock('../workspace/region-annotation', () => ({
+  createRegionInputAnnotations: vi.fn(async () => []),
+}));
 vi.mock('../workspace/capability-media-field.vue', () => ({
   default: defineComponent({
-    props: ['liveCapture', 'stopLiveCapture', 'selectedAssetId'],
+    props: {
+      liveCapture: Function,
+      stopLiveCapture: Function,
+      selectedAssetId: String,
+      captureInput: Boolean,
+    },
     setup: (props) => {
-      mocks.capture = props;
-      return () => h('div', { 'data-testid': 'capture-instance' });
+      if (props.captureInput) mocks.capture = props;
+      return () =>
+        h('div', {
+          'data-testid': props.captureInput
+            ? 'capture-instance'
+            : 'media-instance',
+        });
     },
   }),
 }));
@@ -124,7 +147,7 @@ beforeEach(() => {
   mocks.store = reactive({
     applications: [
       {
-        key: 'screen-capture-edit',
+        key: 'single-image-edit',
         name: '实时画面编辑',
         shortName: '实时编辑',
         capabilityCode: 'capture',
@@ -161,7 +184,7 @@ beforeEach(() => {
         ...base,
         key: 'capture',
         label: '捕获画面',
-        type: 'capture',
+        type: 'asset',
         assetIndex: 0,
         acceptedKinds: ['image'],
       },
@@ -199,6 +222,10 @@ async function render() {
   });
   for (let turn = 0; turn < 50; turn += 1) await Promise.resolve();
   await nextTick();
+  root
+    .querySelector<HTMLButtonElement>('[aria-label="实时输入：捕获画面"]')
+    ?.click();
+  await nextTick();
   return root;
 }
 
@@ -227,7 +254,7 @@ describe('design inline live editing integration', () => {
         projectId: 'project',
         ownedByCurrentUser: true,
         status: 'running',
-        appKey: 'screen-capture-edit',
+        appKey: 'single-image-edit',
       },
     ];
     await render();
@@ -246,7 +273,7 @@ describe('design inline live editing integration', () => {
   it('keeps instructions and captured input through successive live frames; More does not mount another capture', async () => {
     const root = await render();
     const textarea = root.querySelector(
-      '.composer-box textarea',
+      '.composer-box textarea[placeholder]',
     ) as HTMLTextAreaElement;
     expect(textarea.value).toBe('保留这条编辑指令');
     const session = { isCurrent: () => true };
@@ -274,5 +301,92 @@ describe('design inline live editing integration', () => {
     );
     await mocks.capture.stopLiveCapture(session);
     expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('realtime image input contracts', () => {
+  it('replaces only the chosen slot while preserving fixed references through successive frames', async () => {
+    const capability = await mocks.capability();
+    capability.fields.push({
+      ...capability.fields[0],
+      key: 'reference',
+      label: '固定参考',
+      assetIndex: 1,
+    });
+    mocks.capability.mockResolvedValue(capability);
+    mocks.store.currentAssets = [
+      {
+        id: 'reference-image',
+        projectId: 'project',
+        type: 'image',
+        status: 'available',
+        name: '固定参考',
+        version: 1,
+      },
+    ];
+    mocks.draft.mockResolvedValue({
+      updatedAt: '2026-10-22',
+      parameterValues: { prompt: '固定指令' },
+      inputAssetIds: { 1: 'reference-image' },
+    });
+    await render();
+    mocks.upload
+      .mockResolvedValueOnce({ id: 'frame-1' })
+      .mockResolvedValueOnce({ id: 'frame-2' });
+    const session = { isCurrent: () => true };
+    await mocks.capture.liveCapture(new File(['a'], 'a.png'), session);
+    await mocks.capture.liveCapture(new File(['b'], 'b.png'), session);
+    expect(mocks.submit.mock.calls.map((call) => call[2])).toEqual([
+      ['frame-1', 'reference-image'],
+      ['frame-2', 'reference-image'],
+    ]);
+  });
+  it('rejects realtime generation when another required image slot is empty', async () => {
+    const capability = await mocks.capability();
+    capability.fields.push({
+      ...capability.fields[0],
+      key: 'reference',
+      label: '固定参考',
+      assetIndex: 1,
+    });
+    mocks.capability.mockResolvedValue(capability);
+    await render();
+    expect(
+      await mocks.capture.liveCapture(new File(['a'], 'a.png'), {
+        isCurrent: () => true,
+      }),
+    ).toBe(false);
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+  it('preserves region marks in each realtime task snapshot', async () => {
+    const capability = await mocks.capability();
+    capability.fields[0].type = 'region';
+    mocks.capability.mockResolvedValue(capability);
+    const marks = 'brush:square:4:1:255,0,0:1:10,10;30,30';
+    mocks.draft.mockResolvedValue({
+      updatedAt: '2026-10-22',
+      parameterValues: { prompt: '固定指令', capture: marks },
+      inputAssetIds: {},
+    });
+    await render();
+    await mocks.capture.liveCapture(new File(['a'], 'a.png'), {
+      isCurrent: () => true,
+    });
+    expect(mocks.submit.mock.calls[0]?.[3]).toEqual({
+      prompt: '固定指令',
+      capture: marks,
+    });
+  });
+  it('requires an edited mask before starting continuous inpainting', async () => {
+    const capability = await mocks.capability();
+    capability.fields[0].type = 'mask';
+    mocks.capability.mockResolvedValue(capability);
+    await render();
+    expect(
+      await mocks.capture.liveCapture(new File(['a'], 'a.png'), {
+        isCurrent: () => true,
+      }),
+    ).toBe(false);
+    expect(mocks.upload).not.toHaveBeenCalled();
   });
 });

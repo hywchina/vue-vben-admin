@@ -24,6 +24,9 @@ vi.mock(
   '#/views/platform/workflow-management/parameter-presentation-editor.vue',
   () => ({ default: { render: () => null } }),
 );
+vi.mock('#/views/platform/workflow-management/design-mode-editor.vue', () => ({
+  default: { render: () => null },
+}));
 vi.mock('@vben/common-ui', () => ({
   Page: defineComponent({
     setup:

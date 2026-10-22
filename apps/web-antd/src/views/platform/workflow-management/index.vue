@@ -34,6 +34,7 @@ import {
   updateWorkflowApi,
 } from '#/api/platform';
 
+import DesignModeEditor from './design-mode-editor.vue';
 import ParameterPresentationEditor from './parameter-presentation-editor.vue';
 import WorkflowJsonViewer from './workflow-json-viewer.vue';
 
@@ -280,7 +281,10 @@ onMounted(loadOverview);
       <Card :bordered="false">
         <template #title>工作流注册表</template>
         <template #extra>
-          <Button type="primary" @click="openCreateEditor">注册工作流</Button>
+          <Space>
+            <DesignModeEditor />
+            <Button type="primary" @click="openCreateEditor">注册工作流</Button>
+          </Space>
         </template>
         <p class="muted">
           “标识”是系统内部唯一代码，不是 JSON 文件名。例如

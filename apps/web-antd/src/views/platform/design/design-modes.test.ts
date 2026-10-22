@@ -70,28 +70,32 @@ describe('design mode catalog', () => {
     ]);
   });
 
-  it('shares the backend function catalog across all image modes, including newly added workflows', () => {
+  it('keeps module catalogs isolated and honors persisted administrator order', () => {
     const catalog = [
-      application('text-to-image'),
-      application('future-workflow'),
       application('multiview-to-3d'),
-      application('hidden', { visible: false }),
-      application('unbound', { capabilityCode: undefined }),
+      application('single-image-edit', {
+        designModes: { cmf: { order: 0, defaultImage: true } },
+      }),
+      application('multi-image-edit', {
+        designModes: { cmf: { order: 1, defaultImage: false } },
+      }),
     ];
-    const expected = applicationsForDesignMode(
-      catalog,
-      getDesignMode('cabin'),
-    ).map((item) => item.key);
-    for (const mode of ['component', 'cmf', 'cabin'] as const) {
-      expect(
-        applicationsForDesignMode(catalog, getDesignMode(mode)).map(
-          (item) => item.key,
-        ),
-      ).toEqual(expected);
-      expect(getDesignMode(mode).defaultApplicationKey).toBe('text-to-image');
-    }
-    expect(expected).toContain('future-workflow');
-    expect(expected).not.toContain('hidden');
+    expect(
+      applicationsForDesignMode(catalog, getDesignMode('cmf')).map(
+        (item) => item.key,
+      ),
+    ).toEqual(['single-image-edit', 'multi-image-edit']);
+    expect(
+      applicationsForDesignMode(catalog, getDesignMode('component')).map(
+        (item) => item.key,
+      ),
+    ).toEqual(['multiview-to-3d']);
+    expect(
+      applicationsForDesignMode(
+        [application('screen-capture-edit')],
+        getDesignMode('cabin'),
+      ),
+    ).toEqual([]);
   });
   it('uses distinct prompt presets without inventing fields for unrelated workflows', () => {
     expect(designModeDefaults('cmf', 'text-to-image').prompt).toContain(

@@ -111,13 +111,23 @@ vi.mock('../workspace/camera-angle-control.vue', () => ({
 vi.mock('#/components/platform/comfy-mask-editor.vue', () => ({
   default: defineComponent({
     props: ['open', 'src'],
-    setup: (props) => () =>
-      props.open
-        ? h('div', {
-            'data-testid': 'mask-editor',
-            'data-source': props.src,
-          })
-        : null,
+    emits: ['update:open'],
+    setup:
+      (props, { emit }) =>
+      () =>
+        props.open
+          ? h(
+              'div',
+              { 'data-testid': 'mask-editor', 'data-source': props.src },
+              [
+                h(
+                  'button',
+                  { onClick: () => emit('update:open', false) },
+                  '关闭编辑器',
+                ),
+              ],
+            )
+          : null,
   }),
 }));
 vi.mock('#/components/platform/image-lightbox.vue', () => ({
@@ -133,7 +143,21 @@ vi.mock('#/components/platform/image-lightbox.vue', () => ({
   }),
 }));
 vi.mock('#/components/platform/workflow-run-card.vue', () => ({
-  default: defineComponent({ setup: () => () => null }),
+  default: defineComponent({
+    props: ['job'],
+    emits: ['rerun'],
+    setup:
+      (props, { emit }) =>
+      () =>
+        h(
+          'button',
+          {
+            'data-testid': 'rerun-history',
+            onClick: () => emit('rerun', props.job),
+          },
+          '重用历史任务',
+        ),
+  }),
 }));
 vi.mock('./design-image-size.vue', () => ({
   default: defineComponent({ setup: () => () => null }),
@@ -214,9 +238,12 @@ const cases = Object.entries(schemas).flatMap(([appKey, definitions]) =>
       index: field.assetIndex,
     })),
 );
-async function configure(appKey: string) {
+async function configure(appKey: string, filled = true) {
   mocks.appKey = appKey;
   mocks.store.applications[0].key = appKey;
+  mocks.store.applications[0].designModes = {
+    cabin: { order: 0, defaultImage: true },
+  };
   const fields = schemas[appKey];
   if (!fields) throw new Error(`Missing schema: ${appKey}`);
   const media = fields.filter((field) =>
@@ -240,9 +267,11 @@ async function configure(appKey: string) {
       prompt: '保留编辑指令',
       regionMarks: 'brush:box:4:1:255,0,0:0,0;10,10',
     },
-    inputAssetIds: Object.fromEntries(
-      media.map((field) => [field.assetIndex, `asset-${field.assetIndex}`]),
-    ),
+    inputAssetIds: filled
+      ? Object.fromEntries(
+          media.map((field) => [field.assetIndex, `asset-${field.assetIndex}`]),
+        )
+      : {},
   });
   return await render();
 }
@@ -393,5 +422,121 @@ describe('shared image editor lifecycle', () => {
     props.selectedAssetId = 'second';
     await settle();
     expect(root.querySelector('[data-testid="mask-editor"]')).toBeNull();
+  });
+});
+
+describe('role-specific image slots and automatic editors', () => {
+  it('shows all three named inputs before any image is selected', async () => {
+    const root = await configure('multi-image-edit', false);
+    const slots = [
+      ...root.querySelectorAll<HTMLButtonElement>('.composer-input-slot'),
+    ];
+    expect(slots.map((slot) => slot.getAttribute('aria-label'))).toEqual([
+      '添加图片1：基础空间',
+      '添加图片2：样式参考',
+      '添加图片3：材质参考',
+    ]);
+    expect(root.querySelectorAll('.composer-live-entry')).toHaveLength(3);
+  });
+  it.each([
+    'inpaint-single',
+    'region-marker-edit',
+    'region-edit',
+    'image-understanding',
+  ])(
+    'uploads to a specific %s slot and opens only a required editor',
+    async (appKey) => {
+      const root = await configure(appKey, false);
+      const slot = root.querySelector<HTMLButtonElement>(
+        '.composer-input-slot',
+      );
+      if (!slot) throw new Error('Missing empty slot');
+      slot.click();
+      await settle();
+      const local = [
+        ...root.querySelectorAll<HTMLButtonElement>('button'),
+      ].find((button) => button.textContent?.trim() === '本地上传');
+      if (!local) throw new Error('Missing upload source');
+      local.click();
+      await settle();
+      mocks.upload.mockResolvedValue(mocks.store.currentAssets[0]);
+      const input = root.querySelector<HTMLInputElement>('input[type="file"]');
+      if (!input) throw new Error('Missing file input');
+      Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [new File(['fixture'], 'new.png', { type: 'image/png' })],
+      });
+      input.dispatchEvent(new Event('change'));
+      await settle();
+      expect(mocks.upload).toHaveBeenCalledOnce();
+      expect(Boolean(root.querySelector('[data-testid="mask-editor"]'))).toBe(
+        appKey === 'inpaint-single',
+      );
+      expect(root.textContent?.includes('应用分区')).toBe(
+        appKey.startsWith('region-'),
+      );
+      expect(root.querySelector('[data-testid="image-lightbox"]')).toBeNull();
+      expect(mocks.submit).not.toHaveBeenCalled();
+      root
+        .querySelector<HTMLButtonElement>('[data-testid="mask-editor"] button')
+        ?.click();
+      [...root.querySelectorAll<HTMLButtonElement>('button')]
+        .find((button) => button.textContent?.trim() === '应用分区')
+        ?.click();
+      await settle();
+      expect(root.querySelector('.media-picker-fields')).toBeNull();
+    },
+  );
+});
+
+describe('direct editor return path', () => {
+  it('returns straight to the composer after a thumbnail editor is closed', async () => {
+    const root = await configure('inpaint-single');
+    root
+      .querySelector<HTMLButtonElement>('.composer-input-asset__preview')
+      ?.click();
+    await settle();
+    const close = [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+      (item) => item.textContent?.trim() === '关闭编辑器',
+    );
+    if (!close) throw new Error('Missing mask close');
+    close.click();
+    await settle();
+    expect(root.querySelector('[data-testid="mask-editor"]')).toBeNull();
+    expect(root.querySelector('.media-picker-fields')).toBeNull();
+  });
+});
+
+describe('disabled workflow replay', () => {
+  it('does not overwrite the current draft or run another workflow for a hidden historical function', async () => {
+    const root = await configure('inpaint-single');
+    mocks.store.currentJobs = [
+      {
+        id: 'old-job',
+        appKey: 'image-upscale',
+        designMode: 'cabin',
+        designConversationId: 'conversation',
+        projectId: 'project',
+        ownedByCurrentUser: true,
+        status: 'succeeded',
+        createdAt: '2026-10-22T00:00:00Z',
+        inputs: [],
+        outputs: [],
+        parameters: { prompt: '不可覆盖当前输入' },
+      },
+    ];
+    await settle();
+    const replay = root.querySelector<HTMLButtonElement>(
+      '[data-testid="rerun-history"]',
+    );
+    if (!replay) throw new Error('Missing historical action');
+    replay.click();
+    await settle();
+    expect(
+      root.querySelector<HTMLTextAreaElement>(
+        '.composer-box textarea[placeholder]',
+      )?.value,
+    ).toBe('保留编辑指令');
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 });

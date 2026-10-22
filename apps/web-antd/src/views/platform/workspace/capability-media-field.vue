@@ -42,6 +42,8 @@ import {
 const props = defineProps<{
   accent: string;
   assets: PlatformAsset[];
+  captureInput?: boolean;
+  captureScope?: string;
   composer?: boolean;
   field: CapabilityField;
   liveCapture?: (
@@ -58,6 +60,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  editorClosed: [];
   select: [assetId: string];
   'update:value': [value: string];
   upload: [file: File];
@@ -297,7 +300,7 @@ function handleAssetSelect(assetId: string) {
 }
 
 function captureStorageKey() {
-  return `rail-workflow-screen-area-${props.field.key}`;
+  return `rail-workflow-screen-area-${props.captureScope ?? props.projectId ?? ''}:${props.field.key}`;
 }
 
 function restoreCaptureCrop() {
@@ -695,7 +698,19 @@ watch(
       request !== props.openEditorRequest
     )
       return;
+    if (!previewUrl.value) {
+      message.warning('图片预览加载失败，请重试');
+      emit('editorClosed');
+      return;
+    }
     openSelectedImageEditor();
+  },
+);
+watch(
+  [editorOpen, maskEditorOpen, lightboxOpen],
+  ([region, mask, preview], [oldRegion, oldMask, oldPreview]) => {
+    if (!region && !mask && !preview && (oldRegion || oldMask || oldPreview))
+      emit('editorClosed');
   },
 );
 onDeactivated(stopCapture);
@@ -729,7 +744,10 @@ onBeforeUnmount(() => {
       />
     </header>
 
-    <div v-if="field.type === 'capture'" class="capture-inline-panel">
+    <div
+      v-if="captureInput || field.type === 'capture'"
+      class="capture-inline-panel"
+    >
       <div class="capture-preview-frame inline">
         <video
           v-show="false"
@@ -885,7 +903,7 @@ onBeforeUnmount(() => {
 
     <p v-if="field.help && !composer" class="media-help">{{ field.help }}</p>
 
-    <div v-if="field.type !== 'capture'" class="media-actions">
+    <div v-if="!captureInput && field.type !== 'capture'" class="media-actions">
       <Button class="asset-picker-button" @click="pickerOpen = true">
         <IconifyIcon :icon="platformSemanticIcons.assets" />
         从项目资产选择
