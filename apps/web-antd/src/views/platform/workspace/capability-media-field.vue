@@ -138,17 +138,20 @@ async function loadPreview(assetId?: string) {
   activeStroke.value = undefined;
   undoHistory.value = [];
   redoHistory.value = [];
+  loadingPreview.value = false;
   if (!assetId) return;
   loadingPreview.value = true;
   try {
     const preview = await getAssetPreviewApi(assetId);
+    if (assetId !== props.selectedAssetId || disposed) return;
     if (preview.mode !== 'url') throw new Error('图片资产没有返回预览地址');
     previewUrl.value = preview.url;
     await nextTick();
   } catch {
-    previewUrl.value = '';
+    if (!disposed && assetId === props.selectedAssetId) previewUrl.value = '';
   } finally {
-    loadingPreview.value = false;
+    if (!disposed && assetId === props.selectedAssetId)
+      loadingPreview.value = false;
   }
 }
 
@@ -156,7 +159,9 @@ async function loadSelectedAssetDetail(assetId?: string) {
   selectedAssetDetail.value = undefined;
   if (!assetId || props.assets.some((asset) => asset.id === assetId)) return;
   try {
-    selectedAssetDetail.value = await getAssetApi(assetId);
+    const asset = await getAssetApi(assetId);
+    if (!disposed && assetId === props.selectedAssetId)
+      selectedAssetDetail.value = asset;
   } catch {
     // 资产可能已经失效，预览加载会保持为空并允许用户重新选择。
   }
@@ -639,6 +644,9 @@ function handleFile(event: Event) {
 watch(
   () => props.selectedAssetId,
   (assetId) => {
+    editorOpen.value = false;
+    maskEditorOpen.value = false;
+    lightboxOpen.value = false;
     void loadPreview(assetId);
     void loadSelectedAssetDetail(assetId);
   },
@@ -659,17 +667,35 @@ watch(
     redraw();
   },
 );
+function openSelectedImageEditor() {
+  if (!previewUrl.value || props.field.type === 'capture') return;
+  if (props.field.type === 'region') editorOpen.value = true;
+  else if (props.field.type === 'mask' && props.saveMask)
+    maskEditorOpen.value = true;
+  else lightboxOpen.value = true;
+}
+
 watch(
   () => props.openEditorRequest,
-  (request, previousRequest) => {
+  async (request, previousRequest) => {
+    const assetId = props.selectedAssetId;
+    const key = props.field.key;
     if (
-      props.field.type === 'region' &&
-      props.selectedAssetId &&
-      request &&
-      request !== previousRequest
-    ) {
-      editorOpen.value = true;
-    }
+      !request ||
+      request === previousRequest ||
+      !assetId ||
+      props.field.type === 'capture'
+    )
+      return;
+    if (!previewUrl.value) await loadPreview(assetId);
+    if (
+      disposed ||
+      assetId !== props.selectedAssetId ||
+      key !== props.field.key ||
+      request !== props.openEditorRequest
+    )
+      return;
+    openSelectedImageEditor();
   },
 );
 onDeactivated(stopCapture);
@@ -826,14 +852,7 @@ onBeforeUnmount(() => {
       v-else
       class="media-preview"
       :class="{ interactive: Boolean(previewUrl) }"
-      @click="
-        previewUrl &&
-        (field.type === 'mask'
-          ? (maskEditorOpen = true)
-          : isDrawingField
-            ? (editorOpen = true)
-            : (lightboxOpen = true))
-      "
+      @click="openSelectedImageEditor"
     >
       <img v-if="previewUrl" alt="" crossorigin="anonymous" :src="previewUrl" />
       <span v-if="previewUrl" class="preview-affordance">

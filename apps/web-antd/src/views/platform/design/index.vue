@@ -161,10 +161,6 @@ const composerUploading = ref(false);
 const composerImportingImage = ref(false);
 const composerImageDragDepth = ref(0);
 let composerDisposed = false;
-const composerMaskEditorOpen = ref(false);
-const composerMaskField = ref<CapabilityField>();
-const composerMaskSource = ref('');
-const composerMaskTitle = ref('');
 const composerPreviewUrls = reactive<Record<string, string>>({});
 const submitting = ref(false);
 const renameOpen = ref(false);
@@ -208,7 +204,8 @@ const threeDMode = ref<'choose' | 'dialog'>('choose');
 const threeDOutput = ref<PlatformJobOutput>();
 const threeDFiles = ref<File[]>([]);
 const threeDSubmitting = ref(false);
-const markerEditorRequest = ref(0);
+const mediaEditorRequest = ref(0);
+const mediaEditorFieldKey = ref('');
 const draftReadyKey = ref('');
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
@@ -802,24 +799,23 @@ function composerInputPosition(field: CapabilityField) {
   return composerInputs.value.findIndex((item) => item.field.key === field.key);
 }
 
-function openComposerMask(field: CapabilityField, assetName: string) {
-  if (field.assetIndex === undefined) return;
-  const assetId = selectedAssets[field.assetIndex];
-  const source = assetId ? composerPreviewUrls[assetId] : undefined;
-  if (!source) {
-    message.warning('图片预览尚未加载，请稍后重试');
-    return;
-  }
-  composerMaskField.value = field;
-  composerMaskSource.value = source;
-  composerMaskTitle.value = assetName;
-  composerMaskEditorOpen.value = true;
+function composerInputEditorLabel(field: CapabilityField) {
+  if (field.type === 'region')
+    return effectiveApplicationKey.value === 'region-marker-edit'
+      ? '编号标记编辑'
+      : '分区编辑';
+  return field.type === 'mask' ? '遮罩编辑' : '图片预览';
 }
 
-async function saveComposerMask(file: File) {
-  const field = composerMaskField.value;
-  if (!field) throw new Error('当前没有可编辑的输入图片');
-  await saveInputMask(field, file);
+async function openComposerInputEditor(field: CapabilityField) {
+  if (field.assetIndex === undefined || !selectedAssets[field.assetIndex])
+    return;
+  const contextKey = captureContextKey.value;
+  mediaEditorFieldKey.value = field.key;
+  mediaPickerOpen.value = true;
+  await nextTick();
+  if (contextKey === captureContextKey.value && mediaPickerOpen.value)
+    mediaEditorRequest.value += 1;
 }
 
 async function loadMarkdownAsset(assetId: string) {
@@ -2004,9 +2000,9 @@ async function markOutput(
 ) {
   try {
     await prepareOutputInComposer(output, 'region-marker-edit', mode);
-    mediaPickerOpen.value = true;
-    await nextTick();
-    markerEditorRequest.value += 1;
+    const field = mediaFields.value.find((item) => item.type === 'region');
+    if (!field) throw new Error('编号分区能力缺少分区输入位');
+    await openComposerInputEditor(field);
     message.success('图片已进入标记编辑器，请完成区域标记和修改指令');
   } catch (error) {
     message.error(
@@ -2561,11 +2557,11 @@ onBeforeUnmount(() => {
                 class="composer-input-asset"
               >
                 <button
-                  :aria-label="`遮罩编辑：${item.asset.name}`"
+                  :aria-label="`${composerInputEditorLabel(item.field)}：${item.asset.name}`"
                   class="composer-input-asset__preview"
-                  title="点击进入遮罩编辑"
+                  :title="`点击进入${composerInputEditorLabel(item.field)}`"
                   type="button"
-                  @click="openComposerMask(item.field, item.asset.name)"
+                  @click="openComposerInputEditor(item.field)"
                 >
                   <img
                     v-if="composerPreviewUrls[item.asset.id]"
@@ -2586,11 +2582,19 @@ onBeforeUnmount(() => {
                   </button>
                   <button
                     :aria-label="`编辑${item.asset.name}`"
-                    title="编辑遮罩"
+                    :title="composerInputEditorLabel(item.field)"
                     type="button"
-                    @click.stop="openComposerMask(item.field, item.asset.name)"
+                    @click.stop="openComposerInputEditor(item.field)"
                   >
-                    <IconifyIcon :icon="platformSemanticIcons.mask" />
+                    <IconifyIcon
+                      :icon="
+                        item.field.type === 'region'
+                          ? platformUiIcons.scanLine
+                          : item.field.type === 'mask'
+                            ? platformSemanticIcons.mask
+                            : platformUiIcons.maximize2
+                      "
+                    />
                   </button>
                   <button
                     :aria-label="`右移${item.asset.name}`"
@@ -2941,11 +2945,13 @@ onBeforeUnmount(() => {
       <div class="media-picker-fields">
         <CapabilityMediaField
           v-for="field in additionalMediaFields"
-          :key="field.key"
+          :key="`${captureContextKey}:${field.key}`"
           accent="#c51f3a"
           :assets="availableInputAssets"
           :field="field"
-          :open-editor-request="markerEditorRequest"
+          :open-editor-request="
+            field.key === mediaEditorFieldKey ? mediaEditorRequest : 0
+          "
           :project-id="platformStore.currentProjectId"
           :refresh-rate="captureRefreshRate()"
           :save-mask="(file) => saveInputMask(field, file)"
@@ -3376,14 +3382,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </Modal>
-
-    <ComfyMaskEditor
-      v-if="composerMaskField"
-      v-model:open="composerMaskEditorOpen"
-      :on-save="saveComposerMask"
-      :src="composerMaskSource"
-      :title="composerMaskTitle"
-    />
 
     <ComfyMaskEditor
       v-if="maskEditSourceAssetId"
