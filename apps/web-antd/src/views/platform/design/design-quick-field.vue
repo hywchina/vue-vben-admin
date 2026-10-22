@@ -18,9 +18,7 @@ const emit = defineEmits<{
   change: [value: unknown];
 }>();
 
-const isSeedField = computed(() =>
-  `${props.field.key}${props.field.label}`.toLowerCase().match(/seed|种子/),
-);
+const isSeedField = computed(() => /seed/i.test(props.field.key));
 
 const displayValue = computed(() => {
   const value = props.value;

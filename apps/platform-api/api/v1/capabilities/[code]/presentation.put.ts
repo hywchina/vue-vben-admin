@@ -1,23 +1,22 @@
 import { getRouterParam } from 'h3';
-import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
-import { assertQuickFieldKeys } from '~/utils/domain/workflows/presentation';
+import {
+  assertQuickFieldKeys,
+  capabilityPresentationInputSchema,
+  normalizeFieldLabels,
+} from '~/utils/domain/workflows/presentation';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
 
-const schema = z.object({
-  quickFieldKeys: z.array(z.string().min(1).max(200)).max(200),
-  workflowVersionId: z.string().uuid(),
-});
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:workflow:write');
   const code = getRouterParam(event, 'code');
   if (!code)
     throw new ApiError(400, 'CAPABILITY_CODE_REQUIRED', '缺少能力编码');
-  const input = await parseBody(event, schema);
+  const input = await parseBody(event, capabilityPresentationInputSchema);
   const sql = useDatabase();
   await sql.begin(async (transaction) => {
     const [current] = await transaction<
@@ -41,18 +40,27 @@ export default apiHandler(async (event) => {
       );
     }
     assertQuickFieldKeys(current.parameterSchema, input.quickFieldKeys);
+    const fieldLabels =
+      input.fieldLabels === undefined
+        ? undefined
+        : normalizeFieldLabels(current.parameterSchema, input.fieldLabels);
     await transaction`
-      INSERT INTO capability_parameter_presentations (capability_code, quick_field_keys, updated_by)
-      VALUES (${code}, ${transaction.json(input.quickFieldKeys)}, ${identity.id})
+      INSERT INTO capability_parameter_presentations (capability_code, quick_field_keys, field_labels, label_workflow_version_id, updated_by)
+      VALUES (${code}, ${transaction.json(input.quickFieldKeys)}, ${transaction.json(fieldLabels ?? {})}, ${fieldLabels === undefined ? null : current.id}, ${identity.id})
       ON CONFLICT (capability_code) DO UPDATE SET
         quick_field_keys = EXCLUDED.quick_field_keys,
+        field_labels = CASE WHEN ${fieldLabels !== undefined} THEN EXCLUDED.field_labels ELSE capability_parameter_presentations.field_labels END,
+        label_workflow_version_id = CASE WHEN ${fieldLabels !== undefined} THEN EXCLUDED.label_workflow_version_id ELSE capability_parameter_presentations.label_workflow_version_id END,
         updated_by = EXCLUDED.updated_by, updated_at = now()
     `;
   });
   await writeAudit(event, {
     action: 'capability.presentation.update',
     actor: identity,
-    details: { quickFieldKeys: input.quickFieldKeys },
+    details: {
+      quickFieldKeys: input.quickFieldKeys,
+      renamedFieldKeys: Object.keys(input.fieldLabels ?? {}),
+    },
     module: 'workflow',
     targetId: code,
     targetType: 'capability',

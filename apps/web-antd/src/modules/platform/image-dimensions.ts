@@ -12,11 +12,15 @@ export interface TemplateSize {
 export const imageRatios = ['9:16', '2:3', '3:4', '1:1', '4:3', '3:2', '16:9'];
 export function imageDimensionFields(fields: CapabilityField[]) {
   const find = (name: string, label: string) =>
-    fields.find((field) => field.type === 'number' && field.label === label) ??
     fields.find(
       (field) =>
         field.type === 'number' &&
         new RegExp(`(^|[_-])${name}$`, 'i').test(field.key),
+    ) ??
+    fields.find(
+      (field) =>
+        field.type === 'number' &&
+        (field.defaultLabel ?? field.label) === label,
     );
   const width = find('width', '图片宽度');
   const height = find('height', '图片高度');

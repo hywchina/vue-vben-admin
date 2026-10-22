@@ -1077,13 +1077,29 @@ async function run() {
   const presentationCode = 'text-to-image';
   const presentationPath = `/capabilities/${presentationCode}/presentation`;
   const presentationCapability = await apiRequest<{
-    presentation: { quickFieldKeys: string[]; workflowVersionId: string };
+    fields: Array<{
+      defaultLabel: string;
+      key: string;
+      label: string;
+      source?: { inputName: string; nodeId: string };
+    }>;
+    presentation: {
+      fieldLabels: Record<string, string>;
+      quickFieldKeys: string[];
+      workflowVersionId: string;
+    };
   }>(`/capabilities/${presentationCode}`, { session: admin });
   const presentationInput = presentationCapability.envelope.data.presentation;
   const [previousPresentation] = await sql<
-    { keys: string[]; updatedAt: Date; updatedBy: null | string }[]
+    {
+      fieldLabels: Record<string, string>;
+      keys: string[];
+      labelVersion: null | string;
+      updatedAt: Date;
+      updatedBy: null | string;
+    }[]
   >`
-    SELECT quick_field_keys AS keys, updated_by AS "updatedBy", updated_at AS "updatedAt"
+    SELECT quick_field_keys AS keys, field_labels AS "fieldLabels", label_workflow_version_id AS "labelVersion", updated_by AS "updatedBy", updated_at AS "updatedAt"
     FROM capability_parameter_presentations WHERE capability_code = ${presentationCode}
   `;
   try {
@@ -1117,6 +1133,122 @@ async function run() {
       emptyPresentation.envelope.data.presentation.quickFieldKeys.length === 0,
       '管理员配置未对普通用户生效',
     );
+    // Exercise 040 against an existing 032-style row in a disposable schema.
+    await sql.begin(async (transaction) => {
+      const upgradeSchema = `labels_upgrade_${randomUUID().replaceAll('-', '')}`;
+      await transaction`CREATE SCHEMA ${transaction(upgradeSchema)}`;
+      await transaction`SELECT set_config('search_path', ${`${upgradeSchema},public`}, true)`;
+      await transaction`CREATE TABLE workflow_versions (id uuid PRIMARY KEY)`;
+      await transaction`CREATE TABLE capability_parameter_presentations AS SELECT capability_code, quick_field_keys, updated_by, updated_at FROM public.capability_parameter_presentations WHERE capability_code = ${presentationCode}`;
+      await transaction.unsafe(
+        await readFile(
+          new URL(
+            '../migrations/040_capability_parameter_labels.sql',
+            import.meta.url,
+          ),
+          'utf8',
+        ),
+      );
+      const [upgraded] =
+        await transaction`SELECT quick_field_keys, field_labels, label_workflow_version_id FROM capability_parameter_presentations`;
+      assert(
+        upgraded &&
+          isDeepStrictEqual(upgraded.quick_field_keys, []) &&
+          isDeepStrictEqual(upgraded.field_labels, {}) &&
+          upgraded.label_workflow_version_id === null,
+        '040 未保留已有展示配置',
+      );
+      await transaction`DROP SCHEMA ${transaction(upgradeSchema)} CASCADE`;
+    });
+    const labelKey = presentationInput.quickFieldKeys[0];
+    assert(labelKey, '没有可测试的快捷参数');
+    const originalField = presentationCapability.envelope.data.fields.find(
+      (field) => field.key === labelKey,
+    );
+    assert(
+      originalField?.source?.inputName && originalField.source.nodeId,
+      '管理员缺少原始字段信息',
+    );
+    const [snapshot] = await sql<
+      { apiJson: unknown; checksum: string; parameterSchema: unknown }[]
+    >`
+      SELECT api_json AS "apiJson", parameter_schema AS "parameterSchema", checksum FROM workflow_versions WHERE id = ${presentationInput.workflowVersionId}
+    `;
+    for (const fieldLabels of [
+      { missing: '错误' },
+      { [labelKey]: 'a'.repeat(101) },
+      { [labelKey]: 42 },
+      { prompt: '不可编辑' },
+    ]) {
+      await apiRequest(presentationPath, {
+        body: { ...presentationInput, fieldLabels },
+        method: 'PUT',
+        session: admin,
+        expectedStatus: 400,
+      });
+    }
+    await apiRequest(presentationPath, {
+      body: { ...presentationInput, fieldLabels: { [labelKey]: ' 自定名称 ' } },
+      method: 'PUT',
+      session: user1,
+      expectedStatus: 403,
+    });
+    await apiRequest(presentationPath, {
+      body: { ...presentationInput, fieldLabels: { [labelKey]: ' 自定名称 ' } },
+      method: 'PUT',
+      session: admin,
+    });
+    const renamed = await apiRequest<
+      typeof presentationCapability.envelope.data
+    >(`/capabilities/${presentationCode}`, { session: user1 });
+    assert(
+      renamed.envelope.data.fields.find((field) => field.key === labelKey)
+        ?.label === '自定名称',
+      '展示名称没有对普通用户持久生效',
+    );
+    assert(
+      renamed.envelope.data.fields.every(
+        (field) =>
+          !('source' in field) &&
+          !('nodeId' in field) &&
+          !('inputName' in field),
+      ),
+      '普通用户得到节点映射',
+    );
+    // Older clients saving visibility alone must not erase administrator names.
+    await apiRequest(presentationPath, {
+      body: {
+        quickFieldKeys: [],
+        workflowVersionId: presentationInput.workflowVersionId,
+      },
+      method: 'PUT',
+      session: admin,
+    });
+    const legacySaved = await apiRequest<
+      typeof presentationCapability.envelope.data
+    >(`/capabilities/${presentationCode}`, { session: admin });
+    assert(
+      legacySaved.envelope.data.presentation.fieldLabels[labelKey] ===
+        '自定名称',
+      '旧客户端覆盖自定义名称',
+    );
+    await apiRequest(presentationPath, {
+      body: { ...presentationInput, fieldLabels: { [labelKey]: '  ' } },
+      method: 'PUT',
+      session: admin,
+    });
+    const reset = await apiRequest<typeof presentationCapability.envelope.data>(
+      `/capabilities/${presentationCode}`,
+      { session: user1 },
+    );
+    assert(
+      reset.envelope.data.fields.find((field) => field.key === labelKey)
+        ?.label === originalField.defaultLabel,
+      '清空名称没有恢复默认',
+    );
+    const [after] =
+      await sql`SELECT api_json AS "apiJson", parameter_schema AS "parameterSchema", checksum FROM workflow_versions WHERE id = ${presentationInput.workflowVersionId}`;
+    assert(isDeepStrictEqual(snapshot, after), '改名修改了工作流执行快照');
     const reversedKeys = [...presentationInput.quickFieldKeys].toReversed();
     await apiRequest(presentationPath, {
       body: { ...presentationInput, quickFieldKeys: reversedKeys },
@@ -1134,7 +1266,7 @@ async function run() {
     );
   } finally {
     await (previousPresentation
-      ? sql`UPDATE capability_parameter_presentations SET quick_field_keys = ${sql.json(previousPresentation.keys)}, updated_by = ${previousPresentation.updatedBy}, updated_at = ${previousPresentation.updatedAt} WHERE capability_code = ${presentationCode}`
+      ? sql`UPDATE capability_parameter_presentations SET quick_field_keys = ${sql.json(previousPresentation.keys)}, field_labels = ${sql.json(previousPresentation.fieldLabels)}, label_workflow_version_id = ${previousPresentation.labelVersion}, updated_by = ${previousPresentation.updatedBy}, updated_at = ${previousPresentation.updatedAt} WHERE capability_code = ${presentationCode}`
       : sql`DELETE FROM capability_parameter_presentations WHERE capability_code = ${presentationCode}`);
   }
   const visibilityTarget = adminApplications.envelope.data.find(

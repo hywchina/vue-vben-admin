@@ -399,7 +399,13 @@ function zoomByWheel(group: CameraGroup, event: WheelEvent) {
           class="camera-slider"
         >
           <label>
-            <span>{{ field!.label.split('·').at(-1)?.trim() }}</span>
+            <span>
+              {{
+                field!.defaultLabel
+                  ? field!.label
+                  : field!.label.split('·').at(-1)?.trim()
+              }}
+            </span>
             <small>
               {{ fieldValue(field!)
               }}{{ field!.uiControl === 'camera-zoom' ? '' : '°' }}

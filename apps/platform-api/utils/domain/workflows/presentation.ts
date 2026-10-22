@@ -1,5 +1,85 @@
+import { z } from 'zod';
+
 import { ApiError } from '../../response';
-import { publicParameterSchema } from './schema';
+import {
+  parseApiWorkflow,
+  publicParameterSchema,
+  workflowParameterSchema,
+} from './schema';
+import { translatedInputLabel } from './ui-parameters';
+
+export const capabilityPresentationInputSchema = z.object({
+  fieldLabels: z
+    .record(z.string().min(1).max(100), z.string().trim().max(100))
+    .refine(
+      (labels) => Object.keys(labels).length <= 200,
+      '参数名称不能超过 200 项',
+    )
+    .optional(),
+  quickFieldKeys: z.array(z.string().min(1).max(200)).max(200),
+  workflowVersionId: z.string().uuid(),
+});
+
+export function normalizeFieldLabels(
+  parameterSchema: unknown,
+  labels: Record<string, string>,
+) {
+  const allowed = new Set(
+    presentationFields(parameterSchema).map((field) => field.key),
+  );
+  if (Object.keys(labels).some((key) => !allowed.has(key))) {
+    throw new ApiError(
+      400,
+      'CAPABILITY_PRESENTATION_INVALID',
+      '参数名称不属于当前工作流的可配置参数',
+    );
+  }
+  return Object.fromEntries(
+    Object.entries(labels)
+      .filter(([, label]) => label.trim())
+      .map(([key, label]) => [key, label.trim()]),
+  );
+}
+
+export function capabilityPresentationFields(
+  parameterSchema: unknown,
+  apiJson: unknown,
+  labels: Record<string, string> = {},
+  includeSources = false,
+) {
+  const definitions = z.array(workflowParameterSchema).parse(parameterSchema);
+  const workflow = includeSources ? parseApiWorkflow(apiJson) : undefined;
+  const configurable = new Set(
+    presentationFields(parameterSchema).map((field) => field.key),
+  );
+  return publicParameterSchema(parameterSchema).map((field, index) => {
+    const definition = definitions[index];
+    const defaultLabel =
+      (field.key.startsWith('auto_') && definition?.inputName
+        ? translatedInputLabel(definition.inputName)
+        : undefined) ?? field.label;
+    const customLabel =
+      configurable.has(field.key) && Object.hasOwn(labels, field.key)
+        ? labels[field.key]?.trim()
+        : undefined;
+    const node = definition?.nodeId ? workflow?.[definition.nodeId] : undefined;
+    return {
+      ...field,
+      defaultLabel,
+      label: customLabel || defaultLabel,
+      ...(includeSources && definition?.nodeId && definition.inputName
+        ? {
+            source: {
+              inputName: definition.inputName,
+              nodeId: definition.nodeId,
+              nodeTitle:
+                node?._meta?.title ?? node?.class_type ?? definition.nodeId,
+            },
+          }
+        : {}),
+    };
+  });
+}
 
 export function presentationFields(parameterSchema: unknown) {
   const fields = publicParameterSchema(parameterSchema);

@@ -26,5 +26,5 @@ export default apiHandler(async (event) => {
       throw new ApiError(404, 'CAPABILITY_NOT_FOUND', '能力不存在或尚未发布');
     }
   }
-  return toPublicCapability(capability);
+  return toPublicCapability(capability, hasAdministrativeRole(identity));
 });

@@ -23,6 +23,8 @@ export interface CapabilityField {
   advanced: boolean;
   assetIndex?: number;
   defaultValue?: unknown;
+  defaultLabel?: string;
+  source?: { inputName: string; nodeId: string; nodeTitle: string };
   group?: string;
   help?: string;
   integer: boolean;
@@ -41,7 +43,11 @@ export interface CapabilityField {
 }
 
 export interface PlatformCapability {
-  presentation?: { quickFieldKeys: string[]; workflowVersionId: string };
+  presentation?: {
+    fieldLabels?: Record<string, string>;
+    quickFieldKeys: string[];
+    workflowVersionId: string;
+  };
   appKey: string;
   code: string;
   description: string;

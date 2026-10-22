@@ -67,7 +67,11 @@ export function bindCapabilityWorkflowApi(
 
 export function saveCapabilityPresentationApi(
   code: string,
-  input: { quickFieldKeys: string[]; workflowVersionId: string },
+  input: {
+    fieldLabels?: Record<string, string>;
+    quickFieldKeys: string[];
+    workflowVersionId: string;
+  },
 ) {
   return requestClient.put(
     `/capabilities/${encodeURIComponent(code)}/presentation`,

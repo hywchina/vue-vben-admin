@@ -90,6 +90,7 @@ import {
   syncPromptRatio,
   validDimension,
 } from '#/modules/platform/image-dimensions';
+import { captureRefreshRateValue } from '#/modules/platform/parameter-presentation';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
@@ -1617,11 +1618,10 @@ async function saveInputMask(field: CapabilityField, file: File) {
 }
 
 function captureRefreshRate() {
-  const field = capability.value?.fields.find((item) =>
-    item.label.includes('捕获间隔'),
+  return captureRefreshRateValue(
+    capability.value?.fields ?? [],
+    parameterValues,
   );
-  const value = field ? parameterValues[field.key] : undefined;
-  return typeof value === 'number' ? value : 500;
 }
 
 async function waitForJob(jobId: string, isCurrent: () => boolean) {

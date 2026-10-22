@@ -36,13 +36,16 @@ const basicInputNames = new Set([
 ]);
 
 const labelTranslations: Record<string, string> = {
+  aspect_ratio: '宽高比',
   audio: '音频',
   batch_size: '生成数量',
   cfg: 'CFG 引导',
   ckpt_name: 'Checkpoint 模型',
   clip_name: '文本编码模型',
   denoise: '降噪强度',
+  file: '文件',
   filename_prefix: '文件名前缀',
+  fit: '适配方式',
   guidance: '提示词引导',
   height: '高度',
   horizontal_angle: '水平角度',
@@ -51,11 +54,14 @@ const labelTranslations: Record<string, string> = {
   length: '长度 / 帧数',
   lora_name: 'LoRA 模型',
   mask: '遮罩',
+  mode: '模式',
   negative: '负向提示词',
   negative_prompt: '负向提示词',
   noise_seed: '随机种子',
   positive: '正向提示词',
   prompt: '提示词',
+  proportional_height: '输出图片高度',
+  proportional_width: '输出图片宽度',
   refresh_rate: '捕获间隔（毫秒）',
   sampler_name: '采样器',
   scheduler: '调度器',
@@ -68,6 +74,7 @@ const labelTranslations: Record<string, string> = {
   vae_name: 'VAE 模型',
   video: '视频',
   vertical_angle: '俯仰角度',
+  volume: '音量',
   width: '宽度',
   zoom: '镜头距离',
 };
@@ -80,6 +87,10 @@ function inputDefinition(
     const definition = nodeDefinition?.input?.[section]?.[inputName];
     if (definition) return definition;
   }
+}
+
+export function translatedInputLabel(name: string) {
+  return labelTranslations[name];
 }
 
 function humanizeName(name: string) {

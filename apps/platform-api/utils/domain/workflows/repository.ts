@@ -5,8 +5,11 @@ import { createHash } from 'node:crypto';
 
 import { useDatabase } from '../../database';
 import { ApiError } from '../../response';
-import { resolveQuickFieldKeys } from './presentation';
-import { parseWorkflowVersion, publicParameterSchema } from './schema';
+import {
+  capabilityPresentationFields,
+  resolveQuickFieldKeys,
+} from './presentation';
+import { parseWorkflowVersion } from './schema';
 
 export function workflowChecksum(snapshot: unknown) {
   return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
@@ -114,6 +117,8 @@ interface CapabilityRow {
   name: string;
   outputSchema: unknown;
   parameterSchema: unknown;
+  fieldLabels?: Record<string, string>;
+  labelWorkflowVersionId?: null | string;
   quickFieldKeys?: null | string[];
   provider: string;
   workflowCode: string;
@@ -138,6 +143,8 @@ export async function getCapabilityByCode(code: string) {
       wv.api_json AS "apiJson",
       wv.parameter_schema AS "parameterSchema",
       wv.output_schema AS "outputSchema",
+      cp.field_labels AS "fieldLabels",
+      cp.label_workflow_version_id AS "labelWorkflowVersionId",
       cp.quick_field_keys AS "quickFieldKeys"
     FROM capabilities c
     LEFT JOIN capability_parameter_presentations cp ON cp.capability_code = c.code
@@ -162,13 +169,26 @@ export async function getCapabilityByAppKey(appKey: string) {
   return capability ? await getCapabilityByCode(capability.code) : null;
 }
 
-export function toPublicCapability(row: CapabilityRow) {
+export function toPublicCapability(
+  row: CapabilityRow,
+  includeParameterSources = false,
+) {
+  const fieldLabels =
+    row.labelWorkflowVersionId === row.workflowVersionId
+      ? (row.fieldLabels ?? {})
+      : {};
   return {
     appKey: row.appKey,
     code: row.code,
     description: row.description,
-    fields: publicParameterSchema(row.parameterSchema),
+    fields: capabilityPresentationFields(
+      row.parameterSchema,
+      row.apiJson,
+      fieldLabels,
+      includeParameterSources,
+    ),
     presentation: {
+      fieldLabels,
       quickFieldKeys: resolveQuickFieldKeys(
         row.parameterSchema,
         row.quickFieldKeys,

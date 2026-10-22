@@ -4,6 +4,8 @@ import { createApp, h, nextTick } from 'vue';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { captureRefreshRateValue } from '#/modules/platform/parameter-presentation';
+
 import DesignQuickField from './design-quick-field.vue';
 
 vi.mock('@vben/icons', () => ({ IconifyIcon: () => null }));
@@ -138,4 +140,30 @@ describe('quick parameter presentation', () => {
     expect(input.getAttribute('maxlength')).toBe('20');
     expect(input.getAttribute('placeholder')).toBe('请输入');
   });
+});
+
+it('uses a stable capture interval key after renaming and respects schema defaults', () => {
+  const field = {
+    key: 'auto_n413_refresh_rate_71fa108e',
+    label: '管理员自定名称',
+    defaultValue: 750,
+  } as CapabilityField;
+  expect(captureRefreshRateValue([field], { [field.key]: 1200 })).toBe(1200);
+  expect(captureRefreshRateValue([field], {})).toBe(750);
+  expect(captureRefreshRateValue([], {})).toBe(500);
+});
+
+it('identifies seed actions by key even when another parameter is named 随机种子', () => {
+  const renamedSeed = render(
+    { key: 'seed', label: '随机值', type: 'number' },
+    1,
+  );
+  expect(renamedSeed.root.textContent).toContain('随机');
+  const renamedWidth = render(
+    { key: 'width', label: '随机种子', type: 'number' },
+    512,
+  );
+  expect(
+    renamedWidth.root.querySelector('.quick-number-field button'),
+  ).toBeNull();
 });

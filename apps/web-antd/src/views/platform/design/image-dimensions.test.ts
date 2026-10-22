@@ -1,6 +1,9 @@
+import type { CapabilityField } from '#/modules/platform/types';
+
 import { describe, expect, it } from 'vitest';
 
 import {
+  imageDimensionFields,
   linkedSize,
   resolveTemplateSize,
   sizeRatio,
@@ -70,4 +73,27 @@ it('updates only the dedicated ratio line and does not add it before template us
   expect(syncPromptRatio(syncPromptRatio(text, size), size, true)).toBe(
     syncPromptRatio(text, size),
   );
+});
+
+it('keeps dimension identification independent of administrator labels', () => {
+  const fields = [
+    { key: 'cfg', label: '图片宽度', defaultLabel: 'CFG 引导', type: 'number' },
+    { key: 'width', label: 'W', defaultLabel: '图片宽度', type: 'number' },
+    { key: 'height', label: 'H', defaultLabel: '图片高度', type: 'number' },
+  ] as CapabilityField[];
+  expect(imageDimensionFields(fields)).toEqual({
+    width: fields[1],
+    height: fields[2],
+  });
+  expect(
+    imageDimensionFields([
+      fields[0] as CapabilityField,
+      fields[2] as CapabilityField,
+    ]),
+  ).toBeUndefined();
+  const legacy = [
+    { key: 'customX', label: 'W', defaultLabel: '图片宽度', type: 'number' },
+    fields[2],
+  ] as CapabilityField[];
+  expect(imageDimensionFields(legacy)?.width.key).toBe('customX');
 });

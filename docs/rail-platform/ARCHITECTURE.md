@@ -698,6 +698,7 @@ ComfyUI 采用“平台 API 创建持久化任务、独立 Worker 执行、输�
 - 功能来源仍是 `/applications` 的可见已发布能力，前端默认显式选中 `text-to-image`。执行调用继续提交确定的 `appKey`，不增加隐式文生文回退。三个视觉模式不再过滤功能列表。
 - 2026-10-08 输入器增加“文生图 / 图生图”类别：`text-to-image` 独占文生图，直接展示原有参数；图生图增加第二级功能选择，切入时默认 `inpaint-single`，不可用时提示且保留当前功能，不静默回退。其余已发布功能共享既有目录，`text-chat` 暂从设计输入器及历史重发入口排除，后端 API、已有记录与结果查看保留；`text-to-image-lora` 暂归图生图，不修改其 LoRA 输入契约。
 - 分类通过 `design-generation.ts` 从实际 `appKey` 推导，不另存可漂移的分类状态；历史复用、图片编辑与功能切换自动同步类别。快捷参数、媒体槽位和完整抽屉仍读取当前能力 Schema/presentation，分类切换继续走 `chooseApplication` 和既有草稿 API，不增加迁移或环境变量。
+- 迁移 `040_capability_parameter_labels.sql` 增量添加 `field_labels` 和 `label_workflow_version_id`：自定义名称只对对应工作流版本生效；名称为空恢复默认，旧客户端省略该属性时保留已有名称。能力 GET 统一解析展示名称；只向管理员附加只读 `source.inputName/nodeId/nodeTitle`，普通用户仍不获得节点映射。API 审计仅记录改名字段键，不记录名称正文。自动字段优先使用共享翻译表中的简短默认名称，其他字段保留注册名称；发布需先备份并执行 040，再同步更新 API/Web。应用回退可保留新增列与配置，不需删除列或改写历史工作流。实时捕获频率按稳定参数键读取，避免改名影响运行行为。
 - 新表 `capability_parameter_presentations` 按 `capability_code` 保存有序 `quick_field_keys`。能力 GET 返回 `presentation.quickFieldKeys` 和当前 `workflowVersionId`；管理员 PUT `/capabilities/:code/presentation` 使用 `platform:workflow:write`，锁定当前绑定并检查版本，拒绝重复或无效字段，记录 `capability.presentation.update` 审计。参数值和工作流快照不受此配置影响。
 - 未配置时沿用非 advanced 常用字段；明确配置空数组时不显示快捷参数。重新绑定工作流后，GET 自动过滤已不存在的字段，完整参数仍按新 Schema 展示。
 - `design_conversation_drafts` 主键扩展为 `(conversation_id, app_key, design_mode)`，GET/PUT 接受 `designMode`，省略时为 `cabin`，保留旧客户端行为与旧草稿。项目及会话所有者校验维持原链路。
