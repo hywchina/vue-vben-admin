@@ -115,6 +115,7 @@ const selectedAsset = computed(
       ? selectedAssetDetail.value
       : undefined),
 );
+const compactCapture = computed(() => props.composer && props.captureInput);
 const isDrawingField = computed(() => props.field.type === 'region');
 
 function renderCapturePreview() {
@@ -723,10 +724,23 @@ onBeforeUnmount(() => {
 <template>
   <article
     class="media-field"
-    :class="{ 'media-field--composer': composer }"
+    :class="{
+      'media-field--composer': composer,
+      'media-field--compact-capture': compactCapture,
+    }"
     :style="{ '--field-accent': accent }"
   >
-    <header>
+    <header v-if="compactCapture" class="capture-composer-heading">
+      <div>
+        <span>图片{{ (field.assetIndex ?? 0) + 1 }} · 实时输入</span>
+        <small class="capture-role" :title="field.label">
+          {{ field.label }}
+        </small>
+        <small v-if="captureActive" class="capture-connected">已连接</small>
+      </div>
+      <slot name="capture-switch"></slot>
+    </header>
+    <header v-else>
       <div>
         <span>{{ field.label }}</span>
         <small v-if="field.required">必填</small>
@@ -771,7 +785,8 @@ onBeforeUnmount(() => {
         />
         <div v-if="!captureActive && !previewUrl" class="capture-placeholder">
           <IconifyIcon :icon="platformUiIcons.monitorUp" />
-          <p>共享屏幕或打开摄像头后，可截取当前帧或持续实时运行。</p>
+          <p v-if="compactCapture">尚未连接</p>
+          <p v-else>共享屏幕或打开摄像头后，可截取当前帧或持续实时运行。</p>
         </div>
       </div>
       <div class="capture-controls">
@@ -798,12 +813,21 @@ onBeforeUnmount(() => {
           </Button>
         </div>
         <div class="capture-direct-actions">
+          <slot name="capture-settings"></slot>
           <Button
             :disabled="!captureActive || liveCapturing"
             @click="openAreaPicker"
           >
             <IconifyIcon :icon="platformUiIcons.scan" />
             选择区域
+          </Button>
+          <Button
+            v-if="compactCapture"
+            :disabled="!captureActive || liveCapturing"
+            @click="captureFrame"
+          >
+            <IconifyIcon :icon="platformUiIcons.camera" />
+            捕获当前帧
           </Button>
           <Button
             :danger="liveCapturing"
@@ -831,10 +855,13 @@ onBeforeUnmount(() => {
             捕获区域 {{ captureCrop.width }} × {{ captureCrop.height }}
           </span>
           <span v-else-if="captureActive">当前使用完整画面</span>
-          <span v-if="captureActive">检测间隔 {{ refreshRate ?? 500 }} ms</span>
+          <span v-if="captureActive && !compactCapture">
+            检测间隔 {{ refreshRate ?? 500 }} ms
+          </span>
         </div>
         <div class="capture-direct-actions utility-row">
           <Button
+            v-if="!compactCapture"
             :disabled="captureStarting || captureActive"
             class="asset-picker-button"
             @click="pickerOpen = true"
@@ -843,6 +870,7 @@ onBeforeUnmount(() => {
             项目资产
           </Button>
           <Button
+            v-if="!compactCapture"
             :disabled="captureStarting || captureActive"
             @click="fileInputRef?.click()"
           >
@@ -850,12 +878,14 @@ onBeforeUnmount(() => {
             导入
           </Button>
           <Button
+            v-if="!compactCapture"
             :disabled="!captureActive || liveCapturing"
             @click="captureFrame"
           >
             捕获当前帧
           </Button>
           <Button
+            v-if="!compactCapture || captureActive || captureStarting"
             danger
             :disabled="!captureActive && !captureStarting"
             @click="stopCapture"
@@ -1616,6 +1646,119 @@ onBeforeUnmount(() => {
   .media-field--composer .capture-direct-actions :deep(.ant-btn .anticon),
   .media-field--composer .capture-direct-actions :deep(.ant-btn svg) {
     display: none;
+  }
+}
+
+.media-field--compact-capture {
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+}
+
+.media-field--compact-capture .capture-composer-heading {
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.media-field--compact-capture .capture-composer-heading > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+}
+
+.media-field--compact-capture .capture-role {
+  max-width: 180px;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--rail-theme-secondary, #68747d);
+  white-space: nowrap;
+  background: transparent;
+}
+
+.media-field--compact-capture .capture-connected {
+  padding: 0;
+  color: #19845a;
+  background: transparent;
+}
+
+.media-field--compact-capture .capture-inline-panel {
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.media-field--compact-capture .capture-preview-frame.inline {
+  height: 90px;
+}
+
+.media-field--compact-capture .capture-preview-frame.inline canvas,
+.media-field--compact-capture .capture-preview-frame.inline img {
+  max-height: 90px;
+}
+
+.media-field--compact-capture .capture-placeholder svg {
+  width: 26px;
+  height: 26px;
+}
+
+.media-field--compact-capture .capture-placeholder p {
+  margin: 4px 0 0;
+}
+
+.media-field--compact-capture .capture-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 10px;
+  align-items: center;
+  align-self: center;
+  min-width: 0;
+}
+
+.media-field--compact-capture .capture-direct-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+  margin: 0;
+}
+
+.media-field--compact-capture .capture-status {
+  flex: 1 1 100%;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  background: transparent;
+}
+
+.media-field--compact-capture .capture-direct-actions :deep(.ant-btn) {
+  height: 30px;
+  padding-inline: 9px;
+  font-size: 12px;
+}
+
+.media-field--compact-capture .capture-direct-actions :deep(.ant-btn > svg) {
+  width: 14px;
+  height: 14px;
+}
+
+.media-field--compact-capture .capture-direct-actions.utility-row:empty {
+  display: none;
+}
+
+@container (max-width: 460px) {
+  .media-field--compact-capture .capture-inline-panel {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .media-field--compact-capture .capture-direct-actions :deep(.ant-btn) {
+    padding-inline: 7px;
   }
 }
 

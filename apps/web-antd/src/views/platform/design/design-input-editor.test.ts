@@ -87,7 +87,21 @@ vi.mock('ant-design-vue', () => {
     Button: button,
     Drawer: modal,
     Modal: modal,
-    Popover: modal,
+    Popover: defineComponent({
+      props: ['open'],
+      emits: ['update:open'],
+      setup:
+        (props, { slots, emit }) =>
+        () =>
+          h('div', [
+            h(
+              'div',
+              { onClick: () => emit('update:open', !props.open) },
+              slots.default?.(),
+            ),
+            props.open ? h('aside', slots.content?.()) : null,
+          ]),
+    }),
     Spin: container,
     Input: input,
     Textarea: input,
@@ -455,7 +469,9 @@ describe('role-specific image slots and automatic editors', () => {
       await settle();
       const local = [
         ...root.querySelectorAll<HTMLButtonElement>('button'),
-      ].find((button) => button.textContent?.trim() === '本地上传');
+      ].find(
+        (button) => button.querySelector('strong')?.textContent === '本地上传',
+      );
       if (!local) throw new Error('Missing upload source');
       local.click();
       await settle();

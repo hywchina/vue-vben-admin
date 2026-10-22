@@ -1,4 +1,11 @@
-import { createApp, defineComponent, h, nextTick, reactive } from 'vue';
+import {
+  createApp,
+  defineComponent,
+  h,
+  nextTick,
+  onBeforeUnmount,
+  reactive,
+} from 'vue';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -15,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   cancel: vi.fn(),
   capture: undefined as any,
+  captureUnmounted: vi.fn(),
   store: undefined as any,
 }));
 vi.mock('vue-router', () => ({
@@ -82,7 +90,21 @@ vi.mock('ant-design-vue', () => {
     Button: button,
     Drawer: modal,
     Modal: modal,
-    Popover: modal,
+    Popover: defineComponent({
+      props: ['open'],
+      emits: ['update:open'],
+      setup:
+        (props, { slots, emit }) =>
+        () =>
+          h('div', [
+            h(
+              'div',
+              { onClick: () => emit('update:open', !props.open) },
+              slots.default?.(),
+            ),
+            props.open ? h('aside', slots.content?.()) : null,
+          ]),
+    }),
     Spin: container,
     Input: input,
     Textarea: input,
@@ -108,14 +130,21 @@ vi.mock('../workspace/capability-media-field.vue', () => ({
       selectedAssetId: String,
       captureInput: Boolean,
     },
-    setup: (props) => {
-      if (props.captureInput) mocks.capture = props;
+    setup: (props, { slots }) => {
+      if (props.captureInput) {
+        mocks.capture = props;
+        onBeforeUnmount(mocks.captureUnmounted);
+      }
       return () =>
-        h('div', {
-          'data-testid': props.captureInput
-            ? 'capture-instance'
-            : 'media-instance',
-        });
+        h(
+          'div',
+          {
+            'data-testid': props.captureInput
+              ? 'capture-instance'
+              : 'media-instance',
+          },
+          [slots['capture-switch']?.(), slots['capture-settings']?.()],
+        );
     },
   }),
 }));
@@ -211,7 +240,7 @@ beforeEach(() => {
 });
 afterEach(() => cleanup.splice(0).forEach((dispose) => dispose()));
 
-async function render() {
+async function render(openLive = true) {
   const root = document.createElement('div');
   document.body.append(root);
   const app = createApp(Design);
@@ -222,9 +251,10 @@ async function render() {
   });
   for (let turn = 0; turn < 50; turn += 1) await Promise.resolve();
   await nextTick();
-  root
-    .querySelector<HTMLButtonElement>('[aria-label="实时输入：捕获画面"]')
-    ?.click();
+  if (openLive)
+    root
+      .querySelector<HTMLButtonElement>('[aria-label="实时输入：捕获画面"]')
+      ?.click();
   await nextTick();
   return root;
 }
@@ -387,6 +417,106 @@ describe('realtime image input contracts', () => {
         isCurrent: () => true,
       }),
     ).toBe(false);
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+});
+
+describe('mutually exclusive composer input surfaces', () => {
+  it('shows the named square entries and a lightweight source menu, not a modal', async () => {
+    const root = await render(false);
+    expect(root.querySelectorAll('.composer-slot-heading')).toHaveLength(1);
+    expect(
+      root.querySelector('.composer-input-slot')?.textContent?.trim(),
+    ).toBe('添加图片');
+    expect(root.querySelectorAll('.composer-live-entry')).toHaveLength(1);
+    expect(root.querySelector('[data-testid="capture-instance"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.composer-input-slot')?.click();
+    await nextTick();
+    const menu = root.querySelector('.composer-media-source-menu');
+    if (!menu) throw new Error('Missing source menu');
+    expect(
+      [...menu.querySelectorAll('strong')].map((x) => x.textContent),
+    ).toEqual(['本地上传', '从资产中心选择']);
+    expect(menu?.querySelectorAll('small')).toHaveLength(2);
+    expect(root.querySelector('[data-testid="capture-instance"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.composer-live-entry')?.click();
+    await nextTick();
+    expect(root.querySelector('.composer-media-source-menu')).toBeNull();
+    expect(root.querySelector('.composer-input-slot')).toBeNull();
+    expect(root.querySelector('.composer-live-entry')).toBeNull();
+    expect(
+      root.querySelectorAll('[data-testid="capture-instance"]'),
+    ).toHaveLength(1);
+    expect(root.querySelector('input[type="file"]')).not.toBeNull();
+  });
+
+  it('unmounts capture on switching back to images and keeps the existing input and prompt', async () => {
+    mocks.store.currentAssets = [
+      {
+        id: 'base-image',
+        projectId: 'project',
+        type: 'image',
+        status: 'available',
+        name: '底图',
+        version: 1,
+      },
+    ];
+    mocks.draft.mockResolvedValue({
+      updatedAt: '2026-10-22',
+      parameterValues: { prompt: '固定指令' },
+      inputAssetIds: { 0: 'base-image' },
+    });
+    const root = await render();
+    const change = [...root.querySelectorAll<HTMLButtonElement>('button')].find(
+      (x) => x.textContent?.trim() === '切换为图片',
+    );
+    expect(change).toBeDefined();
+    if (!change) throw new Error('Missing image switch');
+    change.click();
+    await nextTick();
+    expect(mocks.captureUnmounted).toHaveBeenCalledOnce();
+    expect(root.querySelector('[data-testid="capture-instance"]')).toBeNull();
+    expect(
+      root
+        .querySelector('.composer-input-asset__preview')
+        ?.getAttribute('aria-label'),
+    ).toContain('底图');
+    expect(
+      (
+        root.querySelector(
+          '.composer-box textarea[placeholder]',
+        ) as HTMLTextAreaElement
+      ).value,
+    ).toBe('固定指令');
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it('keeps other image slots and remounts capture when changing its target', async () => {
+    const capability = await mocks.capability();
+    capability.fields.push({
+      ...capability.fields[0],
+      key: 'reference',
+      label: '固定参考',
+      assetIndex: 1,
+    });
+    mocks.capability.mockResolvedValue(capability);
+    const root = await render();
+    expect(root.querySelector('[aria-label="添加图片1：捕获画面"]')).toBeNull();
+    expect(
+      root.querySelector('[aria-label="添加图片2：固定参考"]'),
+    ).not.toBeNull();
+    root
+      .querySelector<HTMLButtonElement>('[aria-label="实时输入：固定参考"]')
+      ?.click();
+    await nextTick();
+    expect(mocks.captureUnmounted).toHaveBeenCalledOnce();
+    expect(
+      root.querySelectorAll('[data-testid="capture-instance"]'),
+    ).toHaveLength(1);
+    expect(
+      root.querySelector('[aria-label="添加图片1：捕获画面"]'),
+    ).not.toBeNull();
+    expect(root.querySelector('[aria-label="添加图片2：固定参考"]')).toBeNull();
     expect(mocks.upload).not.toHaveBeenCalled();
   });
 });

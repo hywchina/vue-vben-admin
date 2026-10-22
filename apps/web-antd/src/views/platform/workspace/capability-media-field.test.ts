@@ -326,3 +326,30 @@ describe('inline capture controls and cleanup', () => {
     },
   );
 });
+
+describe('compact per-slot realtime presentation', () => {
+  it('reuses screen/camera/crop/frame/live controls while keeping ordinary sources behind the image switch', async () => {
+    const source = stream();
+    display.mockResolvedValue(source.value);
+    const { root, button } = await render({
+      captureInput: true,
+      field: { ...field, type: 'asset', assetIndex: 1 },
+    });
+    expect(root.querySelector('.media-field--compact-capture')).not.toBeNull();
+    expect(root.textContent).toContain('图片2 · 实时输入');
+    expect(root.textContent).toContain('尚未连接');
+    expect(root.textContent).not.toContain('项目资产');
+    expect(root.textContent).not.toContain('导入');
+    for (const label of ['选择区域', '捕获当前帧', '开始实时'])
+      expect(button(label).disabled).toBe(true);
+    button('共享屏幕').click();
+    await settle();
+    expect(root.textContent).toContain('已连接');
+    for (const label of ['选择区域', '捕获当前帧'])
+      expect(button(label).disabled).toBe(false);
+    button('停止共享').click();
+    await settle();
+    expect(source.track.stop).toHaveBeenCalledOnce();
+    expect(root.textContent).not.toContain('已连接');
+  });
+});

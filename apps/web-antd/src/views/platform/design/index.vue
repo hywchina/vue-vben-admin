@@ -388,11 +388,13 @@ const composerImageFields = computed(() =>
   orderedImageMediaFields(additionalMediaFields.value),
 );
 const composerSlots = computed(() =>
-  composerImageFields.value.map((field) => ({
-    field,
-    asset: composerInputs.value.find((item) => item.field.key === field.key)
-      ?.asset,
-  })),
+  composerImageFields.value
+    .filter((field) => field.key !== liveInputFieldKey.value)
+    .map((field) => ({
+      field,
+      asset: composerInputs.value.find((item) => item.field.key === field.key)
+        ?.asset,
+    })),
 );
 const composerCaptureFields = computed(() =>
   mediaFields.value.filter(
@@ -767,12 +769,19 @@ async function addComposerAssetIds(assetIds: string[]) {
 }
 
 function chooseComposerSlot(field: CapabilityField) {
+  if (liveInputFieldKey.value === field.key) liveInputFieldKey.value = '';
   inputSourceFieldKey.value = field.key;
   composerSourcePickerOpen.value = true;
+}
+function setComposerSourceOpen(field: CapabilityField, open: boolean) {
+  if (open) chooseComposerSlot(field);
+  else if (inputSourceFieldKey.value === field.key)
+    composerSourcePickerOpen.value = false;
 }
 function openLiveInput(field: CapabilityField) {
   inputSourceFieldKey.value = '';
   composerSourcePickerOpen.value = false;
+  composerAssetPickerOpen.value = false;
   liveInputFieldKey.value = field.key;
 }
 function chooseComposerLocalFiles() {
@@ -928,6 +937,8 @@ watch(mediaPickerOpen, (open) => {
 watch(captureContextKey, () => {
   liveInputFieldKey.value = '';
   inputSourceFieldKey.value = '';
+  composerSourcePickerOpen.value = false;
+  composerAssetPickerOpen.value = false;
   pendingInputEditors.length = 0;
   activeAutoEditorKey.value = '';
   mediaEditorFieldKey.value = '';
@@ -2726,22 +2737,6 @@ onBeforeUnmount(() => {
             class="composer-capture-fields"
             data-testid="composer-capture-fields"
           >
-            <div class="composer-live-heading">
-              <strong>实时输入</strong>
-              <label>
-                检测间隔
-                <Select
-                  v-model:value="liveRefreshRate"
-                  aria-label="实时输入检测间隔"
-                  :options="[
-                    { value: 500, label: '0.5秒' },
-                    { value: 1000, label: '1秒' },
-                    { value: 2000, label: '2秒' },
-                  ]"
-                />
-              </label>
-              <Button @click="liveInputFieldKey = ''">关闭实时输入</Button>
-            </div>
             <CapabilityMediaField
               v-for="field in composerCaptureFields"
               :key="`${captureContextKey}:${field.key}`"
@@ -2767,10 +2762,35 @@ onBeforeUnmount(() => {
                 selectAsset(field, $event).then(() => queueInputEditor(field))
               "
               @upload="uploadMedia(field, $event)"
-            />
+            >
+              <template #capture-switch>
+                <button
+                  v-if="field.type !== 'capture'"
+                  class="composer-capture-switch"
+                  type="button"
+                  @click="liveInputFieldKey = ''"
+                >
+                  切换为图片
+                </button>
+              </template>
+              <template #capture-settings>
+                <label class="composer-capture-interval">
+                  检测间隔
+                  <Select
+                    v-model:value="liveRefreshRate"
+                    aria-label="实时输入检测间隔"
+                    :options="[
+                      { value: 500, label: '0.5秒' },
+                      { value: 1000, label: '1秒' },
+                      { value: 2000, label: '2秒' },
+                    ]"
+                  />
+                </label>
+              </template>
+            </CapabilityMediaField>
           </section>
           <section
-            v-if="composerImageFields.length"
+            v-if="composerSlots.length"
             class="composer-media-tray"
             data-testid="composer-media-tray"
           >
@@ -2783,110 +2803,141 @@ onBeforeUnmount(() => {
                 :key="item.field.key"
                 class="composer-slot-card"
               >
-                <article v-if="item.asset" class="composer-input-asset">
-                  <span class="composer-input-role">
+                <div class="composer-slot-heading">
+                  <span class="composer-input-role" :title="item.field.label">
                     图片{{ (item.field.assetIndex ?? 0) + 1 }} ·
                     {{ item.field.label }}
                   </span>
-                  <button
-                    :aria-label="`${composerInputEditorLabel(item.field)}：${item.asset.name}`"
-                    class="composer-input-asset__preview"
-                    :title="`点击进入${composerInputEditorLabel(item.field)}`"
-                    type="button"
-                    @click="openComposerInputEditor(item.field)"
-                  >
-                    <img
-                      v-if="composerPreviewUrls[item.asset.id]"
-                      :alt="item.asset.name"
-                      :src="composerPreviewUrls[item.asset.id]"
-                    />
-                    <IconifyIcon v-else :icon="assetTypeIcons.image" />
-                  </button>
-                  <div class="composer-input-asset__move-actions">
-                    <button
-                      :aria-label="`左移${item.asset.name}`"
-                      :disabled="composerInputPosition(item.field) === 0"
-                      title="左移"
-                      type="button"
-                      @click="moveComposerInput(item.field, -1)"
-                    >
-                      <IconifyIcon :icon="platformUiIcons.arrowLeft" />
-                    </button>
-                    <button
-                      :aria-label="`编辑${item.asset.name}`"
-                      :title="composerInputEditorLabel(item.field)"
-                      type="button"
-                      @click.stop="openComposerInputEditor(item.field)"
-                    >
-                      <IconifyIcon
-                        :icon="
-                          item.field.type === 'region'
-                            ? platformUiIcons.scanLine
-                            : item.field.type === 'mask'
-                              ? platformSemanticIcons.mask
-                              : platformUiIcons.maximize2
-                        "
-                      />
-                    </button>
-                    <button
-                      :aria-label="`右移${item.asset.name}`"
-                      :disabled="
-                        composerInputPosition(item.field) ===
-                        composerInputs.length - 1
-                      "
-                      title="右移"
-                      type="button"
-                      @click="moveComposerInput(item.field, 1)"
-                    >
-                      <IconifyIcon :icon="platformUiIcons.arrowRight" />
-                    </button>
-                  </div>
-                  <button
-                    :aria-label="`移除${item.asset.name}`"
-                    class="composer-input-asset__remove"
-                    title="移除"
-                    type="button"
-                    @click="removeSelectedAsset(item.field)"
-                  >
-                    <IconifyIcon :icon="platformUiIcons.close" />
-                  </button>
-                </article>
-
-                <button
-                  v-else
-                  class="composer-input-slot"
-                  :aria-label="`添加图片${(item.field.assetIndex ?? 0) + 1}：${item.field.label}`"
-                  :disabled="composerUploading || composerImportingImage"
-                  type="button"
-                  @click="chooseComposerSlot(item.field)"
-                >
-                  <IconifyIcon :icon="platformUiIcons.plus" />
-                  <strong>
-                    添加图片{{ (item.field.assetIndex ?? 0) + 1 }}
-                  </strong>
-                  <span>{{ item.field.label }}</span>
                   <small>{{ item.field.required ? '必填' : '选填' }}</small>
-                </button>
-                <button
-                  :aria-label="`实时输入：${item.field.label}`"
-                  class="composer-live-entry"
-                  type="button"
-                  @click="openLiveInput(item.field)"
-                >
-                  <IconifyIcon :icon="platformUiIcons.monitorUp" />
-                  <span>实时输入</span>
-                </button>
+                </div>
+                <div class="composer-slot-entries">
+                  <article v-if="item.asset" class="composer-input-asset">
+                    <button
+                      :aria-label="`${composerInputEditorLabel(item.field)}：${item.asset.name}`"
+                      class="composer-input-asset__preview"
+                      :title="`点击进入${composerInputEditorLabel(item.field)}`"
+                      type="button"
+                      @click="openComposerInputEditor(item.field)"
+                    >
+                      <img
+                        v-if="composerPreviewUrls[item.asset.id]"
+                        :alt="item.asset.name"
+                        :src="composerPreviewUrls[item.asset.id]"
+                      />
+                      <IconifyIcon v-else :icon="assetTypeIcons.image" />
+                    </button>
+                    <div class="composer-input-asset__move-actions">
+                      <button
+                        :aria-label="`左移${item.asset.name}`"
+                        :disabled="composerInputPosition(item.field) === 0"
+                        title="左移"
+                        type="button"
+                        @click="moveComposerInput(item.field, -1)"
+                      >
+                        <IconifyIcon :icon="platformUiIcons.arrowLeft" />
+                      </button>
+                      <button
+                        :aria-label="`编辑${item.asset.name}`"
+                        :title="composerInputEditorLabel(item.field)"
+                        type="button"
+                        @click.stop="openComposerInputEditor(item.field)"
+                      >
+                        <IconifyIcon
+                          :icon="
+                            item.field.type === 'region'
+                              ? platformUiIcons.scanLine
+                              : item.field.type === 'mask'
+                                ? platformSemanticIcons.mask
+                                : platformUiIcons.maximize2
+                          "
+                        />
+                      </button>
+                      <button
+                        :aria-label="`右移${item.asset.name}`"
+                        :disabled="
+                          composerInputPosition(item.field) ===
+                          composerInputs.length - 1
+                        "
+                        title="右移"
+                        type="button"
+                        @click="moveComposerInput(item.field, 1)"
+                      >
+                        <IconifyIcon :icon="platformUiIcons.arrowRight" />
+                      </button>
+                    </div>
+                    <button
+                      :aria-label="`移除${item.asset.name}`"
+                      class="composer-input-asset__remove"
+                      title="移除"
+                      type="button"
+                      @click="removeSelectedAsset(item.field)"
+                    >
+                      <IconifyIcon :icon="platformUiIcons.close" />
+                    </button>
+                  </article>
+
+                  <Popover
+                    v-else
+                    :open="
+                      composerSourcePickerOpen &&
+                      inputSourceFieldKey === item.field.key
+                    "
+                    placement="topLeft"
+                    trigger="click"
+                    @update:open="setComposerSourceOpen(item.field, $event)"
+                  >
+                    <template #content>
+                      <div class="composer-media-source-menu">
+                        <button type="button" @click="chooseComposerLocalFiles">
+                          <IconifyIcon :icon="platformUiIcons.upload" />
+                          <span>
+                            <strong>本地上传</strong>
+                            <small>从电脑选择图片</small>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          @click="chooseComposerProjectAssets"
+                        >
+                          <IconifyIcon :icon="platformSemanticIcons.assets" />
+                          <span>
+                            <strong>从资产中心选择</strong>
+                            <small>选择可用的项目图片</small>
+                          </span>
+                        </button>
+                      </div>
+                    </template>
+                    <button
+                      class="composer-input-slot"
+                      :aria-label="`添加图片${(item.field.assetIndex ?? 0) + 1}：${item.field.label}`"
+                      :disabled="composerUploading || composerImportingImage"
+                      type="button"
+                    >
+                      <IconifyIcon :icon="platformUiIcons.plus" />
+                      <span>添加图片</span>
+                    </button>
+                  </Popover>
+                  <button
+                    :aria-label="`实时输入：${item.field.label}`"
+                    class="composer-live-entry"
+                    type="button"
+                    @click="openLiveInput(item.field)"
+                  >
+                    <IconifyIcon :icon="platformUiIcons.monitorUp" />
+                    <span>实时输入</span>
+                  </button>
+                </div>
               </div>
             </div>
-            <input
-              ref="composerFileInputRef"
-              accept="image/*"
-              hidden
-              multiple
-              type="file"
-              @change="uploadComposerFiles"
-            />
           </section>
+          <input
+            ref="composerFileInputRef"
+            accept="image/*"
+            hidden
+            multiple
+            type="file"
+            @change="uploadComposerFiles"
+          />
           <Textarea
             v-if="promptField"
             :auto-size="{ minRows: 2, maxRows: 8 }"
@@ -3134,27 +3185,6 @@ onBeforeUnmount(() => {
       </footer>
     </section>
 
-    <Modal
-      v-model:open="composerSourcePickerOpen"
-      title="添加图片"
-      :footer="null"
-      width="min(420px, 94vw)"
-    >
-      <p>
-        {{
-          composerImageFields.find((field) => field.key === inputSourceFieldKey)
-            ?.label ?? '按工作流输入顺序添加图片'
-        }}
-      </p>
-      <div class="composer-media-source-menu">
-        <button type="button" @click="chooseComposerLocalFiles">
-          本地上传
-        </button>
-        <button type="button" @click="chooseComposerProjectAssets">
-          从资产中心选择
-        </button>
-      </div>
-    </Modal>
     <Modal
       v-model:open="mediaPickerOpen"
       :footer="null"
@@ -3638,68 +3668,93 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .composer-slot-card {
-  display: flex;
-  flex: 0 0 130px;
-  flex-direction: column;
-  gap: 6px;
-  width: 130px;
+  flex: 0 0 202px;
+  width: 202px;
+  min-width: 0;
 }
 
-.composer-input-slot {
+.composer-slot-heading {
   display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.composer-slot-heading small {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  font-size: 11px;
+  color: #a24a66;
+  background: #fff0f4;
+  border-radius: 4px;
+}
+
+.composer-slot-entries {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.composer-input-slot,
+.composer-live-entry {
+  display: flex;
+  flex: 0 0 96px;
   flex-direction: column;
-  gap: 5px;
+  gap: 8px;
   align-items: center;
   justify-content: center;
-  width: 130px;
-  min-height: 116px;
-  padding: 12px;
-  color: #655c60;
-  background: #faf7f8;
-  border: 1px dashed #d8cbd0;
+  width: 96px;
+  height: 96px;
+  padding: 8px;
+  font-size: 12px;
+  color: var(--rail-theme-secondary, #655c60);
+  background: var(--rail-theme-surface, #faf7f8);
+  border: 1px dashed var(--rail-theme-border, #d8cbd0);
   border-radius: 12px;
 }
 
-.composer-input-slot span {
-  max-width: 100%;
-  font-size: 12px;
-  overflow-wrap: anywhere;
+.composer-input-slot:hover,
+.composer-live-entry:hover {
+  color: var(--app-accent, #c51f3a);
+  border-color: currentcolor;
 }
 
-.composer-input-slot small {
-  font-size: 12px;
-  color: #8c7d83;
+.composer-input-slot svg,
+.composer-live-entry svg {
+  width: 25px;
+  height: 25px;
 }
 
 .composer-input-role {
-  display: block;
-  max-width: 140px;
-  margin-bottom: 6px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12px;
-  line-height: 1.4;
-  color: #62585e;
-  overflow-wrap: anywhere;
+  line-height: 1.5;
+  color: var(--rail-theme-secondary, #62585e);
+  white-space: nowrap;
 }
 
-.composer-live-entry {
-  display: flex;
+.composer-capture-switch {
+  flex-shrink: 0;
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--app-accent, #c51f3a);
+  background: transparent;
+  border: 0;
+}
+
+.composer-capture-interval {
+  display: inline-flex;
   gap: 6px;
   align-items: center;
-  padding: 10px;
   font-size: 12px;
-  color: #8f3450;
-  background: #fff7fa;
-  border: 1px solid #ead8df;
-  border-radius: 10px;
+  color: var(--rail-theme-secondary, #68747d);
+  white-space: nowrap;
 }
 
-.composer-live-heading {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+.composer-capture-interval :deep(.ant-select) {
+  width: 82px;
 }
 
 .design-page {
@@ -4953,18 +5008,17 @@ main.design-page {
 
 .composer-input-asset {
   position: relative;
-  flex: 0 0 130px;
-  width: 130px;
-  height: auto;
-  min-height: 116px;
+  flex: 0 0 96px;
+  width: 96px;
+  height: 96px;
 }
 
 .composer-input-asset__preview {
   position: relative;
   display: grid;
   place-items: center;
-  width: 130px;
-  height: 88px;
+  width: 96px;
+  height: 96px;
   padding: 0;
   overflow: hidden;
   color: var(--rail-theme-secondary, #52606d);
@@ -5071,7 +5125,7 @@ main.design-page {
 :global(.composer-media-source-menu) {
   display: grid;
   gap: 6px;
-  width: 250px;
+  width: min(250px, calc(100vw - 48px));
 }
 
 :global(.composer-media-source-menu > button) {
@@ -5102,6 +5156,8 @@ main.design-page {
 :global(.composer-media-source-menu strong),
 :global(.composer-media-source-menu small) {
   display: block;
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 
 :global(.composer-media-source-menu strong) {
