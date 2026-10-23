@@ -40,6 +40,7 @@ import {
   getAssetPreviewApi,
   getReportStatusApi,
 } from '#/api';
+import { REPORT_LIMITS } from '#/api/platform/reports';
 import PageHeading from '#/components/platform/page-heading.vue';
 import { assetTypeIcons } from '#/modules/platform/asset-types';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
@@ -106,11 +107,22 @@ const canSubmit = computed(
           section.title.trim() &&
           (section.body.trim() || section.images.length > 0),
       ),
-    ) && !submitting.value,
+    ) &&
+    !submitting.value &&
+    !uploading.value,
 );
-const activeSection = computed(() =>
-  sections.value.find((section) => section.clientId === activeSectionId.value),
-);
+function imageTarget() {
+  return {
+    projectId: platformStore.currentProjectId,
+    sectionId: activeSectionId.value,
+  };
+}
+function targetSection(target: ReturnType<typeof imageTarget>) {
+  if (target.projectId !== platformStore.currentProjectId) return;
+  return sections.value.find(
+    (section) => section.clientId === target.sectionId,
+  );
+}
 
 function createSection(title = ''): ReportSection {
   return {
@@ -122,7 +134,11 @@ function createSection(title = ''): ReportSection {
 }
 
 function addSection() {
-  if (sections.value.length >= (status.value?.limits.sections ?? 8)) return;
+  if (
+    sections.value.length >=
+    (status.value?.limits.sections ?? REPORT_LIMITS.sections)
+  )
+    return;
   sections.value.push(createSection(`章节 ${sections.value.length + 1}`));
 }
 
@@ -181,8 +197,11 @@ async function loadPreview(asset: PlatformAsset) {
   if (preview.mode === 'url') previews.set(asset.id, preview.url);
 }
 
-async function attachAsset(asset: PlatformAsset) {
-  const section = activeSection.value;
+async function attachAsset(
+  asset: PlatformAsset,
+  target: ReturnType<typeof imageTarget>,
+) {
+  const section = targetSection(target);
   if (!section) return;
   if (!isSupportedImage(asset)) {
     message.error('报告当前仅支持 PNG 和 JPEG 图片');
@@ -192,43 +211,57 @@ async function attachAsset(asset: PlatformAsset) {
     message.info('该图片已在当前章节中');
     return;
   }
-  if (section.images.length >= (status.value?.limits.imagesPerSection ?? 8)) {
-    message.warning('单个章节最多使用 8 张图片');
+  if (
+    section.images.length >=
+    (status.value?.limits.imagesPerSection ?? REPORT_LIMITS.imagesPerSection)
+  ) {
+    message.warning(
+      `单个章节最多使用 ${status.value?.limits.imagesPerSection ?? REPORT_LIMITS.imagesPerSection} 张图片`,
+    );
     return;
   }
-  if (imageCount.value >= (status.value?.limits.totalImages ?? 24)) {
-    message.warning('单个报告最多使用 24 张图片');
+  if (
+    imageCount.value >=
+    (status.value?.limits.totalImages ?? REPORT_LIMITS.totalImages)
+  ) {
+    message.warning(
+      `单个报告最多使用 ${status.value?.limits.totalImages ?? REPORT_LIMITS.totalImages} 张图片`,
+    );
     return;
   }
   section.images.push({ assetId: asset.id, caption: asset.name });
   await loadPreview(asset).catch(() => undefined);
+  return true;
 }
 
-async function handleAssetSelected(assetId: string) {
+async function handleAssetSelected(assetId: string, target = imageTarget()) {
   try {
-    await attachAsset(await getAssetApi(assetId));
+    await attachAsset(await getAssetApi(assetId), target);
   } catch (error) {
     message.error(error instanceof Error ? error.message : '读取图片资产失败');
   }
 }
 
 async function handleAssetsSelected(assetIds: string[]) {
+  const target = imageTarget();
   for (const assetId of assetIds) {
     if (
-      activeSection.value?.images.some((image) => image.assetId === assetId)
+      targetSection(target)?.images.some((image) => image.assetId === assetId)
     ) {
       continue;
     }
     if (
-      !activeSection.value ||
-      activeSection.value.images.length >=
-        (status.value?.limits.imagesPerSection ?? 8) ||
-      imageCount.value >= (status.value?.limits.totalImages ?? 24)
+      !targetSection(target) ||
+      (targetSection(target)?.images.length ?? 0) >=
+        (status.value?.limits.imagesPerSection ??
+          REPORT_LIMITS.imagesPerSection) ||
+      imageCount.value >=
+        (status.value?.limits.totalImages ?? REPORT_LIMITS.totalImages)
     ) {
       message.warning('已达到当前章节或报告的图片数量上限');
       break;
     }
-    await handleAssetSelected(assetId);
+    await handleAssetSelected(assetId, target);
   }
 }
 
@@ -237,6 +270,7 @@ async function handleLocalFiles(event: Event) {
   const files = [...(input.files ?? [])];
   input.value = '';
   if (files.length === 0) return;
+  const target = imageTarget();
   uploading.value = true;
   let uploadedCount = 0;
   try {
@@ -246,10 +280,12 @@ async function handleLocalFiles(event: Event) {
         continue;
       }
       if (
-        !activeSection.value ||
-        activeSection.value.images.length >=
-          (status.value?.limits.imagesPerSection ?? 8) ||
-        imageCount.value >= (status.value?.limits.totalImages ?? 24)
+        !targetSection(target) ||
+        (targetSection(target)?.images.length ?? 0) >=
+          (status.value?.limits.imagesPerSection ??
+            REPORT_LIMITS.imagesPerSection) ||
+        imageCount.value >=
+          (status.value?.limits.totalImages ?? REPORT_LIMITS.totalImages)
       ) {
         message.warning('已达到当前章节或报告的图片数量上限');
         break;
@@ -261,8 +297,7 @@ async function handleLocalFiles(event: Event) {
         tags: ['report-source'],
         type: 'image',
       });
-      await attachAsset(asset);
-      uploadedCount += 1;
+      if (await attachAsset(asset, target)) uploadedCount += 1;
     }
     if (uploadedCount) {
       message.success(`${uploadedCount} 张图片已上传并加入当前章节`);
@@ -390,7 +425,12 @@ async function initialize() {
 
 watch(
   () => platformStore.currentProjectId,
-  () => void initialize(),
+  () => {
+    pickerOpen.value = false;
+    imageSourceMenuSectionId.value = '';
+    activeSectionId.value = '';
+    void initialize();
+  },
 );
 
 onMounted(() => {
@@ -488,10 +528,17 @@ onBeforeUnmount(() => {
                 <h3>报告章节</h3>
                 <span>
                   已配置 {{ sections.length }}/{{
-                    status?.limits.sections ?? 8
+                    status?.limits.sections ?? REPORT_LIMITS.sections
                   }}
-                  章 · {{ imageCount }}/{{ status?.limits.totalImages ?? 24 }}
-                  张图片
+                  章 · {{ imageCount }}/{{
+                    status?.limits.totalImages ?? REPORT_LIMITS.totalImages
+                  }}
+                  张图片 · 每章最多
+                  {{
+                    status?.limits.imagesPerSection ??
+                    REPORT_LIMITS.imagesPerSection
+                  }}
+                  张
                 </span>
               </div>
             </header>
@@ -599,7 +646,8 @@ onBeforeUnmount(() => {
                 <Dropdown
                   v-if="
                     section.images.length <
-                    (status?.limits.imagesPerSection ?? 8)
+                    (status?.limits.imagesPerSection ??
+                      REPORT_LIMITS.imagesPerSection)
                   "
                   :open="imageSourceMenuSectionId === section.clientId"
                   :trigger="['click']"
@@ -650,7 +698,10 @@ onBeforeUnmount(() => {
             <Button
               block
               class="report-add-section"
-              :disabled="sections.length >= (status?.limits.sections ?? 8)"
+              :disabled="
+                sections.length >=
+                (status?.limits.sections ?? REPORT_LIMITS.sections)
+              "
               @click="addSection"
             >
               <IconifyIcon :icon="platformUiIcons.plus" />

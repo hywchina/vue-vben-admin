@@ -68,26 +68,47 @@ describe('report generation schema', () => {
     );
   });
 
-  it('rejects empty sections and more than 24 image placements', () => {
+  it('rejects empty sections', () => {
     expect(() =>
       createReportSchema.parse({
         ...validInput(),
         sections: [{ body: '', images: [], title: '空章节' }],
       }),
     ).toThrow('每个章节至少需要正文或一张图片');
+  });
+
+  it('accepts twenty images per chapter and 160 placements across eight chapters', () => {
+    const sections = Array.from({ length: 8 }, (_, index) => ({
+      title: `章节 ${index + 1}`,
+      body: '',
+      images: Array.from({ length: 20 }, () => ({
+        assetId: imageId,
+        caption: '图',
+      })),
+    }));
+    expect(
+      createReportSchema.parse({ ...validInput(), sections }).sections,
+    ).toHaveLength(8);
     expect(() =>
       createReportSchema.parse({
         ...validInput(),
-        sections: Array.from({ length: 4 }, (_, sectionIndex) => ({
-          body: '',
-          images: Array.from({ length: 7 }, (_, imageIndex) => ({
-            assetId: `10000000-0000-4000-800${sectionIndex}-${String(imageIndex + 1).padStart(12, '0')}`,
-            caption: '图片',
-          })),
-          title: `章节 ${sectionIndex + 1}`,
-        })),
+        sections: [
+          {
+            ...sections[0],
+            images: [
+              ...(sections[0]?.images ?? []),
+              { assetId: imageId, caption: '第21张' },
+            ],
+          },
+        ],
       }),
-    ).toThrow('单个报告最多使用 24 张图片');
+    ).toThrow('单个章节最多使用 20 张图片');
+    expect(() =>
+      createReportSchema.parse({
+        ...validInput(),
+        sections: [...sections, sections[0]],
+      }),
+    ).toThrow(/Too big/u);
   });
 
   it('sanitizes office filenames', () => {

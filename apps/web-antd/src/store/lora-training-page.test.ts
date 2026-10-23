@@ -7,6 +7,10 @@ import Training from '#/views/platform/model-training/index.vue';
 
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
+  logs: vi.fn(),
+  metrics: vi.fn(),
+  jobs: [] as Array<Record<string, unknown>>,
+  projectId: '11111111-1111-4111-8111-111111111111',
   status: vi.fn(),
   refresh: vi.fn(),
   preview: vi.fn(),
@@ -29,22 +33,30 @@ vi.mock('#/components/platform/page-heading.vue', () => ({
 vi.mock('#/components/platform/status-pill.vue', () => ({
   default: defineComponent({ setup: () => () => h('span') }),
 }));
-vi.mock('#/store', () => ({
-  usePlatformStore: () => ({
-    currentProjectId: '11111111-1111-4111-8111-111111111111',
-    currentProject: { name: '测试项目' },
-    currentAssets: mocks.assets,
-    currentJobs: [],
-    refreshCurrentProjectJobs: mocks.refresh,
-    uploadAsset: mocks.upload,
-  }),
-}));
+vi.mock('#/store', async () => {
+  const { reactive } = await import('vue');
+  return {
+    usePlatformStore: () => {
+      mocks.jobs = reactive(mocks.jobs);
+      return {
+        get currentProjectId() {
+          return mocks.projectId;
+        },
+        currentProject: { name: '测试项目' },
+        currentAssets: mocks.assets,
+        currentJobs: mocks.jobs,
+        refreshCurrentProjectJobs: mocks.refresh,
+        uploadAsset: mocks.upload,
+      };
+    },
+  };
+});
 vi.mock('#/api', () => ({
   createLoraTrainingApi: mocks.create,
   getLoraStatusApi: mocks.status,
   getAssetPreviewApi: mocks.preview,
-  getLoraTrainingLogsApi: vi.fn(),
-  getLoraTrainingMetricsApi: vi.fn(),
+  getLoraTrainingLogsApi: mocks.logs,
+  getLoraTrainingMetricsApi: mocks.metrics,
   requestLoraCheckpointApi: vi.fn(),
 }));
 vi.mock('ant-design-vue', () => {
@@ -86,7 +98,13 @@ vi.mock('ant-design-vue', () => {
         () =>
           h('button', { disabled: props.disabled }, slots.default?.()),
     }),
-    Drawer: defineComponent({ setup: () => () => null }),
+    Drawer: defineComponent({
+      props: ['open'],
+      setup:
+        (props, { slots }) =>
+        () =>
+          props.open ? h('aside', slots.default?.()) : null,
+    }),
     Empty: pass,
     Input: field('input'),
     InputNumber: field('input', true),
@@ -118,6 +136,12 @@ function required<T>(value: null | T | undefined): T {
 const disposers: (() => void)[] = [];
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.jobs = [];
+  mocks.projectId = '11111111-1111-4111-8111-111111111111';
+  mocks.logs.mockResolvedValue({ log: '开始训练', offset: 10, reset: false });
+  mocks.metrics.mockResolvedValue({
+    points: [{ step: 10, value: 0.48, wall_time: 1 }],
+  });
   mocks.assets = [
     {
       id: '22222222-2222-4222-8222-222222222222',
@@ -137,7 +161,10 @@ beforeEach(() => {
     models: [{ key: 'flux2-klein-9b', label: 'Flux2 Klein 9B' }],
   });
 });
-afterEach(() => disposers.splice(0).forEach((dispose) => dispose()));
+afterEach(() => {
+  disposers.splice(0).forEach((dispose) => dispose());
+  vi.useRealTimers();
+});
 async function settle() {
   for (let index = 0; index < 5; index++) await Promise.resolve();
   await nextTick();
@@ -299,4 +326,71 @@ describe('loRA training page contract', () => {
     expect(button(root, '开始训练').disabled).toBe(true);
     expect(mocks.create).not.toHaveBeenCalled();
   });
+});
+
+it('fetches final logs and loss when polling changes a running job to succeeded', async () => {
+  vi.useFakeTimers();
+  mocks.jobs = [
+    {
+      id: 'job-test',
+      appKey: 'lora-training',
+      name: '真实任务',
+      status: 'running',
+      progress: 50,
+      stage: '训练中',
+      createdAt: new Date().toISOString(),
+    },
+  ];
+  const root = await render();
+  button(root, '日志 / Loss').click();
+  await settle();
+  expect(root.textContent).toContain('Loss 0.48');
+  expect(root.textContent).not.toContain('暂无 loss 数据');
+  mocks.refresh.mockImplementationOnce(async () => {
+    Object.assign(required(mocks.jobs[0]), {
+      status: 'succeeded',
+      progress: 100,
+      stage: '已完成',
+    });
+  });
+  mocks.logs.mockResolvedValueOnce({
+    log: '模型已保存',
+    offset: 20,
+    reset: false,
+  });
+  await vi.advanceTimersByTimeAsync(5000);
+  await settle();
+  expect(mocks.logs).toHaveBeenCalledTimes(2);
+  expect(mocks.metrics).toHaveBeenCalledTimes(2);
+  expect(root.textContent).toContain('模型已保存');
+  expect(root.textContent).toContain('100%');
+});
+
+it('does not select a late uploaded image after switching projects', async () => {
+  let finish: (value: unknown) => void = () => {};
+  mocks.upload.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const root = await render();
+  const input = required(
+    root.querySelector<HTMLInputElement>('input[type="file"]'),
+  );
+  Object.defineProperty(input, 'files', {
+    value: [new File(['image'], 'late.png', { type: 'image/png' })],
+  });
+  input.dispatchEvent(new Event('change'));
+  await settle();
+  mocks.projectId = 'another-project';
+  finish({ id: 'late-asset' });
+  await settle();
+  expect(root.textContent).toContain('已选 0 张');
+  expect(root.querySelectorAll('.caption-card')).toHaveLength(0);
+});
+it('keeps submission disabled when the training status request fails', async () => {
+  mocks.status.mockRejectedValueOnce(new Error('unreachable'));
+  const root = await render();
+  expect(button(root, '开始训练').disabled).toBe(true);
 });

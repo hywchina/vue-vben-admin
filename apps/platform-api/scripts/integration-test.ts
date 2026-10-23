@@ -34,6 +34,9 @@ const runId = `integration-${randomUUID()}`;
 const runStartedAt = new Date();
 const requestIds: string[] = [];
 const sessions: Session[] = [];
+const heartbeatIds = ['comfy-', 'report-', 'lora-'].map(
+  (prefix) => prefix + runId,
+);
 let requestSequence = 0;
 let projectId: null | string = null;
 const disposableProjectIds: string[] = [];
@@ -227,6 +230,7 @@ async function cleanup() {
   }
 
   const sql = useDatabase();
+  await sql`DELETE FROM worker_heartbeats WHERE instance_id IN ${sql(heartbeatIds)}`;
   if (metadataWorkflowId) {
     await sql`DELETE FROM capability_workflows WHERE capability_code = ${metadataWorkflowCode}`;
     await sql`DELETE FROM workflow_definitions WHERE id = ${metadataWorkflowId}`;
@@ -373,6 +377,21 @@ async function run() {
     `/assistant/conversations/${randomUUID()}/messages`,
   ])
     await apiRequest(path, { expectedStatus: 404, session: user1 });
+
+  // A live report/LoRA worker must not impersonate the ComfyUI executor.
+  await sql`INSERT INTO worker_heartbeats (instance_id, started_at, last_seen_at, metadata)
+    VALUES (${heartbeatIds[0] ?? ''}, now(), now() - interval '5 seconds', '{"adapter":"comfyui","configured":true}'),
+      (${heartbeatIds[1] ?? ''}, now(), now() + interval '5 seconds', '{"role":"report-generation"}'),
+      (${heartbeatIds[2] ?? ''}, now(), now() + interval '6 seconds', '{"provider":"ai-toolkit"}')`;
+  const executorOverview = await apiRequest<{
+    worker: null | { instanceId: string };
+  }>('/workflow-management', { session: admin });
+  assert(executorOverview.envelope.data.worker, '未找到 ComfyUI 执行 Worker');
+  const [executor] = await sql<
+    { adapter: string }[]
+  >`SELECT metadata ->> 'adapter' AS adapter FROM worker_heartbeats WHERE instance_id = ${executorOverview.envelope.data.worker.instanceId}`;
+  assert(executor?.adapter === 'comfyui', '工作流管理误报了报告或训练 Worker');
+  await sql`DELETE FROM worker_heartbeats WHERE instance_id IN ${sql(heartbeatIds)}`;
 
   const catalogEntry = WORKFLOW_CATALOG[0];
   assert(catalogEntry, '缺少工作流目录');
@@ -2173,6 +2192,142 @@ async function run() {
     session: user2,
   });
 
+  // Deletion preserves historical snapshots; a queued job may not have an execution yet.
+  await apiRequest(workflowMetadataPath, {
+    method: 'DELETE',
+    expectedStatus: 401,
+  });
+  await apiRequest(workflowMetadataPath, {
+    method: 'DELETE',
+    session: user1,
+    expectedStatus: 403,
+  });
+  await apiRequest('/workflow-management/not-a-uuid', {
+    method: 'DELETE',
+    session: admin,
+    expectedStatus: 400,
+  });
+  await apiRequest(`/workflow-management/${randomUUID()}`, {
+    method: 'DELETE',
+    session: admin,
+    expectedStatus: 404,
+  });
+  await apiRequest(workflowMetadataPath, {
+    method: 'DELETE',
+    session: admin,
+    expectedStatus: 409,
+  });
+  await sql`UPDATE capability_workflows SET active = false WHERE capability_code = ${metadataWorkflowCode}`;
+  const [deleteVersion] = await sql<{ id: string }[]>`
+    SELECT id FROM workflow_versions WHERE workflow_id = ${metadataWorkflowId} LIMIT 1
+  `;
+  assert(deleteVersion, '缺少测试工作流版本');
+  const versionId = deleteVersion.id;
+  const [deleteWorkspace] = await sql<{ id: string }[]>`
+    INSERT INTO workflow_workspace_instances (user_id, project_id, app_key, title)
+    VALUES (${user1.id}, ${projectId}, 'text-to-image', ${`${runId}-delete-context`}) RETURNING id
+  `;
+  assert(deleteWorkspace, '缺少测试执行上下文');
+  const [historicalJob] = await sql<{ id: string }[]>`
+    INSERT INTO jobs (project_id, app_key, name, parameters, created_by, status, workflow_version_id, workspace_instance_id)
+    VALUES (${projectId}, 'text-to-image', ${`${runId}-workflow-delete`}, '{}', ${user1.id}, 'queued', ${versionId}, ${deleteWorkspace.id}) RETURNING id
+  `;
+  assert(historicalJob, '缺少删除保护测试任务');
+  await apiRequest(workflowMetadataPath, {
+    method: 'DELETE',
+    session: admin,
+    expectedStatus: 409,
+  });
+  await sql`UPDATE jobs SET status = 'succeeded', progress = 100 WHERE id = ${historicalJob.id}`;
+  await apiRequest(workflowMetadataPath, { method: 'DELETE', session: admin });
+  await apiRequest(workflowMetadataPath, {
+    method: 'DELETE',
+    session: admin,
+    expectedStatus: 404,
+  });
+  await apiRequest(workflowMetadataPath, {
+    method: 'PUT',
+    session: admin,
+    body: { name: '不可编辑' },
+    expectedStatus: 404,
+  });
+  await apiRequest(`${workflowMetadataPath}/versions`, {
+    session: admin,
+    body: { apiJson, ...catalogEntry.version },
+    expectedStatus: 404,
+  });
+  const afterDeleteOverview = await apiRequest<{
+    workflows: Array<{ id: string }>;
+  }>('/workflow-management', { session: admin });
+  assert(
+    !afterDeleteOverview.envelope.data.workflows.some(
+      (w) => w.id === metadataWorkflowId,
+    ),
+    '已删除工作流仍在管理列表',
+  );
+  await seedWorkflowCatalogEntry(
+    {
+      ...catalogEntry,
+      application: { ...catalogEntry.application, key: metadataWorkflowCode },
+      workflow: { ...catalogEntry.workflow, code: metadataWorkflowCode },
+    },
+    apiJson,
+    admin.id,
+  );
+  const [retained] = await sql<
+    { audit: boolean; deleted: boolean; job: boolean; version: boolean }[]
+  >`
+    SELECT deleted_at IS NOT NULL AS deleted,
+      EXISTS(SELECT 1 FROM workflow_versions WHERE id = ${versionId}) AS version,
+      EXISTS(SELECT 1 FROM jobs WHERE id = ${historicalJob.id}) AS job,
+      EXISTS(SELECT 1 FROM audit_events WHERE action = 'workflow.delete' AND target_id = ${metadataWorkflowId}) AS audit
+    FROM workflow_definitions WHERE id = ${metadataWorkflowId}
+  `;
+  assert(
+    retained?.deleted && retained.version && retained.job && retained.audit,
+    '逻辑删除/历史/初始化/审计不完整',
+  );
+  // Remove only this test job before the existing workflow cleanup (RESTRICT FK).
+  await sql`DELETE FROM jobs WHERE id = ${historicalJob.id}`;
+  console.warn(
+    '工作流删除集成通过：认证、权限、绑定/排队保护、历史保留、初始化不复活及审计。',
+  );
+
+  const reportLimits = await apiRequest<{
+    limits: { imagesPerSection: number; sections: number; totalImages: number };
+  }>('/reports/status', { session: user1 });
+  assert(
+    reportLimits.envelope.data.limits.imagesPerSection === 20 &&
+      reportLimits.envelope.data.limits.totalImages === 160 &&
+      reportLimits.envelope.data.limits.sections === 8,
+    '报告状态接口与数量策略不同步',
+  );
+  await apiRequest('/reports/generations', {
+    session: user1,
+    expectedStatus: 400,
+    body: {
+      projectId,
+      name: '拒绝第21张图',
+      title: '数量边界',
+      format: 'docx',
+      reportType: 'design-proposal',
+      sections: [
+        {
+          title: '超限章节',
+          images: Array.from({ length: 21 }, () => ({
+            assetId: prepared.envelope.data.asset.id,
+          })),
+        },
+      ],
+    },
+  });
+  await apiRequest(`/capabilities/${metadataWorkflowCode}/workflow`, {
+    method: 'PUT',
+    session: admin,
+    expectedStatus: 400,
+    body: { workflowVersionId: versionId },
+  });
+
   // Exercise the real CPU report worker, database and private object store.
   // Template mode must not depend on Presenton/vLLM or enqueue GPU work.
   for (const format of ['docx', 'pptx', 'md'] as const) {
@@ -2198,12 +2353,12 @@ async function run() {
             images: [{ assetId: prepared.envelope.data.asset.id }],
           },
           {
-            title: '双图对照',
-            body: '相同测试图只验证双栏布局',
-            images: [
-              { assetId: prepared.envelope.data.asset.id },
-              { assetId: prepared.envelope.data.asset.id },
-            ],
+            title: '20张图片章节',
+            body: '验证每章20张图片的完整导出',
+            images: Array.from({ length: 20 }, (_, index) => ({
+              assetId: prepared.envelope.data.asset.id,
+              caption: `第${index + 1}张图`,
+            })),
           },
         ],
       },
@@ -2264,7 +2419,7 @@ async function run() {
     });
   }
   console.warn(
-    '模板报告集成通过：真实 CPU Worker、DOCX/PPTX/Markdown、单图/双图、自动入库及私有对象下载；未调用 AI/GPU。',
+    '模板报告集成通过：真实 CPU Worker、DOCX/PPTX/Markdown、每章20张图、自动入库及私有对象下载；未调用 AI/GPU。',
   );
 
   // Read access to a source project is enough; output still belongs to a writable target.

@@ -6,6 +6,8 @@ import WorkflowManagement from '#/views/platform/workflow-management/index.vue';
 
 const api = vi.hoisted(() => ({
   copy: vi.fn(),
+  confirm: vi.fn(),
+  delete: vi.fn(),
   bind: vi.fn(),
   create: vi.fn(),
   get: vi.fn(),
@@ -16,6 +18,7 @@ const api = vi.hoisted(() => ({
 vi.mock('#/utils/copy-text', () => ({ copyTextToClipboard: api.copy }));
 vi.mock('#/api/platform', () => ({
   bindCapabilityWorkflowApi: api.bind,
+  deleteWorkflowApi: api.delete,
   createWorkflowApi: api.create,
   getWorkflowManagementApi: api.get,
   updateWorkflowApi: api.update,
@@ -106,6 +109,7 @@ vi.mock('ant-design-vue', () => {
         () =>
           h('button', attrs, slots.default?.()),
     }),
+    Modal: { confirm: api.confirm },
     Card: pass,
     Descriptions: Object.assign(pass, { Item: item }),
     Empty: pass,
@@ -488,4 +492,30 @@ it('loads and saves the administrator default prompt without changing JSON or bi
     defaultPrompt: '新的默认词',
   });
   expect(api.bind).not.toHaveBeenCalled();
+});
+
+it('protects bound workflows and confirms unbound deletion before calling the API', async () => {
+  const root = await render();
+  expect(
+    [...root.querySelectorAll('button')].find(
+      (item) => item.textContent?.trim() === '删除',
+    )?.disabled,
+  ).toBe(true);
+  expect(api.delete).not.toHaveBeenCalled();
+});
+it('deletes an unbound workflow only after confirmation and reloads the registry', async () => {
+  api.get.mockResolvedValue({
+    capabilities: [],
+    workflows: [{ ...workflow, versions: [] }],
+  });
+  api.delete.mockResolvedValue({ id: workflow.id });
+  const root = await render();
+  click(root, '删除');
+  expect(api.confirm).toHaveBeenCalledTimes(1);
+  expect(api.delete).not.toHaveBeenCalled();
+  const options = api.confirm.mock.calls[0]?.[0];
+  expect(options.content).toContain('历史');
+  await options.onOk();
+  expect(api.delete).toHaveBeenCalledExactlyOnceWith(workflow.id);
+  expect(api.get).toHaveBeenCalledTimes(2);
 });

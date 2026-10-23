@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { REPORT_LIMITS } from './limits';
+
 export const REPORT_APPLICATION_KEY = 'report-generator';
 export const REPORT_TEMPLATE_KEY = 'rail-design-standard-v1';
 export const REPORT_SUPPORTED_IMAGE_MIME_TYPES = [
@@ -24,7 +26,13 @@ const reportImageSchema = z.object({
 const reportSectionSchema = z
   .object({
     body: z.string().trim().max(10_000).default(''),
-    images: z.array(reportImageSchema).max(8).default([]),
+    images: z
+      .array(reportImageSchema)
+      .max(
+        REPORT_LIMITS.imagesPerSection,
+        `单个章节最多使用 ${REPORT_LIMITS.imagesPerSection} 张图片`,
+      )
+      .default([]),
     title: z.string().trim().min(1).max(120),
   })
   .refine(
@@ -39,7 +47,7 @@ export const createReportSchema = z
     name: z.string().trim().min(1).max(200),
     projectId: z.string().uuid(),
     reportType: reportTypeSchema,
-    sections: z.array(reportSectionSchema).min(1).max(8),
+    sections: z.array(reportSectionSchema).min(1).max(REPORT_LIMITS.sections),
     summary: z.string().trim().max(2000).default(''),
     templateKey: z.literal(REPORT_TEMPLATE_KEY).default(REPORT_TEMPLATE_KEY),
     title: z.string().trim().min(1).max(160),
@@ -49,10 +57,10 @@ export const createReportSchema = z
       (count, section) => count + section.images.length,
       0,
     );
-    if (imageCount > 24) {
+    if (imageCount > REPORT_LIMITS.totalImages) {
       context.addIssue({
         code: 'custom',
-        message: '单个报告最多使用 24 张图片',
+        message: `单个报告最多使用 ${REPORT_LIMITS.totalImages} 张图片`,
         path: ['sections'],
       });
     }

@@ -128,14 +128,15 @@ describe('administrator field labels', () => {
     });
     expect(result[0]).toMatchObject({
       label: '自定宽度',
-      defaultLabel: '输出图片宽度',
+      defaultLabel: '宽度比例',
     });
+    expect(result[0]?.help).toContain('1 不表示 1 像素');
     expect(result[1]?.label).toBe('节点 · Unknown');
     expect(
       capabilityPresentationFields(generated, workflow, {
         auto_width: '   ',
       })[0]?.label,
-    ).toBe('输出图片宽度');
+    ).toBe('宽度比例');
   });
   it('normalizes blank resets and rejects obsolete, prompt and media keys', () => {
     expect(

@@ -79,3 +79,9 @@ export function saveCapabilityPresentationApi(
     input,
   );
 }
+
+export function deleteWorkflowApi(workflowId: string) {
+  return requestClient.delete<{ id: string }>(
+    `/workflow-management/${workflowId}`,
+  );
+}

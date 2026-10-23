@@ -2,6 +2,8 @@ import type { PlatformJob } from '#/modules/platform/types';
 
 import { requestClient } from '#/api/request';
 
+export { REPORT_LIMITS } from '../../../../platform-api/utils/domain/capabilities/report/limits';
+
 export type ReportFormat = 'docx' | 'md' | 'pptx';
 export type ReportGenerationMode = 'ai' | 'template';
 export type ReportType =
@@ -19,7 +21,12 @@ export interface ReportStatus {
     key: ReportGenerationMode;
     label: string;
   }>;
-  limits: { imagesPerSection: number; sections: number; totalImages: number };
+  limits: {
+    imagesPerSection: number;
+    sections: number;
+    totalImageBytes?: number;
+    totalImages: number;
+  };
   reportTypes: Array<{ key: ReportType; label: string }>;
   supportedImageMimeTypes: string[];
   template: { key: string; label: string; version: number };

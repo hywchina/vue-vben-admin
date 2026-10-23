@@ -67,6 +67,18 @@ export function capabilityPresentationFields(
       ...field,
       defaultLabel,
       label: customLabel || defaultLabel,
+      ...(['proportional_height', 'proportional_width'].includes(
+        definition?.inputName ?? '',
+      )
+        ? {
+            help: [
+              field.help,
+              '自定义宽高比的比例数值，例如 16:9；仅在宽高比设为 custom（自定义）时生效，1 不表示 1 像素。',
+            ]
+              .filter(Boolean)
+              .join(' '),
+          }
+        : {}),
       ...(includeSources && definition?.nodeId && definition.inputName
         ? {
             source: {

@@ -1409,9 +1409,10 @@ onBeforeUnmount(() => {
 }
 
 .mask-editor-top-tools button svg {
-  width: 25px;
-  height: 25px;
-  fill: currentcolor;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke-width: 1.75;
 }
 
 .mask-editor-top-tools > i {
@@ -1506,9 +1507,17 @@ onBeforeUnmount(() => {
 }
 
 .mask-tool-rail svg {
-  width: 48px;
-  height: 48px;
-  fill: currentcolor;
+  width: 30px;
+  height: 30px;
+  fill: none;
+  stroke-width: 1.75;
+}
+
+.mask-editor-top-tools :deep(svg *),
+.mask-tool-rail :deep(svg *),
+.layer-card :deep(svg *) {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.75;
 }
 
 .mask-zoom-readout {
@@ -1814,10 +1823,11 @@ onBeforeUnmount(() => {
 
 .layer-card svg,
 .layer-card img {
-  width: 40px;
+  width: 30px;
   height: 30px;
   object-fit: contain;
-  fill: #f3f3f3;
+  fill: none;
+  stroke-width: 1.75;
 }
 
 .layer-card button {

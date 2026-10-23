@@ -1,0 +1,725 @@
+{
+  "date": "2026-10-23",
+  "status": "local_acceptance_complete_with_existing_format_debt",
+  "scope": "本地六项优化、系统回归及文档核对",
+  "source": {
+    "appHead": "be603b7e3187e4f1baa12d12df97c2ce7351ba01",
+    "workingTreeChanges": true,
+    "gitPushed": false,
+    "deliveryUpdated": false,
+    "remoteSynchronized": false,
+    "serverDeployed": false,
+    "fileSha256": {
+      "code/vue-vben-admin/AGENTS.md": "cd504b64bc710a6ceb821a99d4bf9abac906d447a16a05855661229ae9db6ce7",
+      "code/vue-vben-admin/apps/platform-api/api/v1/reports/status.get.ts": "3220a074b340e75cfcde7169a8f95a3f8766d49b82b9c0c06bc30f28d9c73562",
+      "code/vue-vben-admin/apps/platform-api/api/v1/workflow-management/[id].delete.ts": "7ffd93a89100783530ef44e859f54b684e608a1b416efb841edb6a36b62dacb4",
+      "code/vue-vben-admin/apps/platform-api/migrations/043_workflow_soft_delete.sql": "54c6d08471728da4ef54b1d81105d3a80f927c5db0e04033fccd838ad2e2ac92",
+      "code/vue-vben-admin/apps/platform-api/scripts/integration-test.ts": "cdbefad21c603c2d5335d3d43fc3eb7a8cb7a1ef5c3e8070ef9c9fbf0af5b278",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/capabilities/lora/client.test.ts": "c385fa4956a5cb103fb1b49d21009948f1cbffa83c4448b788c2011b4f374486",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/capabilities/lora/client.ts": "f0f6b068b36764ad115bdeb5b6bfbd1952d68ff591ce61867afda47de034cf5b",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/capabilities/report/inputs.ts": "49f8863fc3c4b4afeb2500ee71e898de33014564aca982e6457ffef4cc7650bc",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/capabilities/report/limits.ts": "1a606fdf8ae1bb8339c39014e88c19daddff440130f1bfe10479a2fbb6a5945d",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/capabilities/report/schema.test.ts": "a0216c35bf2f8441f640f7d359ea60c25bbe376502ff70d0c7cff39df6067341",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/capabilities/report/schema.ts": "f7b3a0b2f83adea6189d21b1d1cd0a41c79a1406e7e84efefcf668898d6cf4a8",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/workflows/presentation.test.ts": "7d5cf9cc4b4eb5e46d2d907285f506997fd458532457117c933aa6978e4370f2",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/workflows/presentation.ts": "c9d0d60fc7d2736069825a141d7a12250769b83a394bfe8193bb8b4ef826459b",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/workflows/repository-version.test.ts": "f706b4db16534ed1b460325b5308bc88f22fdbb9fa74be3f52da604e168f5669",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/workflows/repository.ts": "bc50d6ae610362584917209cba62a4dc1d6445e6b009cf3c8c23a9b6509895b4",
+      "code/vue-vben-admin/apps/platform-api/utils/domain/workflows/ui-parameters.ts": "2ac5e4b9cd472f21139db29253f676beed154bc516443ee3f6a44ba741963d38",
+      "code/vue-vben-admin/apps/web-antd/src/api/platform/reports.ts": "6572e43bb4507e29f64bd5c3ab06fbf4f4e77bbe79f8f1062e0d596c78c81faa",
+      "code/vue-vben-admin/apps/web-antd/src/api/platform/workflows.ts": "ac85baeef4af12a4492f17af701c483f321632809c0bec03324bb8148411bc4d",
+      "code/vue-vben-admin/apps/web-antd/src/components/platform/comfy-mask-editor.vue": "f466daa91bc24deea0db2a51c17e0c70a1f2da6b27928d2e158cb801e7652122",
+      "code/vue-vben-admin/apps/web-antd/src/store/lora-training-page.test.ts": "af8fe10a52d84e794e4f3d44656aba052d73d31de82d26646e569bdcf97cf1bf",
+      "code/vue-vben-admin/apps/web-antd/src/store/report-generation-page.test.ts": "66097e1afc1d84b57837af66daa1fe07e3aefa854ac7d4edeccfe0a08ad90ae5",
+      "code/vue-vben-admin/apps/web-antd/src/store/workflow-metadata-editor.test.ts": "f2f9499a4c4b81c9e7b65456750ea0e9cf6623b64cc9ab2047f0a1e2e0043fc4",
+      "code/vue-vben-admin/apps/web-antd/src/views/platform/model-training/index.vue": "caea987554f6ed9b67b0f6c1e58eec38cf90bf526527a551e0e842d2d8467111",
+      "code/vue-vben-admin/apps/web-antd/src/views/platform/report-generation/index.vue": "95d7a2e9be3d55a92514587ff859c2cd3933bb8e520421382eec7fbfe7bafdfa",
+      "code/vue-vben-admin/apps/web-antd/src/views/platform/workflow-management/index.vue": "3542c456151430452ff960f78bc41906e9734e7a06513185befbf3a07193b495",
+      "code/ai-toolkit/extensions_built_in/diffusion_models/flux2/flux2_klein_model.py": "e49e5624b7bb43c41fbe4c7d9809257f204a8593a5845bc1c2f094db8112ba94"
+    },
+    "comfyuiFunctionalSourceModified": false,
+    "unrelatedComfyuiDeploymentReadmeAndRuntimeCachesPreserved": true
+  },
+  "environment": {
+    "web": "http://localhost:5666",
+    "api": "http://127.0.0.1:5320/api/v1",
+    "isolatedDatabase": true,
+    "isolatedObjectBucket": true,
+    "gpu": "RTX 3090 24 GiB",
+    "gpuServicesTestedSequentially": true,
+    "modelDownloads": false,
+    "handover": {
+      "trainingPageRetained": true,
+      "comfyuiAndAiToolkitAvailable": true,
+      "vllmAndPresentonStoppedAfterSequentialAcceptance": true,
+      "assistantAndAiReportDisabledInLocalFixtureAfterAcceptance": true
+    }
+  },
+  "tests": {
+    "businessApi": 217,
+    "businessWeb": 340,
+    "allUnit": 989,
+    "allUnitFiles": 137,
+    "isolatedIntegrationSuites": [
+      "core-permissions-projects-assets-assistant-audit-reports-workflow-delete",
+      "comfy-worker-protocol",
+      "generated-asset-naming",
+      "business-id",
+      "lora-dataset-101-images"
+    ],
+    "deploymentTests": {
+      "run": 154,
+      "skipped": 6,
+      "result": "passed"
+    },
+    "aiToolkitUiTests": 5,
+    "productionBuild": "passed",
+    "typecheck": "passed",
+    "lint": {
+      "oxlint": "passed",
+      "eslint": {
+        "errors": 0,
+        "warnings": 161
+      },
+      "stylelint": "passed",
+      "format": "changed files passed; existing 59 contract documents unchanged"
+    },
+    "databaseUpgrade": {
+      "migration": "043_workflow_soft_delete.sql",
+      "applied": true,
+      "repeatMigration": "passed"
+    },
+    "aiToolkitImageBuild": "passed using validated local base"
+  },
+  "features": {
+    "maskIcons": {
+      "topPx": 20,
+      "railPx": 30,
+      "layerPx": 30,
+      "strokePx": 1.75,
+      "rotationUndoRedo": "passed",
+      "regionControlsPx": 14,
+      "cameraButtonIconPx": 14,
+      "model3dToolbarPx": 18
+    },
+    "workflowManagement": {
+      "layout": "compact Worker summary + responsive capability cards + registry",
+      "delete": "administrator soft delete",
+      "migration": "043_workflow_soft_delete.sql",
+      "checks": [
+        "401/403",
+        "malformed/missing/repeated deletion",
+        "active binding 409",
+        "queued job without execution 409",
+        "history retained",
+        "deleted versions cannot edit/add/bind",
+        "seed does not resurrect",
+        "workflow.delete audit",
+        "browser confirmation and disappearance",
+        "report/LoRA heartbeats cannot impersonate ComfyUI executor"
+      ],
+      "proportionalDimensions": "宽度比例/高度比例，仅 custom 比例生效；1 不是 1 像素，管理员命名优先",
+      "dimensionHelpBrowser": "passed"
+    },
+    "training": {
+      "submittedViaBrowser": true,
+      "publicId": "TSK-00000002",
+      "model": "Flux2 Klein 9B",
+      "images": 3,
+      "steps": 20,
+      "rank": 4,
+      "resolution": 512,
+      "progressPercent": 100,
+      "status": "succeeded",
+      "modelBytes": 20738216,
+      "loss": {
+        "step": 10,
+        "value": 0.4808630645275116,
+        "singlePointDisplayed": true
+      },
+      "modelDownloadValidated": true,
+      "builtImageLoaderMatchesSource": true,
+      "builtImage": "rail-ai-toolkit:regression-20261023",
+      "imageBase": "rail-ai-toolkit:2026.10.10",
+      "builtContainerHealth": "healthy",
+      "modelFileValidation": {
+        "bytes": 20738216,
+        "tensors": 224,
+        "sha256": "c1dac24d9bf43fb416703b434941d18d4dccd032cbe134ac831a4b9eb9e393f0",
+        "matchesTrainingArtifact": true
+      },
+      "builtImageId": "sha256:99e416c1c5ee7de9f105ab58bfaed421be1542be0fdd9da01f36455a335a7fee"
+    },
+    "reports": {
+      "imagesPerSection": 20,
+      "sections": 8,
+      "totalImagePlacements": 160,
+      "totalImageBytes": 104857600,
+      "formats": ["docx", "pptx", "md"],
+      "templateRealWorker": true,
+      "aiRealPresentonAndVllm": [
+        {
+          "format": "md",
+          "jobId": "6b690b5b-9692-4b66-8af8-b30db8da0ec1",
+          "publicId": "TSK-00000005",
+          "assetId": "222f719c-f276-405e-bbde-7b1aa2c35e36",
+          "bytes": 3845472
+        },
+        {
+          "format": "docx",
+          "jobId": "8c72bc37-edd0-4f76-87b3-38e871c8a837",
+          "publicId": "TSK-00000006",
+          "assetId": "8fd36048-f8ee-4609-98cf-64944781e4e5",
+          "bytes": 2923476
+        },
+        {
+          "format": "pptx",
+          "jobId": "065e31c4-9e55-4b97-9b72-0fe9810a8e1b",
+          "publicId": "TSK-00000007",
+          "assetId": "0914066a-e2c0-4626-a1c3-43ef0fda38e9",
+          "bytes": 2913763
+        }
+      ],
+      "browser21Selected20Accepted": true,
+      "browserDocxCompleted": true,
+      "docx20DrawingPositionsValidated": true,
+      "fileIntegrity": {
+        "template-20-images.docx": {
+          "xmlParts": 16,
+          "mediaFiles": 1,
+          "bytes": 3391136
+        },
+        "ai-report.docx": {
+          "xmlParts": 17,
+          "mediaFiles": 1,
+          "bytes": 2923476
+        },
+        "ai-report.pptx": {
+          "xmlParts": 22,
+          "mediaFiles": 1,
+          "bytes": 2913763
+        }
+      }
+    },
+    "assistant": {
+      "realText": "passed",
+      "realImage": "passed",
+      "replyVisibleWithoutReload": true
+    },
+    "workflows": {
+      "nodeModelPreflight": 18,
+      "realRuntimeSucceeded": 18,
+      "cases": [
+        {
+          "code": "text-to-image",
+          "jobId": "2529e19f-77e5-4d2e-a1f1-d489be5f16c4",
+          "status": "succeeded",
+          "steps": 4,
+          "width": 512,
+          "height": 512
+        },
+        {
+          "code": "text-to-image-lora",
+          "jobId": "9ac15187-69ea-49c3-9aef-68d7702dc623",
+          "publicId": "TSK-00000025",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-020.png",
+              "bytes": 402327
+            }
+          ],
+          "attempts": 2,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "single-image-edit",
+          "jobId": "3c91e9ab-ae37-4fe0-98c9-81b3a2ef6089",
+          "publicId": "TSK-00000026",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-021.png",
+              "bytes": 4429216
+            }
+          ],
+          "attempts": 2,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "screen-capture-edit",
+          "jobId": "00d77710-d4ac-4ed5-879a-1d793bb46bc9",
+          "publicId": "TSK-00000027",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-022.png",
+              "bytes": 3979508
+            }
+          ],
+          "attempts": 2,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "multi-image-edit",
+          "jobId": "c64d9eec-cc3b-4f60-aac0-7d810deafaf7",
+          "publicId": "TSK-00000011",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-002.png",
+              "bytes": 3580075
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "inpaint-single",
+          "jobId": "52253d83-7723-4a27-ba05-ffcba4041d34",
+          "publicId": "TSK-00000012",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-003.png",
+              "bytes": 1469116
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "inpaint-reference",
+          "jobId": "8ca130c2-e21c-47b2-aa81-2d35729f9d20",
+          "publicId": "TSK-00000013",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-004.png",
+              "bytes": 1424052
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "outpaint",
+          "jobId": "2973d5b0-7de7-48a7-ad3d-6b5cd36c22ff",
+          "publicId": "TSK-00000014",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-005.png",
+              "bytes": 3946231
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "region-edit",
+          "jobId": "3efdfee5-2d33-4b76-b686-26d58b7eec1f",
+          "publicId": "TSK-00000015",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-006.png",
+              "bytes": 635679
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {}
+        },
+        {
+          "code": "region-marker-edit",
+          "jobId": "1ca19cba-f7a2-4ae7-bf07-f7cfccc2378a",
+          "publicId": "TSK-00000016",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-007.png",
+              "bytes": 599269
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {}
+        },
+        {
+          "code": "image-understanding",
+          "jobId": "30b72489-6f32-4d1d-b72f-132640b62ac8",
+          "publicId": "TSK-00000017",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "text",
+              "name": "DSC-00000001-20261023-008.md",
+              "bytes": 60
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "maxLength": 128
+          }
+        },
+        {
+          "code": "text-chat",
+          "jobId": "1c73e7b6-9cea-4b8a-b7e2-6f481cdd0e7a",
+          "publicId": "TSK-00000018",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "text",
+              "name": "DSC-00000001-20261023-009.md",
+              "bytes": 633
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "maxLength": 128
+          }
+        },
+        {
+          "code": "image-upscale",
+          "jobId": "aba9dd11-60b8-45ed-8e38-285022b22c96",
+          "publicId": "TSK-00000019",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-010.png",
+              "bytes": 1024061
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "upscaleFactor": 2
+          }
+        },
+        {
+          "code": "camera-control-single",
+          "jobId": "0b5b8d57-a92f-47c1-acb2-5ac0b3bb4c1c",
+          "publicId": "TSK-00000020",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-011.png",
+              "bytes": 202993
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "camera-control-multi",
+          "jobId": "5530e458-8a5e-4ef2-9454-c8141698b9e6",
+          "publicId": "TSK-00000021",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-012.png",
+              "bytes": 218491
+            },
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-013.png",
+              "bytes": 208889
+            },
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-014.png",
+              "bytes": 201854
+            },
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-015.png",
+              "bytes": 206109
+            },
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-016.png",
+              "bytes": 220930
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "image-edit-base",
+          "jobId": "01986f18-dd30-4fd6-9e71-842ea8334903",
+          "publicId": "TSK-00000022",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-017.png",
+              "bytes": 1770928
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "image-edit-kv",
+          "jobId": "3cb36713-e259-4804-ac3b-87128830b4e8",
+          "publicId": "TSK-00000023",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "image",
+              "name": "DSC-00000001-20261023-018.png",
+              "bytes": 1595515
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4
+          }
+        },
+        {
+          "code": "multiview-to-3d",
+          "jobId": "9dab4020-a411-477f-96b9-976283778805",
+          "publicId": "TSK-00000024",
+          "status": "succeeded",
+          "outputs": [
+            {
+              "kind": "model3d",
+              "name": "DSC-00000001-20261023-019.glb",
+              "bytes": 673136
+            }
+          ],
+          "attempts": 1,
+          "runtimeParameters": {
+            "steps": 4,
+            "resolution": 512,
+            "auto_n61_octree_resolution_580dfd16": 64
+          }
+        }
+      ],
+      "outputFileIntegrity": [
+        {
+          "name": "image-edit-base-0-DSC-00000001-20261023-017.png",
+          "bytes": 1770928,
+          "sha256": "8823d186b3dd912522a3df0d583074480d33e96eba87a865104466cbc0a420c9",
+          "format": "PNG",
+          "size": [1024, 1024]
+        },
+        {
+          "name": "camera-control-single-0-DSC-00000001-20261023-011.png",
+          "bytes": 202993,
+          "sha256": "1ed0d09e9036b7a7274d86e2aad69e6ddf590736b97081547c0f3e8099d0aa55",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "single-image-edit-0-DSC-00000001-20261023-021.png",
+          "bytes": 4429216,
+          "sha256": "2804af362f20b6afd09d9fb5bb39e3a2be569d97d46e25cde9b6ccd0bec16561",
+          "format": "PNG",
+          "size": [1536, 1536]
+        },
+        {
+          "name": "outpaint-0-DSC-00000001-20261023-005.png",
+          "bytes": 3946231,
+          "sha256": "b52a5520b2faab296a543976f3f06ffd6f3f334cfc12f673830ff6592f0fa3a0",
+          "format": "PNG",
+          "size": [2544, 1536]
+        },
+        {
+          "name": "camera-control-multi-3-DSC-00000001-20261023-015.png",
+          "bytes": 206109,
+          "sha256": "4da1772d0325258969571bcf1ee31152b738e17020f1b95751d97e5b8acb5656",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "image-upscale-0-DSC-00000001-20261023-010.png",
+          "bytes": 1024061,
+          "sha256": "9277469096cec1394c8b1263d842bfa7bf5838d02acacfe075840d848fb54446",
+          "format": "PNG",
+          "size": [1024, 1024]
+        },
+        {
+          "name": "multiview-to-3d-0-DSC-00000001-20261023-019.glb",
+          "bytes": 673136,
+          "sha256": "b7415833d5c971ef94a66c1c0c063cf44d27f9fafad423994f23c382f065a72b",
+          "format": "GLB2",
+          "meshes": 1
+        },
+        {
+          "name": "text-chat-0-DSC-00000001-20261023-009.md",
+          "bytes": 633,
+          "sha256": "746049593fc05110029e8c6a026ff2541eb81887210a9fe2c4d21ed7cde6ae7f",
+          "format": "UTF8"
+        },
+        {
+          "name": "image-understanding-0-DSC-00000001-20261023-008.md",
+          "bytes": 60,
+          "sha256": "89ef61674330ccc49a5b6ec13e69063c88acf4b0c6d8a7c29125ad26d4a933c2",
+          "format": "UTF8"
+        },
+        {
+          "name": "inpaint-reference-0-DSC-00000001-20261023-004.png",
+          "bytes": 1424052,
+          "sha256": "3bce3c1f80587edb4a1f242b5ecf23a5043e54460cf393be36dfbc3e3267d765",
+          "format": "PNG",
+          "size": [1536, 1536]
+        },
+        {
+          "name": "region-marker-edit-0-DSC-00000001-20261023-007.png",
+          "bytes": 599269,
+          "sha256": "896d2142ca0a4e15022ff4fd7e845712b0697e8d9ac467a172c9fb759a415816",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "camera-control-multi-0-DSC-00000001-20261023-012.png",
+          "bytes": 218491,
+          "sha256": "167615a8439ab864755de7be39ceb36172a8207a36f1ea1a90c4f526071d73c0",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "inpaint-single-0-DSC-00000001-20261023-003.png",
+          "bytes": 1469116,
+          "sha256": "30b58e948fbf29b1e75de85851eb7eeb67cc8fd955a44e345d769981ebe9b056",
+          "format": "PNG",
+          "size": [1536, 1536]
+        },
+        {
+          "name": "region-edit-0-DSC-00000001-20261023-006.png",
+          "bytes": 635679,
+          "sha256": "79eed3995b94127784406bdcddf782a638152342aa8b5b6c53154c202198c06d",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "text-to-image-lora-0-DSC-00000001-20261023-020.png",
+          "bytes": 402327,
+          "sha256": "16fc900d4f66b02d4958f49e867bc5aeb6cf4658091f4e61acad18b3b3c4e5dc",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "image-edit-kv-0-DSC-00000001-20261023-018.png",
+          "bytes": 1595515,
+          "sha256": "91e87fd03db7efc764e6985c8109373e8a920f951834f89592701bebaec3f85b",
+          "format": "PNG",
+          "size": [1024, 1024]
+        },
+        {
+          "name": "screen-capture-edit-0-DSC-00000001-20261023-022.png",
+          "bytes": 3979508,
+          "sha256": "48f9ace35931339b114b32a2359bddcaf53b52a4308e1694aa145bb7ed30e4a2",
+          "format": "PNG",
+          "size": [1536, 1536]
+        },
+        {
+          "name": "camera-control-multi-4-DSC-00000001-20261023-016.png",
+          "bytes": 220930,
+          "sha256": "738666ee4b95fbc97235f8505dffa4d51f8e3f25c62c6e1de475a25242026dd4",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "camera-control-multi-1-DSC-00000001-20261023-013.png",
+          "bytes": 208889,
+          "sha256": "32589af9123eab13500ee1a023191f43573fd083905b5d72ccd20a577d0288b1",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "camera-control-multi-2-DSC-00000001-20261023-014.png",
+          "bytes": 201854,
+          "sha256": "540315eec29f3863ea000c16d817504ddb145da499509a54d452b96ebdc609b6",
+          "format": "PNG",
+          "size": [512, 512]
+        },
+        {
+          "name": "multi-image-edit-0-DSC-00000001-20261023-002.png",
+          "bytes": 3580075,
+          "sha256": "0421cb3dd05235c31d9dd96ac64131804c04aa77828d074f309b7437c15f7737",
+          "format": "PNG",
+          "size": [1536, 1536]
+        }
+      ],
+      "browser3d": {
+        "meshes": 1,
+        "vertices": 15100
+      },
+      "textToImageArtifact": {
+        "status": "succeeded",
+        "bytes": 368680,
+        "sha256": "92d6d33aabb8de511d8893376973579219dc1934795523e533825569f2308536"
+      }
+    }
+  },
+  "preservedUserWork": {
+    "baselineFiles": 255,
+    "unchangedFiles": 253,
+    "changedOnlyForDocumentationUpdates": [
+      "docs/rail-platform/README.md",
+      "docs/rail-platform/DEVELOPMENT_LOG.md"
+    ],
+    "deletedFiles": 0,
+    "existingContractFormatFailures": 59
+  },
+  "recoveredHarnessIssues": [
+    "首次训练暴露本地 Qwen 路径错误，修复后重新经前端训练成功，失败记录保留",
+    "测试配置/进程切换导致短暂 API 不可用，修正夹具及启动方式后复测",
+    "ComfyUI 冷启动时三项首次请求失败，等待就绪后全部重测成功"
+  ],
+  "limitations": [
+    "真实工作流使用轻量测试参数验证执行、血缘与输出完整性，不代表生成审美质量、模型训练收敛或生产吞吐验收。",
+    "未验证物理摄像头/屏幕共享授权；采集调度、区域和停止/上下文逻辑由自动化测试覆盖。",
+    "未做多 GPU 并发或 24 小时压力稳定性测试。",
+    "浏览器保留既有 Vben Form 与 StorageManager 开发警告；全仓格式仍有 59 份既有合同资料问题。"
+  ],
+  "screenshots": [
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/assistant-multimodal.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/camera-control.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/lora-completed.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/lora-model-asset.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/lora-running.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/mask-icons.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/proportional-dimensions.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/real-3d-viewer.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/region-editor.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/report-20-images.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/workflow-delete-completed.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/workflow-delete-confirm.png",
+    "code/vue-vben-admin/docs/rail-platform/assets/system-regression-20261023/workflow-layout.png"
+  ],
+  "updatedAt": "2026-10-23T16:37:11.057413+08:00",
+  "pathBase": "rail-system source root"
+}

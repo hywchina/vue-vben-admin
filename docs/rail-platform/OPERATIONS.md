@@ -103,3 +103,9 @@ docker compose -f deploy/rail-platform/compose.yaml exec -T postgres \
 - `COMFYUI_OUTPUT_MISSING`：检查绑定版本的输出节点/字段是否仍与 ComfyUI API JSON 一致。
 - `OUTPUT_REGISTRATION_FAILED`：检查对象存储可用性、输出大小、MIME/扩展名和项目资产约束。
 - 停止 Worker 不会删除任务；恢复服务后过期租约会重新被领取。不得通过直接修改任务为成功来处理故障。
+
+## 工作流删除与训练排查（2026-10-23）
+
+工作流删除为管理员逻辑删除，不能回收代码标识；先将功能改绑，再等待相关任务结束。删除不移除历史版本、结果文件、任务或审计。误删恢复属于受控运维，按备份恢复流程评估，不手动删除版本或复用标识。043 升级只增加可空时间列，历史定义继续可用。
+
+LoRA 离线启动若在 Loading Qwen3 处尝试访问 Hugging Face，检查预置 models/Qwen/Qwen3-8B 是否通过 MODELS_PATH 可见；显式 te_name_or_path 配置须是训练环境可读路径。不要通过联网下载掩盖挂载问题。短训练可能只有一个 Loss 数据点；平台显示实际步数及数值。接口同时兼容 loss 与 loss/loss。失败记录保留供定位，修复后重新提交任务。

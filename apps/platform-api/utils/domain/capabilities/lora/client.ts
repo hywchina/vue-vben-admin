@@ -117,13 +117,21 @@ export class AiToolkitClient {
   }
 
   async getLoss(jobId: string, sinceStep?: number) {
-    const query = new URLSearchParams({ key: 'loss', limit: '2000' });
-    if (sinceStep !== undefined) query.set('since_step', String(sinceStep));
-    return await this.#json<{
+    type LossResult = {
       key: string;
       keys: string[];
       points: Array<{ step: number; value: number; wall_time: number }>;
-    }>(`/api/jobs/${encodeURIComponent(jobId)}/loss?${query}`);
+    };
+    const query = new URLSearchParams({ key: 'loss', limit: '2000' });
+    if (sinceStep !== undefined) query.set('since_step', String(sinceStep));
+    const path = `/api/jobs/${encodeURIComponent(jobId)}/loss`;
+    const result = await this.#json<LossResult>(`${path}?${query}`);
+    // Recent AI Toolkit trainers namespace the training loss under loss/loss.
+    if (result.points.length === 0 && result.keys.includes('loss/loss')) {
+      query.set('key', 'loss/loss');
+      return await this.#json<LossResult>(`${path}?${query}`);
+    }
+    return result;
   }
 
   async healthCheck() {

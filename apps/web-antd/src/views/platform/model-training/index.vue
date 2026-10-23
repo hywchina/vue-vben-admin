@@ -83,6 +83,7 @@ function changeParameter(field: LoraField, value: unknown) {
   if (field.binding) updateLoraParameter(parameters, field.binding, value);
 }
 let pollingTimer: ReturnType<typeof setInterval> | undefined;
+let polling = false;
 
 const currentProjectName = computed(
   () => platformStore.currentProject?.name ?? '尚未选择项目',
@@ -153,7 +154,8 @@ const canSubmit = computed(
     baseModelOptions.value.some(
       (model) => model.value === parameters.baseModel,
     ) &&
-    !submitting.value,
+    !submitting.value &&
+    !uploading.value,
 );
 const statusTone = computed(() => {
   if (statusLoading.value) return 'checking';
@@ -180,6 +182,11 @@ watch(
   () => platformStore.currentProjectId,
   async () => {
     selectedAssetIds.value = [];
+    detailOpen.value = false;
+    detailJob.value = undefined;
+    trainingLog.value = '';
+    metricPoints.value = [];
+    logOffset.value = 0;
     parameters.name = platformStore.currentProject
       ? `${platformStore.currentProject.name} · LoRA 训练`
       : '';
@@ -194,9 +201,22 @@ onMounted(async () => {
     : '';
   await Promise.all([loadAdapterStatus(), refreshJobs(), loadPreviews()]);
   pollingTimer = setInterval(async () => {
-    await refreshJobs();
-    if (detailOpen.value && detailJob.value && isActive(detailJob.value)) {
-      await refreshDetails(false);
+    if (polling) return;
+    polling = true;
+    const jobId = detailJob.value?.id;
+    const wasActive = detailJob.value && isActive(detailJob.value);
+    try {
+      await refreshJobs();
+      if (
+        detailOpen.value &&
+        detailJob.value?.id === jobId &&
+        detailJob.value &&
+        (wasActive || isActive(detailJob.value))
+      ) {
+        await refreshDetails(false);
+      }
+    } finally {
+      polling = false;
     }
   }, 5000);
 });
@@ -217,6 +237,9 @@ async function loadAdapterStatus() {
     ) {
       parameters.baseModel = adapterStatus.value.model;
     }
+  } catch {
+    adapterStatus.value = undefined;
+    message.warning('训练服务状态暂时不可用，请重新检查');
   } finally {
     statusLoading.value = false;
   }
@@ -262,9 +285,11 @@ async function uploadFiles(event: Event) {
   const files = [...(input.files ?? [])];
   input.value = '';
   if (files.length === 0) return;
+  const projectId = platformStore.currentProjectId;
   uploading.value = true;
   try {
     for (const file of files) {
+      if (projectId !== platformStore.currentProjectId) return;
       if (!file.type.startsWith('image/')) {
         message.warning(`${file.name} 不是受支持的图片文件，已跳过`);
         continue;
@@ -276,11 +301,16 @@ async function uploadFiles(event: Event) {
         tags: ['lora-dataset'],
         type: 'image',
       });
+      if (projectId !== platformStore.currentProjectId) return;
       selectedAssetIds.value.push(asset.id);
       captions[asset.id] = '';
     }
     await loadPreviews();
     message.success('图片已上传为项目资产，请补充逐图 caption');
+  } catch (error) {
+    message.warning(
+      error instanceof Error ? error.message : '训练图片上传失败',
+    );
   } finally {
     uploading.value = false;
   }
@@ -343,12 +373,18 @@ async function openDetails(job: PlatformJob) {
 
 async function refreshDetails(reset: boolean) {
   if (!detailJob.value) return;
+  const jobId = detailJob.value.id;
+  const projectId = platformStore.currentProjectId;
+  const isCurrent = () =>
+    detailJob.value?.id === jobId &&
+    platformStore.currentProjectId === projectId;
   detailLoading.value = true;
   try {
     const [logs, metrics] = await Promise.all([
-      getLoraTrainingLogsApi(detailJob.value.id, reset ? 0 : logOffset.value),
-      getLoraTrainingMetricsApi(detailJob.value.id),
+      getLoraTrainingLogsApi(jobId, reset ? 0 : logOffset.value),
+      getLoraTrainingMetricsApi(jobId),
     ]);
+    if (!isCurrent()) return;
     trainingLog.value =
       logs.reset || reset ? logs.log : `${trainingLog.value}${logs.log}`;
     logOffset.value = logs.offset;
@@ -357,9 +393,10 @@ async function refreshDetails(reset: boolean) {
       value: point.value,
     }));
   } catch {
-    if (reset) message.warning('训练尚未提交到 AI Toolkit，暂无日志和指标');
+    if (reset && isCurrent())
+      message.warning('训练日志或指标暂时不可用，请稍后重试');
   } finally {
-    detailLoading.value = false;
+    if (isCurrent()) detailLoading.value = false;
   }
 }
 </script>
@@ -401,7 +438,9 @@ async function refreshDetails(reset: boolean) {
           <span>
             {{
               adapterStatus?.reason ||
-              `模型 ${selectedBaseModel?.label ?? adapterStatus?.model} · GPU 队列 ${adapterStatus?.gpuIds}`
+              (adapterStatus?.reachable
+                ? `模型 ${selectedBaseModel?.label ?? adapterStatus.model} · GPU 队列 ${adapterStatus.gpuIds}`
+                : '正在检查底模与训练队列')
             }}
           </span>
         </div>
@@ -683,7 +722,7 @@ async function refreshDetails(reset: boolean) {
                 :show-info="false"
                 size="small"
               />
-              <span>{{ job.stage }}</span>
+              <span>{{ Math.round(job.progress) }}% · {{ job.stage }}</span>
             </div>
             <StatusPill :status="job.status" />
             <div class="job-row__actions">
@@ -803,6 +842,9 @@ async function refreshDetails(reset: boolean) {
         >
           <polyline :points="lossPolyline" />
         </svg>
+        <p v-else-if="metricPoints.length === 1">
+          第 {{ metricPoints[0]?.step }} 步 · Loss {{ metricPoints[0]?.value }}
+        </p>
         <Empty
           v-else
           :image="Empty.PRESENTED_IMAGE_SIMPLE"

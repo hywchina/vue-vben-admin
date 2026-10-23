@@ -1,3 +1,4 @@
+import { REPORT_LIMITS } from '~/utils/domain/capabilities/report/limits';
 import {
   REPORT_SUPPORTED_IMAGE_MIME_TYPES,
   REPORT_TEMPLATE_KEY,
@@ -17,7 +18,7 @@ export default apiHandler(async (event) => {
       { key: 'pptx', label: 'PowerPoint 演示文稿（.pptx）' },
       { key: 'md', label: 'Markdown 文档（.md）' },
     ],
-    limits: { imagesPerSection: 8, sections: 8, totalImages: 24 },
+    limits: REPORT_LIMITS,
     generationModes: [
       {
         configured: true,

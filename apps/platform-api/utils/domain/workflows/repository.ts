@@ -57,9 +57,10 @@ export async function seedWorkflowCatalogEntry(
       ON CONFLICT (code) DO UPDATE SET
         updated_by = EXCLUDED.updated_by,
         updated_at = now()
+      WHERE workflow_definitions.deleted_at IS NULL
       RETURNING id
     `;
-    if (!definition) throw new Error('初始化工作流定义失败');
+    if (!definition) return null;
 
     let [version] = await transaction<{ id: string; version: number }[]>`
       SELECT id, version
@@ -156,7 +157,7 @@ export async function getCapabilityByCode(code: string) {
     JOIN workflow_definitions wd ON wd.id = wv.workflow_id
     WHERE c.code = ${code}
       AND c.status = 'published'
-      AND wd.status = 'published'
+      AND wd.status = 'published' AND wd.deleted_at IS NULL
   `;
   return row ?? null;
 }
@@ -263,6 +264,7 @@ export async function listWorkflowManagement() {
       ) AS versions
     FROM workflow_definitions wd
     LEFT JOIN workflow_versions wv ON wv.workflow_id = wd.id
+    WHERE wd.deleted_at IS NULL
     GROUP BY wd.id
     ORDER BY wd.updated_at DESC
   `;
@@ -282,7 +284,7 @@ export async function listWorkflowManagement() {
       (
         c.status = 'published'
         AND cw.active = true
-        AND wd.status = 'published'
+        AND wd.status = 'published' AND wd.deleted_at IS NULL
       ) AS ready,
       wv.version AS "workflowVersion"
     FROM capabilities c
@@ -300,6 +302,7 @@ export async function listWorkflowManagement() {
       started_at AS "startedAt",
       last_seen_at AS "lastSeenAt"
     FROM worker_heartbeats
+    WHERE metadata ->> 'adapter' = 'comfyui'
     ORDER BY last_seen_at DESC
     LIMIT 1
   `;
@@ -429,7 +432,7 @@ export async function updateWorkflowDefinition(
       status = COALESCE(${input.status ?? null}, status),
       updated_by = ${actorId},
       updated_at = now()
-    WHERE id = ${id}
+    WHERE id = ${id} AND deleted_at IS NULL
     RETURNING id
   `;
     if (!updated) {
@@ -448,7 +451,14 @@ export async function addWorkflowVersion(
   const checksum = workflowChecksum(parsed);
   const sql = useDatabase();
   try {
-    const [created] = await sql<{ id: string; version: number }[]>`
+    return await sql.begin(async (transaction) => {
+      const [parent] = await transaction<{ id: string }[]>`
+      SELECT id FROM workflow_definitions
+      WHERE id = ${workflowId} AND deleted_at IS NULL FOR UPDATE
+    `;
+      if (!parent)
+        throw new ApiError(404, 'WORKFLOW_NOT_FOUND', '工作流不存在');
+      const [created] = await transaction<{ id: string; version: number }[]>`
       INSERT INTO workflow_versions (
         workflow_id, version, api_json, parameter_schema, output_schema,
         model_requirements, checksum, created_by
@@ -464,14 +474,15 @@ export async function addWorkflowVersion(
         ${actorId}
       FROM workflow_definitions wd
       LEFT JOIN workflow_versions wv ON wv.workflow_id = wd.id
-      WHERE wd.id = ${workflowId}
+      WHERE wd.id = ${workflowId} AND wd.deleted_at IS NULL
       GROUP BY wd.id
       RETURNING id, version
     `;
-    if (!created) {
-      throw new ApiError(404, 'WORKFLOW_NOT_FOUND', '工作流不存在');
-    }
-    return created;
+      if (!created) {
+        throw new ApiError(404, 'WORKFLOW_NOT_FOUND', '工作流不存在');
+      }
+      return created;
+    });
   } catch (error) {
     if (
       error &&
@@ -503,7 +514,8 @@ export async function bindCapabilityWorkflow(
       JOIN workflow_definitions wd ON wd.id = wv.workflow_id
       WHERE c.code = ${capabilityCode}
         AND wv.id = ${workflowVersionId}
-        AND wd.status = 'published'
+        AND wd.status = 'published' AND wd.deleted_at IS NULL
+      FOR UPDATE OF wd
     `;
     if (!compatible) {
       throw new ApiError(
@@ -528,4 +540,42 @@ export async function bindCapabilityWorkflow(
     `;
   });
   return { capabilityCode, workflowVersionId };
+}
+
+export async function deleteWorkflowDefinition(id: string, actorId: string) {
+  const sql = useDatabase();
+  return await sql.begin(async (transaction) => {
+    const [workflow] = await transaction<{ id: string }[]>`
+      SELECT id FROM workflow_definitions
+      WHERE id = ${id} AND deleted_at IS NULL FOR UPDATE
+    `;
+    if (!workflow)
+      throw new ApiError(404, 'WORKFLOW_NOT_FOUND', '工作流不存在或已删除');
+    const [usage] = await transaction<{ bound: boolean; running: boolean }[]>`
+      SELECT
+        EXISTS (SELECT 1 FROM capability_workflows cw
+          JOIN workflow_versions wv ON wv.id = cw.workflow_version_id
+          WHERE wv.workflow_id = ${id} AND cw.active = true) AS bound,
+        EXISTS (SELECT 1 FROM jobs job
+          WHERE job.status IN ('queued', 'running', 'cancelling') AND (
+            job.workflow_version_id IN (SELECT id FROM workflow_versions WHERE workflow_id = ${id})
+            OR EXISTS (SELECT 1 FROM job_executions execution
+              JOIN workflow_versions wv ON wv.id = execution.workflow_version_id
+              WHERE execution.job_id = job.id AND wv.workflow_id = ${id})
+          )) AS running
+    `;
+    if (usage?.bound || usage?.running)
+      throw new ApiError(
+        409,
+        'WORKFLOW_IN_USE',
+        usage.bound
+          ? '该工作流仍绑定功能，请先将功能绑定到其他工作流'
+          : '该工作流仍有活动任务，请等待任务结束后再删除',
+      );
+    await transaction`
+      UPDATE workflow_definitions SET deleted_at = now(), status = 'disabled',
+        updated_by = ${actorId}, updated_at = now() WHERE id = ${id}
+    `;
+    return { id };
+  });
 }

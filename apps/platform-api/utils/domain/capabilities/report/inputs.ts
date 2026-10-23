@@ -3,6 +3,7 @@ import type { CurrentIdentity } from '../../../identity';
 import { useDatabase } from '../../../database';
 import { ApiError } from '../../../response';
 import { requireProjectAccess } from '../../projects/access';
+import { REPORT_LIMITS } from './limits';
 import { REPORT_SUPPORTED_IMAGE_MIME_TYPES } from './schema';
 
 export async function loadReportImages(
@@ -58,7 +59,7 @@ export async function loadReportImages(
   }
   if (
     assets.reduce((sum, asset) => sum + asset.sizeBytes, 0) >
-    100 * 1024 * 1024
+    REPORT_LIMITS.totalImageBytes
   ) {
     throw new ApiError(
       413,

@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addWorkflowVersion } from './repository';
 
 const mocks = vi.hoisted(() => ({
-  sql: Object.assign(vi.fn(), { json: vi.fn((value: unknown) => value) }),
+  sql: Object.assign(vi.fn(), {
+    json: vi.fn((value: unknown) => value),
+    begin: vi.fn(),
+  }),
 }));
 
 vi.mock('../../database', () => ({ useDatabase: () => mocks.sql }));
@@ -28,14 +31,17 @@ const snapshot = {
 describe('workflow version insert', () => {
   beforeEach(() => {
     mocks.sql.mockReset();
+    mocks.sql.begin.mockImplementation(async (callback) => callback(mocks.sql));
   });
 
   it('selects only the eight inserted values, not a public presentation ID', async () => {
-    mocks.sql.mockResolvedValue([{ id: 'version-id', version: 2 }]);
+    mocks.sql
+      .mockResolvedValueOnce([{ id: 'workflow-id' }])
+      .mockResolvedValueOnce([{ id: 'version-id', version: 2 }]);
     await expect(
       addWorkflowVersion('workflow-id', snapshot, 'actor-id'),
     ).resolves.toEqual({ id: 'version-id', version: 2 });
-    const query = mocks.sql.mock.calls[0]?.[0].join('?');
+    const query = mocks.sql.mock.calls[1]?.[0].join('?');
     expect(query).toContain('INSERT INTO workflow_versions');
     expect(query).toContain('COALESCE(max(wv.version), 0)');
     expect(query).not.toContain('wd.public_id');

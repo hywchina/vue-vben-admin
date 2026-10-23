@@ -19,6 +19,7 @@ import {
   Form,
   Input,
   message,
+  Modal,
   Space,
   Spin,
   Switch,
@@ -30,6 +31,7 @@ import {
 import {
   bindCapabilityWorkflowApi,
   createWorkflowApi,
+  deleteWorkflowApi,
   getWorkflowManagementApi,
   updateWorkflowApi,
 } from '#/api/platform';
@@ -249,6 +251,28 @@ async function readWorkflowFile(file: File) {
   return false;
 }
 
+function workflowIsBound(workflow: WorkflowDefinition) {
+  return workflow.versions.some(
+    (version) => version.activeCapabilities?.length,
+  );
+}
+
+function confirmDeleteWorkflow(workflow: WorkflowDefinition) {
+  Modal.confirm({
+    title: `删除工作流“${workflow.name}”？`,
+    content:
+      '删除后不再显示在管理列表中，历史版本、任务和生成结果保留。此工作流标识仍被保留。',
+    okText: '删除',
+    cancelText: '取消',
+    okButtonProps: { danger: true },
+    async onOk() {
+      await deleteWorkflowApi(workflow.id);
+      await loadOverview();
+      message.success('工作流已删除，历史记录保留');
+    },
+  });
+}
+
 onMounted(loadOverview);
 </script>
 
@@ -266,8 +290,8 @@ onMounted(loadOverview);
       />
 
       <div class="summary-grid">
-        <Card title="执行 Worker" :bordered="false">
-          <Descriptions :column="1" size="small">
+        <Card title="执行 Worker" :bordered="false" class="worker-summary">
+          <Descriptions :column="{ xs: 1, sm: 1, md: 2, xl: 3 }" size="small">
             <Descriptions.Item label="状态">
               <Tag :color="workerState.color">{{ workerState.label }}</Tag>
             </Descriptions.Item>
@@ -303,7 +327,11 @@ onMounted(loadOverview);
                   {{ capability.ready ? '可执行' : '未就绪' }}
                 </Tag>
                 <span class="muted">
-                  {{ capability.workflowVersion || '未绑定版本' }}
+                  {{
+                    capability.workflowVersion
+                      ? `v${capability.workflowVersion}`
+                      : '未绑定版本'
+                  }}
                 </span>
               </div>
             </div>
@@ -331,6 +359,7 @@ onMounted(loadOverview);
             :columns="workflowColumns"
             :data-source="overview?.workflows || []"
             :pagination="false"
+            :scroll="{ x: 840 }"
             row-key="id"
           >
             <template #bodyCell="{ column, record }">
@@ -374,6 +403,19 @@ onMounted(loadOverview);
                     @click="toggleWorkflow(workflowRecord(record))"
                   >
                     {{ record.status === 'published' ? '停用' : '发布' }}
+                  </Button>
+                  <Button
+                    danger
+                    size="small"
+                    :disabled="workflowIsBound(workflowRecord(record))"
+                    :title="
+                      workflowIsBound(workflowRecord(record))
+                        ? '仍绑定功能，请先将功能绑定到其他工作流'
+                        : '删除工作流并保留历史记录'
+                    "
+                    @click="confirmDeleteWorkflow(workflowRecord(record))"
+                  >
+                    删除
                   </Button>
                 </Space>
               </template>
@@ -495,33 +537,53 @@ onMounted(loadOverview);
 
 .summary-grid {
   display: grid;
-  grid-template-columns: minmax(280px, 0.8fr) minmax(360px, 1.2fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
+  min-width: 0;
 }
 
 .capability-list {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr));
   gap: 12px;
 }
 
 .capability-item {
   display: flex;
-  gap: 16px;
-  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
   justify-content: space-between;
-  padding-bottom: 12px;
-  border-bottom: 1px solid hsl(var(--border));
-}
-
-.capability-item:last-child {
-  padding-bottom: 0;
-  border-bottom: 0;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 8px;
 }
 
 .capability-status {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.worker-summary :deep(.ant-descriptions-item-container) {
+  min-width: 0;
+}
+
+.worker-summary :deep(.ant-descriptions-item-content) {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.capability-item .muted {
+  overflow-wrap: anywhere;
+}
+
+.workflow-page > :deep(.ant-card),
+.summary-grid > :deep(.ant-card) {
+  min-width: 0;
 }
 
 .muted {
@@ -548,12 +610,6 @@ onMounted(loadOverview);
   .summary-grid,
   .form-grid {
     grid-template-columns: 1fr;
-  }
-
-  .capability-item,
-  .capability-status {
-    flex-direction: column;
-    align-items: flex-start;
   }
 }
 </style>

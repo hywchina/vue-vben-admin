@@ -73,3 +73,46 @@ describe('aI Toolkit client', () => {
     ]);
   });
 });
+
+it('reads namespaced training loss while preserving the legacy protocol and cursor', async () => {
+  const fetchImplementation = vi
+    .fn<typeof fetch>()
+    .mockResolvedValueOnce(
+      json({ key: 'loss', keys: ['learning_rate', 'loss/loss'], points: [] }),
+    )
+    .mockResolvedValueOnce(
+      json({
+        key: 'loss/loss',
+        keys: ['loss/loss'],
+        points: [{ step: 10, value: 0.48, wall_time: 1 }],
+      }),
+    );
+  const client = new AiToolkitClient({
+    apiUrl: 'http://toolkit.test',
+    fetchImplementation,
+    timeoutMs: 1000,
+  });
+  const result = await client.getLoss('job', 5);
+  expect(result.points).toHaveLength(1);
+  const query = new URL(String(fetchImplementation.mock.calls[1]?.[0]))
+    .searchParams;
+  expect(query.get('key')).toBe('loss/loss');
+  expect(query.get('since_step')).toBe('5');
+});
+it('does not request another metric when legacy loss already contains data', async () => {
+  const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+    json({
+      key: 'loss',
+      keys: ['loss'],
+      points: [{ step: 1, value: 0.2, wall_time: 1 }],
+    }),
+  );
+  const client = new AiToolkitClient({
+    apiUrl: 'http://toolkit.test',
+    fetchImplementation,
+    timeoutMs: 1000,
+  });
+  const result = await client.getLoss('job');
+  expect(result.points[0]?.value).toBe(0.2);
+  expect(fetchImplementation).toHaveBeenCalledTimes(1);
+});

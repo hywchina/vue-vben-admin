@@ -65,7 +65,7 @@
 - 文件类型固定为 `image`、`video`、`audio`、`text`、`document`、`model3d`、`model`、`archive` 八类。
 - 遮罩、CMF 材质、LoRA、报告属于业务用途，应使用标签、来源应用和任务血缘表达，不得重新加入文件类型枚举。
 - 新增或修改文件类型时，必须同步检查前端集中定义、API MIME/扩展名校验、数据库约束、应用契约、迁移和测试。
-- 当前任务模块是可持久化台账，任务型外部执行器尚未完整实现；未配置时必须使用稳定错误码（如 `ADAPTER_NOT_CONFIGURED`），不能伪造输出资产。
+- 任务台账已接入 ComfyUI、LoRA 和报告 Worker；其他未接入能力不得伪造执行。适配器未配置时必须使用稳定错误码（如 `ADAPTER_NOT_CONFIGURED`），不能伪造输出资产。
 
 ### 4.3 AI 助手与审计
 
@@ -127,7 +127,7 @@ pnpm --filter @rail/platform-api dev
 ### 数据库迁移
 
 - 已有 `001` 至 `009` 迁移视为已在环境中应用，不得为新需求改写历史迁移。
-- 新变更创建下一个顺序迁移（当前最新为 `042_workflow_default_prompt.sql`，新增从 `043_*.sql` 开始），并保证可在已有数据上升级。
+- 新变更创建下一个顺序迁移（当前最新为 `043_workflow_soft_delete.sql`，新增从 `044_*.sql` 开始），并保证可在已有数据上升级。
 - 迁移必须考虑约束、索引、旧数据转换、回滚/恢复策略和种子脚本兼容性。
 - `pnpm db:rail:reset-users -- --confirm=DELETE_ALL_USERS` 是破坏性维护命令，未经明确授权和备份不得运行。
 
