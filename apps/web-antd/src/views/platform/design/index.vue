@@ -422,13 +422,14 @@ const cameraFields = computed(
       field.uiControl.startsWith('camera-'),
     ) ?? [],
 );
-const promptField = computed(() =>
-  scalarFields.value.find(
-    (field) =>
-      field.key === 'prompt' ||
-      field.type === 'textarea' ||
-      (field.type === 'text' && field.required),
-  ),
+const promptField = computed(
+  () =>
+    scalarFields.value.find(
+      (field) =>
+        field.key === 'prompt' && ['text', 'textarea'].includes(field.type),
+    ) ??
+    scalarFields.value.find((field) => field.type === 'textarea') ??
+    scalarFields.value.find((field) => field.type === 'text' && field.required),
 );
 const compactFields = computed(() => {
   const fields = capability.value?.fields ?? [];
@@ -1109,6 +1110,14 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
     for (const [key, value] of Object.entries(values)) {
       if (scalarKeys.has(key)) parameterValues[key] = value;
     }
+    // A saved empty prompt is intentional; only initialize a brand-new draft.
+    if (
+      !draft.updatedAt &&
+      promptField.value &&
+      typeof nextCapability.workflow?.defaultPrompt === 'string'
+    )
+      parameterValues[promptField.value.key] =
+        nextCapability.workflow.defaultPrompt;
     for (const [index, assetId] of Object.entries(draft.inputAssetIds)) {
       selectedAssets[Number(index)] = assetId;
     }
@@ -2803,15 +2812,11 @@ onBeforeUnmount(() => {
                 :key="item.field.key"
                 class="composer-slot-card"
               >
-                <div class="composer-slot-heading">
-                  <span class="composer-input-role" :title="item.field.label">
-                    图片{{ (item.field.assetIndex ?? 0) + 1 }} ·
-                    {{ item.field.label }}
-                  </span>
-                  <small>{{ item.field.required ? '必填' : '选填' }}</small>
-                </div>
                 <div class="composer-slot-entries">
                   <article v-if="item.asset" class="composer-input-asset">
+                    <span class="composer-input-number">
+                      图片{{ (item.field.assetIndex ?? 0) + 1 }}
+                    </span>
                     <button
                       :aria-label="`${composerInputEditorLabel(item.field)}：${item.asset.name}`"
                       class="composer-input-asset__preview"
@@ -2877,13 +2882,12 @@ onBeforeUnmount(() => {
                   </article>
 
                   <Popover
-                    v-else
                     :open="
                       composerSourcePickerOpen &&
                       inputSourceFieldKey === item.field.key
                     "
                     placement="topLeft"
-                    trigger="click"
+                    :trigger="['hover', 'click', 'focus']"
                     @update:open="setComposerSourceOpen(item.field, $event)"
                   >
                     <template #content>
@@ -2901,31 +2905,47 @@ onBeforeUnmount(() => {
                         >
                           <IconifyIcon :icon="platformSemanticIcons.assets" />
                           <span>
-                            <strong>从资产中心选择</strong>
+                            <strong>资产选图</strong>
                             <small>选择可用的项目图片</small>
+                          </span>
+                        </button>
+                        <button
+                          :aria-label="`实时输入：${item.field.label}`"
+                          class="composer-live-entry"
+                          type="button"
+                          @click="openLiveInput(item.field)"
+                        >
+                          <IconifyIcon :icon="platformUiIcons.monitorUp" />
+                          <span>
+                            <strong>实时输入</strong>
+                            <small>共享屏幕或摄像头</small>
                           </span>
                         </button>
                       </div>
                     </template>
                     <button
-                      class="composer-input-slot"
-                      :aria-label="`添加图片${(item.field.assetIndex ?? 0) + 1}：${item.field.label}`"
+                      :class="
+                        item.asset
+                          ? 'composer-input-source-switch'
+                          : 'composer-input-slot'
+                      "
+                      :aria-label="`${item.asset ? '更换' : '添加'}图片${(item.field.assetIndex ?? 0) + 1}：${item.field.label}`"
                       :disabled="composerUploading || composerImportingImage"
                       type="button"
                     >
-                      <IconifyIcon :icon="platformUiIcons.plus" />
-                      <span>添加图片</span>
+                      <IconifyIcon
+                        v-if="!item.asset"
+                        :icon="platformUiIcons.plus"
+                      />
+                      <span>
+                        {{
+                          item.asset
+                            ? '更换图片'
+                            : `添加图片${(item.field.assetIndex ?? 0) + 1}`
+                        }}
+                      </span>
                     </button>
                   </Popover>
-                  <button
-                    :aria-label="`实时输入：${item.field.label}`"
-                    class="composer-live-entry"
-                    type="button"
-                    @click="openLiveInput(item.field)"
-                  >
-                    <IconifyIcon :icon="platformUiIcons.monitorUp" />
-                    <span>实时输入</span>
-                  </button>
                 </div>
               </div>
             </div>
@@ -3668,71 +3688,68 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .composer-slot-card {
-  flex: 0 0 202px;
-  width: 202px;
+  flex: 0 0 80px;
+  width: 80px;
   min-width: 0;
 }
 
-.composer-slot-heading {
+.composer-slot-entries {
+  position: relative;
   display: flex;
+  align-items: center;
+}
+
+.composer-input-slot {
+  display: flex;
+  flex: 0 0 80px;
+  flex-direction: column;
   gap: 6px;
   align-items: center;
-  margin-bottom: 8px;
-}
-
-.composer-slot-heading small {
-  flex-shrink: 0;
-  padding: 1px 5px;
-  font-size: 11px;
-  color: #a24a66;
-  background: #fff0f4;
-  border-radius: 4px;
-}
-
-.composer-slot-entries {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.composer-input-slot,
-.composer-live-entry {
-  display: flex;
-  flex: 0 0 96px;
-  flex-direction: column;
-  gap: 8px;
-  align-items: center;
   justify-content: center;
-  width: 96px;
-  height: 96px;
-  padding: 8px;
+  width: 80px;
+  height: 80px;
+  padding: 5px;
   font-size: 12px;
   color: var(--rail-theme-secondary, #655c60);
   background: var(--rail-theme-surface, #faf7f8);
   border: 1px dashed var(--rail-theme-border, #d8cbd0);
-  border-radius: 12px;
+  border-radius: 10px;
 }
 
-.composer-input-slot:hover,
-.composer-live-entry:hover {
+.composer-input-slot:hover {
   color: var(--app-accent, #c51f3a);
   border-color: currentcolor;
 }
 
-.composer-input-slot svg,
-.composer-live-entry svg {
-  width: 25px;
-  height: 25px;
+.composer-input-slot svg {
+  width: 22px;
+  height: 22px;
 }
 
-.composer-input-role {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--rail-theme-secondary, #62585e);
-  white-space: nowrap;
+.composer-input-number {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  z-index: 1;
+  padding: 1px 4px;
+  font-size: 10px;
+  color: #fff;
+  pointer-events: none;
+  background: rgb(18 25 30 / 76%);
+  border-radius: 4px;
+}
+
+.composer-input-source-switch {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  z-index: 3;
+  padding: 2px 5px;
+  font-size: 10px;
+  color: #fff;
+  background: rgb(18 25 30 / 76%);
+  border: 0;
+  border-radius: 4px;
 }
 
 .composer-capture-switch {
@@ -5008,17 +5025,17 @@ main.design-page {
 
 .composer-input-asset {
   position: relative;
-  flex: 0 0 96px;
-  width: 96px;
-  height: 96px;
+  flex: 0 0 80px;
+  width: 80px;
+  height: 80px;
 }
 
 .composer-input-asset__preview {
   position: relative;
   display: grid;
   place-items: center;
-  width: 96px;
-  height: 96px;
+  width: 80px;
+  height: 80px;
   padding: 0;
   overflow: hidden;
   color: var(--rail-theme-secondary, #52606d);
@@ -5125,15 +5142,15 @@ main.design-page {
 :global(.composer-media-source-menu) {
   display: grid;
   gap: 6px;
-  width: min(250px, calc(100vw - 48px));
+  width: min(208px, calc(100vw - 48px));
 }
 
 :global(.composer-media-source-menu > button) {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
+  grid-template-columns: 22px minmax(0, 1fr);
   gap: 9px;
   align-items: center;
-  padding: 9px;
+  padding: 7px;
   color: var(--rail-theme-text, #20272c);
   text-align: left;
   background: transparent;

@@ -58,6 +58,7 @@ export interface PlatformCapability {
   supportsImageComparison: boolean;
   workflow: {
     code: string;
+    defaultPrompt?: null | string;
     name: string;
     version: number;
   };
@@ -96,6 +97,7 @@ export interface WorkflowVersion {
 }
 
 export interface WorkflowDefinition {
+  defaultPrompt?: null | string;
   code: string;
   createdAt: string;
   description: string;

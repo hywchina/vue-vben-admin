@@ -7,6 +7,7 @@ import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
 
 const schema = z.object({
+  defaultPrompt: z.string().max(10_000).optional(),
   description: z.string().trim().max(2000).default(''),
   name: z.string().trim().min(1).max(200),
   status: z.enum(['disabled', 'draft', 'published']).optional(),

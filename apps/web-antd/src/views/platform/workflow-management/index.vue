@@ -48,11 +48,36 @@ const submitting = ref(false);
 const overview = ref<WorkflowManagementResult>();
 const editorMode = ref<EditorMode>('create');
 const selectedWorkflow = ref<WorkflowDefinition>();
+const initialDefaultPrompt = ref('');
+const editorPromptFields = computed(() => {
+  const versions = selectedWorkflow.value?.versions ?? [];
+  const bound = versions.filter(
+    (version) => version.activeCapabilities?.length,
+  );
+  return (bound.length > 0 ? bound : versions.slice(0, 1)).map((version) => {
+    const fields = version.parameterSchema ?? [];
+    return (
+      fields.find(
+        (field) =>
+          field.key === 'prompt' && ['text', 'textarea'].includes(field.type),
+      ) ??
+      fields.find((field) => field.type === 'textarea') ??
+      fields.find((field) => field.type === 'text' && field.required)
+    );
+  });
+});
+const editorPromptMaxLength = computed(() =>
+  Math.min(
+    10_000,
+    ...editorPromptFields.value.map((field) => field?.maxLength ?? 10_000),
+  ),
+);
 
 const editor = reactive({
   apiJson: '{}',
   code: '',
   description: '',
+  defaultPrompt: '',
   modelRequirements: '[]',
   name: '',
   outputSchema: '[]',
@@ -98,6 +123,7 @@ function resetEditor() {
     apiJson: '{}',
     code: '',
     description: '',
+    defaultPrompt: '',
     modelRequirements: '[]',
     name: '',
     outputSchema: '[]',
@@ -124,6 +150,10 @@ function openEditEditor(workflow: WorkflowDefinition) {
   editor.code = workflow.code;
   editor.name = workflow.name;
   editor.description = workflow.description ?? '';
+  const preset = editorPromptFields.value[0]?.defaultValue;
+  editor.defaultPrompt =
+    workflow.defaultPrompt ?? (typeof preset === 'string' ? preset : '');
+  initialDefaultPrompt.value = editor.defaultPrompt;
   editorModalApi.open();
 }
 
@@ -146,6 +176,10 @@ async function submitEditor() {
     if (editorMode.value === 'edit') {
       if (!selectedWorkflow.value) throw new Error('未选择要编辑的工作流');
       await updateWorkflowApi(selectedWorkflow.value.id, {
+        ...(typeof selectedWorkflow.value.defaultPrompt === 'string' ||
+        editor.defaultPrompt !== initialDefaultPrompt.value
+          ? { defaultPrompt: editor.defaultPrompt }
+          : {}),
         description: editor.description.trim(),
         name,
       });
@@ -222,7 +256,7 @@ onMounted(loadOverview);
   <ParameterPresentationEditor ref="presentationEditor" />
   <Page
     title="工作流管理"
-    description="注册 ComfyUI API 工作流、编辑中文名称和说明，并管理执行能力与发布状态。"
+    description="注册 ComfyUI API 工作流、编辑中文名称、说明和默认提示词，并管理执行能力与发布状态。"
   >
     <div class="workflow-page">
       <Alert
@@ -289,7 +323,8 @@ onMounted(loadOverview);
         <p class="muted">
           “标识”是系统内部唯一代码，不是 JSON 文件名。例如
           flux2-klein-image-edit-kv 对应 image-edit-kv-v1.json。
-          编辑仅修改中文名称和说明，不改变标识、工作流 JSON、版本或功能绑定。
+          编辑可修改中文名称、说明和默认提示词，不改变标识、工作流
+          JSON、版本或功能绑定。
         </p>
         <Spin :spinning="loading">
           <Table
@@ -358,7 +393,7 @@ onMounted(loadOverview);
           v-if="editorMode === 'edit'"
           show-icon
           type="info"
-          message="仅修改中文展示名称和说明；标识、工作流 JSON、现有版本、发布状态和功能绑定保持不变。"
+          message="可修改中文展示名称、说明和默认提示词；标识、工作流 JSON、现有版本、发布状态和功能绑定保持不变。"
         />
         <div class="form-grid">
           <Form.Item label="工作流标识" required>
@@ -388,6 +423,21 @@ onMounted(loadOverview);
             :rows="2"
             :maxlength="2000"
           />
+        </Form.Item>
+        <Form.Item v-if="editorMode === 'edit'" label="默认提示词">
+          <Input.TextArea
+            v-model:value="editor.defaultPrompt"
+            aria-label="工作流默认提示词"
+            :rows="4"
+            :maxlength="editorPromptMaxLength"
+            show-count
+            :disabled="submitting"
+            placeholder="填写首次使用此工作流时预填的提示词；留空则不预填"
+          />
+          <p class="muted">
+            仅管理员可设置。用户首次使用时自动填入，可修改本次输入；已有草稿保留。留空则不自动预填，不改写
+            API JSON。
+          </p>
         </Form.Item>
         <template v-if="editorMode === 'create'">
           <Form.Item label="ComfyUI API 工作流 JSON" required>

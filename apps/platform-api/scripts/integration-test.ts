@@ -442,6 +442,7 @@ async function run() {
       {
         definition: {
           code: string;
+          defaultPrompt: null | string;
           description: string;
           name: string;
           status: string;
@@ -449,7 +450,7 @@ async function run() {
         versions: unknown;
       }[]
     >`
-      SELECT jsonb_build_object('code', wd.code, 'name', wd.name, 'description', wd.description, 'status', wd.status) AS definition,
+      SELECT jsonb_build_object('code', wd.code, 'name', wd.name, 'description', wd.description, 'status', wd.status, 'defaultPrompt', wd.default_prompt) AS definition,
         (SELECT jsonb_agg(to_jsonb(wv) ORDER BY version) FROM workflow_versions wv WHERE workflow_id = wd.id) AS versions
       FROM workflow_definitions wd WHERE id = ${metadataWorkflowId}
     `;
@@ -458,7 +459,11 @@ async function run() {
   };
   const beforeMetadataEdit = await snapshotWorkflow();
   await apiRequest(workflowMetadataPath, {
-    body: { name: '  客室中文名称验收  ', description: '  新说明  ' },
+    body: {
+      name: '  客室中文名称验收  ',
+      description: '  新说明  ',
+      defaultPrompt: '管理员工作流默认词',
+    },
     method: 'PUT',
     session: admin,
   });
@@ -503,6 +508,74 @@ async function run() {
     JSON.stringify(await snapshotWorkflow()) === JSON.stringify(beforeSeed),
     '再次初始化覆盖了编辑后的名称/说明/状态或新增了版本',
   );
+  const afterPromptSeed = await snapshotWorkflow();
+  assert(
+    afterPromptSeed.definition.defaultPrompt === '管理员工作流默认词',
+    '初始化或旧客户端覆盖默认词',
+  );
+  for (const defaultPrompt of [
+    false,
+    null,
+    'x'.repeat(10_001),
+    'x'.repeat(6001),
+  ]) {
+    await apiRequest(workflowMetadataPath, {
+      method: 'PUT',
+      session: admin,
+      expectedStatus: 400,
+      body: { name: '非法默认词', description: '', defaultPrompt },
+    });
+  }
+  await apiRequest(workflowMetadataPath, {
+    method: 'PUT',
+    session: user1,
+    expectedStatus: 403,
+    body: { name: '越权默认词', defaultPrompt: '越权' },
+  });
+  await apiRequest(workflowMetadataPath, {
+    method: 'PUT',
+    expectedStatus: 401,
+    body: { name: '匿名默认词', defaultPrompt: '越权' },
+  });
+  await apiRequest(workflowMetadataPath, {
+    method: 'PUT',
+    session: admin,
+    body: {
+      name: '客室中文名称验收',
+      description: '新说明',
+      status: 'published',
+    },
+  });
+  await sql`UPDATE capabilities SET status = 'published' WHERE code = ${metadataWorkflowCode}`;
+  const configuredPrompt = await apiRequest<{
+    workflow: { defaultPrompt: string };
+  }>(`/capabilities/${metadataWorkflowCode}`, { session: user1 });
+  assert(
+    configuredPrompt.envelope.data.workflow.defaultPrompt ===
+      '管理员工作流默认词',
+    '普通用户不能读取绑定工作流的默认词',
+  );
+  await apiRequest(workflowMetadataPath, {
+    method: 'PUT',
+    session: admin,
+    body: {
+      name: '客室中文名称验收',
+      description: '新说明',
+      defaultPrompt: '',
+    },
+  });
+  const emptyPrompt = await apiRequest<{ workflow: { defaultPrompt: string } }>(
+    `/capabilities/${metadataWorkflowCode}`,
+    { session: user1 },
+  );
+  assert(
+    emptyPrompt.envelope.data.workflow.defaultPrompt === '',
+    '显式清空默认词后出现回退',
+  );
+  const [promptAudit] = await sql<
+    { leaked: boolean }[]
+  >`SELECT EXISTS(SELECT 1 FROM audit_events WHERE target_id = ${metadataWorkflowId} AND details::text LIKE '%管理员工作流默认词%') AS leaked`;
+  assert(!promptAudit?.leaked, '审计泄漏默认提示词正文');
   const [metadataAudit] = await sql<
     { found: boolean }[]
   >`SELECT EXISTS(SELECT 1 FROM audit_events WHERE target_id = ${metadataWorkflowId} AND action = 'workflow.update') AS found`;

@@ -450,7 +450,12 @@ describe('role-specific image slots and automatic editors', () => {
       '添加图片2：样式参考',
       '添加图片3：材质参考',
     ]);
-    expect(root.querySelectorAll('.composer-live-entry')).toHaveLength(3);
+    expect(root.querySelectorAll('.composer-live-entry')).toHaveLength(0);
+    expect(slots.map((slot) => slot.textContent?.trim())).toEqual([
+      '添加图片1',
+      '添加图片2',
+      '添加图片3',
+    ]);
   });
   it.each([
     'inpaint-single',

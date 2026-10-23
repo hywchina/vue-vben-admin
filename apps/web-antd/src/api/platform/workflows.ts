@@ -35,6 +35,7 @@ export function createWorkflowApi(input: {
 export function updateWorkflowApi(
   workflowId: string,
   input: {
+    defaultPrompt?: string;
     description: string;
     name: string;
     status?: 'disabled' | 'draft' | 'published';

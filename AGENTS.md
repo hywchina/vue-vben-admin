@@ -127,7 +127,7 @@ pnpm --filter @rail/platform-api dev
 ### 数据库迁移
 
 - 已有 `001` 至 `009` 迁移视为已在环境中应用，不得为新需求改写历史迁移。
-- 新变更创建下一个顺序迁移（当前最新为 `041_design_mode_applications.sql`，新增从 `042_*.sql` 开始），并保证可在已有数据上升级。
+- 新变更创建下一个顺序迁移（当前最新为 `042_workflow_default_prompt.sql`，新增从 `043_*.sql` 开始），并保证可在已有数据上升级。
 - 迁移必须考虑约束、索引、旧数据转换、回滚/恢复策略和种子脚本兼容性。
 - `pnpm db:rail:reset-users -- --confirm=DELETE_ALL_USERS` 是破坏性维护命令，未经明确授权和备份不得运行。
 

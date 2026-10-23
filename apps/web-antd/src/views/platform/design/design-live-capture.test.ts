@@ -251,10 +251,17 @@ async function render(openLive = true) {
   });
   for (let turn = 0; turn < 50; turn += 1) await Promise.resolve();
   await nextTick();
-  if (openLive)
+  if (openLive) {
+    root
+      .querySelector<HTMLButtonElement>(
+        '.composer-input-slot, .composer-input-source-switch',
+      )
+      ?.click();
+    await nextTick();
     root
       .querySelector<HTMLButtonElement>('[aria-label="实时输入：捕获画面"]')
       ?.click();
+  }
   await nextTick();
   return root;
 }
@@ -424,11 +431,11 @@ describe('realtime image input contracts', () => {
 describe('mutually exclusive composer input surfaces', () => {
   it('shows the named square entries and a lightweight source menu, not a modal', async () => {
     const root = await render(false);
-    expect(root.querySelectorAll('.composer-slot-heading')).toHaveLength(1);
+    expect(root.querySelectorAll('.composer-slot-heading')).toHaveLength(0);
     expect(
       root.querySelector('.composer-input-slot')?.textContent?.trim(),
-    ).toBe('添加图片');
-    expect(root.querySelectorAll('.composer-live-entry')).toHaveLength(1);
+    ).toBe('添加图片1');
+    expect(root.querySelectorAll('.composer-live-entry')).toHaveLength(0);
     expect(root.querySelector('[data-testid="capture-instance"]')).toBeNull();
     root.querySelector<HTMLButtonElement>('.composer-input-slot')?.click();
     await nextTick();
@@ -436,8 +443,8 @@ describe('mutually exclusive composer input surfaces', () => {
     if (!menu) throw new Error('Missing source menu');
     expect(
       [...menu.querySelectorAll('strong')].map((x) => x.textContent),
-    ).toEqual(['本地上传', '从资产中心选择']);
-    expect(menu?.querySelectorAll('small')).toHaveLength(2);
+    ).toEqual(['本地上传', '资产选图', '实时输入']);
+    expect(menu?.querySelectorAll('small')).toHaveLength(3);
     expect(root.querySelector('[data-testid="capture-instance"]')).toBeNull();
     root.querySelector<HTMLButtonElement>('.composer-live-entry')?.click();
     await nextTick();
@@ -506,6 +513,10 @@ describe('mutually exclusive composer input surfaces', () => {
       root.querySelector('[aria-label="添加图片2：固定参考"]'),
     ).not.toBeNull();
     root
+      .querySelector<HTMLButtonElement>('[aria-label="添加图片2：固定参考"]')
+      ?.click();
+    await nextTick();
+    root
       .querySelector<HTMLButtonElement>('[aria-label="实时输入：固定参考"]')
       ?.click();
     await nextTick();
@@ -519,4 +530,53 @@ describe('mutually exclusive composer input surfaces', () => {
     expect(root.querySelector('[aria-label="添加图片2：固定参考"]')).toBeNull();
     expect(mocks.upload).not.toHaveBeenCalled();
   });
+});
+
+describe('administrator workflow default prompts', () => {
+  it.each([
+    [null, '管理员默认指令'],
+    ['2026-10-23', '保留已有草稿'],
+  ])('initializes only an unsaved draft (%s)', async (updatedAt, expected) => {
+    const capability = await mocks.capability();
+    capability.workflow = { defaultPrompt: '管理员默认指令' };
+    mocks.capability.mockResolvedValue(capability);
+    mocks.draft.mockResolvedValue({
+      updatedAt,
+      parameterValues: { prompt: '保留已有草稿' },
+      inputAssetIds: {},
+    });
+    const root = await render(false);
+    expect(
+      (
+        root.querySelector(
+          '[data-testid="design-prompt-input"]',
+        ) as HTMLTextAreaElement
+      ).value,
+    ).toBe(expected);
+  });
+  it.each([
+    [null, '', ''],
+    ['2026-10-23', '新管理员默认', ''],
+    [null, null, '默认指令'],
+  ])(
+    'preserves an explicit empty default or cleared draft (%s, %s)',
+    async (updatedAt, defaultPrompt, expected) => {
+      const capability = await mocks.capability();
+      capability.workflow = { defaultPrompt };
+      mocks.capability.mockResolvedValue(capability);
+      mocks.draft.mockResolvedValue({
+        updatedAt,
+        parameterValues: { prompt: '' },
+        inputAssetIds: {},
+      });
+      const root = await render(false);
+      expect(
+        (
+          root.querySelector(
+            '[data-testid="design-prompt-input"]',
+          ) as HTMLTextAreaElement
+        ).value,
+      ).toBe(expected);
+    },
+  );
 });

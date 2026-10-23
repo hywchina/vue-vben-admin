@@ -9,7 +9,7 @@ import {
   capabilityPresentationFields,
   resolveQuickFieldKeys,
 } from './presentation';
-import { parseWorkflowVersion } from './schema';
+import { parseWorkflowVersion, validateWorkflowDefaultPrompt } from './schema';
 
 export function workflowChecksum(snapshot: unknown) {
   return createHash('sha256').update(JSON.stringify(snapshot)).digest('hex');
@@ -110,6 +110,7 @@ export async function seedWorkflowCatalogEntry(
 }
 
 interface CapabilityRow {
+  defaultPrompt?: null | string;
   apiJson: Record<string, unknown>;
   appKey: string;
   code: string;
@@ -138,6 +139,7 @@ export async function getCapabilityByCode(code: string) {
       wd.provider,
       wd.code AS "workflowCode",
       wd.name AS "workflowName",
+      wd.default_prompt AS "defaultPrompt",
       wv.id AS "workflowVersionId",
       wv.version AS "workflowVersion",
       wv.api_json AS "apiJson",
@@ -203,6 +205,7 @@ export function toPublicCapability(
     supportsImageComparison: workflowSupportsImageComparison(row.apiJson),
     workflow: {
       code: row.workflowCode,
+      defaultPrompt: row.defaultPrompt ?? null,
       name: row.workflowName,
       version: row.workflowVersion,
     },
@@ -215,6 +218,7 @@ export async function listWorkflowManagement() {
     {
       code: string;
       createdAt: Date;
+      defaultPrompt: null | string;
       description: string;
       id: string;
       name: string;
@@ -230,6 +234,7 @@ export async function listWorkflowManagement() {
       wd.code,
       wd.name,
       wd.description,
+      wd.default_prompt AS "defaultPrompt",
       wd.provider,
       wd.status,
       wd.created_at AS "createdAt",
@@ -379,6 +384,7 @@ export async function createWorkflowDefinition(
 export async function updateWorkflowDefinition(
   id: string,
   input: {
+    defaultPrompt?: string;
     description: string;
     name: string;
     status?: 'disabled' | 'draft' | 'published';
@@ -386,21 +392,51 @@ export async function updateWorkflowDefinition(
   actorId: string,
 ) {
   const sql = useDatabase();
-  const [updated] = await sql<{ id: string }[]>`
+  return await sql.begin(async (transaction) => {
+    if (input.defaultPrompt) {
+      const versions = await transaction<{ parameterSchema: unknown }[]>`
+        SELECT parameter_schema AS "parameterSchema" FROM workflow_versions wv
+        WHERE workflow_id = ${id} AND (
+          EXISTS (SELECT 1 FROM capability_workflows cw
+            WHERE cw.workflow_version_id = wv.id AND cw.active = true)
+          OR (NOT EXISTS (SELECT 1 FROM capability_workflows cw
+            JOIN workflow_versions bound ON bound.id = cw.workflow_version_id
+            WHERE bound.workflow_id = ${id} AND cw.active = true)
+            AND version = (SELECT max(version) FROM workflow_versions WHERE workflow_id = ${id}))
+        )
+      `;
+      try {
+        for (const version of versions)
+          validateWorkflowDefaultPrompt(
+            input.defaultPrompt,
+            version.parameterSchema,
+          );
+      } catch (error) {
+        throw new ApiError(
+          400,
+          'WORKFLOW_DEFAULT_PROMPT_INVALID',
+          error instanceof Error ? error.message : '默认提示词无效',
+        );
+      }
+    }
+    const [updated] = await transaction<{ id: string }[]>`
     UPDATE workflow_definitions
     SET
       name = ${input.name},
       description = ${input.description},
+      default_prompt = CASE WHEN ${input.defaultPrompt !== undefined}
+        THEN ${input.defaultPrompt ?? null} ELSE default_prompt END,
       status = COALESCE(${input.status ?? null}, status),
       updated_by = ${actorId},
       updated_at = now()
     WHERE id = ${id}
     RETURNING id
   `;
-  if (!updated) {
-    throw new ApiError(404, 'WORKFLOW_NOT_FOUND', '工作流不存在');
-  }
-  return updated;
+    if (!updated) {
+      throw new ApiError(404, 'WORKFLOW_NOT_FOUND', '工作流不存在');
+    }
+    return updated;
+  });
 }
 
 export async function addWorkflowVersion(

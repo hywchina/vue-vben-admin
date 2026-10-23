@@ -144,6 +144,23 @@ export type WorkflowParameterDefinition = z.infer<
 >;
 export type WorkflowVersionInput = z.infer<typeof workflowVersionSchema>;
 
+export function validateWorkflowDefaultPrompt(value: string, schema: unknown) {
+  const fields = z.array(workflowParameterSchema).parse(schema);
+  const field =
+    fields.find(
+      (item) =>
+        item.key === 'prompt' && ['text', 'textarea'].includes(item.type),
+    ) ??
+    fields.find((item) => item.type === 'textarea') ??
+    fields.find((item) => item.type === 'text' && item.required);
+  if (!field || value.length > (field.maxLength ?? 10_000))
+    throw new Error(
+      field
+        ? `默认提示词不能超过 ${field.maxLength ?? 10_000} 个字符`
+        : '该工作流没有可填写的主提示词',
+    );
+}
+
 export interface ApiWorkflowNode {
   _meta?: { title?: string };
   class_type: string;

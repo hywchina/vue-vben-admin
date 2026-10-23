@@ -6,6 +6,7 @@ import {
   parseWorkflowVersion,
   publicParameterSchema,
   validateWorkflowAssetInputs,
+  validateWorkflowDefaultPrompt,
   workflowParameterSchema,
   workflowValidationErrorMessage,
 } from './schema';
@@ -197,4 +198,18 @@ describe('comfyUI workflow schema', () => {
       '工作流参数协议与当前服务版本不一致，请刷新服务后重新提交',
     );
   });
+});
+
+it('validates the primary prompt length without mutating published fields', () => {
+  const before = JSON.stringify(parameterSchema);
+  expect(() =>
+    validateWorkflowDefaultPrompt('x'.repeat(100), parameterSchema),
+  ).not.toThrow();
+  expect(() =>
+    validateWorkflowDefaultPrompt('x'.repeat(101), parameterSchema),
+  ).toThrow('不能超过 100');
+  expect(() => validateWorkflowDefaultPrompt('x', [])).toThrow(
+    '没有可填写的主提示词',
+  );
+  expect(JSON.stringify(parameterSchema)).toBe(before);
 });

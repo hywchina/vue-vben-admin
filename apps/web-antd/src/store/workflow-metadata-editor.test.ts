@@ -401,7 +401,7 @@ describe('workflow metadata editor', () => {
       workflow.code,
     );
     expect(dialog.querySelectorAll('input')).toHaveLength(2);
-    expect(dialog.querySelectorAll('textarea')).toHaveLength(1);
+    expect(dialog.querySelectorAll('textarea')).toHaveLength(2);
   });
   it('saves trimmed name and description without sending status or workflow JSON', async () => {
     const root = await render();
@@ -464,4 +464,28 @@ describe('workflow metadata editor', () => {
     expect(api.error).toHaveBeenCalledWith('保存失败');
     expect(root.querySelector('[role="dialog"]')).not.toBeNull();
   });
+});
+
+it('loads and saves the administrator default prompt without changing JSON or binding', async () => {
+  api.get.mockResolvedValue({
+    capabilities: [],
+    workflows: [{ ...structuredClone(workflow), defaultPrompt: '原默认词' }],
+  });
+  const root = await render();
+  click(root, '编辑');
+  await settle();
+  const field = requireElement<HTMLTextAreaElement>(
+    root,
+    'textarea[aria-label="工作流默认提示词"]',
+  );
+  expect(field.value).toBe('原默认词');
+  setValue(field, '新的默认词');
+  click(root, '保存');
+  await settle();
+  expect(api.update).toHaveBeenCalledWith(workflow.id, {
+    name: workflow.name,
+    description: workflow.description,
+    defaultPrompt: '新的默认词',
+  });
+  expect(api.bind).not.toHaveBeenCalled();
 });
