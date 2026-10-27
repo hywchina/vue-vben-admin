@@ -50,10 +50,12 @@ import {
   getAssetDownloadApi,
   getAssetPreviewApi,
   getCapabilityApi,
+  getDesignConversationApi,
   getDesignConversationDraftApi,
   getDesignConversationInputAssetApi,
   getDesignConversationsApi,
   getJobsApi,
+  referenceDesignConversationInputApi,
   renameDesignConversationApi,
   saveDesignConversationDraftApi,
 } from '#/api';
@@ -1168,13 +1170,38 @@ async function scrollToLatestRound() {
 }
 
 async function ensureConversation() {
-  const projectId = platformStore.currentProjectId;
+  let projectId = platformStore.currentProjectId;
   if (!projectId) return;
   await refreshConversations();
   const requestedId =
     typeof route.query.conversationId === 'string'
       ? route.query.conversationId
       : '';
+  if (
+    requestedId &&
+    !regularConversations.value.some((item) => item.id === requestedId)
+  ) {
+    const requested = await getDesignConversationApi(requestedId);
+    if (route.query.conversationId !== requestedId) return;
+    if (requested.projectId !== projectId) {
+      const wasReady = pageReady;
+      pageReady = false;
+      try {
+        await saveDraftNow();
+        activeConversationId.value = '';
+        await platformStore.switchProject(requested.projectId);
+        if (route.query.conversationId !== requestedId) return;
+        projectId = platformStore.currentProjectId;
+        if (projectId !== requested.projectId)
+          throw new Error('无法访问会话所属项目');
+        await refreshConversations();
+      } finally {
+        pageReady = wasReady;
+      }
+    }
+    if (!regularConversations.value.some((item) => item.id === requestedId))
+      throw new Error('该会话暂不能在设计生成中打开');
+  }
   const requestedAppKey =
     typeof route.query.appKey === 'string' &&
     platformStore.applications.some(
@@ -1241,7 +1268,11 @@ async function selectConversation(
   }
   selectedAppKey.value = availablePreferredApp ?? DEFAULT_APP_KEY;
   await router.replace({
-    query: { ...(importingAsset ? route.query : {}), conversationId },
+    query: {
+      ...(importingAsset ? route.query : {}),
+      conversationId,
+      appKey: selectedAppKey.value,
+    },
   });
   await loadCapability();
   void hydrateTimelineCapabilities();
@@ -1267,6 +1298,7 @@ async function chooseApplication(appKey: string, businessToolKey = '') {
     return true;
   }
   await saveDraftNow();
+  const conversationId = activeConversationId.value;
   selectedModeKey.value = designModeForApplication(
     appKey,
     selectedModeKey.value,
@@ -1274,6 +1306,19 @@ async function chooseApplication(appKey: string, businessToolKey = '') {
   selectedBusinessToolKey.value = businessToolKey;
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
+  if (
+    activeConversationId.value !== conversationId ||
+    selectedAppKey.value !== appKey ||
+    effectiveApplicationKey.value !== appKey
+  )
+    return false;
+  await router.replace({
+    query: {
+      ...(importingAsset ? route.query : {}),
+      conversationId: activeConversationId.value,
+      appKey,
+    },
+  });
   return effectiveApplicationKey.value === appKey && Boolean(capability.value);
 }
 
@@ -1720,6 +1765,8 @@ async function selectAsset(
   preserveRegion = false,
 ) {
   if (field.assetIndex === undefined) return;
+  if (!availableInputAssets.value.some((asset) => asset.id === assetId))
+    await resolveConversationInput(assetId);
   const occupied = Object.entries(selectedAssets).find(
     ([index, id]) => Number(index) !== field.assetIndex && id === assetId,
   );
@@ -1752,9 +1799,7 @@ async function uploadMedia(
   const asset = await platformStore.uploadAsset({
     description: `${capability.value?.name ?? application.value?.name} 设计会话输入`,
     derivedFromAssetId: options.derivedFromAssetId,
-    designConversationId: options.derivedFromAssetId
-      ? activeConversationId.value
-      : undefined,
+    designConversationId: activeConversationId.value,
     file,
     name: file.name.replace(/\.[^.]+$/, ''),
     tags: options.tags ?? ['设计会话输入'],
@@ -1763,7 +1808,7 @@ async function uploadMedia(
   if (composerDisposed || contextKey !== captureContextKey.value) return asset;
   await selectAsset(field, asset.id);
   if (!options.derivedFromAssetId) queueInputEditor(field);
-  if (!options.silent) message.success('图像已登记为当前项目资产');
+  if (!options.silent) message.success('图片已添加到当前设计，未加入资产中心');
   return asset;
 }
 
@@ -1866,6 +1911,7 @@ async function runLiveCapture(
   return submitCaptureFrame(isCurrent, {
     upload: async () => {
       const original = await platformStore.uploadAsset({
+        designConversationId: activeConversationId.value,
         description: `${capability.value?.name ?? application.value?.name} 设计会话输入`,
         file,
         name: file.name.replace(/\.[^.]+$/, ''),
@@ -1915,7 +1961,7 @@ async function confirmSaveOutput() {
       saveOutputFolderId.value || undefined,
     );
     saveOutputOpen.value = false;
-    message.success('生成结果已保存到所选资产目录');
+    message.success('已保存到所选资产目录');
   } finally {
     saveOutputSubmitting.value = false;
   }
@@ -1961,7 +2007,7 @@ async function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
 function openInputMask(input: PlatformJobInput, previewUrl: string) {
   actionOutput.value = undefined;
   maskEditSourceAssetId.value = input.assetId;
-  maskEditDerivedFromAssetId.value = input.assetId;
+  maskEditDerivedFromAssetId.value = input.derivedFromAssetId ?? input.assetId;
   outputMaskSource.value = previewUrl;
   outputMaskTitle.value = input.name || '本轮输入图片';
   outputMaskEditorOpen.value = true;
@@ -1969,6 +2015,10 @@ function openInputMask(input: PlatformJobInput, previewUrl: string) {
 
 async function saveOutputMask(file: File) {
   if (!maskEditSourceAssetId.value) throw new Error('当前没有可编辑的图片');
+  const contextKey = captureContextKey.value;
+  const outputMode = actionOutput.value
+    ? actionDesignMode.value
+    : selectedModeKey.value;
   const maskAsset = await platformStore.uploadAsset({
     derivedFromAssetId: maskEditDerivedFromAssetId.value || undefined,
     designConversationId: activeConversationId.value,
@@ -1978,19 +2028,16 @@ async function saveOutputMask(file: File) {
     tags: ['设计会话图片编辑', '遮罩'],
     type: 'image',
   });
-  if (actionOutput.value) {
-    selectedModeKey.value = actionDesignMode.value;
-    if (!(await chooseApplication('inpaint-single')))
-      throw new Error('当前模块未启用局部重绘');
-    const maskField = mediaFields.value.find(
-      (field) => field.type === 'mask' && field.assetIndex !== undefined,
-    );
-    if (!maskField) throw new Error('局部重绘能力缺少遮罩输入位');
-    await selectAsset(maskField, maskAsset.id);
-    message.success('遮罩已保存并填入“局部重绘”编辑框，请确认提示词后发送');
-    return;
-  }
-  message.success('遮罩编辑结果已保存到当前项目资产中心');
+  if (contextKey !== captureContextKey.value || composerDisposed) return;
+  selectedModeKey.value = outputMode;
+  if (!(await chooseApplication('inpaint-single')))
+    throw new Error('当前模块未启用局部重绘');
+  const maskField = mediaFields.value.find(
+    (field) => field.type === 'mask' && field.assetIndex !== undefined,
+  );
+  if (!maskField) throw new Error('局部重绘能力缺少遮罩输入位');
+  await selectAsset(maskField, maskAsset.id);
+  message.success('遮罩已保存并填入“局部重绘”编辑框，请确认提示词后发送');
 }
 
 async function loadContinueCapability(appKey: string) {
@@ -2409,7 +2456,24 @@ function handleBusinessResultAction(
 async function switchProject(projectId: string) {
   if (projectId === platformStore.currentProjectId) return;
   await saveDraftNow();
-  await platformStore.switchProject(projectId);
+  pageReady = false;
+  loading.value = true;
+  try {
+    activeConversationId.value = '';
+    await router.replace({
+      query:
+        typeof route.query.appKey === 'string'
+          ? { appKey: route.query.appKey }
+          : {},
+    });
+    await platformStore.switchProject(projectId);
+    await ensureConversation();
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '项目切换失败');
+  } finally {
+    pageReady = true;
+    loading.value = false;
+  }
 }
 
 function jobApplication(job: PlatformJob) {
@@ -2433,6 +2497,35 @@ function stopPolling() {
   pollTimer = undefined;
 }
 
+// One design page owns its sidebar; query changes must not create a second
+// composer or reset the workflow when continuing from a task/asset entry.
+watch(
+  () => [route.query.conversationId, route.query.appKey, loading.value],
+  async () => {
+    if (
+      !pageReady ||
+      loading.value ||
+      importingAsset ||
+      route.path !== '/design' ||
+      route.query.sourceAssetId
+    )
+      return;
+    const id = route.query.conversationId;
+    const appKey =
+      typeof route.query.appKey === 'string' ? route.query.appKey : undefined;
+    if (typeof id === 'string' && id !== activeConversationId.value) {
+      try {
+        await ensureConversation();
+      } catch (error) {
+        message.error(
+          error instanceof Error ? error.message : '无法打开设计会话',
+        );
+      }
+    } else if (appKey && appKey !== selectedAppKey.value)
+      await chooseApplication(appKey);
+  },
+);
+
 let importingAsset = false;
 async function importAssetAction() {
   const assetId = route.query.sourceAssetId;
@@ -2443,7 +2536,18 @@ async function importAssetAction() {
   loading.value = true;
   try {
     if (!action) throw new Error('不支持的图片操作');
-    const asset = await getAssetApi(assetId);
+    const targetConversation =
+      typeof route.query.conversationId === 'string'
+        ? await getDesignConversationApi(route.query.conversationId)
+        : undefined;
+    const asset = targetConversation
+      ? await referenceDesignConversationInputApi(
+          targetConversation.id,
+          targetConversation.projectId,
+          assetId,
+        )
+      : await getAssetApi(assetId);
+    if (route.query.sourceAssetId !== assetId) return;
     const unavailable = assetImageActionUnavailable(
       asset,
       action.key,
@@ -2467,10 +2571,25 @@ async function importAssetAction() {
     )
       throw new Error('图片的来源任务已不可用');
     await refreshConversations();
-    const conversation = regularConversations.value.find(
-      (item) => item.id === route.query.conversationId,
+    let conversation = targetConversation
+      ? regularConversations.value.find(
+          (item) => item.id === targetConversation.id,
+        )
+      : undefined;
+    if (!conversation) {
+      if (targetConversation)
+        throw new Error('图片编辑会话不属于当前项目或已不可用');
+      conversation = await createDesignConversationApi({
+        projectId: asset.projectId,
+      });
+      conversations.value.unshift(conversation);
+    }
+    await referenceDesignConversationInputApi(
+      conversation.id,
+      asset.projectId,
+      asset.id,
     );
-    if (!conversation) throw new Error('图片编辑会话不属于当前项目或已不可用');
+    if (route.query.sourceAssetId !== assetId) return;
     activeConversationId.value = '';
     await selectConversation(conversation.id);
     selectedModeKey.value = 'cabin';
@@ -2526,6 +2645,8 @@ onMounted(async () => {
       ? importAssetAction()
       : ensureConversation());
     pageReady = true;
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '无法打开设计会话');
   } finally {
     loading.value = false;
   }
@@ -3096,6 +3217,14 @@ onBeforeUnmount(() => {
                   <DesignPromptTemplatePopover
                     :mode="promptTemplateMode"
                     :context="promptTemplateContext"
+                    :scope-key="captureContextKey"
+                    :current-prompt="
+                      String(
+                        promptField
+                          ? (parameterValues[promptField.key] ?? '')
+                          : '',
+                      )
+                    "
                     @apply="applyPromptTemplate"
                     @size-change="applyImageSize"
                   />

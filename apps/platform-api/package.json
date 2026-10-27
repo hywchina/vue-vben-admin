@@ -23,7 +23,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "catalog:",
     "@aws-sdk/s3-request-presigner": "catalog:",
+    "@xmldom/xmldom": "0.9.12",
     "docx": "catalog:",
+    "fflate": "0.8.3",
     "h3": "catalog:",
     "image-size": "catalog:",
     "jose": "catalog:",

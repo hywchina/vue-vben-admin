@@ -45,7 +45,13 @@ export default apiHandler(async (event) => {
     JOIN assets asset
       ON asset.id = transfer.asset_id
       AND asset.status = 'available'
-      AND asset.saved_at IS NOT NULL
+      AND (asset.saved_at IS NOT NULL OR (asset.kind = 'image' AND EXISTS (
+        SELECT 1 FROM design_input_assets d
+        JOIN workflow_workspace_instances w ON w.id = d.workspace_instance_id
+        WHERE d.asset_id = asset.id AND d.workspace_instance_id = transfer.target_instance_id
+          AND d.created_by = ${identity.id} AND w.user_id = ${identity.id}
+          AND w.project_id = asset.project_id
+      )))
       AND asset.deleted_at IS NULL
     WHERE transfer.created_by = ${identity.id}
       AND transfer.project_id = ${input.projectId}

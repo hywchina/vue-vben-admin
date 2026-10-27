@@ -12,6 +12,7 @@ import Toolbar from './toolbar.vue';
 
 interface Props {
   appName?: string;
+  backgroundImage?: string;
   logo?: string;
   logoDark?: string;
   pageTitle?: string;
@@ -25,6 +26,7 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   appName: '',
+  backgroundImage: '',
   copyright: true,
   logo: '',
   logoDark: '',
@@ -112,7 +114,16 @@ const logoSrc = computed(() => {
       <div
         class="absolute inset-0 size-full bg-background-deep dark:bg-[#070709]"
       >
-        <div class="login-background absolute top-0 left-0 size-full"></div>
+        <div
+          class="login-background absolute top-0 left-0 size-full"
+          :class="{ 'login-background--illustrated': backgroundImage }"
+          :style="
+            backgroundImage
+              ? { backgroundImage: `url(${backgroundImage})` }
+              : undefined
+          "
+          aria-hidden="true"
+        ></div>
         <div
           :key="authPanelLeft ? 'left' : authPanelRight ? 'right' : 'center'"
           class="mr-20 flex-col-center h-full"
@@ -141,7 +152,16 @@ const logoSrc = computed(() => {
 
     <!-- 中心认证面板 -->
     <div v-if="authPanelCenter" class="relative flex-center w-full">
-      <div class="login-background absolute top-0 left-0 size-full"></div>
+      <div
+        class="login-background absolute top-0 left-0 size-full"
+        :class="{ 'login-background--illustrated': backgroundImage }"
+        :style="
+          backgroundImage
+            ? { backgroundImage: `url(${backgroundImage})` }
+            : undefined
+        "
+        aria-hidden="true"
+      ></div>
       <AuthenticationFormView
         class="w-full rounded-3xl pb-20 shadow-float shadow-primary/5 md:w-2/3 md:bg-background lg:w-1/2 xl:w-[36%]"
         data-side="bottom"
@@ -186,6 +206,23 @@ const logoSrc = computed(() => {
   filter: blur(100px);
 }
 
+.login-background--illustrated {
+  pointer-events: none;
+  background-color: #faf9f8;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: cover;
+  opacity: 0.56;
+  filter: none;
+}
+
+@media (max-width: 720px) {
+  .login-background--illustrated {
+    background-position: 70% center;
+    opacity: 0.2;
+  }
+}
+
 .dark {
   .login-background {
     background: linear-gradient(
@@ -195,6 +232,11 @@ const logoSrc = computed(() => {
       #07070915 64%
     );
     filter: blur(100px);
+  }
+
+  .login-background--illustrated {
+    opacity: 0.5;
+    filter: brightness(0.35) saturate(0.55);
   }
 }
 </style>

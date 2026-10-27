@@ -11,7 +11,7 @@ export interface WorkflowWorkspaceInstanceRecord {
 }
 
 export async function requireWorkflowWorkspaceInstance(input: {
-  appKey: string;
+  appKey?: string;
   instanceId: string;
   projectId: string;
   userId: string;
@@ -29,7 +29,7 @@ export async function requireWorkflowWorkspaceInstance(input: {
     WHERE id = ${input.instanceId}
       AND user_id = ${input.userId}
       AND project_id = ${input.projectId}
-      AND app_key = ${input.appKey}
+      AND (${input.appKey ?? null}::text IS NULL OR app_key = ${input.appKey ?? null})
   `;
   if (!instance) {
     throw new ApiError(

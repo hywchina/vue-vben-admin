@@ -23,11 +23,13 @@ export async function completeObjectVersion(
       expectedSize: number;
       objectKey: string;
       projectId: string;
+      savedAt: Date | null;
       status: string;
     }[]
   >`
     SELECT
       a.project_id AS "projectId",
+      a.saved_at AS "savedAt",
       av.object_key AS "objectKey",
       av.size_bytes::float8 AS "expectedSize",
       av.status
@@ -96,12 +98,13 @@ export async function completeObjectVersion(
     targetId: assetId,
     targetType: 'asset',
   });
-  await createNotification({
-    link: '/assets',
-    message: `资产的新版本 V${version} 已完成上传并可在项目内使用。`,
-    title: '资产已保存',
-    type: 'asset',
-    userId: identity.id,
-  });
+  if (pending.savedAt)
+    await createNotification({
+      link: '/assets',
+      message: `资产的新版本 V${version} 已完成上传并可在项目内使用。`,
+      title: '资产已保存',
+      type: 'asset',
+      userId: identity.id,
+    });
   return await getAssetView(assetId, identity.id);
 }

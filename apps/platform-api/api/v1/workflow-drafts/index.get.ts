@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { useDatabase } from '~/utils/database';
+import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
 import { workspaceDraftAssetSelection } from '~/utils/domain/workflows/drafts';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
@@ -59,18 +60,12 @@ export default apiHandler(async (event) => {
     return { inputAssetIds: {}, parameterValues: {}, updatedAt: undefined };
   }
   const assetIds = Object.values(draft.inputAssetIds);
-  const assets =
-    assetIds.length === 0
-      ? []
-      : await sql<{ id: string; kind: string }[]>`
-          SELECT id, kind
-          FROM assets
-          WHERE id IN ${sql(assetIds)}
-            AND project_id = ${input.projectId}
-            AND status = 'available'
-            AND saved_at IS NOT NULL
-            AND deleted_at IS NULL
-        `;
+  const assets = await getDesignInputAssets({
+    assetIds,
+    workspaceInstanceId: input.workspaceInstanceId,
+    projectId: input.projectId,
+    userId: identity.id,
+  });
   return {
     inputAssetIds: workspaceDraftAssetSelection(
       capability.parameterSchema,

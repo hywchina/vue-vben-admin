@@ -565,9 +565,15 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: 'catalog:'
         version: 3.1102.0
+      '@xmldom/xmldom':
+        specifier: 0.9.12
+        version: 0.9.12
       docx:
         specifier: 'catalog:'
         version: 9.7.1
+      fflate:
+        specifier: 0.8.3
+        version: 0.8.3
       h3:
         specifier: 'catalog:'
         version: 1.15.11
@@ -5066,6 +5072,10 @@ packages:
 
   '@webgpu/types@0.1.71':
     resolution: {integrity: sha512-mMy8/ODcKhab808co15eW+yN+HgXoQxRQHTiBV9Mrvl1r0ufnid7YOcI+gi4eUWSWl9ezD6TW2KXccrL8HCh2A==}
+
+  '@xmldom/xmldom@0.9.12':
+    resolution: {integrity: sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==}
+    engines: {node: '>=14.6'}
 
   '@yuku-codegen/binding-darwin-arm64@0.7.4':
     resolution: {integrity: sha512-fjkATm+fg4r6Ss8o82u3j33PfIqhSs4A0WEEw9kOwhMx/ui/RQ0ZAsCtF6e7UG2CWGOGXAJspLlfk2tr3rjjKQ==}
@@ -13259,6 +13269,8 @@ snapshots:
 
   '@webgpu/types@0.1.71': {}
 
+  '@xmldom/xmldom@0.9.12': {}
+
   '@yuku-codegen/binding-darwin-arm64@0.7.4':
     optional: true
 
@@ -15071,7 +15083,7 @@ snapshots:
 
   happy-dom@20.11.1:
     dependencies:
-      '@types/node': 25.9.5
+      '@types/node': 26.1.1
       '@types/whatwg-mimetype': 3.0.2
       '@types/ws': 8.18.1
       buffer-image-size: 0.6.4

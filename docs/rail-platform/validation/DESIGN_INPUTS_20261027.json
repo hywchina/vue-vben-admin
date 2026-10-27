@@ -1,0 +1,49 @@
+{
+  "status": "local_combined_validation_passed",
+  "date": "2026-10-27",
+  "branch": "dev-1001",
+  "baseCommit": "e4aa2155da8f67c665ad0a522f6c42e4592f6ff6",
+  "migration": "044_design_input_staging.sql",
+  "unit": {
+    "files": 139,
+    "tests": 1007,
+    "passed": true
+  },
+  "integration": {
+    "isolatedPostgresAndMinio": true,
+    "suites": 5,
+    "passed": true,
+    "newCoverage": [
+      "private original upload",
+      "mask and region snapshots without automatic publication",
+      "members and administrators denied private content/publication/reference",
+      "scope spoofing denied",
+      "explicit references idempotent",
+      "private workspace transfer",
+      "explicit save without publishing other images"
+    ]
+  },
+  "browser": {
+    "passed": true,
+    "cases": [
+      "login and homepage backgrounds",
+      "mobile and theme switching",
+      "real prompt preview/application preserves hand text",
+      "real image upload opens marker editor",
+      "refresh restores private input",
+      "region job snapshot stays out of asset center",
+      "result action opens mask editor without asset save",
+      "mask fills local repaint and survives refresh",
+      "cross-project conversation deep link resolves authorized project",
+      "new conversation for result continuation preserves old draft",
+      "dark theme filter applies only to background image"
+    ],
+    "gpuOutput": "Design output continuation used an explicitly labeled fixture; no real ComfyUI image generation. Report AI separately used real Qwen inference.",
+    "consoleErrors": []
+  },
+  "notes": [
+    "Final light/dark/tablet/mobile screenshots refreshed after fixing a scoped CSS selector that affected the root element.",
+    "Report work completed in the same local round; see REPORT_TEMPLATES_20261027.json.",
+    "Pre-existing contract changes preserved. No Git commit/push, delivery export, sync or server deployment."
+  ]
+}

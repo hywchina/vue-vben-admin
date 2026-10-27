@@ -162,6 +162,7 @@ export default apiHandler(async (event) => {
       conversationId: input.designConversationId,
       projectId: input.projectId,
       userId: identity.id,
+      workspaceInstanceId: input.workspaceInstanceId,
     });
     const byId = new Map(rows.map((asset) => [asset.id, asset]));
     for (const assetId of input.inputAssetIds) {
@@ -205,24 +206,13 @@ export default apiHandler(async (event) => {
     );
   }
   if (input.inputAnnotations.length > 0) {
-    const annotationRows = await sql<
-      { derivedFromAssetId: null | string; id: string; kind: string }[]
-    >`
-      SELECT
-        annotation.id,
-        annotation.kind,
-        annotation_version.metadata ->> 'derivedFromAssetId'
-          AS "derivedFromAssetId"
-      FROM assets annotation
-      JOIN asset_versions annotation_version
-        ON annotation_version.asset_id = annotation.id
-        AND annotation_version.version = annotation.current_version
-      WHERE annotation.id IN ${sql(input.inputAnnotations.map((item) => item.assetId))}
-        AND annotation.project_id = ${input.projectId}
-        AND annotation.status = 'available'
-        AND annotation.saved_at IS NOT NULL
-        AND annotation.deleted_at IS NULL
-    `;
+    const annotationRows = await getDesignInputAssets({
+      assetIds: input.inputAnnotations.map((item) => item.assetId),
+      conversationId: input.designConversationId,
+      workspaceInstanceId: input.workspaceInstanceId,
+      projectId: input.projectId,
+      userId: identity.id,
+    });
     const annotationById = new Map(
       annotationRows.map((annotation) => [annotation.id, annotation]),
     );

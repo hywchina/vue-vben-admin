@@ -136,6 +136,8 @@ export default apiHandler(async (event) => {
             'annotationAssetId', annotation_asset.id,
             'annotationMimeType', annotation_version.mime_type,
             'annotationName', annotation_asset.name,
+            'annotationSaved', annotation_asset.saved_at IS NOT NULL,
+            'saved', input_asset.saved_at IS NOT NULL,
             'derivedFromAssetId', input_version.metadata ->> 'derivedFromAssetId',
             'kind', input_asset.kind,
             'mimeType', input_version.mime_type,

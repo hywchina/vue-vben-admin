@@ -385,7 +385,6 @@ async function download(item: WorkbenchItem) {
 const saveItem = ref<WorkbenchItem>();
 const folders = ref<AssetFolder[]>([]);
 const folderId = ref('');
-const afterSave = ref('');
 const folderOptions = computed(() => [
   { value: '', label: '项目根目录' },
   ...folders.value
@@ -405,10 +404,9 @@ const folderOptions = computed(() => [
       };
     }),
 ]);
-async function prepareSave(item: WorkbenchItem, imageAction = '') {
+async function prepareSave(item: WorkbenchItem) {
   folders.value = await getAssetFoldersApi(item.projectId);
   folderId.value = '';
-  afterSave.value = imageAction;
   saveItem.value = item;
 }
 async function confirmSave() {
@@ -423,7 +421,6 @@ async function confirmSave() {
     await refresh(true);
     if (task.value) await refreshTask();
     if (listSection.value) await loadList(listPage.value);
-    if (afterSave.value) await editImage(item, afterSave.value);
   } catch (error) {
     showError(error);
   } finally {
@@ -453,11 +450,6 @@ async function useImageAction(key: string) {
   }
 }
 async function editImage(item: WorkbenchItem, key: string) {
-  if (!item.saved) {
-    previewItem.value = undefined;
-    await prepareSave(item, key);
-    return;
-  }
   const conversations = await getDesignConversationsApi(item.projectId);
   const existing = conversations.find(
     (conversation) => conversation.id === item.conversationId,
@@ -786,7 +778,7 @@ async function action(actionName: string, item: WorkbenchItem) {
     </Modal>
     <Modal
       :open="Boolean(saveItem)"
-      :title="afterSave ? '保存成果并继续编辑' : '保存至项目资产'"
+      title="保存至项目资产"
       :confirm-loading="busy"
       ok-text="确认保存"
       @ok="confirmSave"
@@ -794,7 +786,6 @@ async function action(actionName: string, item: WorkbenchItem) {
     >
       <div class="wb-form">
         <p>{{ saveItem?.projectName }} · {{ saveItem?.name }}</p>
-        <p v-if="afterSave">成果保存为项目资产后，可继续编辑。</p>
         <label for="wb-save-folder">保存目录</label>
         <Select
           id="wb-save-folder"

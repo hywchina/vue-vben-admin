@@ -16,6 +16,9 @@ export const reportTypeSchema = z.enum([
   'component-design',
   'design-proposal',
   'project-summary',
+  'contract',
+  'patent-disclosure',
+  'bid-response',
 ]);
 
 const reportImageSchema = z.object({
@@ -46,6 +49,15 @@ export const createReportSchema = z
     generationMode: reportGenerationModeSchema.default('template'),
     name: z.string().trim().min(1).max(200),
     projectId: z.string().uuid(),
+    reportTemplateId: z.string().uuid().optional(),
+    reportTemplateRevision: z.number().int().positive().optional(),
+    templateValues: z
+      .record(z.string().max(80), z.string().trim().max(10_000))
+      .refine(
+        (value) => Object.keys(value).length <= 100,
+        '自定义字段最多 100 项',
+      )
+      .optional(),
     reportType: reportTypeSchema,
     sections: z.array(reportSectionSchema).min(1).max(REPORT_LIMITS.sections),
     summary: z.string().trim().max(2000).default(''),
@@ -53,6 +65,14 @@ export const createReportSchema = z
     title: z.string().trim().min(1).max(160),
   })
   .superRefine((input, context) => {
+    if (
+      Boolean(input.reportTemplateId) !== Boolean(input.reportTemplateRevision)
+    )
+      context.addIssue({
+        code: 'custom',
+        message: '请选择有效的模板版本',
+        path: ['reportTemplateId'],
+      });
     const imageCount = input.sections.reduce(
       (count, section) => count + section.images.length,
       0,
@@ -76,6 +96,9 @@ export const reportTypeLabels: Record<ReportType, string> = {
   'component-design': '客室零部件设计报告',
   'design-proposal': '客室设计方案报告',
   'project-summary': '项目设计总结报告',
+  contract: '合同文件',
+  'patent-disclosure': '专利技术交底书',
+  'bid-response': '投标响应文件',
 };
 
 export function orderedReportAssetIds(input: CreateReportInput) {

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { requireAssetContentAccess } from '~/utils/domain/assets/content-access';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import { workflowTransferCompatibleAssetIndexes } from '~/utils/domain/workflows/transfers';
@@ -50,11 +51,12 @@ export default apiHandler(async (event) => {
   `;
   if (!asset) throw new ApiError(404, 'ASSET_NOT_FOUND', '资产不存在');
   await requireProjectAccess(identity, asset.projectId, 'write');
-  if (!asset.savedAt) {
+  await requireAssetContentAccess(asset.id, identity.id);
+  if (!asset.savedAt && asset.kind !== 'image') {
     throw new ApiError(
       409,
       'WORKFLOW_OUTPUT_NOT_SAVED',
-      '请先将生成结果加入项目资产，再流转到其他工作流',
+      '非图片结果请先加入项目资产，再流转到其他工作流',
     );
   }
 
@@ -156,6 +158,12 @@ export default apiHandler(async (event) => {
       RETURNING id, target_asset_index AS "targetAssetIndex"
     `;
     if (!created) throw new Error('创建工作流资产流转记录失败');
+    if (!asset.savedAt)
+      await transaction`
+      INSERT INTO design_input_assets (asset_id, workspace_instance_id, created_by)
+      VALUES (${asset.id}, ${targetInstance.id}, ${identity.id})
+      ON CONFLICT DO NOTHING
+    `;
     return { ...created, assetId: asset.id, created: true };
   });
 

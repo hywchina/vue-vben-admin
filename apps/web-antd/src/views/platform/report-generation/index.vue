@@ -1,4 +1,5 @@
 <script lang="ts" setup>
+import type { ReportTemplateView } from '#/api/platform/report-templates';
 import type {
   ReportFormat,
   ReportGenerationMode,
@@ -48,6 +49,7 @@ import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
 import AssetPickerModal from '../workspace/asset-picker-modal.vue';
+import ReportTemplatePicker from './report-template-picker.vue';
 
 interface ReportImageItem {
   assetId: string;
@@ -62,6 +64,15 @@ interface ReportSection {
 }
 
 const platformStore = usePlatformStore();
+const selectedTemplate = ref<ReportTemplateView>();
+const templateValues = reactive<Record<string, string>>(Object.create(null));
+const customTemplateFields = computed(() => [
+  ...new Set(
+    selectedTemplate.value?.configuration?.bindings
+      .filter((item) => item.role === 'value')
+      .map((item) => item.fieldName),
+  ),
+]);
 const loading = ref(true);
 const submitting = ref(false);
 const uploading = ref(false);
@@ -336,6 +347,14 @@ async function submitReport() {
       name: `${form.title.trim()} · ${form.format.toUpperCase()}`,
       projectId,
       reportType: form.reportType,
+      reportTemplateId: selectedTemplate.value?.id,
+      reportTemplateRevision: selectedTemplate.value?.revision,
+      templateValues: Object.fromEntries(
+        customTemplateFields.value.map((field) => [
+          field,
+          templateValues[field] ?? '',
+        ]),
+      ),
       sections: sections.value.map((section) => ({
         body: section.body.trim(),
         images: section.images.map((image) => ({
@@ -424,8 +443,64 @@ async function initialize() {
 }
 
 watch(
+  () => form.reportType,
+  (type, previousType) => {
+    // Defaults help start a new report; changing type never overwrites entered work.
+    if (
+      sections.value.some(
+        (section) => section.body.trim() || section.images.length > 0,
+      )
+    )
+      return;
+    const outlines: Partial<Record<ReportType, string[]>> = {
+      contract: [
+        '合同主体与定义',
+        '项目内容与交付物',
+        '实施计划与验收',
+        '费用与支付安排',
+        '知识产权与保密',
+        '双方责任与违约处理',
+        '变更终止与争议解决',
+        '签署信息与附件',
+      ],
+      'patent-disclosure': [
+        '发明名称与所属技术领域',
+        '背景技术与现有问题',
+        '要解决的技术问题',
+        '技术方案与附图说明',
+        '具体实施方式',
+        '有益效果与验证状态',
+        '替代方案及待确认事项',
+      ],
+      'bid-response': [
+        '投标主体与资格资料',
+        '项目理解与需求响应',
+        '技术方案及偏差说明',
+        '实施组织与进度计划',
+        '质量保障与验收安排',
+        '服务方案与履约承诺',
+        '报价说明与商务响应',
+        '证明材料与附件',
+      ],
+    };
+    const previous = outlines[previousType] ?? ['设计背景与目标'];
+    if (
+      sections.value.length !== previous.length ||
+      sections.value.some((section, index) => section.title !== previous[index])
+    )
+      return;
+    sections.value = (outlines[type] ?? ['设计背景与目标']).map((title) =>
+      createSection(title),
+    );
+  },
+);
+
+watch(
   () => platformStore.currentProjectId,
   () => {
+    selectedTemplate.value = undefined;
+    for (const key of Object.keys(templateValues))
+      Reflect.deleteProperty(templateValues, key);
     pickerOpen.value = false;
     imageSourceMenuSectionId.value = '';
     activeSectionId.value = '';
@@ -503,6 +578,24 @@ onBeforeUnmount(() => {
                   }))
                 "
                 placeholder="请选择交付格式"
+              />
+            </label>
+          </div>
+          <ReportTemplatePicker
+            v-model="selectedTemplate"
+            :project-id="platformStore.currentProjectId ?? ''"
+            :format="form.format"
+          />
+          <div
+            v-if="customTemplateFields.length"
+            class="report-fields report-fields--two"
+          >
+            <label v-for="field in customTemplateFields" :key="field">
+              <span>{{ field }}</span>
+              <Input
+                v-model:value="templateValues[field]"
+                :maxlength="10000"
+                :placeholder="`填写模板字段：${field}`"
               />
             </label>
           </div>

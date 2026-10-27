@@ -7,9 +7,12 @@ export { REPORT_LIMITS } from '../../../../platform-api/utils/domain/capabilitie
 export type ReportFormat = 'docx' | 'md' | 'pptx';
 export type ReportGenerationMode = 'ai' | 'template';
 export type ReportType =
+  | 'bid-response'
   | 'cmf-design'
   | 'component-design'
+  | 'contract'
   | 'design-proposal'
+  | 'patent-disclosure'
   | 'project-summary';
 
 export interface ReportStatus {
@@ -38,6 +41,9 @@ export interface CreateReportInput {
   name: string;
   projectId: string;
   reportType: ReportType;
+  reportTemplateId?: string;
+  reportTemplateRevision?: number;
+  templateValues?: Record<string, string>;
   sections: Array<{
     body: string;
     images: Array<{ assetId: string; caption: string }>;

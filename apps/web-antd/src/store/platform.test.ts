@@ -215,6 +215,34 @@ describe('platform store with real API contract', () => {
     );
   });
 
+  it('keeps design uploads out of the asset list and project count', async () => {
+    const store = usePlatformStore();
+    await store.initialize();
+    const count = store.currentProject?.assetCount;
+    const initial = [...store.currentAssets];
+    const uploaded = {
+      ...asset,
+      id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      saved: false,
+    };
+    api.uploadAssetApi.mockResolvedValue(uploaded);
+    for (const scope of [
+      { designConversationId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+      { workspaceInstanceId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' },
+    ]) {
+      expect(
+        await store.uploadAsset({
+          ...scope,
+          file: new File(['image'], 'mask.png', { type: 'image/png' }),
+          name: '过程图',
+          type: 'image',
+        }),
+      ).toEqual(uploaded);
+    }
+    expect(store.currentAssets).toEqual(initial);
+    expect(store.currentProject?.assetCount).toBe(count);
+  });
+
   it('adds a staged workflow output only after the user saves it', async () => {
     const store = usePlatformStore();
     await store.initialize();

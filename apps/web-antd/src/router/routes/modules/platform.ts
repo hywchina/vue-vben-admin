@@ -18,6 +18,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('#/views/platform/design/index.vue'),
     meta: {
       hideInTab: true,
+      fullPathKey: false,
       icon: platformSemanticIcons.design,
       order: -110,
       title: '设计生成',

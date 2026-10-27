@@ -14,6 +14,7 @@ const logoDark = computed(() => preferences.logo.sourceDark);
 <template>
   <AuthPageLayout
     :app-name="appName"
+    background-image="/rail-cabin-background.webp"
     :logo="logo"
     :logo-dark="logoDark"
     :page-description="$t('authentication.pageDesc')"

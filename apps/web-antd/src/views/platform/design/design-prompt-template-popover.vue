@@ -25,6 +25,7 @@ import {
   syncPromptRatio,
   validDimension,
 } from '#/modules/platform/image-dimensions';
+import { composePromptApplication } from '#/modules/platform/prompt-template-composition';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 import TemplateEditor from './prompt-template-editor.vue';
@@ -33,9 +34,16 @@ const props = withDefaults(
   defineProps<{
     categoryIds?: readonly string[];
     context?: PromptTemplateContext;
+    currentPrompt?: string;
     mode: DesignPromptTemplateMode;
+    scopeKey?: string;
   }>(),
-  { categoryIds: undefined, context: undefined },
+  {
+    categoryIds: undefined,
+    context: undefined,
+    currentPrompt: '',
+    scopeKey: '',
+  },
 );
 const emit = defineEmits<{
   apply: [
@@ -97,9 +105,22 @@ function chooseRatio(ratio: string) {
   }
 }
 const preview = ref<PromptTemplatePreview>();
+let appliedTemplate = '';
+let nextTemplate = '';
+
 const isPlatformAdmin = computed(() => userStore.userRoles.includes('admin'));
 const context = computed(
   () => props.context ?? { workflowKey: '', editing: false, maxLength: 10_000 },
+);
+watch(
+  () => [props.scopeKey, props.mode, context.value.workflowKey],
+  () => {
+    appliedTemplate = '';
+    previewSequence++;
+    selected.value = [];
+    ratioSelected.value = false;
+    preview.value = undefined;
+  },
 );
 const visibleCategories = computed(() =>
   categories.value
@@ -141,6 +162,8 @@ let loadSequence = 0;
 let previewSequence = 0;
 async function loadCatalog() {
   const sequence = ++loadSequence;
+  previewSequence++;
+  preview.value = undefined;
   loading.value = true;
   try {
     const catalog = await getDesignPromptTemplateCatalogApi(props.mode);
@@ -194,6 +217,12 @@ async function refreshPreview() {
             length: 0,
             revision: revision.value,
           };
+    const application = composePromptApplication(
+      props.currentPrompt,
+      result.text,
+      appliedTemplate,
+    );
+    result.text = application.text;
     // Current workflow dimensions are the single source of truth, including changes outside the template.
     if (ratioSelected.value && canSize.value) {
       result.size = { ...currentSize.value };
@@ -202,7 +231,16 @@ async function refreshPreview() {
       if (result.length > context.value.maxLength)
         result.errors.push('提示词超出长度限制');
     }
-    if (sequence === previewSequence) preview.value = result;
+    result.length = result.text.length;
+    if (
+      result.length > context.value.maxLength &&
+      !result.errors.includes('提示词超出长度限制')
+    )
+      result.errors.push('提示词超出长度限制');
+    if (sequence === previewSequence) {
+      nextTemplate = application.appliedTemplate;
+      preview.value = result;
+    }
   } catch (error) {
     if (sequence === previewSequence)
       message.error(error instanceof Error ? error.message : '预览失败');
@@ -211,7 +249,10 @@ async function refreshPreview() {
   }
 }
 async function applySelection() {
+  const scope = `${props.scopeKey}:${props.mode}:${context.value.workflowKey}`;
   await refreshPreview();
+  if (scope !== `${props.scopeKey}:${props.mode}:${context.value.workflowKey}`)
+    return;
   const result = preview.value;
   if (!result || result.errors.length > 0) return;
   if (result.revision !== revision.value) {
@@ -219,6 +260,7 @@ async function applySelection() {
     await loadCatalog();
     return;
   }
+  appliedTemplate = nextTemplate;
   emit('apply', result.text, result.size);
   open.value = false;
 }
@@ -228,7 +270,13 @@ watch(
   { immediate: true },
 );
 watch(
-  () => JSON.stringify([selected.value, context.value, ratioSelected.value]),
+  () =>
+    JSON.stringify([
+      selected.value,
+      context.value,
+      ratioSelected.value,
+      props.currentPrompt,
+    ]),
   () => void refreshPreview(),
 );
 watch(visibleCategories, () => {
@@ -256,7 +304,7 @@ watch(visibleCategories, () => {
         <header>
           <div>
             <strong>提示词模板</strong>
-            <small>按分类选择需求，预览后替换输入框内容</small>
+            <small>按分类组合完整描述，保留已填写的设计要求</small>
           </div>
           <button
             v-if="isPlatformAdmin"
@@ -356,7 +404,7 @@ watch(visibleCategories, () => {
           class="template-preview"
           aria-label="提示词预览"
         >
-          <strong>最终提示词预览（替换当前输入）</strong>
+          <strong>最终提示词预览（包含当前输入）</strong>
           <pre>{{ previewing ? '正在组织提示词…' : preview?.text }}</pre>
           <p v-if="preview?.size">
             当前图片尺寸：{{

@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   capability: vi.fn(),
   draft: vi.fn(),
   conversations: vi.fn(),
+  resolveConversation: vi.fn(),
   save: vi.fn(),
   initialize: vi.fn(),
   upload: vi.fn(),
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   cancel: vi.fn(),
   capture: undefined as any,
+  privateInputs: new Map<string, any>(),
   captureUnmounted: vi.fn(),
   store: undefined as any,
 }));
@@ -49,9 +51,10 @@ vi.mock('#/api', () => ({
     Promise.resolve(
       mocks.store.currentAssets.find(
         (asset: { id: string }) => asset.id === id,
-      ),
+      ) ?? mocks.privateInputs.get(id),
     ),
   getDesignConversationsApi: mocks.conversations,
+  getDesignConversationApi: mocks.resolveConversation,
   saveDesignConversationDraftApi: mocks.save,
   archiveDesignConversationApi: vi.fn(),
   createDesignConversationApi: vi.fn(),
@@ -194,6 +197,14 @@ beforeEach(() => {
     refreshCurrentProjectData: mocks.refresh,
     cancelJob: mocks.cancel,
   });
+  mocks.store.switchProject = vi.fn(async (id: string) => {
+    mocks.store.currentProjectId = id;
+  });
+  mocks.resolveConversation.mockResolvedValue({
+    id: 'conversation',
+    projectId: 'project',
+    title: '设计',
+  });
   mocks.initialize.mockResolvedValue(undefined);
   mocks.save.mockResolvedValue(undefined);
   mocks.conversations.mockResolvedValue([
@@ -232,7 +243,18 @@ beforeEach(() => {
     parameterValues: { prompt: '保留这条编辑指令' },
     inputAssetIds: {},
   });
-  mocks.upload.mockResolvedValue({ id: 'frame' });
+  mocks.privateInputs.clear();
+  mocks.upload.mockImplementation(async () => {
+    const asset = {
+      id: 'frame',
+      projectId: 'project',
+      type: 'image',
+      status: 'available',
+      saved: false,
+    };
+    mocks.privateInputs.set(asset.id, asset);
+    return asset;
+  });
   mocks.submit.mockResolvedValue({ id: 'live-job', status: 'queued' });
   mocks.refresh.mockImplementation(async () => {
     mocks.store.currentJobs = [{ id: 'live-job', status: 'succeeded' }];
@@ -367,6 +389,14 @@ describe('realtime image input contracts', () => {
       inputAssetIds: { 1: 'reference-image' },
     });
     await render();
+    for (const id of ['frame-1', 'frame-2'])
+      mocks.privateInputs.set(id, {
+        id,
+        projectId: 'project',
+        type: 'image',
+        status: 'available',
+        saved: false,
+      });
     mocks.upload
       .mockResolvedValueOnce({ id: 'frame-1' })
       .mockResolvedValueOnce({ id: 'frame-2' });
@@ -578,5 +608,32 @@ describe('administrator workflow default prompts', () => {
         ).value,
       ).toBe(expected);
     },
+  );
+});
+
+it('resolves the owned conversation project before restoring a direct-link private draft', async () => {
+  mocks.store.currentProjectId = 'other-project';
+  mocks.store.projects.push({ id: 'other-project', name: '其他项目' });
+  mocks.conversations.mockImplementation(async (projectId: string) =>
+    projectId === 'project'
+      ? [
+          {
+            id: 'conversation',
+            projectId: 'project',
+            title: '设计',
+            legacy: false,
+          },
+        ]
+      : [],
+  );
+  await render(false);
+  expect(mocks.resolveConversation).toHaveBeenCalledWith('conversation');
+  expect(mocks.store.switchProject).toHaveBeenCalledWith('project');
+  expect(mocks.store.currentProjectId).toBe('project');
+  expect(mocks.draft).toHaveBeenCalledWith(
+    'conversation',
+    'project',
+    'single-image-edit',
+    'cabin',
   );
 });

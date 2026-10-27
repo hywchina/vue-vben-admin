@@ -6,6 +6,28 @@ import type {
 
 import { requestClient } from '#/api/request';
 
+export function referenceDesignConversationInputApi(
+  conversationId: string,
+  projectId: string,
+  assetId: string,
+) {
+  return requestClient.post<PlatformAsset>(
+    `/design-conversations/${conversationId}/input-assets/${assetId}`,
+    { projectId },
+  );
+}
+
+export function getWorkflowInstanceInputAssetApi(
+  instanceId: string,
+  projectId: string,
+  assetId: string,
+) {
+  return requestClient.get<PlatformAsset>(
+    `/workflow-instances/${instanceId}/input-assets/${assetId}`,
+    { params: { projectId } },
+  );
+}
+
 export function getDesignConversationInputAssetApi(
   conversationId: string,
   projectId: string,
@@ -14,6 +36,12 @@ export function getDesignConversationInputAssetApi(
   return requestClient.get<PlatformAsset>(
     `/design-conversations/${conversationId}/input-assets/${assetId}`,
     { params: { projectId } },
+  );
+}
+
+export function getDesignConversationApi(id: string) {
+  return requestClient.get<{ id: string; projectId: string; title: string }>(
+    `/design-conversations/${id}`,
   );
 }
 

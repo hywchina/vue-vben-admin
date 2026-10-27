@@ -1,5 +1,6 @@
 import type { ReportImageAsset } from './renderer';
 import type { CreateReportInput } from './schema';
+import type { TemplateSnapshot } from './templates/repository';
 
 import { createHash, randomUUID } from 'node:crypto';
 import process from 'node:process';
@@ -17,6 +18,8 @@ import { generateAiReportArtifact, ReportAiAdapterError } from './ai-adapter';
 import { loadReportImages } from './inputs';
 import { renderReportArtifact } from './renderer';
 import { orderedReportAssetIds, reportTypeLabels } from './schema';
+import { planTemplateReport } from './templates/ai-plan';
+import { renderOfficeTemplate } from './templates/renderer';
 
 const MAX_ATTEMPTS = 3;
 const LEASE_SECONDS = 60;
@@ -36,6 +39,7 @@ interface ReportExecutionRow {
   requestedBy: string;
   status: string;
   templateKey: string;
+  templateSnapshot: null | TemplateSnapshot;
 }
 
 function safeError(error: unknown) {
@@ -248,8 +252,47 @@ export class ReportGenerationWorker {
           'AI 报告生成服务尚未配置',
         );
       }
+      const renderInput = {
+        assets,
+        createdAt: job.createdAt,
+        parameters: job.parameters,
+        projectName: job.projectName,
+        requestedBy: job.requestedBy,
+      };
+      let templateArtifact;
+      if (job.templateSnapshot) {
+        const source = await readObject(job.templateSnapshot.objectKey);
+        if (
+          createHash('sha256').update(source).digest('hex') !==
+          job.templateSnapshot.sha256
+        )
+          throw new ApiError(
+            409,
+            'REPORT_TEMPLATE_SOURCE_CHANGED',
+            '模板源文件校验失败，已停止生成',
+          );
+        const planned =
+          job.generationMode === 'ai'
+            ? await planTemplateReport(renderInput, job.templateSnapshot, {
+                apiUrl: reportAiApiUrl,
+                timeoutMs: config.reportAiTimeoutMs,
+              })
+            : renderInput;
+        templateArtifact = await renderOfficeTemplate(
+          planned,
+          job.templateSnapshot,
+          source,
+        );
+        if (templateArtifact.bytes.byteLength > config.reportAiMaxOutputBytes)
+          throw new ApiError(
+            413,
+            'REPORT_OUTPUT_TOO_LARGE',
+            '报告文件超出大小限制，请拆分报告',
+          );
+      }
       const artifact =
-        job.generationMode === 'ai'
+        templateArtifact ??
+        (job.generationMode === 'ai'
           ? await generateAiReportArtifact({
               apiUrl: reportAiApiUrl,
               assets,
@@ -267,7 +310,7 @@ export class ReportGenerationWorker {
               parameters: job.parameters,
               projectName: job.projectName,
               requestedBy: job.requestedBy,
-            });
+            }));
 
       const [execution] = await sql<{ status: string }[]>`
         SELECT status FROM report_generation_executions WHERE job_id = ${job.jobId}
@@ -430,7 +473,8 @@ export class ReportGenerationWorker {
         execution.generation_mode AS "generationMode",
         execution.output_asset_id AS "outputAssetId",
         execution.object_key AS "objectKey",
-        execution.template_key AS "templateKey"
+        execution.template_key AS "templateKey",
+        execution.template_snapshot AS "templateSnapshot"
       FROM report_generation_executions execution
       JOIN jobs job ON job.id = execution.job_id
       JOIN projects project ON project.id = job.project_id

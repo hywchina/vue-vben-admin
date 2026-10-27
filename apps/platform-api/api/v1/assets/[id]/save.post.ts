@@ -42,11 +42,11 @@ export default apiHandler(async (event) => {
   if (!asset) throw new ApiError(404, 'ASSET_NOT_FOUND', '生成结果不存在');
   await requireProjectAccess(identity, asset.projectId, 'write');
   await requireAssetContentAccess(assetId, identity.id);
-  if (asset.source !== 'workflow' || asset.status !== 'available') {
+  if (asset.status !== 'available') {
     throw new ApiError(
       409,
       'WORKFLOW_OUTPUT_NOT_READY',
-      '当前记录不是可加入资产的工作流结果',
+      '当前图片或生成结果尚不可加入资产中心',
     );
   }
 

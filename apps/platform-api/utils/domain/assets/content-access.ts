@@ -14,7 +14,16 @@ export async function requireAssetContentAccess(
     SELECT a.id FROM assets a
     WHERE a.id = ${assetId} AND a.deleted_at IS NULL
       AND (
-        a.saved_at IS NOT NULL OR (
+        a.saved_at IS NOT NULL OR (a.kind = 'image' AND EXISTS (
+          SELECT 1 FROM design_input_assets d
+          LEFT JOIN design_conversations c ON c.id = d.design_conversation_id
+          LEFT JOIN workflow_workspace_instances w ON w.id = d.workspace_instance_id
+          WHERE d.asset_id = a.id AND d.created_by = ${userId}
+            AND (
+              (c.user_id = ${userId} AND c.project_id = a.project_id)
+              OR (w.user_id = ${userId} AND w.project_id = a.project_id)
+            )
+        )) OR (
           a.source = 'workflow' AND EXISTS (
             SELECT 1 FROM job_outputs o
             JOIN jobs j ON j.id = o.job_id

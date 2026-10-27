@@ -63,15 +63,45 @@ describe('deterministic prompt expansion', () => {
       selected: ['light/night', 'subject/cabin'],
     });
     expect(result.errors).toEqual([]);
-    expect(result.text).toBe(
-      '设计主体：轨道客室。\n光照与环境：客室内部采用夜间照明。',
-    );
+    expect(result.text).toBe('设计轨道客室。客室内部采用夜间照明。');
     expect(
       composePrompt(catalog(), {
         ...context,
         selected: ['subject/cabin', 'light/night'],
       }).text,
     ).toBe(result.text);
+  });
+  it('merges lighting and exterior into one natural sentence without adding an unselected subject', () => {
+    const data = designPromptTemplateCatalogInputSchema.parse({
+      categories: [
+        {
+          id: 'light-environment',
+          name: '光环境',
+          section: 'lighting',
+          options: [
+            { id: 'day', label: '白天', value: '明亮自然的白天光环境' },
+          ],
+        },
+        {
+          id: 'outside-environment',
+          name: '窗外环境',
+          section: 'lighting',
+          options: [
+            { id: 'outdoor', label: '户外', value: '窗外为开阔户外环境' },
+          ],
+        },
+      ],
+    });
+    const result = composePrompt(data, {
+      ...context,
+      selected: ['outside-environment/outdoor', 'light-environment/day'],
+    });
+    expect(result.text).toBe('采用明亮自然的白天光环境，窗外为开阔户外环境。');
+    expect(result.text).not.toMatch(/光照与环境：|客室|座椅|仅修改/);
+  });
+  it('respects the edit instruction target rather than applying it to the entire image', () => {
+    const result = composePrompt(catalog(), { ...context, editing: true });
+    expect(result.text).toBe('仅将客室内部改为夜间照明，保留结构。');
   });
   it('uses edit instructions and expands referenced presets once', () => {
     const result = composePrompt(catalog(), {

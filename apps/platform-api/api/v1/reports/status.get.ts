@@ -22,7 +22,7 @@ export default apiHandler(async (event) => {
     generationModes: [
       {
         configured: true,
-        description: '按平台标准结构确定性编排 Word、PowerPoint 或 Markdown',
+        description: '按已确认的 Word/PPT 原生模板编排；Markdown 使用文本结构',
         key: 'template',
         label: '模板生成',
       },
@@ -42,8 +42,8 @@ export default apiHandler(async (event) => {
     supportedImageMimeTypes: REPORT_SUPPORTED_IMAGE_MIME_TYPES,
     template: {
       key: REPORT_TEMPLATE_KEY,
-      label: '轨道客室标准设计报告',
-      version: 1,
+      label: '平台工程设计模板',
+      version: 2,
     },
   };
 });

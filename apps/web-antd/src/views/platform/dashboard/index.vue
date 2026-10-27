@@ -30,6 +30,7 @@ import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { usePlatformStore } from '#/store';
 
+const cabinBackgroundUrl = '/rail-cabin-background.webp';
 const router = useRouter();
 const platformStore = usePlatformStore();
 
@@ -391,35 +392,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="home-hero__visual" aria-hidden="true">
-          <svg viewBox="0 0 720 370">
-            <defs>
-              <linearGradient id="cabin-glow" x1="0" x2="1">
-                <stop offset="0" stop-color="#fff" stop-opacity="0" />
-                <stop offset="1" stop-color="#f8cfd6" stop-opacity=".72" />
-              </linearGradient>
-            </defs>
-            <path
-              class="wash"
-              d="M80 330C190 210 270 142 405 92 510 53 612 72 720 120v250H0Z"
-            />
-            <g class="cabin-lines">
-              <path d="M43 323 202 177l298-92 188 81" />
-              <path d="M119 327 246 211l264-80 178 77" />
-              <path d="M192 330 286 244l235-69 167 72" />
-              <path d="M201 177v150M246 211v116M286 244v86" />
-              <path d="M500 85v245M510 131v199M521 175v155" />
-              <path d="m202 177 44 34 40 33 235-69-11-44-10-46" />
-              <path
-                d="M340 227v103M403 208v122M462 191v139M580 206v124M640 230v100"
-              />
-              <path d="M43 323h645M79 292h609M112 263h576M150 228h538" />
-              <path d="m409 208 33-66 173 16 61 61" />
-              <path d="m427 204 27-48 150 15 50 47" />
-              <path d="M454 156v129M604 171v142" />
-              <path d="M293 330c45-37 95-53 151-53 63 0 107 19 142 53" />
-              <path d="M328 330c35-26 73-37 116-37 47 0 83 13 108 37" />
-            </g>
-          </svg>
+          <img :src="cabinBackgroundUrl" alt="" decoding="async" />
         </div>
       </section>
 
@@ -587,7 +560,7 @@ onBeforeUnmount(() => {
   position: relative;
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(700px, 1.15fr) minmax(400px, 0.85fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   min-height: 310px;
   overflow: hidden;
   background: linear-gradient(
@@ -705,28 +678,25 @@ onBeforeUnmount(() => {
 }
 
 .home-hero__visual {
-  position: relative;
-  z-index: 1;
-  min-height: 310px;
-}
-
-.home-hero__visual > svg {
   position: absolute;
-  right: -34px;
-  bottom: -10px;
-  width: min(720px, 120%);
-  height: auto;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
 }
 
-.home-hero__visual .wash {
-  fill: url('#cabin-glow');
+.home-hero__visual > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: right center;
+  opacity: 0.78;
+  mask-image: linear-gradient(90deg, transparent 38%, #000 65%);
 }
 
-.cabin-lines {
-  opacity: 0.55;
-  fill: none;
-  stroke: #c97c89;
-  stroke-width: 1.1;
+:global(.dark .home-hero__visual > img) {
+  filter: brightness(0.45) saturate(0.6);
 }
 
 .home-entry-grid {
@@ -964,7 +934,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 1280px) {
   .home-hero {
-    grid-template-columns: minmax(500px, 1.15fr) minmax(360px, 0.85fr);
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   }
 
   .home-history-filters {

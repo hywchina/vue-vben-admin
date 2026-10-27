@@ -304,6 +304,10 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     for (const job of jobs.value) {
       const output = job.outputs.find((item) => item.assetId === assetId);
       if (output) output.saved = true;
+      for (const input of job.inputs) {
+        if (input.assetId === assetId) input.saved = true;
+        if (input.annotationAssetId === assetId) input.annotationSaved = true;
+      }
     }
     return asset;
   }
@@ -345,23 +349,32 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     name: string;
     tags?: string[];
     type: AssetType;
+    workspaceInstanceId?: string;
   }) {
     if (!currentProjectId.value) throw new Error('请先创建或选择项目');
+    const projectId = currentProjectId.value;
     const asset = await uploadAssetApi({
       description: input.description ?? '',
       derivedFromAssetId: input.derivedFromAssetId,
       designConversationId: input.designConversationId,
+      workspaceInstanceId: input.workspaceInstanceId,
       file: input.file,
       folderId: input.folderId,
       generationCategory: input.generationCategory,
       kind: input.type,
       name: input.name,
-      projectId: currentProjectId.value,
+      projectId,
       tags: input.tags,
     });
-    assets.value.unshift(asset);
-    const project = currentProject.value;
-    if (project) project.assetCount += 1;
+    if (
+      projectId === currentProjectId.value &&
+      !input.designConversationId &&
+      !input.workspaceInstanceId
+    ) {
+      assets.value.unshift(asset);
+      const project = currentProject.value;
+      if (project) project.assetCount += 1;
+    }
     return asset;
   }
 

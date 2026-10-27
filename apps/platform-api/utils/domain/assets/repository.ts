@@ -21,6 +21,7 @@ interface AssetViewRow {
   projectId: string;
   publicId: string;
   sizeBytes: number;
+  savedAt: Date | null;
   source: 'upload' | 'workflow';
   sourceAppKey: null | string;
   sourceJobId: null | string;
@@ -53,6 +54,7 @@ function mapAsset(row: AssetViewRow) {
     publicId: row.publicId,
     size: formatFileSize(row.sizeBytes),
     sizeBytes: row.sizeBytes,
+    saved: Boolean(row.savedAt),
     source: row.source,
     sourceAppKey: row.sourceAppKey ?? undefined,
     sourceJobId: row.sourceJobId ?? undefined,
@@ -73,6 +75,7 @@ const selectAssetColumns = `
   a.folder_id AS "folderId",
   a.generation_category AS "generationCategory",
   a.kind,
+  a.saved_at AS "savedAt",
   a.source,
   a.source_app_key AS "sourceAppKey",
   a.source_job_id AS "sourceJobId",

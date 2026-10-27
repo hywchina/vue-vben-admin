@@ -29,6 +29,7 @@ export interface PlatformAsset {
   publicId: string;
   size: string;
   sizeBytes?: number;
+  saved?: boolean;
   source: 'upload' | 'workflow';
   sourceAppKey?: string;
   sourceJobId?: string;

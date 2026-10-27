@@ -1,0 +1,18 @@
+{
+  "date": "2026-10-27",
+  "provenance": "Project-authored native templates and isolated local test reports; no third-party template binaries redistributed.",
+  "sha256": {
+    "starter-report.docx": "0d442de824830bd26711063ae386dde357ca885158d1a404f91a802d15e2e064",
+    "starter-report.pptx": "a9226ca0e959691dc135a2dcd55c40b83ec4e10372408d3c6923531ed14ef7d8",
+    "starter-contract.docx": "7c909bf352e546a572e4b018a321e7332b9f20f5e4dc70a00b9835afdc7d7b86",
+    "starter-contract.pptx": "8b71f801092e4131372547a247517d850c2d120eb3ce5f9808d876ba4640e8b3",
+    "starter-patent.docx": "ffdbd332d0895d5de9630095c1cec5aa1ced3de5b1dd58c91fa4262d231eea8a",
+    "starter-patent.pptx": "9ec8a79808a29dda9dff9b8a78ddcd9be645e532fa3e64ca625bc83846320fb3",
+    "starter-bid.docx": "17e23a2865001ebb0823759f57adc4da24c07d9c926fc90eef0abee7298a095a",
+    "starter-bid.pptx": "5ea28eb37941155ff44dd86c2a6e1748a5a5350ba0f54c08fa35597805c5e272",
+    "example-ai.docx": "ab5ff58f4c3d5f37a51502dcbb8b5cdcf6d0ad91e4f932a38167d8cd5f78702c",
+    "example-ai.pptx": "de5f268738f1f6648c5029d8ab82e08aee0a77fde23d62ed8dd365ec8f8d232c",
+    "example-template.docx": "f59d880743eb4270ca728860e3bb78f9d776732e8d75f585d3fe26a847f941ae",
+    "example-template.pptx": "99d23a17b43475e60d125f380f06846fefc1d1c564f4035ea2c57cad0a0205d8"
+  }
+}

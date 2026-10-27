@@ -1,3 +1,5 @@
+import type { ReportTemplateView } from '../utils/domain/capabilities/report/templates/schema';
+
 import { Buffer } from 'node:buffer';
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
@@ -8,6 +10,7 @@ import { SignJWT } from 'jose';
 
 import { getConfig } from '../utils/config';
 import { closeDatabase, useDatabase } from '../utils/database';
+import { getStarterTemplate } from '../utils/domain/capabilities/report/templates/starters';
 import { WORKFLOW_CATALOG } from '../utils/domain/workflows/catalog';
 import { seedWorkflowCatalogEntry } from '../utils/domain/workflows/repository';
 import { hashPassword } from '../utils/password';
@@ -264,6 +267,8 @@ async function cleanup() {
       JOIN assets asset ON asset.id = version.asset_id
       WHERE asset.project_id = ANY(${[projectId, ...disposableProjectIds]})
         AND version.object_key IS NOT NULL
+      UNION SELECT object_key FROM report_templates WHERE project_id = ANY(${[projectId, ...disposableProjectIds]})
+      UNION SELECT template_snapshot->>'objectKey' FROM report_generation_executions execution JOIN jobs job ON job.id = execution.job_id WHERE job.project_id = ANY(${[projectId, ...disposableProjectIds]}) AND template_snapshot IS NOT NULL
     `;
     for (const object of objects) {
       await deleteObject(object.objectKey).catch((error) => {
@@ -280,6 +285,7 @@ async function cleanup() {
   ];
   if (allProjectIds.length > 0) {
     await sql`DELETE FROM jobs WHERE project_id = ANY(${allProjectIds})`;
+    await sql`DELETE FROM report_templates WHERE project_id = ANY(${allProjectIds})`;
     await sql`DELETE FROM projects WHERE id = ANY(${allProjectIds})`;
   }
   if (notificationIds.length > 0) {
@@ -2422,6 +2428,150 @@ async function run() {
     '模板报告集成通过：真实 CPU Worker、DOCX/PPTX/Markdown、每章20张图、自动入库及私有对象下载；未调用 AI/GPU。',
   );
 
+  // Uploaded native templates: real presigned upload, reviewed bindings,
+  // immutable snapshots, optimistic revision control, private downloads and CPU output.
+  for (const format of ['docx', 'pptx'] as const) {
+    const starter = await getStarterTemplate(format);
+    const upload = await apiRequest<{
+      id: string;
+      upload: { headers: Record<string, string>; url: string };
+    }>('/report-templates/uploads', {
+      session: user1,
+      body: {
+        projectId,
+        name: `${runId}-${format}-template`,
+        filename: `reviewed.${format}`,
+        sizeBytes: starter.source.byteLength,
+      },
+    });
+    const id = upload.envelope.data.id;
+    const put = await fetch(upload.envelope.data.upload.url, {
+      method: 'PUT',
+      headers: upload.envelope.data.upload.headers,
+      body: Buffer.from(starter.source),
+    });
+    assert(put.ok, '报告模板直传失败');
+    const parsed = await apiRequest<ReportTemplateView>(
+      `/report-templates/${id}/complete`,
+      { session: user1, body: {} },
+    );
+    assert(
+      parsed.envelope.data.status === 'draft' &&
+        parsed.envelope.data.sha256.length === 64,
+      '模板未经过真实解析',
+    );
+    await apiRequest(`/report-templates/${id}/download`, {
+      session: user2,
+      expectedStatus: 404,
+    });
+    const reviewed = await apiRequest<ReportTemplateView>(
+      `/report-templates/${id}`,
+      {
+        method: 'PUT',
+        session: user1,
+        body: {
+          name: `已确认模板 ${format}`,
+          revision: parsed.envelope.data.revision,
+          configuration: starter.snapshot.configuration,
+        },
+      },
+    );
+    const oldRevision = reviewed.envelope.data.revision;
+    const job = await apiRequest<{ id: string }>('/reports/generations', {
+      session: user1,
+      body: {
+        format,
+        generationMode: 'template',
+        name: `上传模板 ${format}`,
+        projectId,
+        reportType: 'design-proposal',
+        title: '原模板格式验收',
+        summary: '固定格式与可变内容验证',
+        reportTemplateId: id,
+        reportTemplateRevision: oldRevision,
+        sections: [
+          {
+            title: '原生章节',
+            body: '保持字体、母版与页眉页脚，完成后仍需审阅。',
+            images: [
+              {
+                assetId: prepared.envelope.data.asset.id,
+                caption: '模板位置配图',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await apiRequest(`/report-templates/${id}`, {
+      method: 'PUT',
+      session: user1,
+      body: {
+        name: '后续修订',
+        revision: oldRevision,
+        configuration: starter.snapshot.configuration,
+      },
+    });
+    await apiRequest(`/report-templates/${id}`, {
+      method: 'PUT',
+      session: user1,
+      expectedStatus: 409,
+      body: {
+        name: '并发旧版更新',
+        revision: oldRevision,
+        configuration: starter.snapshot.configuration,
+      },
+    });
+    await apiRequest(`/report-templates/${id}`, {
+      method: 'DELETE',
+      session: user1,
+    });
+    await apiRequest(`/report-templates/${id}/download`, {
+      session: user1,
+      expectedStatus: 404,
+    });
+    const [execution] = await sql<
+      { revision: number; sha: string }[]
+    >`SELECT (template_snapshot->>'revision')::int AS revision, template_snapshot->>'sha256' AS sha FROM report_generation_executions WHERE job_id = ${job.envelope.data.id}`;
+    assert(
+      execution?.revision === oldRevision &&
+        execution.sha === parsed.envelope.data.sha256,
+      '已提交任务的模板快照被后续编辑改变',
+    );
+    const deadline = Date.now() + 30_000;
+    let state = 'queued';
+    while (Date.now() < deadline) {
+      const [row] = await sql<
+        { status: string }[]
+      >`SELECT status FROM jobs WHERE id = ${job.envelope.data.id}`;
+      state = row?.status ?? 'missing';
+      if (['cancelled', 'failed', 'succeeded'].includes(state)) break;
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    assert(
+      state === 'succeeded',
+      `归档后历史模板任务未成功：${format} ${state}`,
+    );
+    // Reusing an unexpired PUT URL cannot modify the immutable reviewed object.
+    const overwrite = await fetch(upload.envelope.data.upload.url, {
+      method: 'PUT',
+      headers: upload.envelope.data.upload.headers,
+      body: Buffer.from('changed source'),
+    });
+    assert(overwrite.ok, '上传 URL 重放夹具失败');
+    const [snapshot] = await sql<
+      { key: string }[]
+    >`SELECT template_snapshot->>'objectKey' AS key FROM report_generation_executions WHERE job_id = ${job.envelope.data.id}`;
+    assert(
+      snapshot?.key !== `${projectId}/report-templates/${id}/source.${format}`,
+      '模板仍指向可重放上传地址',
+    );
+    await deleteObject(`${projectId}/report-templates/${id}/source.${format}`);
+  }
+  console.warn(
+    '上传模板集成通过：DOCX/PPTX 原生上传、字段确认、项目隔离、乐观锁、不可变来源与任务快照、归档后历史任务继续生成。',
+  );
+
   // Read access to a source project is enough; output still belongs to a writable target.
   const reportDestination = await apiRequest<{ id: string }>('/projects', {
     body: { name: `${runId}-cross-report`, description: '跨项目报告验收' },
@@ -2658,6 +2808,23 @@ async function run() {
     /^DSC-\d{8,}$/.test(designConversation.envelope.data.publicId),
     '设计会话必须返回统一业务编号',
   );
+  const resolvedConversation = await apiRequest<{ projectId: string }>(
+    `/design-conversations/${designConversation.envelope.data.id}`,
+    { session: user1 },
+  );
+  assert(
+    resolvedConversation.envelope.data.projectId === projectId,
+    '会话直达链接没有返回授权项目',
+  );
+  await apiRequest(
+    `/design-conversations/${designConversation.envelope.data.id}`,
+    { session: user2, expectedStatus: 404 },
+  );
+  await apiRequest(
+    `/design-conversations/${designConversation.envelope.data.id}`,
+    { session: admin, expectedStatus: 404 },
+  );
+
   const parallelDesignConversation = await apiRequest<{ id: string }>(
     '/design-conversations',
     { body: { projectId, title: '并行设计会话验收' }, session: user1 },
@@ -2991,38 +3158,42 @@ async function run() {
       ),
     '任务接口没有返回可流转的暂存结果',
   );
-  const rejectedTransfer = await apiRequest<unknown>('/workflow-transfers', {
-    body: {
-      assetId: stagedAssetId,
-      targetAppKey: flowTarget.key,
-      targetAssetIndex: 0,
-      targetInstanceId: flowWorkspace.envelope.data.id,
+  const privateTransfer = await apiRequest<{ id: string }>(
+    '/workflow-transfers',
+    {
+      body: {
+        assetId: stagedAssetId,
+        targetAppKey: flowTarget.key,
+        targetAssetIndex: 0,
+        targetInstanceId: flowWorkspace.envelope.data.id,
+      },
+      session: user1,
     },
-    expectedStatus: 409,
-    session: user1,
-  });
-  assert(
-    rejectedTransfer.envelope.code === 'WORKFLOW_OUTPUT_NOT_SAVED',
-    '未加入资产的工作流结果没有被后端阻止流转',
   );
-  const rejectedJobInput = await apiRequest<unknown>('/jobs', {
+  const privateWorkspaceJob = await apiRequest<{ id: string }>('/jobs', {
     body: {
       appKey: flowTarget.key,
       inputAssetIds: [stagedAssetId],
-      name: '未登记结果越权复用验收',
+      name: '暂存图片直接流转验收',
       parameters: {},
       projectId,
       workspaceInstanceId: flowWorkspace.envelope.data.id,
     },
-    expectedStatus: 400,
     session: user1,
   });
-  assert(
-    rejectedJobInput.envelope.code === 'INVALID_JOB_ASSETS',
-    '未加入资产的工作流结果被任务接口当作正式输入使用',
+  await settleJobsForIntegration(
+    [privateWorkspaceJob.envelope.data.id],
+    '暂存工作区图片流转完成',
   );
+  await apiRequest(`/workflow-transfers/${privateTransfer.envelope.data.id}`, {
+    method: 'DELETE',
+    session: user1,
+  });
+  const [transferredAsset] =
+    await sql`SELECT saved_at FROM assets WHERE id = ${stagedAssetId}`;
+  assert(transferredAsset?.saved_at === null, '流转图片暗中加入了资产中心');
   // An unsaved output from the caller's own conversation is an input, not an
-  // asset-center registration. Workspace outputs above remain saved-only.
+  // asset-center registration. Explicit private references also support workspaces.
   const conversationOutputId = randomUUID();
   const conversationOutputJobId = randomUUID();
   await sql.begin(async (tx) => {
@@ -3318,6 +3489,118 @@ async function run() {
     ),
     '继续编辑污染资产中心',
   );
+  // Uploads, masks and annotated snapshots are durable working files, not library entries.
+  const stagedMaskId = derivedFromStaged.envelope.data.asset.id;
+  const [stagedMask] =
+    await sql`SELECT saved_at FROM assets WHERE id = ${stagedMaskId}`;
+  assert(stagedMask?.saved_at === null, '遮罩图被自动加入资产中心');
+  const inputUploadBody = {
+    designConversationId: designConversation.envelope.data.id,
+    filename: 'working-input.png',
+    kind: 'image',
+    mimeType: 'image/png',
+    name: '仅在设计中使用的原图',
+    projectId,
+    sizeBytes: avatarPng.length,
+  };
+  const workingUpload = await apiRequest<{
+    asset: { id: string; saved: boolean };
+    upload: { headers: Record<string, string>; url: string };
+  }>('/assets/uploads', { body: inputUploadBody, session: user1 });
+  const workingId = workingUpload.envelope.data.asset.id;
+  assert(
+    !workingUpload.envelope.data.asset.saved,
+    '设计上传一开始就被登记为正式资产',
+  );
+  const workingPut = await fetch(workingUpload.envelope.data.upload.url, {
+    method: 'PUT',
+    headers: workingUpload.envelope.data.upload.headers,
+    body: avatarPng,
+  });
+  assert(workingPut.ok, '设计输入对象上传失败');
+  await apiRequest(`/assets/${workingId}/complete`, {
+    method: 'POST',
+    session: user1,
+  });
+  await apiRequest(
+    `/design-conversations/${designConversation.envelope.data.id}/input-assets/${workingId}?projectId=${projectId}`,
+    { session: user1 },
+  );
+  await apiRequest(`/assets/${workingId}`, {
+    expectedStatus: 404,
+    session: user1,
+  });
+  await apiRequest('/assets/uploads', {
+    body: { ...inputUploadBody, designConversationId: randomUUID() },
+    expectedStatus: 404,
+    session: user1,
+  });
+  await sql`INSERT INTO project_members (project_id, user_id, project_role)
+    VALUES (${projectId}, ${user4.id}, 'editor')`;
+  for (const session of [user4, admin]) {
+    await apiRequest(`/assets/${workingId}/preview`, {
+      expectedStatus: 404,
+      session,
+    });
+    await apiRequest(`/assets/${workingId}/save`, {
+      body: {},
+      expectedStatus: 404,
+      session,
+    });
+    await apiRequest('/assets/uploads', {
+      body: inputUploadBody,
+      expectedStatus: 404,
+      session,
+    });
+    const ownTarget = await apiRequest<{ id: string }>(
+      '/design-conversations',
+      { body: { projectId }, session },
+    );
+    await apiRequest(
+      `/design-conversations/${ownTarget.envelope.data.id}/input-assets/${workingId}`,
+      {
+        body: { projectId },
+        expectedStatus: 404,
+        session,
+      },
+    );
+  }
+  await sql`DELETE FROM project_members WHERE project_id = ${projectId} AND user_id = ${user4.id}`;
+  const referencePath = `/design-conversations/${reuseConversation.envelope.data.id}/input-assets/${conversationOutputId}`;
+  await apiRequest(referencePath, { body: { projectId }, session: user1 });
+  await apiRequest(referencePath, { body: { projectId }, session: user1 });
+  const [refCount] =
+    await sql`SELECT count(*)::int AS count FROM design_input_assets
+    WHERE design_conversation_id = ${reuseConversation.envelope.data.id} AND asset_id = ${conversationOutputId}`;
+  assert(refCount?.count === 1, '重复继续编辑产生了重复输入引用');
+  await apiRequest(`${referencePath}?projectId=${projectId}`, {
+    session: user1,
+  });
+  await apiRequest(`/assets/${stagedMaskId}/save`, {
+    body: {},
+    session: user1,
+  });
+  const publishedMask = await apiRequest<{ id: string; saved: boolean }>(
+    `/assets/${stagedMaskId}`,
+    { session: user1 },
+  );
+  assert(
+    publishedMask.envelope.data.saved,
+    '用户主动保存过程图没有进入资产中心',
+  );
+  const privateAssets = await apiRequest<Array<{ id: string }>>(
+    `/assets?projectId=${projectId}`,
+    { session: user1 },
+  );
+  assert(
+    !privateAssets.envelope.data.some(
+      (asset) => asset.id === workingId || asset.id === conversationOutputId,
+    ),
+    '输入引用或保存另一张遮罩导致其他过程图入库',
+  );
+  console.warn(
+    '设计过程文件验收通过：原图/遮罩/编号快照持久且不入库，其他成员及管理员拒绝，显式继续编辑不发布，主动保存可用。',
+  );
   await apiRequest(`/assets/${conversationOutputId}/save`, {
     body: {},
     method: 'POST',
@@ -3347,7 +3630,7 @@ async function run() {
     '主动入库跨会话复用验收完成',
   );
   console.warn(
-    '同会话图片复用验收通过：直接输入/草稿/标记血缘不入库，跨会话/用户/无效版本/伪造来源拒绝，主动入库后可跨会话复用。',
+    '图片复用验收通过：输入/草稿/标记不入库，跨会话须显式引用，跨用户/无效版本/伪造来源拒绝，主动保存后进入资产中心。',
   );
 
   const stagedOutputFolder = await apiRequest<{ id: string }>(

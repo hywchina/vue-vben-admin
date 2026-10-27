@@ -1,6 +1,7 @@
 <script lang="ts" setup>
 import type {
   CapabilityField,
+  PlatformAsset,
   PlatformCapability,
   PlatformJob,
   PlatformJobInput,
@@ -35,6 +36,7 @@ import {
   getAssetPreviewApi,
   getCapabilityApi,
   getPendingWorkflowInputTransfersApi,
+  getWorkflowInstanceInputAssetApi,
   getWorkflowWorkspaceDraftApi,
   getWorkflowWorkspaceInstancesApi,
   saveWorkflowWorkspaceDraftApi,
@@ -61,6 +63,30 @@ const tabbarStore = useTabbarStore();
 const platformStore = usePlatformStore();
 const selectedAssets = reactive<Record<number, string>>({});
 const selectedTransfers = reactive<Record<number, string>>({});
+const workingAssets = reactive<Record<string, PlatformAsset>>({});
+const availableInputAssets = computed(() => {
+  const assets = new Map(
+    platformStore.currentAssets.map((asset) => [asset.id, asset]),
+  );
+  for (const asset of Object.values(workingAssets)) assets.set(asset.id, asset);
+  return [...assets.values()];
+});
+async function resolveWorkspaceInput(assetId: string) {
+  const projectId = platformStore.currentProjectId;
+  const instanceId = workspaceInstanceId.value;
+  const asset = await getWorkflowInstanceInputAssetApi(
+    instanceId,
+    projectId,
+    assetId,
+  );
+  if (
+    projectId !== platformStore.currentProjectId ||
+    instanceId !== workspaceInstanceId.value
+  )
+    throw new Error('工作区已切换，请重新选择图片');
+  workingAssets[assetId] = asset;
+  return asset;
+}
 const submitting = ref(false);
 const uploadingField = ref('');
 const capabilityLoading = ref(false);
@@ -318,6 +344,8 @@ async function loadCapability() {
   draftSaveTimer = undefined;
   loadedWorkspaceKey.value = '';
   capability.value = null;
+  for (const id of Object.keys(workingAssets))
+    Reflect.deleteProperty(workingAssets, id);
   workspaceInstance.value = null;
   actionOutput.value = undefined;
   outputMaskEditorOpen.value = false;
@@ -383,9 +411,15 @@ async function loadCapability() {
     for (const [key, value] of Object.entries(draft.parameterValues)) {
       if (parameterKeys.has(key)) parameterValues[key] = value;
     }
-    for (const [index, assetId] of Object.entries(draft.inputAssetIds)) {
+    const draftAssets = await Promise.all(
+      Object.entries(draft.inputAssetIds).map(async ([index, assetId]) => {
+        await resolveWorkspaceInput(assetId);
+        return [index, assetId] as const;
+      }),
+    );
+    if (generation !== capabilityLoadGeneration) return;
+    for (const [index, assetId] of draftAssets)
       selectedAssets[Number(index)] = assetId;
-    }
     await applyTransferredInputs();
   } finally {
     if (generation === capabilityLoadGeneration) {
@@ -438,6 +472,8 @@ async function selectAsset(
   transferId?: string,
 ) {
   if (field.assetIndex === undefined) return;
+  if (!availableInputAssets.value.some((asset) => asset.id === assetId))
+    await resolveWorkspaceInput(assetId);
   const occupied = Object.entries(selectedAssets).find(
     ([index, id]) => Number(index) !== field.assetIndex && id === assetId,
   );
@@ -482,18 +518,25 @@ async function uploadMedia(
     tags?: string[];
   } = {},
 ) {
+  const contextKey = loadedWorkspaceKey.value;
+  const instanceId = workspaceInstanceId.value;
+  if (!contextKey || !instanceId) throw new Error('请先选择工作区');
   uploadingField.value = field.key;
   try {
     const asset = await platformStore.uploadAsset({
       description: `${capability.value?.name ?? application.value?.name} 工作区输入`,
       derivedFromAssetId: options.derivedFromAssetId,
+      workspaceInstanceId: instanceId,
       file,
       name: file.name.replace(/\.[^.]+$/, ''),
       tags: options.tags ?? ['工作流输入'],
       type: 'image',
     });
+    if (loadedWorkspaceKey.value !== contextKey) return asset;
+    workingAssets[asset.id] = asset;
     await selectAsset(field, asset.id);
-    if (!options.silent) message.success('图像已登记为当前项目资产');
+    if (!options.silent)
+      message.success('图片已添加到当前工作区，未加入资产中心');
     return asset;
   } finally {
     uploadingField.value = '';
@@ -505,7 +548,7 @@ async function saveInputMask(field: CapabilityField, file: File) {
   const selectedAsset =
     assetIndex === undefined
       ? undefined
-      : platformStore.currentAssets.find(
+      : availableInputAssets.value.find(
           (asset) => asset.id === selectedAssets[assetIndex],
         );
   await uploadMedia(field, file, {
@@ -544,6 +587,7 @@ async function prepareRegionAnnotations() {
       return platformStore.uploadAsset({
         description: `${capability.value?.name ?? application.value?.name} 分区标记输入快照`,
         derivedFromAssetId: originalAssetId,
+        workspaceInstanceId: workspaceInstanceId.value,
         file,
         name: file.name.replace(/\.[^.]+$/, ''),
         tags: ['工作流输入', '分区标记'],
@@ -693,15 +737,38 @@ async function saveOutput(output: PlatformJobOutput) {
 
 async function saveOutputMask(file: File) {
   if (!maskEditSourceAssetId.value) throw new Error('当前没有可编辑的图片');
-  await platformStore.uploadAsset({
-    derivedFromAssetId: maskEditDerivedFromAssetId.value || undefined,
+  const contextKey = loadedWorkspaceKey.value;
+  const asset = await platformStore.uploadAsset({
+    workspaceInstanceId: workspaceInstanceId.value,
+    derivedFromAssetId:
+      maskEditDerivedFromAssetId.value || maskEditSourceAssetId.value,
     description: `${application.value?.name ?? '工作流'}图片遮罩编辑`,
     file,
     name: file.name.replace(/\.[^.]+$/, ''),
     tags: ['工作流结果编辑', '遮罩'],
     type: 'image',
   });
-  message.success('遮罩编辑结果已保存到当前项目资产中心');
+  if (loadedWorkspaceKey.value !== contextKey) return;
+  workingAssets[asset.id] = asset;
+  const maskField = mediaFields.value.find((field) => field.type === 'mask');
+  if (maskField) await selectAsset(maskField, asset.id);
+  else {
+    openFlowModal({
+      assetId: asset.id,
+      kind: 'image',
+      mimeType: 'image/png',
+      name: asset.name,
+      position: 0,
+      saved: false,
+    });
+    if (
+      compatibleDestinations.value.some(
+        (item) => item.value === 'inpaint-single',
+      )
+    )
+      flowDestination.value = 'inpaint-single';
+  }
+  message.success('遮罩已保留在当前工作区，未加入资产中心');
 }
 
 async function loadFlowTargetOptions() {
@@ -801,9 +868,6 @@ async function sendLatestOutput() {
   }
   flowSubmitting.value = true;
   try {
-    if (!actionOutput.value.saved) {
-      await platformStore.saveWorkflowOutput(actionOutput.value.assetId);
-    }
     const targetInstance =
       flowTargetInstanceId.value === 'new'
         ? await createWorkflowWorkspaceInstanceApi({
@@ -852,7 +916,7 @@ function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
 
 function openInputMask(input: PlatformJobInput, previewUrl: string) {
   maskEditSourceAssetId.value = input.assetId;
-  maskEditDerivedFromAssetId.value = input.assetId;
+  maskEditDerivedFromAssetId.value = input.derivedFromAssetId ?? input.assetId;
   outputMaskSource.value = previewUrl;
   outputMaskTitle.value = input.name || '本轮输入图片';
   outputMaskEditorOpen.value = true;
@@ -1285,7 +1349,7 @@ onBeforeUnmount(() => {
             v-for="field in mediaFields"
             :key="field.key"
             :accent="application.color"
-            :assets="platformStore.currentAssets"
+            :assets="availableInputAssets"
             :field="field"
             :project-id="platformStore.currentProjectId"
             :live-capture="(file) => runLiveCapture(field, file)"
@@ -1353,7 +1417,7 @@ onBeforeUnmount(() => {
           flowTargetAssetIndex === undefined ||
           flowTargetLoading,
       }"
-      :ok-text="actionOutput?.saved ? '流转并打开' : '加入资产并流转'"
+      ok-text="填入并打开"
       title="流转到兼容工作流"
       @ok="sendLatestOutput"
     >
@@ -1362,7 +1426,7 @@ onBeforeUnmount(() => {
           当前项目资产会持久化发送到你指定的目标输入位，不下载、不重复上传。
         </template>
         <template v-else>
-          当前结果尚未加入资产。确认后会先将它登记为当前项目资产，再持久化发送到你指定的目标输入位。
+          当前图片将直接填入你本人的目标工作区，不会自动加入资产中心。
         </template>
       </p>
       <Select

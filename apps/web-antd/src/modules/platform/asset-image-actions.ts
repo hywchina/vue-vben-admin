@@ -46,6 +46,6 @@ export function assetImageOutput(asset: PlatformAsset): PlatformJobOutput {
     mimeType: asset.mimeType ?? 'image/png',
     name: asset.name,
     position: 0,
-    saved: true,
+    saved: asset.saved ?? true,
   };
 }

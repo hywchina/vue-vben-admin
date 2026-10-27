@@ -1,0 +1,167 @@
+{
+  "status": "local_combined_validation_passed",
+  "date": "2026-10-27",
+  "source": {
+    "platformBranch": "dev-1001",
+    "platformBaseCommit": "e4aa2155da8f67c665ad0a522f6c42e4592f6ff6",
+    "aiBranch": "main",
+    "aiBaseCommit": "eee209d43b36ee1643f08415b5c8ae594f062340",
+    "uncommitted": true
+  },
+  "migrations": ["044_design_input_staging.sql", "045_report_templates.sql"],
+  "checks": {
+    "unitFiles": 139,
+    "unitTests": 1007,
+    "unitPassed": true,
+    "railApiTests": 228,
+    "railWebTests": 347,
+    "typesPassed": true,
+    "buildPassed": true,
+    "integration": {
+      "isolatedPostgresMinio": true,
+      "suites": 5,
+      "passed": true,
+      "coverage": [
+        "uploaded DOCX/PPTX and CPU render",
+        "project isolation and revision conflicts",
+        "immutable source and upload PUT replay",
+        "archival preserves queued snapshot",
+        "private working inputs and conversation ownership"
+      ]
+    },
+    "independentAiUnitTests": 18,
+    "independentAiImage": "sha256:bd397ae35e1e27d86e19b1e31063345c7c35eea131e0e749840247870b7fa74b",
+    "eslintStylelintOxlintPassed": true,
+    "oxfmt": {
+      "ownFilesPassed": true,
+      "existingContractFilesBlocked": 59,
+      "preserved": true
+    }
+  },
+  "reportBrowser": {
+    "projectId": "e8b46387-d82e-4796-bf47-7a9dd342652d",
+    "results": [
+      {
+        "format": "docx",
+        "mode": "template",
+        "jobId": "3ce640f2-5427-447d-8f92-ec0d4728cf9c",
+        "outputAssetId": "528de222-df7a-4ff7-bce6-6daf1caba2cc",
+        "progressVisible": false,
+        "completedVisible": true,
+        "observedProgress": [0, 100]
+      },
+      {
+        "format": "docx",
+        "mode": "ai",
+        "jobId": "283db64f-4590-4840-90f3-3cf1d52705d5",
+        "outputAssetId": "0b062fa4-461b-444d-bd7a-0a2fb7427f12",
+        "progressVisible": true,
+        "completedVisible": true,
+        "observedProgress": [0, 45, 100]
+      },
+      {
+        "format": "pptx",
+        "mode": "ai",
+        "jobId": "5e89899a-0ae6-4158-87bb-0bc3d7a7c88d",
+        "outputAssetId": "8fd3ec59-962d-48a2-b48e-b65af2c482c2",
+        "progressVisible": true,
+        "completedVisible": true,
+        "observedProgress": [0, 45, 100]
+      },
+      {
+        "format": "pptx",
+        "mode": "template",
+        "jobId": "fb6d97e7-f986-4678-81d8-8adf35679689",
+        "outputAssetId": "a3da9ff9-054e-418a-8507-c1230bbd63ad",
+        "progressVisible": false,
+        "completedVisible": true,
+        "observedProgress": [0, 100]
+      }
+    ],
+    "errors": []
+  },
+  "designBrowser": {
+    "themes": true,
+    "responsive": true,
+    "singleComposer": true,
+    "regionJob": "ed44822e-120a-4041-9269-11cdc853d759",
+    "annotation": "cc3570e1-e298-4563-bb2e-059d58c5994d",
+    "fixtureOutput": "de25903d-b766-4ec9-9731-173113e0686c",
+    "continuedMaskWithoutSaving": true,
+    "maskRefresh": true,
+    "libraryAssets": 0,
+    "errors": []
+  },
+  "actualInference": {
+    "service": "independent Presenton Docker image",
+    "model": "local Qwen3-VL through vLLM",
+    "realModelRequests": true,
+    "schemaCompatibility": "const/enum/count accepted; uniqueItems rejected by tested vLLM, validated in service instead",
+    "comfyImageGeneration": false
+  },
+  "visualQa": {
+    "passed": true,
+    "renderer": "bundled LibreOffice and DOCX renderer",
+    "pagesReviewed": 6,
+    "files": [
+      "example-template.docx",
+      "example-ai.docx",
+      "example-template.pptx",
+      "example-ai.pptx"
+    ],
+    "previewDirectory": "../report-templates/examples/previews",
+    "findings": "No text clipping, image distortion or page overflow in the four delivered examples. Source template style and inherited elements retained."
+  },
+  "artifacts": {
+    "research": "../report-templates/RESEARCH.md",
+    "examples": "../report-templates/examples/README.md",
+    "manifest": "../report-templates/examples/manifest.json",
+    "ui": "../ui-proposals/20261027-report-templates"
+  },
+  "limits": [
+    "Native DOCX/PPTX only; source positions must be reviewed before use.",
+    "Unsupported complex objects remain fixed; complex Office animations/extensions are outside visual guarantees.",
+    "AI semantic correctness still needs review; numeric and structure validation is not a factual proof.",
+    "Third-party download confirmation HTML was not treated as DOCX; starter formats are locally authored references.",
+    "Existing contract document changes and formatting debt preserved."
+  ],
+  "release": {
+    "gitCommit": false,
+    "gitPush": false,
+    "localDeliveryExport": false,
+    "remoteSync": false,
+    "serverDeployment": false
+  },
+  "sourceSha256": {
+    "apps/platform-api/utils/domain/capabilities/report/templates/ai-plan.ts": "9cab84cf5730711c6cdff041b1fb08248148e70cfe8cad5ba23ef0c19e6b8b50",
+    "apps/platform-api/utils/domain/capabilities/report/templates/required.ts": "fcd8fd5c585450829318848bc88400619deacb79b93f70653f138006233a01db",
+    "apps/platform-api/utils/domain/capabilities/report/templates/repository.ts": "6acf6d0c31b9e07bc6c6748042e8c01fe7bec55912fba9a489121892e7dde71b",
+    "apps/platform-api/utils/domain/capabilities/report/templates/renderer.ts": "20d84984d9e587a5e835082083d7e1a03aa2dfbc844cbb2a8df1ca22738199e9",
+    "apps/platform-api/utils/domain/capabilities/report/templates/starters.ts": "b8f7f533b3729cab313242e48be74db8da551fbe27c0741bb7a1ce15c65fc9b2",
+    "apps/platform-api/utils/domain/capabilities/report/templates/package.ts": "8d9c110d602fcb9c39ff3bad4255b2cbe3c577d2e0a24bc7707b4179bc4eecb2",
+    "apps/platform-api/utils/domain/capabilities/report/templates/templates.test.ts": "5ad6c363127ef03a07b5a04b64ee7458c9d035e5cb5fc74e2308126dcf1367f3",
+    "apps/platform-api/utils/domain/capabilities/report/templates/schema.ts": "59142237fc505eb7ab6343fd2c7d254fce86dcb6121369b66f6481c3e2ee4c70",
+    "apps/platform-api/api/v1/report-templates/starter.get.ts": "f5c01e5d2742184faef15b9b3d15e404284ea3002bf6e9c2bf911d0b928bcead",
+    "apps/platform-api/api/v1/report-templates/index.get.ts": "7b42446568d577f1816d1b63f80f6d7423c647074a73b0379258535f763dc225",
+    "apps/platform-api/api/v1/report-templates/uploads.post.ts": "6e9274a5e0f22d47647833d3cb93dfd13c6fb4f2db53117ba2ed9c262dbd7147",
+    "apps/platform-api/api/v1/report-templates/[id]/complete.post.ts": "747aefb8c4c4addd0b0d65c87b3c701d373c66dc6fac3e8a6761ddb505ffb076",
+    "apps/platform-api/api/v1/report-templates/[id]/download.get.ts": "26c6e013267595e6d958c366ccdb16509013b2555498a03f87b2bf1d83bc1d5e",
+    "apps/platform-api/api/v1/report-templates/[id]/index.delete.ts": "5c95fa140311ed1dde408fb4780d72497fd7ee939a1ffd5ab05fbd898d0e1688",
+    "apps/platform-api/api/v1/report-templates/[id]/index.put.ts": "00923dd890ec4f9e27ab6252689df01c7dae7c81ed4255a9391511df4843dad1"
+  },
+  "cleanup": {
+    "temporaryContainersRemoved": 4,
+    "temporaryNetworkRemoved": true,
+    "testApiWebWorkerStopped": true,
+    "temporaryGpuServiceStopped": true,
+    "privateTestEnvironmentRemoved": true,
+    "preexistingContainersAndVolumesUntouched": true
+  },
+  "independentAiSourceSha256": {
+    "servers/fastapi/models/template_report_plan.py": "52738d2f2db16ada0d12f8e3c893fd4240a80810004c458b2d10cde69165f888",
+    "servers/fastapi/services/template_report_plan_service.py": "f3d1132cd4b6a296077f6fca2c473bc1ed3300ff7e8bd0ceb6371f441ca6daa4",
+    "servers/fastapi/api/v1/file_generation/router.py": "d79da7555e99f8ac9509d71fe839791248740bdcf25e350646620b15c25fd5ef",
+    "servers/fastapi/services/local_file_generation_service.py": "8f108df8c3ac9a9a85b37693f0e495c86c58d9876b718c9240e80791cb7ef975",
+    "servers/fastapi/tests/unit/test_template_report_plan.py": "629ac5419ef8e2e20c3d5cb9ea7add83d16a9de8895b5d3989fa8420e142c87d"
+  }
+}

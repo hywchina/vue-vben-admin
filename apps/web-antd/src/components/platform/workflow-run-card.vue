@@ -637,6 +637,17 @@ onMounted(() => void loadPreviews());
                   }}
                 </span>
                 <strong>{{ input.name || input.assetId }}</strong>
+                <Button
+                  v-if="
+                    job.ownedByCurrentUser &&
+                    input.saved === false &&
+                    input.kind === 'image'
+                  "
+                  size="small"
+                  @click="emit('save', { ...input, saved: false })"
+                >
+                  保存到资产中心
+                </Button>
               </div>
               <div
                 v-if="input.annotationAssetId"
@@ -652,6 +663,22 @@ onMounted(() => void loadPreviews());
                 <strong>
                   {{ input.annotationName || input.annotationAssetId }}
                 </strong>
+                <Button
+                  v-if="
+                    job.ownedByCurrentUser && input.annotationSaved === false
+                  "
+                  size="small"
+                  @click="
+                    emit('save', {
+                      ...input,
+                      assetId: input.annotationAssetId,
+                      name: input.annotationName || '分区标记图',
+                      saved: false,
+                    })
+                  "
+                >
+                  保存到资产中心
+                </Button>
               </div>
             </template>
           </div>

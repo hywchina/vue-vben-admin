@@ -7,12 +7,17 @@ import {
   createReportSchema,
   orderedReportAssetIds,
   REPORT_APPLICATION_KEY,
+  reportMimeType,
 } from '~/utils/domain/capabilities/report/schema';
+import { validateTemplateInput } from '~/utils/domain/capabilities/report/templates/renderer';
+import { snapshotReportTemplate } from '~/utils/domain/capabilities/report/templates/repository';
+import { getStarterTemplate } from '~/utils/domain/capabilities/report/templates/starters';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { getConfig } from '~/utils/infrastructure/config';
 import { createNotification } from '~/utils/notifications';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
+import { storeObject } from '~/utils/storage';
 import { parseBody } from '~/utils/validation';
 
 export default apiHandler(async (event) => {
@@ -28,8 +33,26 @@ export default apiHandler(async (event) => {
       'AI 报告生成服务尚未配置',
     );
   }
-  const executionTemplateKey =
+  let templateSnapshot = await snapshotReportTemplate(identity, input);
+  if (!templateSnapshot && input.format !== 'md') {
+    let starterKind: 'bid' | 'contract' | 'patent' | 'report' = 'report';
+    if (input.reportType === 'contract') starterKind = 'contract';
+    else if (input.reportType === 'patent-disclosure') starterKind = 'patent';
+    else if (input.reportType === 'bid-response') starterKind = 'bid';
+    const starter = await getStarterTemplate(input.format, starterKind);
+    const objectKey = `${input.projectId}/report-templates/builtin/${starter.snapshot.sha256}.${input.format}`;
+    await storeObject(objectKey, reportMimeType(input.format), starter.source);
+    templateSnapshot = {
+      ...starter.snapshot,
+      projectId: input.projectId,
+      objectKey,
+    };
+  }
+  if (templateSnapshot) validateTemplateInput(templateSnapshot, input);
+  let executionTemplateKey =
     input.generationMode === 'ai' ? config.reportAiTemplate : input.templateKey;
+  if (templateSnapshot)
+    executionTemplateKey = `uploaded:${templateSnapshot.id}:r${templateSnapshot.revision}`;
 
   const sql = useDatabase();
   const assetIds = orderedReportAssetIds(input);
@@ -98,10 +121,10 @@ export default apiHandler(async (event) => {
     await transaction`
       INSERT INTO report_generation_executions (
         job_id, output_format, template_key, generation_mode,
-        output_asset_id, object_key
+        output_asset_id, object_key, template_snapshot
       ) VALUES (
         ${job.id}, ${input.format}, ${executionTemplateKey}, ${input.generationMode},
-        ${outputAssetId}, ${objectKey}
+        ${outputAssetId}, ${objectKey}, ${templateSnapshot ? transaction.json(JSON.parse(JSON.stringify(templateSnapshot))) : null}
       )
     `;
     return job;

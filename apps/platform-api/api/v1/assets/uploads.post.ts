@@ -10,6 +10,7 @@ import { useDatabase } from '~/utils/database';
 import { ASSET_GENERATION_CATEGORIES } from '~/utils/domain/assets/query';
 import { requireDesignConversation } from '~/utils/domain/design-conversations';
 import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
+import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -20,6 +21,7 @@ const uploadSchema = z.object({
   description: z.string().trim().max(2000).optional().default(''),
   derivedFromAssetId: z.string().uuid().optional(),
   designConversationId: z.string().uuid().optional(),
+  workspaceInstanceId: z.string().uuid().optional(),
   filename: z.string().trim().min(1).max(255),
   folderId: z.string().uuid().optional(),
   generationCategory: z.enum(ASSET_GENERATION_CATEGORIES).optional(),
@@ -58,6 +60,33 @@ export default apiHandler(async (event) => {
   const uploadUrl = await createUploadUrl(objectKey, input.mimeType);
   const sql = useDatabase();
 
+  const staged = Boolean(
+    input.designConversationId || input.workspaceInstanceId,
+  );
+  if (
+    staged &&
+    (input.kind !== 'image' ||
+      input.folderId ||
+      (input.designConversationId && input.workspaceInstanceId))
+  )
+    throw new ApiError(
+      400,
+      'DESIGN_INPUT_SCOPE_INVALID',
+      '设计输入必须是图片，且只能关联一个会话或工作区，不能直接指定资产目录',
+    );
+  if (input.designConversationId)
+    await requireDesignConversation({
+      conversationId: input.designConversationId,
+      projectId: input.projectId,
+      userId: identity.id,
+    });
+  if (input.workspaceInstanceId)
+    await requireWorkflowWorkspaceInstance({
+      instanceId: input.workspaceInstanceId,
+      projectId: input.projectId,
+      userId: identity.id,
+    });
+
   if (input.folderId) {
     const [folder] = await sql<{ id: string; kind: string }[]>`
       SELECT id, kind FROM asset_folders
@@ -85,17 +114,12 @@ export default apiHandler(async (event) => {
         '只有图片资产可以登记原始图片血缘',
       );
     }
-    if (input.designConversationId)
-      await requireDesignConversation({
-        conversationId: input.designConversationId,
-        projectId: input.projectId,
-        userId: identity.id,
-      });
     const [sourceAsset] = await getDesignInputAssets({
       assetIds: [input.derivedFromAssetId],
       conversationId: input.designConversationId,
       projectId: input.projectId,
       userId: identity.id,
+      workspaceInstanceId: input.workspaceInstanceId,
     });
     if (!sourceAsset || sourceAsset.kind !== 'image') {
       throw new ApiError(
@@ -109,12 +133,17 @@ export default apiHandler(async (event) => {
   await sql.begin(async (transaction) => {
     await transaction`
       INSERT INTO assets (
-        id, project_id, folder_id, generation_category, name, description, kind, owner_id
+        id, project_id, folder_id, generation_category, name, description, kind, owner_id, saved_at
       ) VALUES (
         ${assetId}, ${input.projectId}, ${input.folderId ?? null}, ${input.generationCategory ?? null},
         ${input.name}, ${input.description},
-        ${input.kind}, ${identity.id}
+        ${input.kind}, ${identity.id}, ${staged ? null : new Date()}
       )
+    `;
+    if (staged)
+      await transaction`
+      INSERT INTO design_input_assets (asset_id, design_conversation_id, workspace_instance_id, created_by)
+      VALUES (${assetId}, ${input.designConversationId ?? null}, ${input.workspaceInstanceId ?? null}, ${identity.id})
     `;
     await transaction`
       INSERT INTO asset_versions (

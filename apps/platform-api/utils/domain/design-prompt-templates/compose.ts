@@ -21,6 +21,37 @@ export function categorySection(category: Category) {
   if (/style|form/.test(category.id)) return 'style';
   return 'appearance';
 }
+// Legacy catalogs contain both full instructions and short noun phrases. Add
+// only grammatical connectors; never infer a subject, target or edit boundary.
+function naturalClause(
+  category: Category,
+  option: Category['options'][number],
+  editing: boolean,
+) {
+  const raw = editing && option.editValue ? option.editValue : option.value;
+  const value = raw
+    .replaceAll('{target}', option.target)
+    .trim()
+    .replace(/[。；;，,\s]+$/u, '');
+  const section = categorySection(category);
+  const hasPredicate =
+    /采用|呈现|保持|保留|调整|替换|设为|改为|改成|生成|设计|展示|使用|为|具有|不要|不得|避免|仅将|将.+[为成]/u.test(
+      value,
+    );
+  if (
+    option.target &&
+    !raw.includes('{target}') &&
+    !value.includes(option.target)
+  )
+    return `对${option.target}，${hasPredicate ? value : `采用${value}`}`;
+  if (hasPredicate) return value;
+  if (section === 'subject')
+    return `${editing ? '以' : '设计'}${value}${editing ? '为设计主体' : ''}`;
+  if (section === 'constraints') return `满足${value}`;
+  if (section === 'scene') return `场景设置为${value}`;
+  return `采用${value}`;
+}
+
 export function composePrompt(
   catalog: DesignPromptTemplateCatalogInput,
   input: {
@@ -111,32 +142,22 @@ export function composePrompt(
       sections.indexOf(categorySection(a.category)) -
       sections.indexOf(categorySection(b.category)),
   );
-  const sentences = ordered
-    .filter(
-      ({ category, option }) =>
-        categorySection(category) !== 'parameters' &&
-        option.includes.length === 0,
-    )
-    .map(({ category, option }) => {
-      const value = (
-        input.editing && option.editValue ? option.editValue : option.value
-      )
-        .replaceAll('{target}', option.target)
-        .replace(/[。；;\s]+$/u, '');
-      const section = categorySection(category);
-      // Named clauses give legacy short entries explicit semantic roles without inventing objects.
-      const labels: Record<string, string> = {
-        subject: '设计主体',
-        scene: '场景要求',
-        camera: '视角与构图',
-        appearance: '外观要求',
-        style: '风格要求',
-        lighting: '光照与环境',
-        constraints: '保留与限制',
-      };
-      return `${labels[section] ?? category.name}${option.target && !option.value.includes('{target}') ? `（${option.target}）` : ''}：${value}。`;
-    });
-  const text = [...new Set(sentences)].join('\n');
+  const groups = new Map<string, string[]>();
+  const seen = new Set<string>();
+  for (const { category, option } of ordered) {
+    const section = categorySection(category);
+    if (section === 'parameters' || option.includes.length > 0) continue;
+    const clause = naturalClause(category, option, input.editing);
+    const key = clause.replaceAll(/\s+/gu, '');
+    if (!clause || seen.has(key)) continue;
+    seen.add(key);
+    const group = groups.get(section) ?? [];
+    group.push(clause);
+    groups.set(section, group);
+  }
+  const text = [...groups.values()]
+    .map((clauses) => `${clauses.join('，')}。`)
+    .join('');
   if (!text && !size) errors.push('请至少选择一项内容或尺寸模板');
   if (text.length > input.maxLength)
     errors.push(

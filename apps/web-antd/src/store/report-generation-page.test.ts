@@ -15,6 +15,40 @@ vi.mock('@vben/icons', () => ({ IconifyIcon: { render: () => null } }));
 vi.mock('#/components/platform/page-heading.vue', () => ({
   default: { render: () => null },
 }));
+vi.mock(
+  '#/views/platform/report-generation/report-template-picker.vue',
+  () => ({
+    default: defineComponent({
+      emits: ['update:modelValue'],
+      setup:
+        (_, { emit }) =>
+        () =>
+          h(
+            'button',
+            {
+              onClick: () =>
+                emit('update:modelValue', {
+                  id: '11111111-1111-4111-8111-111111111111',
+                  revision: 3,
+                  format: 'docx',
+                  configuration: {
+                    repeatSections: true,
+                    bindings: [
+                      {
+                        id: 'field',
+                        role: 'value',
+                        fieldName: '甲方',
+                        sectionIndex: 0,
+                      },
+                    ],
+                  },
+                }),
+            },
+            '选择已确认模板',
+          ),
+    }),
+  }),
+);
 vi.mock('#/store', () => ({
   usePlatformStore: () => ({
     currentProjectId: 'project-test',
@@ -185,3 +219,34 @@ function required<T>(value: null | T | undefined): T {
     throw new Error('Missing test element');
   return value;
 }
+
+it('submits the confirmed template revision and literal custom fields with user content', async () => {
+  mocks.create.mockResolvedValue({ id: 'report-job' });
+  const root = await render();
+  button(root, '选择已确认模板').click();
+  await settle();
+  const custom = [...root.querySelectorAll('label')]
+    .find((label) => label.textContent?.includes('甲方'))
+    ?.querySelector('input');
+  expect(custom).toBeTruthy();
+  if (!custom) throw new Error('Missing custom template field');
+  custom.value = '项目甲方 <原样填写>';
+  custom.dispatchEvent(new Event('input', { bubbles: true }));
+  const body = root.querySelector<HTMLTextAreaElement>(
+    '.report-section textarea',
+  );
+  if (!body) throw new Error('Missing report chapter body');
+  body.value = '暂定 800 mm，仍待验证。';
+  body.dispatchEvent(new Event('input', { bubbles: true }));
+  await settle();
+  button(root, '生成 DOCX 报告').click();
+  await settle();
+  expect(mocks.create).toHaveBeenCalledWith(
+    expect.objectContaining({
+      reportTemplateId: '11111111-1111-4111-8111-111111111111',
+      reportTemplateRevision: 3,
+      templateValues: { 甲方: '项目甲方 <原样填写>' },
+      sections: [expect.objectContaining({ body: '暂定 800 mm，仍待验证。' })],
+    }),
+  );
+});

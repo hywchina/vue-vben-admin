@@ -13,6 +13,7 @@ export interface PrepareAssetUploadInput {
   description: string;
   derivedFromAssetId?: string;
   designConversationId?: string;
+  workspaceInstanceId?: string;
   file: File;
   folderId?: string;
   generationCategory?: AssetGenerationCategory;
@@ -75,6 +76,7 @@ export async function uploadAssetApi(input: PrepareAssetUploadInput) {
       description: input.description,
       derivedFromAssetId: input.derivedFromAssetId,
       designConversationId: input.designConversationId,
+      workspaceInstanceId: input.workspaceInstanceId,
       filename: input.file.name,
       folderId: input.folderId,
       generationCategory: input.generationCategory,

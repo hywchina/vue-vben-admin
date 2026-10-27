@@ -42,6 +42,8 @@ export interface PlatformJob {
 }
 
 export interface PlatformJobInput {
+  saved?: boolean;
+  annotationSaved?: boolean;
   annotationAssetId?: string;
   annotationMimeType?: string;
   annotationName?: string;

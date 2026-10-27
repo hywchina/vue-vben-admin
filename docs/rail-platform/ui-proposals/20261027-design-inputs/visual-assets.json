@@ -1,0 +1,10 @@
+{
+  "date": "2026-10-27",
+  "generator": "built-in imagegen",
+  "asset": "apps/web-antd/public/rail-cabin-background.webp",
+  "sha256": "c9c7cefc9be3645fbf81d6ce2d90c9f484e225dc4102a32fc25655b5157579f1",
+  "bytes": 95666,
+  "prompt": "Production background asset only, no UI/text/logo. Landscape 16:9. Modern Chinese rail passenger cabin on right 45%, pearl white/warm gray/dusty rose upholstery, thin architectural linework and softly shaded materials, ceiling lights/windows/aisle; left 55% fades to clean white. Quiet professional engineering design platform. Used behind the login form and homepage hero.",
+  "conversion": "PNG to WebP, quality 85, original pixel dimensions retained",
+  "note": "All visible text, controls and statistics remain rendered by the application."
+}
