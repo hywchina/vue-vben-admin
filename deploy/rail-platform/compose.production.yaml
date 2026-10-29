@@ -21,6 +21,8 @@ x-platform-environment: &platform-environment
   COMFYUI_MAX_OUTPUT_BYTES: ${COMFYUI_MAX_OUTPUT_BYTES:-104857600}
   COMFYUI_POLL_INTERVAL_MS: ${COMFYUI_POLL_INTERVAL_MS:-1500}
   COMFYUI_WORKER_LEASE_SECONDS: ${COMFYUI_WORKER_LEASE_SECONDS:-90}
+  MANAGED_MODELS_ROOT: /app/managed-models
+  MANAGED_MODELS_MAX_BYTES: ${MANAGED_MODELS_MAX_BYTES:-137438953472}
   LORA_API_TOKEN: ${LORA_API_TOKEN:-}
   LORA_API_URL: ${LORA_API_URL:-}
   LORA_API_TIMEOUT_MS: ${LORA_API_TIMEOUT_MS:-120000}
@@ -102,6 +104,8 @@ services:
       dockerfile: deploy/rail-platform/Dockerfile.production
       target: api
     environment: *platform-environment
+    volumes:
+      - managed-models:/app/managed-models
     depends_on:
       migration:
         condition: service_completed_successfully
@@ -128,6 +132,8 @@ services:
       dockerfile: deploy/rail-platform/Dockerfile.production
       target: worker
     environment: *platform-environment
+    volumes:
+      - managed-models:/app/managed-models
     depends_on:
       migration:
         condition: service_completed_successfully
@@ -160,5 +166,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  managed-models:
   rail-production-minio:
   rail-production-postgres:

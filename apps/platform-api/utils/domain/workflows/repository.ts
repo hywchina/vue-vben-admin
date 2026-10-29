@@ -92,6 +92,9 @@ export async function seedWorkflowCatalogEntry(
     }
     if (!version) throw new Error('初始化工作流版本失败');
 
+    const [managedBinding] =
+      await transaction`SELECT 1 FROM capability_workflows cw JOIN managed_model_updates mu ON mu.candidate_version_id=cw.workflow_version_id WHERE cw.capability_code=${entry.application.key} AND cw.active=true AND mu.published_at IS NOT NULL`;
+    if (managedBinding) return version;
     await transaction`
       UPDATE capability_workflows
       SET active = false
@@ -507,6 +510,14 @@ export async function bindCapabilityWorkflow(
 ) {
   const sql = useDatabase();
   await sql.begin(async (transaction) => {
+    const [unverified] =
+      await transaction`SELECT 1 FROM managed_model_updates WHERE candidate_version_id=${workflowVersionId} AND published_at IS NULL`;
+    if (unverified)
+      throw new ApiError(
+        409,
+        'MODEL_TEST_REQUIRED',
+        '模型更新须通过试运行后从模型管理发布',
+      );
     const [compatible] = await transaction<{ found: boolean }[]>`
       SELECT true AS found
       FROM capabilities c

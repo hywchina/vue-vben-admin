@@ -20,6 +20,10 @@ services:
       NITRO_HOST: 127.0.0.1
       NITRO_PORT: '5320'
       NODE_ENV: production
+      MANAGED_MODELS_ROOT: /app/managed-models
+      MANAGED_MODELS_MAX_BYTES: ${MANAGED_MODELS_MAX_BYTES:-137438953472}
+    volumes:
+      - managed-models:/app/managed-models
     ports:
       - '${PLATFORM_BIND_IP:-127.0.0.1}:${PLATFORM_PORT:-18080}:8080'
     cpus: ${PLATFORM_CPUS:-4}
@@ -82,5 +86,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  managed-models:
   postgres-data:
   minio-data:

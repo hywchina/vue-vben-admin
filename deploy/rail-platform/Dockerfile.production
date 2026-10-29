@@ -35,6 +35,7 @@ ENV TZ=Asia/Shanghai
 
 WORKDIR /app
 COPY --from=builder --chown=node:node /workspace/apps/platform-api/.output/ ./
+RUN mkdir -p /app/managed-models && chown node:node /app/managed-models
 USER node
 EXPOSE 5320
 CMD ["node", "server/index.mjs"]
@@ -46,6 +47,7 @@ ENV TZ=Asia/Shanghai
 
 WORKDIR /app
 COPY --from=builder --chown=node:node /migration-runtime/ ./
+RUN mkdir -p /app/managed-models && chown node:node /app/managed-models
 USER node
 CMD ["./node_modules/.bin/tsx", "scripts/worker.ts"]
 

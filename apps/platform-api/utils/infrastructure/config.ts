@@ -46,6 +46,8 @@ export interface PlatformConfig {
   loraWorkerLeaseSeconds: number;
   maxInlineTextBytes: number;
   maxUploadBytes: number;
+  managedModelsRoot: null | string;
+  managedModelsMaxBytes: number;
   refreshTokenTtlDays: number;
   reportAiApiUrl: null | string;
   reportAiMaxOutputBytes: number;
@@ -283,6 +285,11 @@ export function getConfig(): PlatformConfig {
     ),
     comfyuiApiToken: process.env.COMFYUI_API_TOKEN?.trim() || null,
     comfyuiApiUrl: process.env.COMFYUI_API_URL?.trim() || null,
+    managedModelsRoot: process.env.MANAGED_MODELS_ROOT?.trim() || null,
+    managedModelsMaxBytes: positiveInteger(
+      process.env.MANAGED_MODELS_MAX_BYTES,
+      128 * 1024 ** 3,
+    ),
     comfyuiLeaseSeconds: positiveInteger(
       process.env.COMFYUI_WORKER_LEASE_SECONDS,
       90,

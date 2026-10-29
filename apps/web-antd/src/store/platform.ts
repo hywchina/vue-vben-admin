@@ -409,7 +409,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
           designConversationId: string;
           designMode?: 'cabin' | 'cmf' | 'component' | 'report';
         }
-      | { workspaceInstanceId: string },
+      | { modelUpdateId?: string; workspaceInstanceId: string },
     inputAssetIds: string[],
     parameters: Record<string, unknown>,
     inputTransferIds: string[] = [],

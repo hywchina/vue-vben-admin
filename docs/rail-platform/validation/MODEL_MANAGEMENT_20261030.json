@@ -1,0 +1,212 @@
+{
+  "date": "2026-10-30",
+  "phase": "local development and tests only",
+  "repository": "code/vue-vben-admin",
+  "branch": "dev-1001",
+  "baseCommit": "0adb89e6d90c305e36c3f75c0760a3c4214c9ac0",
+  "newMigration": "046_managed_models.sql",
+  "checks": {
+    "typecheck:rail": "passed",
+    "test:rail": {
+      "api": 242,
+      "web": 352,
+      "result": "passed"
+    },
+    "test:rail:integration": {
+      "result": "passed",
+      "suites": 6,
+      "modelHttpChecks": 45,
+      "storage": "real isolated PostgreSQL/filesystem/MinIO",
+      "comfy": "protocol fixture, not GPU"
+    },
+    "deploymentUnitTests": {
+      "run": 160,
+      "skipped": 6,
+      "result": "passed"
+    },
+    "productionBuild": {
+      "result": "passed",
+      "recipe": "deploy/single-image/Dockerfile",
+      "includes": "pnpm build:rail",
+      "image": "rail-platform:model-management-20261030",
+      "imageId": "sha256:0fa76bc27b1839b2b562672e08493ae70247e275a18bbd4bb855f3cf47cda8aa"
+    },
+    "volumeWriteTest": {
+      "result": "passed",
+      "uid": 1000,
+      "owner": "node:node",
+      "mode": "755"
+    },
+    "compose": "passed; all profiles, public example configuration only",
+    "lint": {
+      "result": "blocked by pre-existing unrelated contract formatting",
+      "count": 59,
+      "files": [
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-14/double-diamond.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-14/four-design-factors.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-14/industrial-design-process.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-15/design-input-reuse.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-6/figure-24.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/export-figures-v2-9.cjs",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-10-kontext.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-11-control-adapter.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-controlnet.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-evolution.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-ipadapter.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-kontext.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-latent.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-lora.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/figure-task-organization.html",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/CHANGES_V2.13.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/CHANGES_V2.14.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/CHAPTER1_PATCH_V2.14.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/CHAPTER23_PATCH_V2.12.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/CHAPTER2_PATCH_V2.9.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/CHAPTER3_CASES_V2.10.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/CHAPTER3_CASES_V2.11.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/CLIENT_MATERIALS_V2.6.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/PATCH_V2.13.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/PATCH_V2.15.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/PPT_MATERIALS_V2.10.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/PPT_MATERIALS_V2.11.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.10.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.11.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.12.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.13.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.14-initial-independent.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.14-previsual.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.14-toc-independent.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.14.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.15-initial-independent.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.15.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.6.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.8.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/QA_V2.9.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REFERENCE_CHANGES_V2.8.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REPORT_V2.10.md",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REPORT_V2.11.md",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REPORT_V2.12.md",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REPORT_V2.13.md",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REPORT_V2.14.md",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REPORT_V2.15.md",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REPORT_V2.9.md",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/REVIEW_RESPONSE_V2.8.md",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/VISUAL_QA_V2.10.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/VISUAL_QA_V2.11.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/VISUAL_QA_V2.12.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/VISUAL_QA_V2.13.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/VISUAL_QA_V2.14.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/VISUAL_QA_V2.15.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/source/VISUAL_QA_V2.9.json",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/tools/export_figures_v2_14.cjs",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/tools/export_figures_v2_15.cjs",
+        "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/tools/export_figures_v2_7.cjs"
+      ],
+      "featureCodeErrors": 0
+    },
+    "scopedCodeLint": {
+      "oxlint": "passed",
+      "eslint": "passed",
+      "stylelint": "passed"
+    },
+    "documentationLinks": "passed"
+  },
+  "liveAcceptance": {
+    "evidence": "MODEL_MANAGEMENT_LIVE_20261030.json",
+    "result": "passed real browser upload, discovery, v2 trial and publish",
+    "desktop": "1280x720",
+    "responsive": ["768x900", "390x844"],
+    "consoleErrorsAfterFix": 0,
+    "limits": "Real 79MiB safetensors LoRA only; one 512x512 image at one step; no inference quality claim"
+  },
+  "composeMounts": {
+    "platform": [
+      {
+        "target": "/app/managed-models",
+        "source": "managed-models",
+        "readOnly": false
+      }
+    ],
+    "comfyui": [
+      {
+        "target": "/managed-models",
+        "source": "managed-models",
+        "readOnly": true
+      },
+      {
+        "target": "/managed-model-paths.yaml",
+        "source": "/data_ssd/projects/rail-system/config/comfyui-managed-model-paths.yaml",
+        "readOnly": true
+      }
+    ]
+  },
+  "fixedDuringAcceptance": [
+    "Upload request included UI-only SHA field; now explicit manifest",
+    "Completed uploads disappeared from task tab; now retained",
+    "Workspace canonical routing removed candidate query ID; preserved and regression tested",
+    "Live test logger raced cleanup; changed to inherited file descriptors and process groups; start/stop revalidated"
+  ],
+  "cleanup": {
+    "isolatedDatabasesRemoved": true,
+    "localBrowserGpuServicesStopped": true,
+    "temporaryCredentialsRemoved": true
+  },
+  "limits": [
+    "Contract report files unchanged; full lint not green",
+    "Cross-host storage, 128GiB transfers, all model types, power-loss durability and production GPU concurrency not validated",
+    "Optional old offline dependency cache lacked an existing @xmldom/xmldom tarball; supported online Dockerfile build passed; no model weights downloaded"
+  ],
+  "release": {
+    "gitPushed": false,
+    "deliveryGenerated": false,
+    "remoteSynced": false,
+    "remoteDeployed": false
+  },
+  "sourceFilesSha256": {
+    "code/vue-vben-admin/.dockerignore": "48dbfbb173d18d79ff71a91e37687e07701115e586a45dc90f3dbcf7217a2d66",
+    "code/vue-vben-admin/AGENTS.md": "255d79d75aaf79ba9315c9f203d9793182e21b85b28dc05b53451c2efc0b0f26",
+    "code/vue-vben-admin/apps/platform-api/.env.example": "1fd4eac5c728dab6e3bde9caeee7f40ed01cdbdb665bc7c74ba960bb11c7bda1",
+    "code/vue-vben-admin/apps/platform-api/api/v1/jobs/index.post.ts": "24515e4a2d38ba6dbb23d80278dfe5569c57aa4f6088cbdc15b32b2d1e056d56",
+    "code/vue-vben-admin/apps/platform-api/api/v1/model-management/[...path].ts": "b56f63638faef39bc0e93bea07bf258ba4a29234baa5cbfea3265c410077ade4",
+    "code/vue-vben-admin/apps/platform-api/api/v1/model-management/index.ts": "73563b932702b90c0e8caa1e3f1a1969c06e74862376292cd9ea5a39f195ac4a",
+    "code/vue-vben-admin/apps/platform-api/migrations/046_managed_models.sql": "9d97353c06e2e145a828b9b20f955fce466a7e69a32a8f72ebd49d654dff2c1d",
+    "code/vue-vben-admin/apps/platform-api/scripts/integration-suite.ts": "99312598cfc94e829491f88fe6cda895846f51e92291e910cac1e6d210cdae5c",
+    "code/vue-vben-admin/apps/platform-api/scripts/model-management-integration-test.ts": "f230397df23c939fd97e04872a5b7458f53c644fea8680736cde0ef3fc57f40c",
+    "code/vue-vben-admin/apps/platform-api/scripts/model-management-live-acceptance.ts": "c6c6fca62cdaf52a27b0991a596069322be1230e00b2993fda5b10345f5d6343",
+    "code/vue-vben-admin/apps/platform-api/scripts/worker.ts": "96c37d0046aed53aefbd7c996befeca5290062c245687f6337dc2bf6d3abeabd",
+    "code/vue-vben-admin/apps/platform-api/utils/domain/capabilities/comfyui/client.ts": "356bcf61d9efe74a81ba7e9a3df491cec784cebfef71f32dc498586e115893f6",
+    "code/vue-vben-admin/apps/platform-api/utils/domain/models/files.ts": "396c3ff28f0d591d615cd16aaeb81f0d1b1d181443496f606c90fd6f9138c4da",
+    "code/vue-vben-admin/apps/platform-api/utils/domain/models/models.test.ts": "023b38bde1a1a6d8f9efc1031b19ecc28e2da59826dfaf3160df22fe413b6e87",
+    "code/vue-vben-admin/apps/platform-api/utils/domain/models/repository.ts": "c867900ccd9e7916350e22852b2d87313faaec30adb2837ae5671d25dc7dbac3",
+    "code/vue-vben-admin/apps/platform-api/utils/domain/models/schema.ts": "30f43f79dd7a62573d82a485253ccdf86a96fa7e1b55a4cdf04521e24e1fe174",
+    "code/vue-vben-admin/apps/platform-api/utils/domain/models/updates.ts": "6b90d19c38de2cf30423216f323156f746721150775cba9141db9b83e2f170d5",
+    "code/vue-vben-admin/apps/platform-api/utils/domain/workflows/repository.ts": "e55950e411a162871bd2c670580f7263c910a2adf489ce0ed7c32f11f6ccd51d",
+    "code/vue-vben-admin/apps/platform-api/utils/infrastructure/config.ts": "18fa717fe3d0ecdcb812ae7979a2b020b3017ea9f0869e39cb18398e7d4a8248",
+    "code/vue-vben-admin/apps/web-antd/package.json": "568286b35ba1469d89c8f81aa875f3b60360d6202f7352a46c641efddc4e1ce4",
+    "code/vue-vben-admin/apps/web-antd/src/api/platform/index.ts": "42555e71bf67d2de62add2290a00b41f4f9446ccdce2c3578b666ac2e7859fe1",
+    "code/vue-vben-admin/apps/web-antd/src/api/platform/jobs.ts": "c7c4c31cacd627fee2ee4fa3262855fab6382da99581ac61ae6fe152dcc43811",
+    "code/vue-vben-admin/apps/web-antd/src/api/platform/models.ts": "9e1f17fa7378b949696bd20c343d867a39da49e3d769a07ee370340a94f8b637",
+    "code/vue-vben-admin/apps/web-antd/src/router/routes/modules/platform.ts": "191b2a577b4589bfe0be3a0d5fbd7c10475af5aef871a9298713e57cf55f810a",
+    "code/vue-vben-admin/apps/web-antd/src/store/platform-navigation.test.ts": "96bafc00961b2c46d22bcfe9b9a7becd3a5d2ec798e47bb007256398cddc4e6f",
+    "code/vue-vben-admin/apps/web-antd/src/store/platform.ts": "90f9a8b94b079b26c56a74583b2d1ec01e95c7932317807c79eb92202ad40e30",
+    "code/vue-vben-admin/apps/web-antd/src/views/platform/model-management/index.vue": "fad23e4985ff10682985849022b172d9f8219e84f4a1b069d92868a8a54c3cc7",
+    "code/vue-vben-admin/apps/web-antd/src/views/platform/model-management/upload.test.ts": "a81cc61a78ec80bc42cf5051a3ddeca35cbc0b8d41c7c5114569e3365e862860",
+    "code/vue-vben-admin/apps/web-antd/src/views/platform/model-management/upload.ts": "8d34ee2c8b95f216546fb1966db8579b7f833f6c011755f75cc11269f79f055d",
+    "code/vue-vben-admin/apps/web-antd/src/views/platform/overview/workbench-tools.ts": "88424dc4caf175f2f1abdd9e03010b94edbde71678b19c683169829ab9d7c19f",
+    "code/vue-vben-admin/apps/web-antd/src/views/platform/workspace/index.vue": "ad8f9f540acbf4049086de7c2758a0c804bde5829d43626c8e77b6c70c652e59",
+    "code/vue-vben-admin/apps/web-antd/src/views/platform/workspace/model-update-context.test.ts": "467e7a5ad6e34fd530079a1325f9c220689ba256a54be468f34b0dec03335370",
+    "code/vue-vben-admin/apps/web-antd/src/views/platform/workspace/model-update-context.ts": "c1ffc11f5845002988500acaa4eb742c568a7c042b26cec49ae718faef0af5cd",
+    "code/vue-vben-admin/deploy/rail-platform/Dockerfile.production": "040f1feb4078af4c96f433c05309289f58a8db62bb5d2d5786d2708c5e7fa5fa",
+    "code/vue-vben-admin/deploy/rail-platform/compose.production.yaml": "d3f98a5dd9a8a777440015827184d0ba17c1668caeaff6e674aa8a851cbdbf7c",
+    "code/vue-vben-admin/deploy/single-image/Dockerfile": "b406dcfa4d739da1bb25c1be4063f5844f792a207fb5c5ad4ed1363253be329c",
+    "code/vue-vben-admin/deploy/single-image/compose.yaml": "b25bbd19baa1f797dac8d8aa18e4d3d7a78238f05407f4f7c0940dda07312a71",
+    "code/vue-vben-admin/deploy/single-image/config.example.env": "f9848441528eb47f8fcd26a7b213140242334df98518f8e9d6c08135d75a7947",
+    "config/comfyui-managed-model-paths.yaml": "6e56094fc6f59a9a4d394efdb2dc21ebbca7d42ee0ad63176ee8bf049b50cf97",
+    "config/compose.yaml": "9aee9ff26d8a012ccbc23e9d3bd17825cffe6173c785eb183c38973b8e69910d",
+    "config/config.example.env": "551628c597eae76c820a3d3c92a84099a1c7fa7c74137fb1d0e38b0b45a40bad",
+    "scripts/deployment/clean-project.py": "beb23fb9427b372a5c4af7d4b4d0f7fb8029617269992fab14f5d950fbb45aff",
+    "scripts/deployment/offline/platform.Dockerfile": "a82a9ef93ee879de45bb84c8889929d43b21ebfcc3c1594af303159799df6620",
+    "scripts/deployment/package-online.py": "321d612e999a82f6082c853a0b6ab6105d8c6d7ece7adfed71f7bdab64d2142d",
+    "scripts/deployment/test_managed_models.py": "5831c212701a7ea3773365ef82530f488a41538babbb4538af7f9b1718ba9860"
+  }
+}

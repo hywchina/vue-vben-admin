@@ -4,6 +4,7 @@ import { requestClient } from '#/api/request';
 
 export interface CreateJobInput {
   appKey: string;
+  modelUpdateId?: string;
   designConversationId?: string;
   designMode?: 'cabin' | 'cmf' | 'component' | 'report';
   inputAnnotations?: Array<{ assetId: string; position: number }>;

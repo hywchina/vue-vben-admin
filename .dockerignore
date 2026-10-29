@@ -6,3 +6,12 @@ dist
 .turbo
 dist.zip
 deploy/rail-platform/.env.production
+.rail-platform-runtime
+**/.rail-platform-runtime
+**/.env
+**/.env.*
+!**/.env.example
+!apps/web-antd/.env
+!apps/web-antd/.env.production
+apps/platform-api/.output
+apps/platform-api/.nitro

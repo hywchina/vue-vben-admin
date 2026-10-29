@@ -147,6 +147,10 @@ export class ComfyUiClient {
     };
   }
 
+  async objectInfo() {
+    return this.#requestJson('object_info');
+  }
+
   async submit(prompt: Record<string, unknown>, platformJobId: string) {
     const result = await this.#requestJson('prompt', {
       body: JSON.stringify({

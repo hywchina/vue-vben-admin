@@ -30,6 +30,7 @@ COPY deploy/single-image/nginx.conf /etc/nginx/nginx.conf
 COPY deploy/single-image/supervisord.conf /etc/supervisor/rail.conf
 COPY --chmod=755 deploy/single-image/entrypoint.sh /usr/local/bin/rail-entrypoint
 COPY --chmod=755 deploy/single-image/healthcheck.sh /usr/local/bin/rail-healthcheck
+RUN mkdir -p /app/managed-models && chown node:node /app/managed-models
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=15s --timeout=10s --start-period=90s --retries=4 CMD ["rail-healthcheck"]

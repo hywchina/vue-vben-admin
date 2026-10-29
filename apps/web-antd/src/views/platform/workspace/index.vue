@@ -17,6 +17,7 @@ import { IconifyIcon } from '@vben/icons';
 import { useTabbarStore } from '@vben/stores';
 
 import {
+  Alert,
   Button,
   Input,
   InputNumber,
@@ -35,6 +36,7 @@ import {
   getAssetDownloadApi,
   getAssetPreviewApi,
   getCapabilityApi,
+  getModelUpdateApi,
   getPendingWorkflowInputTransfersApi,
   getWorkflowInstanceInputAssetApi,
   getWorkflowWorkspaceDraftApi,
@@ -53,6 +55,7 @@ import { selectWorkspaceJobs } from '#/store/platform/helpers';
 
 import CameraAngleControl from './camera-angle-control.vue';
 import CapabilityMediaField from './capability-media-field.vue';
+import { canonicalWorkspaceQuery } from './model-update-context';
 import { createRegionInputAnnotations } from './region-annotation';
 
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
@@ -91,6 +94,7 @@ const submitting = ref(false);
 const uploadingField = ref('');
 const capabilityLoading = ref(false);
 const capability = ref<null | PlatformCapability>(null);
+const modelTestParameters = ref<Record<string, unknown>>({});
 const workspaceInstance = ref<null | WorkflowWorkspaceInstance>(null);
 const parameterValues = reactive<Record<string, unknown>>({});
 const cameraPreviewUrl = ref('');
@@ -344,6 +348,7 @@ async function loadCapability() {
   draftSaveTimer = undefined;
   loadedWorkspaceKey.value = '';
   capability.value = null;
+  modelTestParameters.value = {};
   for (const id of Object.keys(workingAssets))
     Reflect.deleteProperty(workingAssets, id);
   workspaceInstance.value = null;
@@ -374,7 +379,15 @@ async function loadCapability() {
       return;
     }
     const [nextCapability, draft, instances] = await Promise.all([
-      getCapabilityApi(capabilityCode),
+      typeof route.query.modelUpdateId === 'string'
+        ? getModelUpdateApi(route.query.modelUpdateId).then((update) => {
+            if (update.appKey !== appKey)
+              throw new Error('模型更新与当前应用不匹配');
+            if (generation === capabilityLoadGeneration)
+              modelTestParameters.value = update.lockedParameters;
+            return update.capability;
+          })
+        : getCapabilityApi(capabilityCode),
       getWorkflowWorkspaceDraftApi(projectId, appKey, instanceId),
       getWorkflowWorkspaceInstancesApi(projectId, appKey),
     ]);
@@ -411,6 +424,7 @@ async function loadCapability() {
     for (const [key, value] of Object.entries(draft.parameterValues)) {
       if (parameterKeys.has(key)) parameterValues[key] = value;
     }
+    Object.assign(parameterValues, modelTestParameters.value);
     const draftAssets = await Promise.all(
       Object.entries(draft.inputAssetIds).map(async ([index, assetId]) => {
         await resolveWorkspaceInput(assetId);
@@ -630,7 +644,13 @@ async function submitCapability(options: { silent?: boolean } = {}) {
     const inputAnnotations = await prepareRegionAnnotations();
     const job = await platformStore.runApplication(
       application.value.key,
-      { workspaceInstanceId: workspaceInstanceId.value },
+      {
+        workspaceInstanceId: workspaceInstanceId.value,
+        modelUpdateId:
+          typeof route.query.modelUpdateId === 'string'
+            ? route.query.modelUpdateId
+            : undefined,
+      },
       selectedAssetIds.value,
       capability.value ? taskParameters() : { prompt: genericPrompt.value },
       Object.values(selectedTransfers),
@@ -939,10 +959,14 @@ async function canonicalizeAndDeduplicateInstanceTab() {
   if (!instanceId) return;
   if (
     Object.keys(route.query).some(
-      (key) => key !== 'instanceId' && route.query[key] !== undefined,
+      (key) =>
+        !['instanceId', 'modelUpdateId'].includes(key) &&
+        route.query[key] !== undefined,
     )
   ) {
-    await router.replace({ query: { instanceId } });
+    await router.replace({
+      query: canonicalWorkspaceQuery(instanceId, route.query),
+    });
   }
   const currentKey = route.fullPath;
   const duplicateKeys = tabbarStore.getTabs.flatMap((tab) => {
@@ -976,6 +1000,7 @@ watch(
   () => [
     route.params.appKey,
     route.query.instanceId,
+    route.query.modelUpdateId,
     application.value?.capabilityCode,
     platformStore.currentProjectId,
   ],
@@ -1005,6 +1030,12 @@ onBeforeUnmount(() => {
     class="capability-studio"
     :style="{ '--cap-accent': application.color }"
   >
+    <Alert
+      v-if="route.query.modelUpdateId"
+      type="warning"
+      show-icon
+      message="模型更新试运行：使用待验证版本，不会改变当前功能绑定。完成后返回模型管理查看输出并发布。"
+    />
     <header class="studio-hero">
       <div class="studio-hero__identity">
         <Button
@@ -1139,6 +1170,7 @@ onBeforeUnmount(() => {
               />
               <Input
                 v-else-if="field.type === 'text'"
+                :disabled="field.key in modelTestParameters"
                 :value="fieldTextValue(field)"
                 :maxlength="field.maxLength"
                 :placeholder="field.placeholder"
@@ -1155,6 +1187,7 @@ onBeforeUnmount(() => {
               />
               <Select
                 v-else-if="field.type === 'select'"
+                :disabled="field.key in modelTestParameters"
                 :value="fieldTextValue(field)"
                 :options="field.options"
                 @update:value="setFieldValue(field, $event)"
@@ -1236,6 +1269,7 @@ onBeforeUnmount(() => {
                   />
                   <Select
                     v-else-if="field.type === 'select'"
+                    :disabled="field.key in modelTestParameters"
                     :value="fieldTextValue(field)"
                     :options="field.options"
                     @update:value="setFieldValue(field, $event)"

@@ -146,6 +146,12 @@ const routes: RouteRecordRaw[] = [
         name: 'PlatformWorkflowManagement',
         path: 'workflows',
       },
+      {
+        component: () => import('#/views/platform/model-management/index.vue'),
+        meta: { icon: platformSemanticIcons.component, title: '模型管理' },
+        name: 'PlatformModelManagement',
+        path: 'models',
+      },
     ],
   },
   {

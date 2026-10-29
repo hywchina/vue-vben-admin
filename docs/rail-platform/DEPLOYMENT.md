@@ -1,5 +1,9 @@
 # 跨平台部署手册
 
+## 管理员上传模型部署增量（2026-10-30）
+
+迁移 046 随平台初始化执行；平台新增 `/app/managed-models` 可写卷和 `MANAGED_MODELS_ROOT`、`MANAGED_MODELS_MAX_BYTES`。整体 Compose 给 ComfyUI 同卷只读挂载及额外模型路径 YAML。平台镜像须重建，ComfyUI 按新挂载重建容器；独立平台部署还须人工配置外部 ComfyUI 的对应路径。备份 PostgreSQL 和模型卷，禁止以缓存方式清理；见 [模型管理部署与恢复](MODEL_MANAGEMENT.md#部署备份与恢复)。本轮尚未发布到服务器。
+
 > 2026-10-15 HTTPS 交付更新：整体项目的服务器入口由 `scripts/deploy.sh` 自动识别业务 IP、维护每项目本地 CA 与服务证书，平台和对象存储统一 HTTPS。单镜像 Nginx 保留可信入口传入的协议及带端口 Host；入口和平台镜像需要重建。客户端首次必须信任目标服务器 CA 公钥，不能分发私钥。流程和旧 HTTP 升级方式以整体仓库 `doc/DEPLOY.md` 为准；下文历史 Compose 示例不等于当前服务器 HTTPS 入口。
 
 > 2026-10-10 Ubuntu 联网依赖/本地模型交付：整个系统新增根目录 `scripts/deploy.sh`，安装缺失的 Docker/Compose/Buildx/Container Toolkit，从当前 Dockerfile 构建五个业务镜像，支持 ComfyUI、LoRA、vLLM 独立物理 GPU。平台仍为一个 Web/API/Worker 容器。详见整体仓库 [doc/DEPLOY.md](../../../../doc/DEPLOY.md)。模型完整校验、只读挂载且运行网络禁外连；缺失模型直接失败。单镜像 Dockerfile 的 pnpm 11 生产 deploy 改为注入 workspace 包的受支持方式，不再使用已移除的 `--legacy`。本轮构建/实机验收以交付验收记录为准，不能将三 GPU 配置测试当作本机三 GPU 实测。

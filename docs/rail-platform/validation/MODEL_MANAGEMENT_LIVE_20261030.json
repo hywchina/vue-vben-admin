@@ -1,0 +1,28 @@
+{
+  "modelId": "c320d856-3a72-48a0-8fc5-79e17975defd",
+  "status": "ready",
+  "file": [
+    {
+      "path": "flux2_klein_9b_interior_lora_smoke.safetensors",
+      "size": 82866816,
+      "actualSha256": "1f8088d31fddf1e5454e43614e41e0e593969549ba648b2823d22e30482011d4"
+    }
+  ],
+  "updateId": "11127d65-8349-4262-bbfe-250e0d909ff2",
+  "publishedAt": "2026-10-29T16:46:44.06527+00:00",
+  "candidateVersionId": "b7d74093-ec27-48c2-91cf-a2fd5b98b3bf",
+  "activeVersionId": "b7d74093-ec27-48c2-91cf-a2fd5b98b3bf",
+  "jobId": "e5425861-9002-4fef-b96a-c7560db83346",
+  "jobPublicId": "TSK-00000029",
+  "jobStatus": "succeeded",
+  "outputCount": 1,
+  "scope": "Local isolated database; real browser and RTX 3090 GPU",
+  "comfyProof": [
+    "\u001b[32m[INFO]\u001b[0m \u001b[32mPrompt executed in 7.09 seconds\u001b[0m"
+  ],
+  "resolution": "512x512",
+  "steps": 1,
+  "samples": 1,
+  "presetWeightsUnmodified": true,
+  "browserErrorsAfterFix": []
+}

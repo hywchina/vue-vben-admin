@@ -123,6 +123,7 @@ async function main() {
     'generated-asset-naming-integration-test.ts',
     'business-id-integration-test.ts',
     'lora-dataset-integration-test.ts',
+    'model-management-integration-test.ts',
   ]) {
     if (interrupted) throw new Error('Integration suite interrupted');
     if (report.child.exitCode !== null)
@@ -132,6 +133,8 @@ async function main() {
   console.warn(
     'Isolated integration suite passed; no real GPU jobs submitted.',
   );
+  if (process.env.RAIL_MODEL_LIVE_ACCEPTANCE === '1')
+    await run('model-management-live-acceptance.ts', env);
 }
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

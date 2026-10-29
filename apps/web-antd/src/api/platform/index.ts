@@ -8,6 +8,7 @@ export * from './design-modes';
 export * from './design-prompt-templates';
 export * from './jobs';
 export * from './lora';
+export * from './models';
 export * from './notifications';
 export * from './projects';
 export * from './reports';

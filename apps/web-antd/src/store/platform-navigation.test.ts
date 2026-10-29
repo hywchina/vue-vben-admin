@@ -40,6 +40,7 @@ describe('platform navigation', () => {
     expect(getWorkbenchTools(true).map((tool) => tool.key)).toEqual([
       'access',
       'workflows',
+      'models',
       'audit',
     ]);
   });

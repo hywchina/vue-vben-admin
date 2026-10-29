@@ -9,6 +9,7 @@ import {
 } from '~/utils/domain/design-conversation-titles';
 import { requireDesignConversation } from '~/utils/domain/design-conversations';
 import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
+import { getModelUpdate } from '~/utils/domain/models/updates';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
@@ -30,6 +31,7 @@ import { parseBody } from '~/utils/validation';
 const createJobSchema = z
   .object({
     appKey: z.string().trim().min(1).max(100),
+    modelUpdateId: z.string().uuid().optional(),
     designConversationId: z.string().uuid().optional(),
     designMode: z.enum(['cabin', 'cmf', 'component', 'report']).optional(),
     inputAnnotations: z
@@ -112,7 +114,33 @@ export default apiHandler(async (event) => {
     );
   }
 
-  const capability = await getCapabilityByAppKey(input.appKey);
+  let capability = await getCapabilityByAppKey(input.appKey);
+  if (input.modelUpdateId) {
+    if (!hasAdministrativeRole(identity))
+      throw new ApiError(403, 'FORBIDDEN', '仅管理员可试运行模型更新');
+    const update = await getModelUpdate(input.modelUpdateId);
+    if (
+      update.record.publishedAt ||
+      update.capability.appKey !== input.appKey ||
+      update.record.baseVersionId !== capability?.workflowVersionId
+    )
+      throw new ApiError(
+        409,
+        'MODEL_BINDING_CHANGED',
+        '模型更新已发布或工作流绑定已变化',
+      );
+    capability = update.capability;
+    const fields = capability.parameterSchema as {
+      defaultValue?: unknown;
+      inputName?: string;
+      key: string;
+      nodeId?: string;
+    }[];
+    for (const r of update.record.replacements)
+      for (const field of fields)
+        if (field.nodeId === r.nodeId && field.inputName === r.inputName)
+          input.parameters[field.key] = field.defaultValue;
+  }
   if (capability) {
     try {
       materializeWorkflow(
@@ -372,6 +400,8 @@ export default apiHandler(async (event) => {
       RETURNING id, public_id AS "publicId", status, stage, progress, created_at AS "createdAt"
     `;
     if (!created) throw new Error('创建任务失败');
+    if (input.modelUpdateId)
+      await transaction`INSERT INTO managed_model_tests(update_id,job_id) VALUES(${input.modelUpdateId},${created.id})`;
 
     for (const [position, assetId] of input.inputAssetIds.entries()) {
       await transaction`

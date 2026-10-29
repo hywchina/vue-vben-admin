@@ -3,7 +3,7 @@ import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 export interface WorkbenchTool {
   description: string;
   icon: string;
-  key: 'access' | 'audit' | 'workflows';
+  key: 'access' | 'audit' | 'models' | 'workflows';
   path: string;
   title: string;
 }
@@ -25,6 +25,13 @@ export function getWorkbenchTools(isAdmin: boolean): WorkbenchTool[] {
             key: 'workflows' as const,
             path: '/administration/workflows',
             title: '工作流管理',
+          },
+          {
+            description: '上传系统模型，验证并更新工作流模型引用',
+            icon: platformSemanticIcons.component,
+            key: 'models' as const,
+            path: '/administration/models',
+            title: '模型管理',
           },
         ]
       : []),
