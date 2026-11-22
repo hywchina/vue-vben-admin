@@ -1,0 +1,133 @@
+{
+  "date": "2026-11-22",
+  "scope": "local source development and verification only; no Git commit/push, delivery generation/sync or remote deployment",
+  "baseCommit": "030299d806b690d962580a9b707700dcf107c0ff",
+  "reference": {
+    "reference": "快速有轨电车工业设计方案(1).pdf",
+    "sha256": "d23cf64090f8208f1e13ccf5e4f78f1efeeaaf71d81ec2671bb0d71b81720cd5",
+    "pagePoints": {
+      "width": 1190.5,
+      "height": 822
+    }
+  },
+  "changes": [
+    "Explicit auto line rule in all Word starters and legacy body/figure rendering",
+    "Only generated picture paragraphs override uploaded fixed/body line spacing; original text styles preserved",
+    "Generated fallback captions override picture page breaks; paragraph XML properties kept in schema order",
+    "Editable landscape design-report template v3, cover art/logo, chapter directory populated at generation, purple chapter styling, large images/captions, Noto CJK fonts",
+    "PPT remains v2; immutable submitted snapshots unchanged; no database migration or Presenton code change"
+  ],
+  "checks": {
+    "apiUnit": {
+      "passed": 271,
+      "reportSpecificPassed": 34
+    },
+    "webUnit": {
+      "passed": 363
+    },
+    "typecheck:rail": "passed",
+    "build:rail": "passed",
+    "test:rail:integration": {
+      "passed": true,
+      "groups": 7,
+      "environment": "isolated PostgreSQL and MinIO; real CPU report worker, permissions/upload/review/snapshots/download; GPU workers use explicit protocol fixtures"
+    },
+    "changedFiles": {
+      "oxfmt": "passed",
+      "oxlintTypeAware": "passed",
+      "eslint": "passed",
+      "stylelint": "passed",
+      "gitDiffCheck": "passed"
+    },
+    "fullLint": {
+      "passed": false,
+      "blocker": "59 pre-existing contract-deliverable format issues, left unchanged under prior user instruction"
+    }
+  },
+  "libreoffice24": {
+    "office": "LibreOffice 24.2.7.2 420(Build:2)",
+    "aiValidation": "live-model",
+    "results": [
+      {
+        "name": "template-design-template",
+        "pages": 9,
+        "fullImages": 5,
+        "ai": "not-used"
+      },
+      {
+        "name": "template-uploaded-exact-line",
+        "pages": 3,
+        "fullImages": 5,
+        "ai": "not-used"
+      },
+      {
+        "name": "template-clipping-negative-control",
+        "pages": 1,
+        "fullImages": 0,
+        "ai": "not-used"
+      },
+      {
+        "name": "ai-design-template",
+        "pages": 9,
+        "fullImages": 5,
+        "ai": "live-model"
+      },
+      {
+        "name": "ai-uploaded-exact-line",
+        "pages": 3,
+        "fullImages": 5,
+        "ai": "live-model"
+      }
+    ],
+    "environment": "Ubuntu 24.04 LibreOffice Writer 24.2.7.2, installed from official Ubuntu packages into an isolated local prefix; dedicated disposable profiles, host installation unchanged"
+  },
+  "ai": {
+    "actualModel": "qwen3.5:9b",
+    "provider": "local Ollama",
+    "independentServiceImage": "rail-presenton-combined-delivery:20261027",
+    "service": "existing template-plan endpoint in isolated local validation container",
+    "mockSeparated": true,
+    "productionModelValidated": false
+  },
+  "browser": {
+    "desktop": true,
+    "mobile": true,
+    "formatSwitch": true,
+    "templateManagement": true,
+    "pageErrors": [],
+    "scope": "actual picker component in Chrome; template list fixture; persistence and access independently verified by integration"
+  },
+  "samples": {
+    "template": {
+      "file": "report-templates/examples/example-template.docx",
+      "pages": 6,
+      "visualReview": "all 6 pages reviewed in LibreOffice 24.2.7.2 and bundled LibreOfficeDev 26.8"
+    },
+    "ai": {
+      "file": "report-templates/examples/example-ai.docx",
+      "pages": 6,
+      "visualReview": "all 6 pages reviewed in LibreOffice 24.2.7.2 and bundled LibreOfficeDev 26.8"
+    },
+    "wordSha256": {
+      "starter-report.docx": "f4e7ea96ad20d1d92766bb49d3c628208b1ea82be110bb34ac15f7a89353831f",
+      "starter-contract.docx": "af3ae6e167b2dea1a7e69e7d7b786efba8e5660106b67f607aa317524a12c522",
+      "starter-patent.docx": "8c2414e1a304f4bdbc4e8af8217b8c3ab3e3e609b0c3d2add583439111c8748c",
+      "starter-bid.docx": "549190f69d276b80346b870424216fb1eca4440d9bd98db6c2c972ebbfe925c6",
+      "example-ai.docx": "af629ae93d8b67d7c7af8572317c0d5bd6d0b48304f152b06cf3e575e99e41e9",
+      "example-template.docx": "1c0df63e9a56f8904e9cc76abfad72fb005f8033f021dc38f425a44290e49dd1"
+    }
+  },
+  "edgeCases": {
+    "titleCharacters": 160,
+    "summaryCharacters": 2000,
+    "longBodyNaturalPagination": true,
+    "coverOverflow": false,
+    "20ImagesPerChapter": "unit and real CPU Worker integration"
+  },
+  "limitations": [
+    "This is a reusable editable Word layout derived from the PDF, not a pixel-identical conversion of all 21 reference pages",
+    "Directory lists actual chapter titles; it intentionally does not invent or cache page numbers",
+    "No Word desktop/Microsoft Office visual acceptance performed",
+    "No remote deployment or production AI model acceptance in this round"
+  ]
+}

@@ -30,6 +30,8 @@
 
 报告生成现支持 DOCX、PPTX 和自包含 Markdown 三种交付格式，三种格式均可选择模板生成或 AI 生成。DOCX/PPTX 回流为 `document` 项目资产，Markdown 回流为 `text` 项目资产；外部 AI 未配置或返回无效文件时明确失败，不回退为模板产物。
 
+Word 默认使用参考工业设计方案 PDF 重建的横向 v3 模板，模板模式与 AI 模式共用原生版式；图片段落使用明确的自动行距，已增加 LibreOffice 24.2 的实际渲染回归。PPT 默认模板仍为 v2，历史报告保持原文件。使用说明与测试入口见 [报告模板规则](report-templates/README.md)。本轮为本地开发验证，不表示服务器已更新。
+
 2026-08-20 甲方前端意见的原始需求、提交映射、验证证据、已知问题和后续检查清单见 [`customer-feedback/20260820/ITERATION_HANDOFF.md`](customer-feedback/20260820/ITERATION_HANDOFF.md)。面向甲方确认的逐条需求、22 张配图说明、疑问与不合理项见 [`customer-feedback/20260820/CUSTOMER_REQUIREMENTS_ANALYSIS.md`](customer-feedback/20260820/CUSTOMER_REQUIREMENTS_ANALYSIS.md)，同目录提供已完成全页渲染检查的 PDF 版本。
 
 合同要求的研究报告、说明书及后续交付文档统一存放于 [`contract-deliverables/`](contract-deliverables/README.md)，每版在内部登记代码提交、取证时间、工作区状态和验证范围。当前研究报告为V2.15平台方案与研究验证完善稿：基于实际V2.14按七项审查定点完善第四至十二章，修正运行依赖与成果复用，细化方法承接、阶段检测和实验判据，修图44及图47底注；新增及改写文字深蓝色。89页、47图、13表、32原生公式、87书签及14目录项/28链接，71项最终审计和89页视觉检查通过，真实目录页码零差。前三章实质内容、14条批注、76旧媒体及18个旧版保留；工程与阶段实证边界继续内部维护，原批注不自动标记专家确认。正式正文不含报价、代码说明、“甲方”或编修指令，详见文档目录内 `source/REVIEW_RESPONSE_V2.15.md`、`source/EVIDENCE_V2.15.md` 和最终QA记录。

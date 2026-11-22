@@ -10,6 +10,7 @@ import {
   Header,
   HeadingLevel,
   ImageRun,
+  LineRuleType,
   Packer,
   PageBreak,
   PageNumber,
@@ -354,7 +355,7 @@ async function renderDocx(input: RenderReportInput) {
         (text) =>
           new Paragraph({
             children: [new TextRun({ text })],
-            spacing: { after: 180, line: 360 },
+            spacing: { after: 180, line: 360, lineRule: LineRuleType.AUTO },
           }),
       ),
     );
@@ -392,7 +393,7 @@ async function renderDocx(input: RenderReportInput) {
         (text) =>
           new Paragraph({
             children: [new TextRun({ text })],
-            spacing: { after: 180, line: 360 },
+            spacing: { after: 180, line: 360, lineRule: LineRuleType.AUTO },
           }),
       ),
     );
@@ -417,7 +418,12 @@ async function renderDocx(input: RenderReportInput) {
             }),
           ],
           keepNext: true,
-          spacing: { before: 160, after: 80 },
+          spacing: {
+            before: 160,
+            after: 80,
+            line: 240,
+            lineRule: LineRuleType.AUTO,
+          },
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,

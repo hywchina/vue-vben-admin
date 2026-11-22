@@ -38,6 +38,72 @@ const directChildren = (node: Node) =>
   Array.from(node.childNodes ?? []).filter(
     (item): item is Element => item.nodeType === 1,
   );
+// OOXML paragraph properties have a defined order; XML DOM append alone is
+// insufficient when adding overrides to a paragraph cloned from a user template.
+function wordParagraphProperty(
+  paragraph: Element,
+  name: 'keepNext' | 'pageBreakBefore' | 'spacing',
+  attributes: Record<string, string>,
+) {
+  const document = requireTemplateValue(paragraph.ownerDocument);
+  let properties = directChildren(paragraph).find(
+    (node) => node.localName === 'pPr',
+  );
+  if (!properties) {
+    properties = document.createElementNS(NS.w, 'w:pPr');
+    paragraph.insertBefore(properties, paragraph.firstChild);
+  }
+  const order = [
+    'pStyle',
+    'keepNext',
+    'keepLines',
+    'pageBreakBefore',
+    'framePr',
+    'widowControl',
+    'numPr',
+    'suppressLineNumbers',
+    'pBdr',
+    'shd',
+    'tabs',
+    'suppressAutoHyphens',
+    'kinsoku',
+    'wordWrap',
+    'overflowPunct',
+    'topLinePunct',
+    'autoSpaceDE',
+    'autoSpaceDN',
+    'bidi',
+    'adjustRightInd',
+    'snapToGrid',
+    'spacing',
+    'ind',
+    'contextualSpacing',
+    'mirrorIndents',
+    'suppressOverlap',
+    'jc',
+    'textDirection',
+    'textAlignment',
+    'textboxTightWrap',
+    'outlineLvl',
+    'divId',
+    'cnfStyle',
+    'rPr',
+    'sectPr',
+    'pPrChange',
+  ];
+  let property = directChildren(properties).find(
+    (node) => node.localName === name,
+  );
+  if (!property) {
+    property = document.createElementNS(NS.w, `w:${name}`);
+    const following = directChildren(properties).find(
+      (node) => order.indexOf(node.localName ?? '') > order.indexOf(name),
+    );
+    properties.insertBefore(property, following ?? null);
+  }
+  for (const [key, value] of Object.entries(attributes))
+    property.setAttributeNS(NS.w, `w:${key}`, value);
+}
 function paragraphNodes(node: Node): Element[] {
   if (node.nodeType !== 1) return [];
   const paragraphs = children(node as Element, NS.w, 'p');
@@ -253,6 +319,11 @@ export async function renderOfficeTemplate(
   ) {
     const section = input.parameters.sections[sectionIndex];
     switch (binding.role) {
+      case 'contents': {
+        return input.parameters.sections
+          .map((item, index) => `${index + 1}  ${item.title}`)
+          .join('\n');
+      }
       case 'section-body': {
         return body ?? section?.body ?? '';
       }
@@ -316,24 +387,23 @@ export async function renderOfficeTemplate(
       );
       const p = doc.importNode(picture, true) as Element;
       if (pPr) p.insertBefore(pPr.cloneNode(true), p.firstChild);
+      // Inline pictures must expand their line box. Body/exact line spacing can
+      // otherwise clip them to a thin strip in LibreOffice 24.2. Only generated
+      // picture paragraphs change; source text styles remain untouched.
+      wordParagraphProperty(p, 'spacing', { line: '240', lineRule: 'auto' });
+      wordParagraphProperty(p, 'keepNext', { val: image.caption ? '1' : '0' });
       requireTemplateValue(node.parentNode).insertBefore(p, node);
       if (image.caption) {
         const caption = (captionStyle ?? node).cloneNode(true) as Element;
         if (!captionStyle) {
           for (const drawing of children(caption, NS.w, 'drawing'))
             requireTemplateValue(drawing.parentNode).removeChild(drawing);
-          let captionProperties = directChildren(caption).find(
-            (item) => item.localName === 'pPr',
-          );
-          if (!captionProperties) {
-            captionProperties = doc.createElementNS(NS.w, 'w:pPr');
-            caption.insertBefore(captionProperties, caption.firstChild);
-          }
-          for (const keep of children(captionProperties, NS.w, 'keepNext'))
-            requireTemplateValue(keep.parentNode).removeChild(keep);
-          const keep = doc.createElementNS(NS.w, 'w:keepNext');
-          keep.setAttributeNS(NS.w, 'w:val', '0');
-          captionProperties.appendChild(keep);
+          wordParagraphProperty(caption, 'keepNext', { val: '0' });
+          wordParagraphProperty(caption, 'pageBreakBefore', { val: '0' });
+          wordParagraphProperty(caption, 'spacing', {
+            line: '240',
+            lineRule: 'auto',
+          });
         }
         requireTemplateValue(node.parentNode).insertBefore(caption, node);
         setText(caption, image.caption, 'docx');

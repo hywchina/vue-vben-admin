@@ -7,6 +7,7 @@ import {
   Document,
   Footer,
   HeadingLevel,
+  LineRuleType,
   Packer,
   PageNumber,
   Paragraph,
@@ -15,6 +16,7 @@ import {
 import pptxgen from 'pptxgenjs';
 
 import { inspectOfficeTemplate } from './package';
+import { createDesignWordTemplate } from './word-design';
 
 export const STARTER_NAMES = {
   report: '工程设计报告',
@@ -55,96 +57,127 @@ async function build(format: 'docx' | 'pptx', kind: StarterKind) {
       bid: '按采购文件逐项响应；资格、报价、承诺及证明材料须核实，不自动推定满足要求。',
     };
     const note = kind === 'report' ? undefined : notes[kind];
-    const doc = new Document({
-      title: STARTER_NAMES[kind],
-      creator: 'Rail design platform',
-      styles: {
-        default: {
-          document: {
-            run: {
-              font: { name: '宋体', eastAsia: '宋体' },
-              size: 24,
-              color: '202838',
-            },
-            paragraph: { spacing: { line: 360, after: 160 } },
-          },
-          heading1: {
-            run: {
-              font: { name: 'Arial', eastAsia: '黑体' },
-              size: 32,
-              bold: true,
-              color: '202838',
-            },
-            paragraph: { keepNext: true, spacing: { before: 360, after: 200 } },
-          },
-        },
-        paragraphStyles: [
-          {
-            id: 'RailCaption',
-            name: 'Rail figure caption',
-            run: {
-              font: { name: '宋体', eastAsia: '宋体' },
-              size: 20,
-              color: '667085',
-            },
-            paragraph: {
-              alignment: AlignmentType.CENTER,
-              spacing: { after: 200 },
-              keepNext: false,
-            },
-          },
-        ],
-      },
-      sections: [
-        {
-          properties: {
-            page: {
-              size: { width: 11_906, height: 16_838 },
-              margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 },
-            },
-          },
-          footers: {
-            default: new Footer({
-              children: [
-                new Paragraph({
-                  alignment: AlignmentType.CENTER,
-                  children: [
-                    new TextRun({ text: '第 ', size: 18 }),
-                    new TextRun({ children: [PageNumber.CURRENT] }),
-                    new TextRun({ text: ' 页', size: 18 }),
-                  ],
-                }),
+    const doc =
+      kind === 'report'
+        ? createDesignWordTemplate()
+        : new Document({
+            title: STARTER_NAMES[kind],
+            creator: 'Rail design platform',
+            styles: {
+              default: {
+                document: {
+                  run: {
+                    font: {
+                      name: 'Noto Sans CJK SC',
+                      eastAsia: 'Noto Sans CJK SC',
+                    },
+                    size: 24,
+                    color: '202838',
+                  },
+                  paragraph: {
+                    spacing: {
+                      line: 360,
+                      lineRule: LineRuleType.AUTO,
+                      after: 160,
+                    },
+                  },
+                },
+                heading1: {
+                  run: {
+                    font: {
+                      name: 'Noto Sans CJK SC',
+                      eastAsia: 'Noto Sans CJK SC',
+                    },
+                    size: 32,
+                    bold: true,
+                    color: '202838',
+                  },
+                  paragraph: {
+                    keepNext: true,
+                    spacing: { before: 360, after: 200 },
+                  },
+                },
+              },
+              paragraphStyles: [
+                {
+                  id: 'RailCaption',
+                  name: 'Rail figure caption',
+                  run: {
+                    font: {
+                      name: 'Noto Sans CJK SC',
+                      eastAsia: 'Noto Sans CJK SC',
+                    },
+                    size: 20,
+                    color: '667085',
+                  },
+                  paragraph: {
+                    alignment: AlignmentType.CENTER,
+                    spacing: { after: 200 },
+                    keepNext: false,
+                  },
+                },
               ],
-            }),
-          },
-          children: [
-            paragraph(STARTER_NAMES[kind], {
-              spacing: { before: 600, after: 200 },
-            }),
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: '{{title}}',
-                  font: { name: 'Arial', eastAsia: '黑体' },
-                  size: 48,
-                  bold: true,
-                }),
-              ],
-              spacing: { after: 480 },
-            }),
-            ...(note ? [paragraph(note)] : []),
-            paragraph('{{summary}}'),
-            paragraph('{{section_title}}', { heading: HeadingLevel.HEADING_1 }),
-            paragraph('{{section_body}}'),
-            paragraph('{{images}}', {
-              alignment: AlignmentType.CENTER,
-              keepNext: true,
-            }),
-            paragraph('{{caption}}', { style: 'RailCaption' }),
-          ],
-        },
-      ],
-    });
+            },
+            sections: [
+              {
+                properties: {
+                  page: {
+                    size: { width: 11_906, height: 16_838 },
+                    margin: {
+                      top: 1440,
+                      bottom: 1440,
+                      left: 1440,
+                      right: 1440,
+                    },
+                  },
+                },
+                footers: {
+                  default: new Footer({
+                    children: [
+                      new Paragraph({
+                        alignment: AlignmentType.CENTER,
+                        children: [
+                          new TextRun({ text: '第 ', size: 18 }),
+                          new TextRun({ children: [PageNumber.CURRENT] }),
+                          new TextRun({ text: ' 页', size: 18 }),
+                        ],
+                      }),
+                    ],
+                  }),
+                },
+                children: [
+                  paragraph(STARTER_NAMES[kind], {
+                    spacing: { before: 600, after: 200 },
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: '{{title}}',
+                        font: {
+                          name: 'Noto Sans CJK SC',
+                          eastAsia: 'Noto Sans CJK SC',
+                        },
+                        size: 48,
+                        bold: true,
+                      }),
+                    ],
+                    spacing: { after: 480 },
+                  }),
+                  ...(note ? [paragraph(note)] : []),
+                  paragraph('{{summary}}'),
+                  paragraph('{{section_title}}', {
+                    heading: HeadingLevel.HEADING_1,
+                  }),
+                  paragraph('{{section_body}}'),
+                  paragraph('{{images}}', {
+                    alignment: AlignmentType.CENTER,
+                    keepNext: true,
+                  }),
+                  paragraph('{{caption}}', { style: 'RailCaption' }),
+                ],
+              },
+            ],
+          });
     source = new Uint8Array(await Packer.toBuffer(doc));
   } else {
     const PresentationConstructor =
@@ -389,7 +422,7 @@ async function build(format: 'docx' | 'pptx', kind: StarterKind) {
       projectId: '',
       name: STARTER_NAMES[kind],
       format,
-      revision: 2,
+      revision: format === 'docx' ? 3 : 2,
       objectKey: '',
       sha256: createHash('sha256').update(source).digest('hex'),
       manifest,

@@ -42,7 +42,13 @@ const config = reactive<TemplateConfiguration>({
 });
 const starterKind = ref('report');
 const options = computed(() => [
-  { label: '平台工程设计模板 · v2', value: '' },
+  {
+    label:
+      props.format === 'docx'
+        ? '工业设计方案模板 · v3'
+        : '平台工程设计模板 · v2',
+    value: '',
+  },
   ...templates.value
     .filter((item) => item.format === props.format && item.status === 'ready')
     .map((item) => ({
@@ -54,6 +60,7 @@ const roleOptions = [
   ['fixed', '保持原样'],
   ['title', '报告标题'],
   ['summary', '报告摘要'],
+  ['contents', '章节目录'],
   ['section-title', '章节标题'],
   ['section-body', '章节正文'],
   ['images', '章节图片'],

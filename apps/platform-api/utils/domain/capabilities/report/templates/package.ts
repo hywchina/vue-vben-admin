@@ -140,6 +140,7 @@ function inferredRole(text: string): { fieldName: string; role: TemplateRole } {
     title: 'title',
     summary: 'summary',
     section_title: 'section-title',
+    contents: 'contents',
     section_body: 'section-body',
     images: 'images',
     caption: 'image-caption',

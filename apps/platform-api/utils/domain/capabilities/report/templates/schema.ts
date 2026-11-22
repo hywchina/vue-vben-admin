@@ -4,6 +4,7 @@ export const templateRoleSchema = z.enum([
   'fixed',
   'title',
   'summary',
+  'contents',
   'section-title',
   'section-body',
   'images',

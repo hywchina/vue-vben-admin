@@ -10,11 +10,13 @@ import { createReportSchema } from '../schema';
 import { planTemplateReport } from './ai-plan';
 import {
   children,
+  closeOfficePackage,
   inspectOfficeTemplate,
   NS,
   openOfficePackage,
   readXml,
   slideParts,
+  writeXml,
 } from './package';
 import { renderOfficeTemplate, validateTemplateInput } from './renderer';
 import { validateTemplateBindings } from './repository';
@@ -135,7 +137,11 @@ describe('native reviewed report templates', () => {
     expect(texts).toContain('800 mm');
     expect(texts).toContain('后续验证');
     expect(texts).not.toContain('{{');
-    expect(children(doc, NS.w, 'drawing')).toHaveLength(20);
+    expect(
+      children(doc, NS.wp, 'docPr').filter((node) =>
+        node.getAttribute('name')?.startsWith('Report image '),
+      ),
+    ).toHaveLength(20);
     expect(
       Object.keys(files).filter((name) =>
         name.startsWith('word/media/railImage'),
@@ -238,7 +244,7 @@ describe('native reviewed report templates', () => {
     ).toHaveLength(20);
   });
   it('fills an existing Word picture position with a caption even without a caption-style slot', async () => {
-    const starter = await getStarterTemplate('docx');
+    const starter = await getStarterTemplate('docx', 'contract');
     const first = input();
     first.parameters.sections = [
       {
@@ -258,6 +264,23 @@ describe('native reviewed report templates', () => {
       starter.snapshot,
       starter.source,
     );
+    const seedFiles = openOfficePackage(seed.bytes);
+    const seedDocument = readXml(seedFiles, 'word/document.xml');
+    const picture = requireTemplateValue(
+      children(seedDocument, NS.w, 'p').find(
+        (node) => children(node, NS.w, 'drawing').length,
+      ),
+    );
+    const properties = requireTemplateValue(children(picture, NS.w, 'pPr')[0]);
+    const pageBreak = seedDocument.createElementNS(NS.w, 'w:pageBreakBefore');
+    pageBreak.setAttributeNS(NS.w, 'w:val', '1');
+    // oxlint-disable-next-line unicorn/prefer-modern-dom-apis -- @xmldom implements XML DOM Level 2.
+    properties.insertBefore(
+      pageBreak,
+      children(properties, NS.w, 'spacing')[0] ?? null,
+    );
+    writeXml(seedFiles, 'word/document.xml', seedDocument);
+    seed.bytes = closeOfficePackage(seedFiles);
     const manifest = inspectOfficeTemplate(seed.bytes, 'docx');
     const section = requireTemplateValue(first.parameters.sections[0]);
     const bindings = manifest.elements.map((element) => {
@@ -286,6 +309,111 @@ describe('native reviewed report templates', () => {
         (node) => node.textContent === '新的图注',
       ),
     ).toHaveLength(1);
+    const caption = requireTemplateValue(
+      children(doc, NS.w, 'p').find((node) => node.textContent === '新的图注'),
+    );
+    expect(
+      children(caption, NS.w, 'pageBreakBefore')[0]?.getAttributeNS(
+        NS.w,
+        'val',
+      ),
+    ).toBe('0');
+    expect(
+      children(caption, NS.w, 'spacing')[0]?.getAttributeNS(NS.w, 'lineRule'),
+    ).toBe('auto');
+  });
+  it.each(['report', 'contract', 'patent', 'bid'] as const)(
+    'uses explicit automatic line rules in the %s Word starter',
+    async (kind) => {
+      const starter = await getStarterTemplate('docx', kind);
+      const files = openOfficePackage(starter.source);
+      for (const part of Object.keys(files).filter(
+        (name) => name.startsWith('word/') && name.endsWith('.xml'),
+      )) {
+        for (const spacing of children(
+          readXml(files, part),
+          NS.w,
+          'spacing',
+        ).filter((node) => node.hasAttributeNS(NS.w, 'line'))) {
+          expect(spacing.getAttributeNS(NS.w, 'lineRule')).toBe('auto');
+        }
+      }
+    },
+  );
+  it('uses the PDF landscape layout and a populated chapter directory', async () => {
+    const starter = await getStarterTemplate('docx');
+    const files = openOfficePackage(starter.source);
+    const doc = readXml(files, 'word/document.xml');
+    const page = requireTemplateValue(children(doc, NS.w, 'pgSz')[0]);
+    expect(
+      Number(page.getAttributeNS(NS.w, 'w')) /
+        Number(page.getAttributeNS(NS.w, 'h')),
+    ).toBeCloseTo(1190.5 / 822, 3);
+    expect(
+      starter.snapshot.manifest.elements.some(
+        (item) => item.role === 'contents',
+      ),
+    ).toBe(true);
+    expect(starter.snapshot.revision).toBe(3);
+    const report = input();
+    const artifact = await renderOfficeTemplate(
+      report,
+      starter.snapshot,
+      starter.source,
+    );
+    const text = children(
+      readXml(openOfficePackage(artifact.bytes), 'word/document.xml'),
+      NS.w,
+      't',
+    )
+      .map((node) => node.textContent)
+      .join('\n');
+    expect(text).toContain('1  设计约束');
+    expect(text).toContain('2  后续验证');
+  });
+  it('protects generated images from exact and legacy inherited line spacing in both generation modes without changing source text styles', async () => {
+    const starter = await getStarterTemplate('docx', 'contract');
+    for (const mode of ['template', 'ai'] as const) {
+      for (const rule of ['exact', 'legacy'] as const) {
+        const original = openOfficePackage(starter.source);
+        const styles = readXml(original, 'word/styles.xml');
+        const spacing = requireTemplateValue(
+          children(styles, NS.w, 'spacing').find((node) =>
+            node.hasAttributeNS(NS.w, 'line'),
+          ),
+        );
+        if (rule === 'exact')
+          spacing.setAttributeNS(NS.w, 'w:lineRule', 'exact');
+        else spacing.removeAttributeNS(NS.w, 'lineRule');
+        writeXml(original, 'word/styles.xml', styles);
+        const source = closeOfficePackage(original);
+        const report = input();
+        report.parameters.generationMode = mode;
+        const output = await renderOfficeTemplate(
+          report,
+          starter.snapshot,
+          source,
+        );
+        const files = openOfficePackage(output.bytes);
+        expect(files['word/styles.xml']).toEqual(original['word/styles.xml']);
+        const doc = readXml(files, 'word/document.xml');
+        const images = children(doc, NS.w, 'p').filter(
+          (node) => children(node, NS.w, 'drawing').length,
+        );
+        expect(images).toHaveLength(20);
+        for (const image of images) {
+          expect(
+            children(image, NS.w, 'spacing')[0]?.getAttributeNS(
+              NS.w,
+              'lineRule',
+            ),
+          ).toBe('auto');
+          expect(
+            children(image, NS.w, 'spacing')[0]?.getAttributeNS(NS.w, 'line'),
+          ).toBe('240');
+        }
+      }
+    }
   });
   it('does not include source template text in errors that may enter audits', async () => {
     const starter = await getStarterTemplate('pptx');
