@@ -4,6 +4,7 @@ import { extname } from 'node:path';
 import { z } from 'zod';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import { assertAssetFolderCategory } from '~/utils/domain/assets/category';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
 import { ApiError, apiHandler } from '~/utils/response';
@@ -49,15 +50,19 @@ export default apiHandler(async (event) => {
     );
   }
   const sql = useDatabase();
+  let targetCategory: null | string = null;
   if (input.operation !== 'delete' && input.targetFolderId) {
-    const [folder] = await sql<{ id: string; kind: string }[]>`
-      SELECT id, kind FROM asset_folders
+    const [folder] = await sql<
+      { generationCategory: null | string; id: string; kind: string }[]
+    >`
+      SELECT id, kind, generation_category AS "generationCategory" FROM asset_folders
       WHERE id = ${input.targetFolderId}
         AND project_id = ${input.projectId}
         AND deleted_at IS NULL
     `;
     if (!folder)
       throw new ApiError(400, 'ASSET_FOLDER_NOT_FOUND', '目标文件夹不存在');
+    targetCategory = folder.generationCategory;
     if (folder.kind === 'favorites') {
       throw new ApiError(
         400,
@@ -99,6 +104,14 @@ export default apiHandler(async (event) => {
       'INVALID_BATCH_ASSETS',
       '部分资产不存在、未登记或不属于当前项目',
     );
+  }
+
+  if (input.operation !== 'delete') {
+    const category = sources[0]?.generationCategory ?? null;
+    for (const source of sources)
+      assertAssetFolderCategory(category, source.generationCategory);
+    if (input.targetFolderId)
+      assertAssetFolderCategory(category, targetCategory);
   }
 
   let result: {

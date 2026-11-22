@@ -6,6 +6,7 @@ import { getAssetView } from '~/utils/asset-repository';
 import { writeAudit } from '~/utils/audit';
 import { getConfig } from '~/utils/config';
 import { useDatabase } from '~/utils/database';
+import { assertAssetFolderCategory } from '~/utils/domain/assets/category';
 import { ASSET_GENERATION_CATEGORIES } from '~/utils/domain/assets/query';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { requireProjectAccess } from '~/utils/project-access';
@@ -48,8 +49,10 @@ export default apiHandler(async (event) => {
     : `${input.name}${extension}`;
   const sql = useDatabase();
   if (input.folderId) {
-    const [folder] = await sql<{ id: string; kind: string }[]>`
-      SELECT id, kind FROM asset_folders
+    const [folder] = await sql<
+      { generationCategory: null | string; id: string; kind: string }[]
+    >`
+      SELECT id, kind, generation_category AS "generationCategory" FROM asset_folders
       WHERE id = ${input.folderId}
         AND project_id = ${input.projectId}
         AND deleted_at IS NULL
@@ -64,6 +67,11 @@ export default apiHandler(async (event) => {
         '不能直接把资产登记到收藏文件夹',
       );
     }
+    if (input.generationCategory)
+      assertAssetFolderCategory(
+        input.generationCategory,
+        folder.generationCategory,
+      );
   }
   await sql.begin(async (transaction) => {
     await transaction`

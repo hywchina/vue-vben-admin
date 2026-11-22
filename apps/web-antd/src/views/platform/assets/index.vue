@@ -44,7 +44,9 @@ import ImageLightbox from '#/components/platform/image-lightbox.vue';
 import {
   assetCategoryLabel,
   assetDateBoundary,
+  assetFolderOptions,
   assetGenerationModules,
+  selectedAssetCategory,
   sortBrowserAssets,
 } from '#/modules/platform/asset-browser';
 import {
@@ -348,15 +350,30 @@ const currentFolders = computed(() =>
         )
         .toSorted((a, b) => a.name.localeCompare(b.name, 'zh-CN')),
 );
-const folderOptions = computed(() => [
-  { label: '项目根目录', value: '__root__' },
-  ...platformStore.assetFolders
-    .filter((folder) => folder.kind === 'normal')
-    .map((folder) => ({
-      label: `${assetCategoryLabel(folder.generationCategory)} / ${folderPathLabel(folder.id)}`,
-      value: folder.id,
-    })),
-]);
+const batchCategory = computed(() =>
+  selectedAssetCategory(
+    visibleAssets.value.filter((asset) =>
+      selectedAssetIds.value.includes(asset.id),
+    ),
+  ),
+);
+const folderOptions = computed(() =>
+  assetFolderOptions(platformStore.assetFolders, batchCategory.value.category),
+);
+const directoryHint = computed(() => {
+  if (projectFilter.value === 'all')
+    return '请先选择具体项目，再管理该项目的分类目录';
+  if (isFavoritesFolder.value) return '收藏是快捷视图，请进入业务大类整理目录';
+  if (moduleKey.value === 'all')
+    return '请先选择客室、零部件、CMF、报告或未分类，再新建子目录';
+  return '';
+});
+const batchHint = computed(() => {
+  if (projectFilter.value === 'all') return '请先选择具体项目';
+  if (isFavoritesFolder.value) return '请进入业务大类移动或复制资产';
+  if (batchCategory.value.mixed) return '请选择同一业务大类的资产';
+  return '';
+});
 const breadcrumbs = computed(() => {
   const items: Array<{ id: null | string; name: string }> = [
     {
@@ -858,6 +875,7 @@ async function closeAssetDetail() {
 }
 
 function openCreateFolder() {
+  if (directoryHint.value) return;
   folderEditingId.value = '';
   folderName.value = '';
   folderModalOpen.value = true;
@@ -942,6 +960,7 @@ function clearAssetSelection() {
 }
 
 function openBatch(operation: 'copy' | 'move') {
+  if (batchHint.value) return;
   batchOperation.value = operation;
   batchTargetFolderId.value = null;
   batchModalOpen.value = true;
@@ -1268,15 +1287,16 @@ async function saveAssetName() {
             </template>
           </nav>
           <Button
-            :disabled="projectFilter === 'all' || isFavoritesFolder"
+            :disabled="Boolean(directoryHint)"
+            :title="directoryHint || undefined"
             @click="openCreateFolder"
           >
             <IconifyIcon :icon="platformUiIcons.folderPlus" />
             新建文件夹
           </Button>
         </div>
-        <p v-if="projectFilter === 'all'" class="asset-scope-hint">
-          正在汇总可访问项目。选择项目后，可管理分类目录和登记资产。
+        <p v-if="directoryHint" class="asset-scope-hint">
+          {{ directoryHint }}。
         </p>
         <p v-if="assetsLoading" class="asset-scope-hint" role="status">
           正在加载资产…
@@ -1359,19 +1379,22 @@ async function saveAssetName() {
             取消选择
           </Button>
           <Button
-            :disabled="projectFilter === 'all' || isFavoritesFolder"
+            :disabled="Boolean(batchHint)"
+            :title="batchHint || undefined"
             @click="openBatch('move')"
           >
             <IconifyIcon :icon="platformUiIcons.folderInput" />
             移动到
           </Button>
           <Button
-            :disabled="projectFilter === 'all' || isFavoritesFolder"
+            :disabled="Boolean(batchHint)"
+            :title="batchHint || undefined"
             @click="openBatch('copy')"
           >
             <IconifyIcon :icon="platformUiIcons.copy" />
             复制到
           </Button>
+          <span v-if="batchHint" class="asset-scope-hint">{{ batchHint }}</span>
           <Button danger @click="confirmBatchDelete">
             <IconifyIcon :icon="platformUiIcons.trash2" />
             删除
@@ -1585,6 +1608,14 @@ async function saveAssetName() {
       :ok-text="folderEditingId ? '保存' : '创建'"
       @ok="saveFolder"
     >
+      <p v-if="!folderEditingId">
+        创建位置：{{ platformStore.currentProject?.name }} /
+        {{
+          currentFolder
+            ? folderPathLabel(currentFolder.id)
+            : `${assetCategoryLabel(selectedGenerationCategory)}根目录`
+        }}
+      </p>
       <Input
         v-model:value="folderName"
         :maxlength="120"
@@ -1600,14 +1631,17 @@ async function saveAssetName() {
       :title="batchOperation === 'move' ? '移动所选资产' : '复制所选资产'"
       @ok="submitBatch"
     >
-      <p>选择目标文件夹，复制会创建独立资产，不与原文件共享对象。</p>
+      <p>
+        仅在{{
+          assetCategoryLabel(batchCategory.category)
+        }}大类内整理。复制会创建独立资产。
+      </p>
       <Select
         :options="folderOptions"
-        :value="batchTargetFolderId ?? '__root__'"
+        :value="batchTargetFolderId ?? ''"
         class="w-full"
         @change="
-          (value) =>
-            (batchTargetFolderId = value === '__root__' ? null : String(value))
+          (value) => (batchTargetFolderId = value === '' ? null : String(value))
         "
       />
     </Modal>

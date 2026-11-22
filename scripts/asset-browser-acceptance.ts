@@ -320,10 +320,22 @@ try {
     projectId,
     assetIds: [text.id],
     operation: 'move',
-    targetFolderId: cabinFolder.id,
+    targetFolderId: child.id,
   });
+  await request(
+    '/assets/batch',
+    owner.token,
+    {
+      projectId,
+      assetIds: [text.id],
+      operation: 'move',
+      targetFolderId: cabinFolder.id,
+    },
+    'POST',
+    400,
+  );
   const resolved18 = await request<Asset>(`/assets/${text.id}`, owner.token);
-  assert.equal(resolved18.generationCategory, 'cabin');
+  assert.equal(resolved18.generationCategory, 'cmf');
   await request('/assets/batch', owner.token, {
     projectId,
     assetIds: [text.id],
@@ -331,7 +343,7 @@ try {
     targetFolderId: null,
   });
   const resolved19 = await request<Asset>(`/assets/${text.id}`, owner.token);
-  assert.equal(resolved19.generationCategory, 'cabin');
+  assert.equal(resolved19.generationCategory, 'cmf');
   await request(
     `/assets/${imageIds[0]}/favorite`,
     owner.token,
@@ -353,7 +365,7 @@ try {
     400,
   );
   pass(
-    '复制保留分类、跨分类移动、回根目录保留分类、收藏按用户隔离、批量跨项目拒绝',
+    '复制保留分类、跨分类移动拒绝、回大类根目录保留分类、收藏按用户隔离、批量跨项目拒绝',
   );
   // Restore the child directory to six images for a representative screenshot.
   await request('/assets/batch', owner.token, {
@@ -566,7 +578,7 @@ try {
   await moveDialog.locator('.ant-select').click();
   await page
     .locator('.ant-select-dropdown:visible .ant-select-item-option')
-    .filter({ hasText: '客室 / 材质方案' })
+    .filter({ hasText: 'CMF / 材质方案' })
     .first()
     .click();
   await moveDialog.getByRole('button', { name: /移\s*动/ }).click();
@@ -575,14 +587,14 @@ try {
     `/assets/${registered[0].id}`,
     owner.token,
   );
-  assert.equal(resolved23.generationCategory, 'cabin');
+  assert.equal(resolved23.generationCategory, 'cmf');
   await select('资产排序', '创建时间：最早优先');
   assert.equal(
     await page.locator('.asset-card').first().getAttribute('data-asset-id'),
     imageIds[0],
   );
   pass(
-    '浏览器真实登记文本到分类目录、批量移动到另一模块、分类结果刷新和正序排序',
+    '浏览器真实登记文本到分类目录、批量移动到同类子目录、分类结果刷新和正序排序',
   );
   assert.deepEqual(errors, []);
   pass(

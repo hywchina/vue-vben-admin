@@ -4,11 +4,7 @@ import type {
   WorkbenchPage,
   WorkbenchSection,
 } from '#/api/platform/workbench';
-import type {
-  AssetFolder,
-  PlatformAsset,
-  PlatformJob,
-} from '#/modules/platform/types';
+import type { PlatformAsset, PlatformJob } from '#/modules/platform/types';
 
 import {
   computed,
@@ -40,9 +36,7 @@ import {
 import {
   getAssetApi,
   getAssetDownloadApi,
-  getAssetFoldersApi,
   getAssetPreviewApi,
-  saveWorkflowOutputApi,
 } from '#/api/platform/assets';
 import {
   createDesignConversationApi,
@@ -51,11 +45,11 @@ import {
 import { cancelJobApi, getJobsApi } from '#/api/platform/jobs';
 import { getWorkbenchApi } from '#/api/platform/workbench';
 import AssetModelPreview from '#/components/platform/asset-model-preview.vue';
+import AssetSaveModal from '#/components/platform/asset-save-modal.vue';
 import AssetTextPreview from '#/components/platform/asset-text-preview.vue';
 import ComfyMaskIcon from '#/components/platform/comfy-mask-icon.vue';
 import ImageLightbox from '#/components/platform/image-lightbox.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
-import { assetCategoryLabel } from '#/modules/platform/asset-browser';
 import {
   assetImageActions,
   assetImageActionUnavailable,
@@ -383,49 +377,13 @@ async function download(item: WorkbenchItem) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 const saveItem = ref<WorkbenchItem>();
-const folders = ref<AssetFolder[]>([]);
-const folderId = ref('');
-const folderOptions = computed(() => [
-  { value: '', label: '项目根目录' },
-  ...folders.value
-    .filter((item) => item.kind !== 'favorites')
-    .map((item) => {
-      const parts = [item.name];
-      const seen = new Set([item.id]);
-      let parent = folders.value.find((entry) => entry.id === item.parentId);
-      while (parent && !seen.has(parent.id)) {
-        seen.add(parent.id);
-        parts.unshift(parent.name);
-        parent = folders.value.find((entry) => entry.id === parent?.parentId);
-      }
-      return {
-        value: item.id,
-        label: `${assetCategoryLabel(item.generationCategory)} / ${parts.join(' / ')}`,
-      };
-    }),
-]);
-async function prepareSave(item: WorkbenchItem) {
-  folders.value = await getAssetFoldersApi(item.projectId);
-  folderId.value = '';
+function prepareSave(item: WorkbenchItem) {
   saveItem.value = item;
 }
-async function confirmSave() {
-  const item = saveItem.value;
-  if (!item || busy.value) return;
-  busy.value = true;
-  try {
-    await saveWorkflowOutputApi(item.id, folderId.value || undefined);
-    item.saved = true;
-    saveItem.value = undefined;
-    message.success('已保存至项目资产');
-    await refresh(true);
-    if (task.value) await refreshTask();
-    if (listSection.value) await loadList(listPage.value);
-  } catch (error) {
-    showError(error);
-  } finally {
-    busy.value = false;
-  }
+async function savedItem() {
+  await refresh(true);
+  if (task.value) await refreshTask();
+  if (listSection.value) await loadList(listPage.value);
 }
 function imageActionUnavailable(key: string) {
   if (!previewItem.value?.canWrite) return '没有项目编辑权限';
@@ -776,24 +734,12 @@ async function action(actionName: string, item: WorkbenchItem) {
         />
       </div>
     </Modal>
-    <Modal
-      :open="Boolean(saveItem)"
-      title="保存至项目资产"
-      :confirm-loading="busy"
-      ok-text="确认保存"
-      @ok="confirmSave"
-      @cancel="saveItem = undefined"
-    >
-      <div class="wb-form">
-        <p>{{ saveItem?.projectName }} · {{ saveItem?.name }}</p>
-        <label for="wb-save-folder">保存目录</label>
-        <Select
-          id="wb-save-folder"
-          v-model:value="folderId"
-          :options="folderOptions"
-        />
-      </div>
-    </Modal>
+    <AssetSaveModal
+      :asset-id="saveItem?.id"
+      :job-id="saveItem?.jobId"
+      @close="saveItem = undefined"
+      @saved="savedItem"
+    />
     <ImageLightbox
       :open="Boolean(previewItem?.type === 'image' && !previewError)"
       :title="previewItem?.name"

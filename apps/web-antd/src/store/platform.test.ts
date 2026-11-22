@@ -258,8 +258,34 @@ describe('platform store with real API contract', () => {
     expect(api.saveWorkflowOutputApi).toHaveBeenCalledWith(
       generated.id,
       undefined,
+      undefined,
     );
     expect(store.currentAssets[0]).toEqual(generated);
+  });
+
+  it('keeps a save attached to its asset project after the current project changes', async () => {
+    const store = usePlatformStore();
+    await store.initialize();
+    await store.switchProject(secondProject.id);
+    const generated = {
+      ...asset,
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      source: 'workflow' as const,
+    };
+    api.saveWorkflowOutputApi.mockResolvedValue(generated);
+    const before = [...store.currentAssets];
+    const secondCount = store.currentProject?.assetCount;
+    await store.saveWorkflowOutput(generated.id, undefined, 'source-round');
+    expect(api.saveWorkflowOutputApi).toHaveBeenCalledWith(
+      generated.id,
+      undefined,
+      'source-round',
+    );
+    expect(store.currentAssets).toEqual(before);
+    expect(store.currentProject?.assetCount).toBe(secondCount);
+    expect(
+      store.projects.find((item) => item.id === firstProject.id)?.assetCount,
+    ).toBe(firstProject.assetCount + 1);
   });
 
   it('removes a deleted asset from the current project cache', async () => {

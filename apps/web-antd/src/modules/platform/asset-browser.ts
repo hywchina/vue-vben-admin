@@ -1,4 +1,8 @@
-import type { AssetGenerationCategory, PlatformAsset } from './types';
+import type {
+  AssetFolder,
+  AssetGenerationCategory,
+  PlatformAsset,
+} from './types';
 
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
@@ -50,4 +54,37 @@ export function sortBrowserAssets(
           );
     return direction * difference || a.id.localeCompare(b.id);
   });
+}
+
+export function assetFolderOptions(
+  folders: AssetFolder[],
+  category?: AssetGenerationCategory | null,
+) {
+  const label = assetCategoryLabel(category);
+  const scoped = folders.filter(
+    (folder) =>
+      folder.kind === 'normal' &&
+      (folder.generationCategory ?? null) === (category ?? null),
+  );
+  return [
+    { label: `${label}根目录`, value: '' },
+    ...scoped.map((folder) => {
+      const parts: string[] = [];
+      const visited = new Set<string>();
+      let current: AssetFolder | undefined = folder;
+      while (current && !visited.has(current.id)) {
+        visited.add(current.id);
+        parts.unshift(current.name);
+        current = scoped.find((item) => item.id === current?.parentId);
+      }
+      return { label: `${label} / ${parts.join(' / ')}`, value: folder.id };
+    }),
+  ];
+}
+export function selectedAssetCategory(assets: PlatformAsset[]) {
+  const category = assets[0]?.generationCategory;
+  return {
+    category,
+    mixed: assets.some((asset) => asset.generationCategory !== category),
+  };
 }

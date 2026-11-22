@@ -68,10 +68,10 @@ import {
   assetImageDragType,
   readDraggedAssetId,
 } from '#/components/assistant/asset-image-drag';
+import AssetSaveModal from '#/components/platform/asset-save-modal.vue';
 import CameraViewPicker from '#/components/platform/camera-view-picker.vue';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
-import { assetCategoryLabel } from '#/modules/platform/asset-browser';
 import {
   assetImageAction,
   assetImageActionUnavailable,
@@ -222,10 +222,8 @@ const baseEditHistory = ref<{
   prompt: unknown;
 }>();
 const baseEditContinuing = ref<string>();
-const saveOutputOpen = ref(false);
 const saveOutputTarget = ref<PlatformJobOutput>();
-const saveOutputFolderId = ref<string>();
-const saveOutputSubmitting = ref(false);
+const saveOutputJob = ref<PlatformJob>();
 const cmfMultiImageOpen = ref(false);
 const cmfMultiImageMode = ref<'choose' | 'dialog'>('choose');
 const cmfMultiImageOutput = ref<PlatformJobOutput>();
@@ -328,15 +326,6 @@ const projectOptions = computed(() =>
     value: project.id,
   })),
 );
-const saveOutputFolderOptions = computed(() => [
-  { label: '项目资产根目录', value: '' },
-  ...platformStore.assetFolders
-    .filter((folder) => folder.kind === 'normal')
-    .map((folder) => ({
-      label: assetFolderPath(folder.id),
-      value: folder.id,
-    })),
-]);
 const activeDesignMode = computed(() => getDesignMode(selectedModeKey.value));
 const promptTemplateMode = computed<DesignPromptTemplateMode>(() =>
   selectedModeKey.value === 'report' ? 'cabin' : selectedModeKey.value,
@@ -696,23 +685,6 @@ function formatConversationTime(value: string) {
     });
   }
   return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' });
-}
-
-function assetFolderPath(folderId: string) {
-  const names: string[] = [];
-  const visited = new Set<string>();
-  let current = platformStore.assetFolders.find((item) => item.id === folderId);
-  while (current && !visited.has(current.id)) {
-    visited.add(current.id);
-    names.unshift(current.name);
-    current = current.parentId
-      ? platformStore.assetFolders.find((item) => item.id === current?.parentId)
-      : undefined;
-  }
-  const folder = platformStore.assetFolders.find(
-    (item) => item.id === folderId,
-  );
-  return `${assetCategoryLabel(folder?.generationCategory)} / ${names.join(' / ')}`;
 }
 
 function fieldTextValue(field: CapabilityField) {
@@ -2548,27 +2520,10 @@ async function stopLiveCapture(session?: CaptureSession) {
   if (jobId) await platformStore.cancelJob(jobId);
 }
 
-async function saveOutput(output: PlatformJobOutput) {
+function saveOutput(output: PlatformJobOutput, job: PlatformJob) {
   if (output.saved) return;
   saveOutputTarget.value = output;
-  saveOutputFolderId.value = undefined;
-  saveOutputOpen.value = true;
-}
-
-async function confirmSaveOutput() {
-  const output = saveOutputTarget.value;
-  if (!output) return;
-  saveOutputSubmitting.value = true;
-  try {
-    await platformStore.saveWorkflowOutput(
-      output.assetId,
-      saveOutputFolderId.value || undefined,
-    );
-    saveOutputOpen.value = false;
-    message.success('已保存到所选资产目录');
-  } finally {
-    saveOutputSubmitting.value = false;
-  }
+  saveOutputJob.value = job;
 }
 
 async function downloadOutput(output: PlatformJobOutput) {
@@ -3707,7 +3662,7 @@ onBeforeUnmount(() => {
               @flow="openContinue($event, job)"
               @mask="openOutputMask"
               @rerun="rerunJob"
-              @save="saveOutput"
+              @save="saveOutput($event, job)"
             />
           </div>
           <div v-else class="thread-welcome">
@@ -4493,23 +4448,11 @@ onBeforeUnmount(() => {
       />
     </Modal>
 
-    <Modal
-      v-model:open="saveOutputOpen"
-      :confirm-loading="saveOutputSubmitting"
-      ok-text="保存到此目录"
-      title="加入资产中心"
-      @ok="confirmSaveOutput"
-    >
-      <p class="continue-description">
-        请选择当前项目中的资产目录，用于保存、整理或共享。仅在本会话继续编辑时无需加入资产中心。
-      </p>
-      <Select
-        v-model:value="saveOutputFolderId"
-        :options="saveOutputFolderOptions"
-        class="w-full"
-        placeholder="项目资产根目录"
-      />
-    </Modal>
+    <AssetSaveModal
+      :asset-id="saveOutputTarget?.assetId"
+      :job-id="saveOutputJob?.id"
+      @close="saveOutputTarget = undefined"
+    />
 
     <Modal
       :open="Boolean(baseEditHistory)"

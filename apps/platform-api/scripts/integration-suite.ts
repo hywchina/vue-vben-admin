@@ -124,6 +124,7 @@ async function main() {
     'business-id-integration-test.ts',
     'lora-dataset-integration-test.ts',
     'model-management-integration-test.ts',
+    'asset-category-integration-test.ts',
   ]) {
     if (interrupted) throw new Error('Integration suite interrupted');
     if (report.child.exitCode !== null)

@@ -2,6 +2,11 @@ import { z } from 'zod';
 import { getAssetView } from '~/utils/asset-repository';
 import { writeAudit } from '~/utils/audit';
 import { useDatabase } from '~/utils/database';
+import {
+  applyAssetSaveJobContext,
+  assertAssetFolderCategory,
+  getAssetSaveScope,
+} from '~/utils/domain/assets/category';
 import { requireAssetContentAccess } from '~/utils/domain/assets/content-access';
 import { getUuidParam } from '~/utils/http/resource-id';
 import { requireIdentity, requirePermission } from '~/utils/identity';
@@ -12,6 +17,7 @@ import { parseBody } from '~/utils/validation';
 const saveWorkflowOutputSchema = z
   .object({
     folderId: z.string().uuid().optional(),
+    jobId: z.string().uuid().optional(),
   })
   .default({});
 
@@ -23,58 +29,59 @@ export default apiHandler(async (event) => {
   const input = await parseBody(event, saveWorkflowOutputSchema);
 
   const sql = useDatabase();
-  const [asset] = await sql<
-    {
-      projectId: string;
-      savedAt: Date | null;
-      source: string;
-      status: string;
-    }[]
-  >`
-    SELECT
-      project_id AS "projectId",
-      saved_at AS "savedAt",
-      source,
-      status
-    FROM assets
-    WHERE id = ${assetId} AND deleted_at IS NULL
-  `;
-  if (!asset) throw new ApiError(404, 'ASSET_NOT_FOUND', '生成结果不存在');
-  await requireProjectAccess(identity, asset.projectId, 'write');
+  const scope = await getAssetSaveScope(sql, assetId);
+  await requireProjectAccess(identity, scope.projectId, 'write');
   await requireAssetContentAccess(assetId, identity.id);
-  if (asset.status !== 'available') {
-    throw new ApiError(
-      409,
-      'WORKFLOW_OUTPUT_NOT_READY',
-      '当前图片或生成结果尚不可加入资产中心',
-    );
-  }
+  await sql.begin(async (transaction) => {
+    const asset = await getAssetSaveScope(transaction, assetId, true);
+    if (asset.status !== 'available') {
+      throw new ApiError(
+        409,
+        'WORKFLOW_OUTPUT_NOT_READY',
+        '当前图片或生成结果尚不可加入资产中心',
+      );
+    }
 
-  if (input.folderId) {
-    const [folder] = await sql<{ id: string; kind: string }[]>`
-      SELECT id, kind
+    await applyAssetSaveJobContext(
+      transaction,
+      asset,
+      assetId,
+      identity.id,
+      input.jobId,
+    );
+    if (input.folderId) {
+      const [folder] = await transaction<
+        { generationCategory: null | string; id: string; kind: string }[]
+      >`
+      SELECT id, kind, generation_category AS "generationCategory"
       FROM asset_folders
       WHERE id = ${input.folderId}
         AND project_id = ${asset.projectId}
         AND deleted_at IS NULL
+      FOR SHARE
     `;
-    if (!folder) {
-      throw new ApiError(400, 'ASSET_FOLDER_NOT_FOUND', '目标文件夹不存在');
-    }
-    if (folder.kind === 'favorites') {
-      throw new ApiError(
-        400,
-        'ASSET_FAVORITES_FOLDER_READ_ONLY',
-        '不能直接把资产登记到收藏文件夹',
+      if (!folder) {
+        throw new ApiError(400, 'ASSET_FOLDER_NOT_FOUND', '目标文件夹不存在');
+      }
+      if (folder.kind === 'favorites') {
+        throw new ApiError(
+          400,
+          'ASSET_FAVORITES_FOLDER_READ_ONLY',
+          '不能直接把资产登记到收藏文件夹',
+        );
+      }
+      assertAssetFolderCategory(
+        asset.generationCategory,
+        folder.generationCategory,
       );
     }
-  }
 
-  if (!asset.savedAt) {
-    await sql`
+    if (!asset.savedAt) {
+      await transaction`
       UPDATE assets
       SET
         saved_at = now(),
+        generation_category = ${asset.generationCategory},
         folder_id = ${input.folderId ?? null},
         description = regexp_replace(
           description,
@@ -84,15 +91,20 @@ export default apiHandler(async (event) => {
         updated_at = now()
       WHERE id = ${assetId} AND deleted_at IS NULL
     `;
-    await writeAudit(event, {
-      action: 'asset.workflow-output.save',
-      actor: identity,
-      details: { folderId: input.folderId ?? null, source: asset.source },
-      module: 'asset',
-      targetId: assetId,
-      targetType: 'asset',
-    });
-  }
+      await writeAudit(
+        event,
+        {
+          action: 'asset.workflow-output.save',
+          actor: identity,
+          details: { folderId: input.folderId ?? null, source: asset.source },
+          module: 'asset',
+          targetId: assetId,
+          targetType: 'asset',
+        },
+        transaction,
+      );
+    }
+  });
 
   return await getAssetView(assetId, identity.id);
 });

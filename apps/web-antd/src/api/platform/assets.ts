@@ -177,9 +177,14 @@ export function getAssetPreviewApi(assetId: string) {
   >(`/assets/${assetId}/preview`);
 }
 
-export function saveWorkflowOutputApi(assetId: string, folderId?: string) {
+export function saveWorkflowOutputApi(
+  assetId: string,
+  folderId?: string,
+  jobId?: string,
+) {
   return requestClient.post<PlatformAsset>(`/assets/${assetId}/save`, {
     folderId,
+    jobId,
   });
 }
 
@@ -187,4 +192,10 @@ export function deleteAssetApi(assetId: string) {
   return requestClient.delete<{ deleted: true; id: string }>(
     `/assets/${assetId}`,
   );
+}
+
+export function getAssetSaveContextApi(assetId: string, jobId?: string) {
+  return requestClient.get<PlatformAsset>(`/assets/${assetId}/save`, {
+    params: { jobId },
+  });
 }

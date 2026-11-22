@@ -43,6 +43,7 @@ import {
   getWorkflowWorkspaceInstancesApi,
   saveWorkflowWorkspaceDraftApi,
 } from '#/api';
+import AssetSaveModal from '#/components/platform/asset-save-modal.vue';
 import CameraViewPicker from '#/components/platform/camera-view-picker.vue';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
@@ -792,10 +793,12 @@ async function cancelActiveJob() {
   message.info('取消请求已提交');
 }
 
-async function saveOutput(output: PlatformJobOutput) {
+const saveOutputTarget = ref<PlatformJobOutput>();
+const saveOutputJob = ref<PlatformJob>();
+function saveOutput(output: PlatformJobOutput, job: PlatformJob) {
   if (output.saved) return;
-  await platformStore.saveWorkflowOutput(output.assetId);
-  message.success('生成结果已保存到当前项目资产中心');
+  saveOutputTarget.value = output;
+  saveOutputJob.value = job;
 }
 
 async function saveOutputMask(file: File) {
@@ -1395,7 +1398,7 @@ onBeforeUnmount(() => {
               @flow="openFlowModal"
               @mask="openOutputMask"
               @rerun="rerunJob"
-              @save="saveOutput"
+              @save="saveOutput($event, job)"
             />
           </div>
 
@@ -1560,6 +1563,11 @@ onBeforeUnmount(() => {
       </div>
     </div>
   </main>
+  <AssetSaveModal
+    :asset-id="saveOutputTarget?.assetId"
+    :job-id="saveOutputJob?.id"
+    @close="saveOutputTarget = undefined"
+  />
 </template>
 
 <style scoped>

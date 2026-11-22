@@ -295,11 +295,18 @@ export const usePlatformStore = defineStore('rail-platform', () => {
     return updated;
   }
 
-  async function saveWorkflowOutput(assetId: string, folderId?: string) {
-    const asset = await saveWorkflowOutputApi(assetId, folderId);
+  async function saveWorkflowOutput(
+    assetId: string,
+    folderId?: string,
+    jobId?: string,
+  ) {
+    const asset = await saveWorkflowOutputApi(assetId, folderId, jobId);
     if (!assets.value.some((item) => item.id === asset.id)) {
-      assets.value.unshift(asset);
-      const project = currentProject.value;
+      if (asset.projectId === currentProjectId.value)
+        assets.value.unshift(asset);
+      const project = projects.value.find(
+        (item) => item.id === asset.projectId,
+      );
       if (project) project.assetCount += 1;
     }
     for (const job of jobs.value) {
