@@ -47,6 +47,7 @@ export default apiHandler(async (event) => {
       designConversationId: null | string;
       designConversationTitle: null | string;
       designMode: 'cabin' | 'cmf' | 'component' | 'report' | null;
+      designRoundArchived: boolean;
       errorCode: null | string;
       errorMessage: null | string;
       externalExecution: boolean;
@@ -97,6 +98,7 @@ export default apiHandler(async (event) => {
       j.design_conversation_id AS "designConversationId",
       design_conversation.title AS "designConversationTitle",
       j.design_mode AS "designMode",
+      j.design_round_archived_at IS NOT NULL AS "designRoundArchived",
       j.workspace_instance_id AS "workspaceInstanceId",
       workspace_instance.title AS "workspaceInstanceTitle",
       j.name,
@@ -198,7 +200,8 @@ export default apiHandler(async (event) => {
       AND j.archived_at IS NULL
       AND (
         ${designConversationId ?? null}::uuid IS NULL
-        OR j.design_conversation_id = ${designConversationId ?? null}
+        OR (j.design_conversation_id = ${designConversationId ?? null}
+          AND j.design_round_archived_at IS NULL)
       )
       AND (${ownerId ?? null}::uuid IS NULL OR j.created_by = ${ownerId ?? null})
       AND (

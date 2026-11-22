@@ -43,11 +43,22 @@ import {
   getWorkflowWorkspaceInstancesApi,
   saveWorkflowWorkspaceDraftApi,
 } from '#/api';
+import CameraViewPicker from '#/components/platform/camera-view-picker.vue';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
+import {
+  cameraCountField,
+  cameraViewsKey,
+  restoreCameraViews,
+  setCameraViewParameters,
+} from '#/modules/platform/camera-views';
 import { referenceImageEditKey } from '#/modules/platform/design-generation';
+import {
+  imageGenerationCountKey,
+  savedImageGenerationCount,
+} from '#/modules/platform/image-generation-count';
 import { localImageEditKey } from '#/modules/platform/local-image-edit';
 import { captureRefreshRateValue } from '#/modules/platform/parameter-presentation';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
@@ -172,8 +183,10 @@ const advancedFields = computed(
 );
 const cameraFields = computed(
   () =>
-    capability.value?.fields.filter((field) =>
-      field.uiControl.startsWith('camera-'),
+    capability.value?.fields.filter(
+      (field) =>
+        capability.value?.appKey !== 'camera-control-multi' &&
+        field.uiControl.startsWith('camera-'),
     ) ?? [],
 );
 const selectedAssetIds = computed(() =>
@@ -242,7 +255,9 @@ function fieldJsonValue(field: CapabilityField) {
 }
 
 function setFieldValue(field: CapabilityField, value: unknown) {
-  parameterValues[field.key] = value;
+  if (field.key === cameraViewsKey)
+    setCameraViewParameters(parameterValues, value);
+  else parameterValues[field.key] = value;
   scheduleWorkspaceDraftSave();
 }
 
@@ -428,7 +443,21 @@ async function loadCapability() {
     for (const [key, value] of Object.entries(draft.parameterValues)) {
       if (parameterKeys.has(key)) parameterValues[key] = value;
     }
+    const count = savedImageGenerationCount(
+      nextCapability,
+      draft.parameterValues,
+    );
+    if (count !== undefined && parameterKeys.has(imageGenerationCountKey))
+      parameterValues[imageGenerationCountKey] = count;
     Object.assign(parameterValues, modelTestParameters.value);
+    if (parameterKeys.has(cameraViewsKey))
+      parameterValues[cameraViewsKey] = restoreCameraViews(
+        nextCapability.fields,
+        {
+          ...draft.parameterValues,
+          generationCount: parameterValues.generationCount,
+        },
+      );
     const draftAssets = await Promise.all(
       Object.entries(draft.inputAssetIds).map(async ([index, assetId]) => {
         await resolveWorkspaceInput(assetId);
@@ -697,6 +726,16 @@ async function rerunJob(job: PlatformJob) {
     for (const [key, value] of Object.entries(job.parameters)) {
       parameterValues[key] = value;
     }
+    const count = savedImageGenerationCount(
+      capability.value ?? undefined,
+      job.parameters,
+    );
+    if (count !== undefined) parameterValues[imageGenerationCountKey] = count;
+    if (capability.value?.appKey === 'camera-control-multi')
+      parameterValues[cameraViewsKey] = restoreCameraViews(
+        capability.value.fields,
+        job.parameters,
+      );
     for (const key of Object.keys(selectedAssets)) {
       Reflect.deleteProperty(selectedAssets, key);
     }
@@ -1142,7 +1181,7 @@ onBeforeUnmount(() => {
               :values="parameterValues"
               @update="setFieldNumberValue"
             />
-            <label
+            <div
               v-for="field in basicFields"
               :key="field.key"
               class="studio-field"
@@ -1166,11 +1205,19 @@ onBeforeUnmount(() => {
                 @update:value="setFieldValue(field, $event)"
               />
               <Textarea
-                v-else-if="field.type === 'json'"
+                v-else-if="
+                  field.type === 'json' && field.key !== cameraViewsKey
+                "
                 :value="fieldJsonValue(field)"
                 :rows="5"
                 class="json-field"
                 @update:value="setFieldValue(field, $event)"
+              />
+              <CameraViewPicker
+                v-else-if="field.key === cameraViewsKey"
+                :value="parameterValues[field.key]"
+                :count="parameterValues.generationCount"
+                @change="setFieldValue(field, $event)"
               />
               <Input
                 v-else-if="field.type === 'text'"
@@ -1182,8 +1229,10 @@ onBeforeUnmount(() => {
               />
               <InputNumber
                 v-else-if="field.type === 'number'"
+                :aria-label="field.label"
                 :max="field.max"
-                :min="field.min"
+                :min="cameraCountField(field, parameterValues).min"
+                :precision="field.integer ? 0 : undefined"
                 :step="field.step"
                 :value="fieldNumberValue(field)"
                 class="w-full"
@@ -1201,7 +1250,7 @@ onBeforeUnmount(() => {
                 :checked="fieldBooleanValue(field)"
                 @update:checked="setFieldValue(field, $event)"
               />
-            </label>
+            </div>
 
             <div
               v-if="!basicFields.length && !cameraFields.length"
@@ -1236,7 +1285,7 @@ onBeforeUnmount(() => {
                   <div v-if="field.key === 'seed'" class="seed-field">
                     <InputNumber
                       :max="field.max"
-                      :min="field.min"
+                      :min="cameraCountField(field, parameterValues).min"
                       :step="field.step"
                       :value="fieldNumberValue(field)"
                       class="w-full"
@@ -1246,8 +1295,10 @@ onBeforeUnmount(() => {
                   </div>
                   <InputNumber
                     v-else-if="field.type === 'number'"
+                    :aria-label="field.label"
                     :max="field.max"
-                    :min="field.min"
+                    :min="cameraCountField(field, parameterValues).min"
+                    :precision="field.integer ? 0 : undefined"
                     :step="field.step"
                     :value="fieldNumberValue(field)"
                     class="w-full"
@@ -1260,7 +1311,9 @@ onBeforeUnmount(() => {
                     @update:value="setFieldValue(field, $event)"
                   />
                   <Textarea
-                    v-else-if="field.type === 'json'"
+                    v-else-if="
+                      field.type === 'json' && field.key !== cameraViewsKey
+                    "
                     :value="fieldJsonValue(field)"
                     :rows="5"
                     class="json-field"

@@ -48,7 +48,8 @@ export function selectDesignConversationJobs(
       (job) =>
         job.designConversationId === designConversationId &&
         job.projectId === projectId &&
-        job.ownedByCurrentUser,
+        job.ownedByCurrentUser &&
+        !job.designRoundArchived,
     )
     .toSorted(
       (a, b) =>

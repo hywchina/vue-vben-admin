@@ -19,12 +19,22 @@ import {
   assetTypeIcons,
   assetTypeLabels,
 } from '#/modules/platform/asset-types';
-import { cameraViewDescriptors } from '#/modules/platform/camera-angles';
+import {
+  cameraViewDescriptors,
+  distanceCameraPreset,
+  horizontalCameraPreset,
+  verticalCameraPreset,
+} from '#/modules/platform/camera-angles';
+import {
+  cameraViewsKey,
+  cameraViewValues,
+} from '#/modules/platform/camera-views';
 import { retiredBaseEditKey } from '#/modules/platform/design-generation';
 import {
   designImageResultActions,
   designResultActionAvailable,
 } from '#/modules/platform/design-result-actions';
+import { imageGenerationCountKey } from '#/modules/platform/image-generation-count';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 import { copyTextToClipboard } from '#/utils/copy-text';
@@ -49,6 +59,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  archiveRound: [job: PlatformJob];
   businessAction: [
     action:
       | 'environment'
@@ -101,11 +112,34 @@ const cameraViews = computed(() => {
   ) {
     return [];
   }
-  return cameraViewDescriptors(props.fields, props.job.parameters);
+  const configured =
+    props.job.appKey === 'camera-control-multi'
+      ? cameraViewValues(props.job.parameters[cameraViewsKey]).filter(
+          ({ enabled }) => enabled,
+        )
+      : [];
+  const views =
+    configured.length > 0
+      ? configured.map((view, index) => ({
+          ...view,
+          index,
+          horizontalLabel: horizontalCameraPreset(view.horizontal).label,
+          verticalLabel: verticalCameraPreset(view.vertical).label,
+          distanceLabel: distanceCameraPreset(view.zoom).label,
+        }))
+      : cameraViewDescriptors(props.fields, props.job.parameters);
+  const count = props.job.parameters[imageGenerationCountKey];
+  return typeof count === 'number' && views.length > 0
+    ? views.slice(0, count)
+    : views;
 });
 const imageGalleryItems = computed(() =>
   imageOutputs.value.map((output, index) => ({
-    camera: cameraViews.value[index],
+    camera:
+      cameraViews.value.length > 0 &&
+      props.job.parameters[imageGenerationCountKey]
+        ? cameraViews.value[index % cameraViews.value.length]
+        : cameraViews.value[index],
     id: output.assetId,
     name: output.name,
     url: previewUrls[output.assetId] ?? '',
@@ -628,6 +662,21 @@ onMounted(() => void loadPreviews());
             >
               <IconifyIcon :icon="platformUiIcons.ellipsis" />
             </button>
+          </Tooltip>
+          <Tooltip
+            v-if="conversationLayout && job.ownedByCurrentUser"
+            :title="isActive ? '完成或停止后可删除' : '删除本轮'"
+          >
+            <span>
+              <button
+                aria-label="删除本轮"
+                :disabled="isActive"
+                type="button"
+                @click="emit('archiveRound', job)"
+              >
+                <IconifyIcon :icon="platformUiIcons.trash2" />
+              </button>
+            </span>
           </Tooltip>
         </div>
       </div>
@@ -1506,6 +1555,11 @@ onMounted(() => void loadPreviews());
   transition:
     color 150ms ease,
     background 150ms ease;
+}
+
+.round-input-actions button:disabled {
+  pointer-events: none;
+  opacity: 0.45;
 }
 
 .round-input-actions button:hover,

@@ -14,6 +14,7 @@ export interface PlatformJob {
   designConversationId?: string;
   designConversationTitle?: string;
   designMode?: 'cabin' | 'cmf' | 'component' | 'report';
+  designRoundArchived?: boolean;
   duration?: string;
   externalExecution: boolean;
   error?: {

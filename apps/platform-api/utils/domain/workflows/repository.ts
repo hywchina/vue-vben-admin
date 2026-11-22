@@ -5,6 +5,11 @@ import { createHash } from 'node:crypto';
 
 import { useDatabase } from '../../database';
 import { ApiError } from '../../response';
+import { cameraViewsField } from './camera-views';
+import {
+  imageGenerationCountField,
+  legacyImageCountKey,
+} from './image-generation-count';
 import {
   capabilityPresentationFields,
   resolveQuickFieldKeys,
@@ -178,27 +183,49 @@ export async function getCapabilityByAppKey(appKey: string) {
 export function toPublicCapability(
   row: CapabilityRow,
   includeParameterSources = false,
+  rawWorkflowParameters = false,
 ) {
   const fieldLabels =
     row.labelWorkflowVersionId === row.workflowVersionId
       ? (row.fieldLabels ?? {})
       : {};
+  const quantity = rawWorkflowParameters
+    ? undefined
+    : imageGenerationCountField(row.appKey);
+  const views = rawWorkflowParameters
+    ? undefined
+    : cameraViewsField(row.appKey, row.apiJson);
+  const legacyQuantityKey = quantity
+    ? legacyImageCountKey(row.apiJson, row.parameterSchema)
+    : undefined;
+  const workflowFields = capabilityPresentationFields(
+    row.parameterSchema,
+    row.apiJson,
+    fieldLabels,
+    includeParameterSources,
+  ).filter((field) => field.key !== legacyQuantityKey);
+  const quickFieldKeys = resolveQuickFieldKeys(
+    row.parameterSchema,
+    row.quickFieldKeys,
+  ).filter((key) => key !== legacyQuantityKey);
   return {
     appKey: row.appKey,
     code: row.code,
     description: row.description,
-    fields: capabilityPresentationFields(
-      row.parameterSchema,
-      row.apiJson,
-      fieldLabels,
-      includeParameterSources,
-    ),
+    fields: [
+      ...(views ? [views] : []),
+      ...(quantity ? [quantity] : []),
+      ...workflowFields,
+    ],
     presentation: {
       fieldLabels,
-      quickFieldKeys: resolveQuickFieldKeys(
-        row.parameterSchema,
-        row.quickFieldKeys,
-      ),
+      ...(legacyQuantityKey && {
+        legacyGenerationCountKey: legacyQuantityKey,
+        legacyGenerationCountMultiplier: quantity?.defaultValue,
+      }),
+      quickFieldKeys: quantity
+        ? [...(views ? [views.key] : []), quantity.key, ...quickFieldKeys]
+        : quickFieldKeys,
       workflowVersionId: row.workflowVersionId,
     },
     name: row.name,

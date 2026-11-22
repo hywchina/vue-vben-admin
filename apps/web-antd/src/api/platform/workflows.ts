@@ -14,8 +14,10 @@ export interface WorkflowVersionInput {
   parameterSchema: WorkflowParameterDefinition[];
 }
 
-export function getCapabilityApi(code: string) {
-  return requestClient.get<PlatformCapability>(`/capabilities/${code}`);
+export function getCapabilityApi(code: string, view?: 'workflow-parameters') {
+  return requestClient.get<PlatformCapability>(`/capabilities/${code}`, {
+    params: { view },
+  });
 }
 
 export function getWorkflowManagementApi() {

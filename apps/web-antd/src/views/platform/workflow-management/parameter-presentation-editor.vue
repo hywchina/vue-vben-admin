@@ -31,7 +31,7 @@ async function show(code: string) {
   loading.value = true;
   capability.value = undefined;
   try {
-    capability.value = await getCapabilityApi(code);
+    capability.value = await getCapabilityApi(code, 'workflow-parameters');
     keys.value = [...(capability.value.presentation?.quickFieldKeys ?? [])];
     labels.value = Object.fromEntries(
       fields.value.map((field) => [field.key, field.label]),

@@ -1356,7 +1356,7 @@ async function run() {
   const referenceInput = {
     projectId: referenceProjectId,
     designMode: 'cmf',
-    parameterValues: { prompt: '保留布局，融入参考设计' },
+    parameterValues: { generationCount: 8, prompt: '保留布局，融入参考设计' },
     inputAssetIds: Object.fromEntries(
       referenceAssets.slice(0, 3).map((id, index) => [index, id]),
     ),
@@ -1384,7 +1384,7 @@ async function run() {
       restoredReferenceDraft.envelope.data.parameterValues,
       referenceInput.parameterValues,
     ),
-    '参考图草稿未恢复提示词',
+    '参考图草稿未恢复提示词和生成数量',
   );
   const referenceJobInput = {
     appKey: 'reference-image-edit',
@@ -1394,6 +1394,17 @@ async function run() {
     parameters: referenceInput.parameterValues,
     name: '参考图编辑路由验收',
   };
+  for (const generationCount of [0, 1.5, 9, '8']) {
+    await apiRequest('/jobs', {
+      body: {
+        ...referenceJobInput,
+        inputAssetIds: referenceAssets.slice(0, 1),
+        parameters: { ...referenceJobInput.parameters, generationCount },
+      },
+      expectedStatus: 400,
+      session: user1,
+    });
+  }
   for (const inputAssetIds of [[], referenceAssets])
     await apiRequest('/jobs', {
       body: { ...referenceJobInput, inputAssetIds },
@@ -1436,12 +1447,82 @@ async function run() {
       '图片数量路由了错误的工作流',
     );
     const [binding] =
-      await sql`SELECT cw.workflow_version_id = j.workflow_version_id AS matches
+      await sql`SELECT cw.workflow_version_id = j.workflow_version_id AS matches,
+        j.parameters ->> 'generationCount' AS count
       FROM jobs j JOIN capability_workflows cw ON cw.capability_code = j.app_key AND cw.active
       WHERE j.id = ${referenceJob.envelope.data.id}`;
-    assert(binding?.matches, '参考图任务未冻结实际绑定的版本');
+    assert(
+      binding?.matches && binding.count === '8',
+      '参考图任务未冻结实际版本及生成数量',
+    );
   }
   const [base, reference, derivedMask, annotated] = referenceAssets;
+  const cameraScope = await apiRequest<{ id: string }>(
+    '/design-conversations',
+    {
+      body: { projectId: referenceProjectId },
+      session: user1,
+    },
+  );
+  const cameraViews = [
+    { id: 'view0', enabled: true, horizontal: 0, vertical: 60, zoom: 8 },
+    { id: 'view1', enabled: true, horizontal: 90, vertical: 0, zoom: 5 },
+    { id: 'view2', enabled: true, horizontal: 270, vertical: -30, zoom: 1 },
+  ];
+  const cameraDraft = `/design-conversations/${cameraScope.envelope.data.id}/drafts/camera-control-multi`;
+  const cameraParameters = { cameraViews, generationCount: 8 };
+  await apiRequest(cameraDraft, {
+    method: 'PUT',
+    session: user1,
+    body: {
+      projectId: referenceProjectId,
+      inputAssetIds: { 0: base },
+      parameterValues: cameraParameters,
+    },
+  });
+  const restoredCamera = await apiRequest<{ parameterValues: unknown }>(
+    `${cameraDraft}?projectId=${referenceProjectId}`,
+    { session: user1 },
+  );
+  assert(
+    isDeepStrictEqual(
+      restoredCamera.envelope.data.parameterValues,
+      cameraParameters,
+    ),
+    '视角和数量草稿未完整恢复',
+  );
+  const cameraJobInput = {
+    appKey: 'camera-control-multi',
+    projectId: referenceProjectId,
+    designConversationId: cameraScope.envelope.data.id,
+    inputAssetIds: [base],
+    name: '编辑视角验收',
+  };
+  for (const parameters of [
+    { cameraViews, generationCount: 2 },
+    { cameraViews, generationCount: 9 },
+    {
+      cameraViews: cameraViews.map((view) => ({ ...view, enabled: false })),
+      generationCount: 1,
+    },
+    {
+      cameraViews: [{ ...cameraViews[0], horizontal: 12 }],
+      generationCount: 1,
+    },
+  ])
+    await apiRequest('/jobs', {
+      body: { ...cameraJobInput, parameters },
+      session: user1,
+      expectedStatus: 400,
+    });
+  const cameraJob = await apiRequest<{ parameters: unknown }>('/jobs', {
+    body: { ...cameraJobInput, parameters: cameraParameters },
+    session: user1,
+  });
+  assert(
+    isDeepStrictEqual(cameraJob.envelope.data.parameters, cameraParameters),
+    '任务未保存编辑视角和数量快照',
+  );
   assert(
     base && reference && derivedMask && annotated,
     '局部编辑夹具缺少输入图',
@@ -1452,6 +1533,7 @@ async function run() {
   const color = 'brush:free:24:1:255,0,0:25,25;75,75';
   const number = 'brush:square:24:1:255,0,0:1:25,25;75,75';
   const localParameters = {
+    generationCount: 3,
     prompt: '更换为灰色座椅',
     localEdit: { mode: 'mask', color, number },
   };
@@ -1495,12 +1577,15 @@ async function run() {
       restoredLocal.envelope.data.parameterValues,
       localParameters,
     ),
-    '局部编辑草稿未恢复各工具的标记',
+    '局部编辑草稿未恢复各工具的标记和生成数量',
   );
   const localInput = {
     ...referenceJobInput,
     appKey: 'local-image-edit',
-    parameters: { prompt: localParameters.prompt },
+    parameters: {
+      generationCount: localParameters.generationCount,
+      prompt: localParameters.prompt,
+    },
   };
   for (const test of [
     { mode: 'mask', key: 'inpaint-single', assetIds: [derivedMask] },
@@ -1542,10 +1627,14 @@ async function run() {
       '局部编辑提交未按工具与参考图正确分流',
     );
     const [version] =
-      await sql`SELECT cw.workflow_version_id = j.workflow_version_id AS matches
+      await sql`SELECT cw.workflow_version_id = j.workflow_version_id AS matches,
+        j.parameters ->> 'generationCount' AS count
       FROM jobs j JOIN capability_workflows cw ON cw.capability_code = j.app_key AND cw.active
       WHERE j.id = ${job.envelope.data.id}`;
-    assert(version?.matches, '局部编辑任务未冻结实际绑定版本');
+    assert(
+      version?.matches && version.count === '3',
+      '局部编辑任务未冻结实际版本及生成数量',
+    );
   }
   for (const invalid of [
     { inputAssetIds: [base], localEdit: { baseAssetId: base, mode: 'mask' } },
@@ -3213,6 +3302,19 @@ async function run() {
     expectedStatus: 409,
     session: user1,
   });
+  const activeRoundPath = `/design-conversations/${designConversation.envelope.data.id}/rounds/${activeDesignJobId}?projectId=${projectId}`;
+  for (const status of ['queued', 'running', 'cancelling']) {
+    await sql`UPDATE jobs SET status = ${status} WHERE id = ${activeDesignJobId}`;
+    const refused = await apiRequest(activeRoundPath, {
+      expectedStatus: 409,
+      method: 'DELETE',
+      session: user1,
+    });
+    assert(
+      refused.envelope.code === 'DESIGN_ROUND_ACTIVE',
+      '活动轮次删除没有被拒绝',
+    );
+  }
   await settleJobsForIntegration(
     [activeDesignJobId, parallelDesignJob.envelope.data.id],
     '设计会话并发验收完成',
@@ -3537,6 +3639,11 @@ async function run() {
   );
   const inputPath = (id: string) =>
     `/design-conversations/${id}/input-assets/${conversationOutputId}?projectId=${projectId}`;
+  const roundPath = (
+    conversationId = designConversation.envelope.data.id,
+    ownerProjectId = projectId,
+  ) =>
+    `/design-conversations/${conversationId}/rounds/${conversationOutputJobId}?projectId=${ownerProjectId}`;
   const resolvedInput = await apiRequest<{ id: string }>(
     inputPath(designConversation.envelope.data.id),
     { session: user1 },
@@ -3546,6 +3653,11 @@ async function run() {
   await sql`INSERT INTO project_members (project_id, user_id, project_role)
     VALUES (${projectId}, ${user4.id}, 'editor')`;
   for (const session of [user4, admin]) {
+    await apiRequest(roundPath(), {
+      expectedStatus: 404,
+      method: 'DELETE',
+      session,
+    });
     for (const suffix of ['preview', 'download', 'versions'])
       await apiRequest(`/assets/${conversationOutputId}/${suffix}`, {
         expectedStatus: 404,
@@ -3666,6 +3778,95 @@ async function run() {
       conversationOutputId,
     '刷新草稿丢失未入库输入',
   );
+  await apiRequest(roundPath(reuseConversation.envelope.data.id), {
+    expectedStatus: 404,
+    method: 'DELETE',
+    session: user1,
+  });
+  await apiRequest(roundPath(undefined, referenceProjectId), {
+    expectedStatus: 404,
+    method: 'DELETE',
+    session: user1,
+  });
+  await sql`INSERT INTO job_outputs (job_id, asset_id, position)
+    VALUES (${conversationOutputJobId}, ${prepared.envelope.data.asset.id}, 1)`;
+  const getRoundSummary = async () => {
+    const result = await apiRequest<
+      Array<{ id: string; previewAssetId: null | string; roundCount: number }>
+    >(`/design-conversations?projectId=${projectId}`, { session: user1 });
+    return result.envelope.data.find(
+      ({ id }) => id === designConversation.envelope.data.id,
+    );
+  };
+  const summaryBefore = await getRoundSummary();
+  assert(
+    summaryBefore?.previewAssetId === conversationOutputId,
+    '最新出图轮次应显示封面',
+  );
+  await Promise.all(
+    Array.from({ length: 2 }, () =>
+      apiRequest(roundPath(), {
+        method: 'DELETE',
+        session: user1,
+      }),
+    ),
+  );
+  const summaryAfter = await getRoundSummary();
+  assert(
+    summaryAfter?.roundCount === summaryBefore.roundCount - 1 &&
+      summaryAfter.previewAssetId !== conversationOutputId,
+    '删除轮次后未更新会话数量或封面',
+  );
+  const roundJobsPath = `/jobs?projectId=${projectId}`;
+  const timeline = await apiRequest<
+    Array<{ id: string; inputs: Array<{ assetId: string }> }>
+  >(
+    `${roundJobsPath}&designConversationId=${designConversation.envelope.data.id}`,
+    { session: user1 },
+  );
+  assert(
+    !timeline.envelope.data.some(({ id }) => id === conversationOutputJobId),
+    '已删除轮次仍出现在时间线',
+  );
+  assert(
+    timeline.envelope.data.find(({ id }) => id === reusedJob.envelope.data.id)
+      ?.inputs[0]?.assetId === conversationOutputId,
+    '已有轮次丢失了对被删除轮次结果的引用',
+  );
+  const ledger = await apiRequest<
+    Array<{
+      designRoundArchived: boolean;
+      id: string;
+      outputs: Array<{ assetId: string; saved: boolean }>;
+    }>
+  >(roundJobsPath, { session: user1 });
+  const archivedRound = ledger.envelope.data.find(
+    ({ id }) => id === conversationOutputJobId,
+  );
+  assert(
+    archivedRound?.designRoundArchived &&
+      archivedRound.outputs.some(
+        ({ assetId, saved }) =>
+          assetId === prepared.envelope.data.asset.id && saved,
+      ),
+    '历史任务或已保存资产因删除轮次而丢失',
+  );
+  await apiRequest(inputPath(designConversation.envelope.data.id), {
+    session: user1,
+  });
+  const afterRoundDelete = await apiRequest<{
+    inputAssetIds: Record<string, string>;
+  }>(`${designDraftPath}?projectId=${projectId}`, { session: user1 });
+  assert(
+    afterRoundDelete.envelope.data.inputAssetIds['0'] === conversationOutputId,
+    '删除轮次时误清除草稿中引用的图片',
+  );
+  const [roundAudit] = await sql<{ count: number }[]>`
+    SELECT count(*)::int AS count FROM audit_events
+    WHERE action = 'design.round.archive' AND target_id = ${conversationOutputJobId}
+      AND actor_id = ${user1.id}
+  `;
+  assert(roundAudit?.count === 1, '并发重试应只留下一个轮次删除审计事件');
   await apiRequest(
     `/design-conversations/${reuseConversation.envelope.data.id}/drafts/${flowTarget.key}`,
     {

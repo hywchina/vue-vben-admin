@@ -49,6 +49,7 @@ import {
 
 import {
   archiveDesignConversationApi,
+  archiveDesignRoundApi,
   createDesignConversationApi,
   getAssetApi,
   getAssetDownloadApi,
@@ -67,6 +68,7 @@ import {
   assetImageDragType,
   readDraggedAssetId,
 } from '#/components/assistant/asset-image-drag';
+import CameraViewPicker from '#/components/platform/camera-view-picker.vue';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { assetCategoryLabel } from '#/modules/platform/asset-browser';
@@ -76,6 +78,13 @@ import {
   assetImageOutput,
 } from '#/modules/platform/asset-image-actions';
 import { assetTypeIcons } from '#/modules/platform/asset-types';
+import {
+  cameraCountField,
+  cameraViewsKey,
+  cameraViewValues,
+  restoreCameraViews,
+  setCameraViewParameters,
+} from '#/modules/platform/camera-views';
 import {
   baseEditReplacements,
   defaultGenerationApplicationKey,
@@ -101,6 +110,11 @@ import {
   syncPromptRatio,
   validDimension,
 } from '#/modules/platform/image-dimensions';
+import {
+  imageGenerationCountKey,
+  imageGenerationCountOptions,
+  savedImageGenerationCount,
+} from '#/modules/platform/image-generation-count';
 import {
   isLocalEditWorkflow,
   localEditDraft,
@@ -217,12 +231,14 @@ const cmfMultiImageMode = ref<'choose' | 'dialog'>('choose');
 const cmfMultiImageOutput = ref<PlatformJobOutput>();
 const cmfMultiImageDesignMode = ref<Exclude<DesignModeKey, 'report'>>('cmf');
 const cmfMultiImagePrompt = ref('');
+const cmfMultiImageCount = ref(1);
 const cmfMultiImageFiles = ref<File[]>([]);
 const cmfMultiImageSubmitting = ref(false);
 const cmfUpscaleOpen = ref(false);
 const cmfUpscaleOutput = ref<PlatformJobOutput>();
 const cmfUpscaleDesignMode = ref<Exclude<DesignModeKey, 'report'>>('cmf');
 const cmfUpscaleFactor = ref(4);
+const cmfUpscaleCount = ref(1);
 const cmfUpscaleSubmitting = ref(false);
 const multiAngleOpen = ref(false);
 const multiAngleMode = ref<'choose' | 'dialog'>('choose');
@@ -230,6 +246,8 @@ const multiAngleOutput = ref<PlatformJobOutput>();
 const multiAngleDesignMode = ref<'cabin' | 'component'>('component');
 const multiAngleFile = ref<File>();
 const multiAngleSubmitting = ref(false);
+const multiAngleCount = ref(5);
+const multiAngleViews = ref<unknown>([]);
 const threeDOpen = ref(false);
 const threeDMode = ref<'choose' | 'dialog'>('choose');
 const threeDOutput = ref<PlatformJobOutput>();
@@ -496,12 +514,13 @@ const composerPlaceholder = computed(() => {
     activeDesignMode.value.placeholder
   );
 });
+const archivedRoundIds = reactive(new Set<string>());
 const conversationJobs = computed(() =>
   selectDesignConversationJobs(
     platformStore.currentJobs,
     activeConversationId.value,
     platformStore.currentProjectId,
-  ),
+  ).filter(({ id }) => !archivedRoundIds.has(id)),
 );
 const activeJob = computed(() =>
   conversationJobs.value.find((job) =>
@@ -561,8 +580,10 @@ const scalarFields = computed(
 );
 const cameraFields = computed(
   () =>
-    capability.value?.fields.filter((field) =>
-      field.uiControl.startsWith('camera-'),
+    capability.value?.fields.filter(
+      (field) =>
+        effectiveApplicationKey.value !== 'camera-control-multi' &&
+        field.uiControl.startsWith('camera-'),
     ) ?? [],
 );
 const promptField = computed(
@@ -717,7 +738,9 @@ function fieldJsonValue(field: CapabilityField) {
 }
 
 function setFieldValue(field: CapabilityField, value: unknown) {
-  parameterValues[field.key] = value;
+  if (field.key === cameraViewsKey)
+    setCameraViewParameters(parameterValues, value);
+  else parameterValues[field.key] = value;
   scheduleDraftSave();
 }
 
@@ -1277,7 +1300,13 @@ function resetDraftState(nextCapability?: PlatformCapability) {
   resetCapabilityParameters(nextCapability);
 }
 
-function resetCapabilityParameters(nextCapability?: PlatformCapability) {
+function resetCapabilityParameters(
+  nextCapability?: PlatformCapability,
+  preserveImageCount = false,
+) {
+  const count = preserveImageCount
+    ? parameterValues[imageGenerationCountKey]
+    : undefined;
   for (const key of Object.keys(parameterValues)) {
     Reflect.deleteProperty(parameterValues, key);
   }
@@ -1286,6 +1315,11 @@ function resetCapabilityParameters(nextCapability?: PlatformCapability) {
       parameterValues[field.key] = field.defaultValue;
     }
   }
+  if (
+    count !== undefined &&
+    (!nextCapability || imageGenerationCountKey in parameterValues)
+  )
+    parameterValues[imageGenerationCountKey] = count;
 }
 
 watch(referenceWorkflowKey, (workflowKey) => {
@@ -1295,7 +1329,7 @@ watch(referenceWorkflowKey, (workflowKey) => {
   const target = workflowKey ? referenceCapabilities[workflowKey] : undefined;
   const prompt = parameterValues[promptField.value?.key ?? 'prompt'];
   capability.value = target ?? null;
-  resetCapabilityParameters(target);
+  resetCapabilityParameters(target, true);
   parameterValues[promptField.value?.key ?? 'prompt'] = prompt;
 });
 
@@ -1311,7 +1345,7 @@ watch(localWorkflowKey, (key, previous) => {
   const prompt = parameterValues[promptField.value?.key ?? 'prompt'];
   const target = localCapabilities[key];
   capability.value = target ?? null;
-  resetCapabilityParameters(target);
+  resetCapabilityParameters(target, true);
   parameterValues[promptField.value?.key ?? 'prompt'] = prompt;
 });
 
@@ -1469,6 +1503,15 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
     for (const [key, value] of Object.entries(values)) {
       if (scalarKeys.has(key)) parameterValues[key] = value;
     }
+    if (scalarKeys.has(imageGenerationCountKey) || unified || local) {
+      const count = savedImageGenerationCount(nextCapability, values);
+      if (count !== undefined) parameterValues[imageGenerationCountKey] = count;
+    }
+    if (scalarKeys.has(cameraViewsKey))
+      parameterValues[cameraViewsKey] = restoreCameraViews(
+        nextCapability?.fields ?? [],
+        { ...values, generationCount: parameterValues.generationCount },
+      );
     // A saved empty prompt is intentional; only initialize a brand-new draft.
     if (
       !unified &&
@@ -1524,11 +1567,16 @@ async function hydrateTimelineCapabilities() {
   );
 }
 
+let conversationListRequest = 0;
 async function refreshConversations() {
+  const request = ++conversationListRequest;
   const projectId = platformStore.currentProjectId;
-  conversations.value = projectId
-    ? await getDesignConversationsApi(projectId)
-    : [];
+  const next = projectId ? await getDesignConversationsApi(projectId) : [];
+  if (
+    request === conversationListRequest &&
+    projectId === platformStore.currentProjectId
+  )
+    conversations.value = next;
 }
 
 async function scrollToLatestRound() {
@@ -1944,9 +1992,33 @@ function archiveConversation(conversation: DesignConversation) {
   });
 }
 
+function archiveRound(job: PlatformJob) {
+  const { designConversationId, id, projectId } = job;
+  if (!designConversationId) return;
+  Modal.confirm({
+    cancelText: '取消',
+    content:
+      '本轮输入和结果会从当前会话移除。任务台账、已保存的资产和其他轮次引用的素材会继续保留。',
+    okButtonProps: { danger: true },
+    okText: '删除本轮',
+    title: '删除这轮交互？',
+    async onOk() {
+      await archiveDesignRoundApi(designConversationId, id, projectId);
+      job.designRoundArchived = true;
+      archivedRoundIds.add(id);
+      if (projectId === platformStore.currentProjectId)
+        await refreshConversations().catch(() => {});
+      message.success('已删除本轮');
+    },
+  });
+}
+
 function taskParameters() {
   if ((referenceEdit.value || localEdit.value) && !capability.value)
-    return { prompt: parameterValues.prompt };
+    return {
+      [imageGenerationCountKey]: parameterValues[imageGenerationCountKey],
+      prompt: parameterValues.prompt,
+    };
   return Object.fromEntries(
     (capability.value?.fields ?? [])
       .filter((field) => !mediaTypes.has(field.type) || field.type === 'region')
@@ -2011,6 +2083,16 @@ async function submitCapability(
   } = {},
 ) {
   if (options.isCurrent && !options.isCurrent()) return;
+  if (
+    effectiveApplicationKey.value === 'camera-control-multi' &&
+    !cameraViewValues(parameterValues[cameraViewsKey]).some(
+      ({ enabled }) => enabled,
+    )
+  ) {
+    message.warning('请至少选择一个视角');
+    return;
+  }
+
   if (composerImportingImage.value || composerUploading.value) {
     message.info('图片正在添加，请完成后再提交');
     return;
@@ -2830,6 +2912,7 @@ function openMultiImage(
   cmfMultiImageDesignMode.value = mode;
   cmfMultiImageMode.value = 'choose';
   cmfMultiImagePrompt.value = '';
+  cmfMultiImageCount.value = 1;
   cmfMultiImageFiles.value = [];
   cmfMultiImageOpen.value = true;
 }
@@ -2921,6 +3004,7 @@ async function runCmfMultiImageDialog() {
     }
     if (!promptField.value) throw new Error('多图融合能力缺少提示词输入');
     setFieldValue(promptField.value, prompt);
+    parameterValues[imageGenerationCountKey] = cmfMultiImageCount.value;
     await saveDraftNow();
     cmfMultiImageOpen.value = false;
     await runCapability();
@@ -2938,6 +3022,7 @@ function openUpscale(
   cmfUpscaleOutput.value = output;
   cmfUpscaleDesignMode.value = mode;
   cmfUpscaleFactor.value = 4;
+  cmfUpscaleCount.value = 1;
   cmfUpscaleOpen.value = true;
 }
 
@@ -2956,6 +3041,7 @@ async function runCmfUpscale() {
     );
     if (!factorField) throw new Error('图像放大能力缺少倍率参数');
     setFieldValue(factorField, cmfUpscaleFactor.value);
+    parameterValues[imageGenerationCountKey] = cmfUpscaleCount.value;
     await saveDraftNow();
     cmfUpscaleOpen.value = false;
     await runCapability();
@@ -3034,15 +3120,41 @@ async function changeEnvironment(output: PlatformJobOutput) {
   }
 }
 
-function openMultiAngle(
+async function openMultiAngle(
   output: PlatformJobOutput,
   mode: 'cabin' | 'component',
 ) {
   multiAngleOutput.value = output;
   multiAngleDesignMode.value = mode;
   multiAngleMode.value = 'choose';
+  multiAngleCount.value = 5;
   multiAngleFile.value = undefined;
   multiAngleOpen.value = true;
+  multiAngleViews.value = [];
+  try {
+    const app = platformStore.applications.find(
+      ({ key }) => key === 'camera-control-multi',
+    );
+    if (app?.capabilityCode) {
+      const loaded = await getCapabilityApi(app.capabilityCode);
+      multiAngleViews.value = restoreCameraViews(loaded.fields, {});
+      multiAngleCount.value = cameraViewValues(multiAngleViews.value).filter(
+        ({ enabled }) => enabled,
+      ).length;
+    }
+  } catch {
+    message.error('多视角参数加载失败，请重新打开');
+  }
+}
+
+function setMultiAngleViews(value: unknown) {
+  const values = {
+    cameraViews: multiAngleViews.value,
+    generationCount: multiAngleCount.value,
+  };
+  setCameraViewParameters(values, value);
+  multiAngleViews.value = values.cameraViews;
+  multiAngleCount.value = values.generationCount;
 }
 
 function selectMultiAngleFile(event: Event) {
@@ -3091,6 +3203,8 @@ async function runMultiAngleDialog() {
         tags: ['设计会话输入', '多角度生成'],
       });
     }
+    parameterValues[imageGenerationCountKey] = multiAngleCount.value;
+    parameterValues[cameraViewsKey] = multiAngleViews.value;
     await saveDraftNow();
     multiAngleOpen.value = false;
     await runCapability();
@@ -3585,6 +3699,7 @@ onBeforeUnmount(() => {
               :supports-image-comparison="
                 jobCapability(job)?.supportsImageComparison ?? false
               "
+              @archive-round="archiveRound"
               @business-action="handleBusinessResultAction"
               @download="downloadOutput"
               @edit-rerun="editAndRerunJob"
@@ -3983,8 +4098,9 @@ onBeforeUnmount(() => {
                   <DesignQuickField
                     v-for="field in compactDisplayFields"
                     :key="field.key"
-                    :field="field"
+                    :field="cameraCountField(field, parameterValues)"
                     :value="parameterValues[field.key]"
+                    :generation-count="parameterValues.generationCount"
                     @change="setQuickFieldValue(field, $event)"
                   />
                   <DesignImageSize
@@ -4058,6 +4174,11 @@ onBeforeUnmount(() => {
                 !activeConversationId ||
                 submitting ||
                 activeJob?.status === 'cancelling' ||
+                (!activeJob &&
+                  effectiveApplicationKey === 'camera-control-multi' &&
+                  !cameraViewValues(parameterValues[cameraViewsKey]).some(
+                    ({ enabled }) => enabled,
+                  )) ||
                 composerImportingImage ||
                 composerUploading ||
                 (referenceEdit &&
@@ -4288,7 +4409,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="drawer-section">
           <h3>应用参数</h3>
-          <label
+          <div
             v-for="field in scalarFields"
             :key="field.key"
             class="drawer-field"
@@ -4308,10 +4429,16 @@ onBeforeUnmount(() => {
               @update:value="setFieldValue(field, $event)"
             />
             <Textarea
-              v-else-if="field.type === 'json'"
+              v-else-if="field.type === 'json' && field.key !== cameraViewsKey"
               :value="fieldJsonValue(field)"
               :rows="5"
               @update:value="setFieldValue(field, $event)"
+            />
+            <CameraViewPicker
+              v-else-if="field.key === cameraViewsKey"
+              :value="parameterValues[field.key]"
+              :count="parameterValues.generationCount"
+              @change="setFieldValue(field, $event)"
             />
             <Input
               v-else-if="field.type === 'text'"
@@ -4322,8 +4449,10 @@ onBeforeUnmount(() => {
             />
             <InputNumber
               v-else-if="field.type === 'number'"
+              :aria-label="field.label"
               :max="field.max"
-              :min="field.min"
+              :min="cameraCountField(field, parameterValues).min"
+              :precision="field.integer ? 0 : undefined"
               :step="field.step"
               :value="fieldNumberValue(field)"
               class="w-full"
@@ -4341,7 +4470,7 @@ onBeforeUnmount(() => {
               :checked="fieldBooleanValue(field)"
               @update:checked="setFieldValue(field, $event)"
             />
-          </label>
+          </div>
         </div>
       </Spin>
       <template #extra>
@@ -4503,6 +4632,15 @@ onBeforeUnmount(() => {
           :maxlength="6000"
           placeholder="描述三张图像的融合关系、目标纹样、色彩与材质效果……"
         />
+        <div class="flex flex-wrap items-center gap-2">
+          <label for="fusion-generation-count">生成数量</label>
+          <Select
+            id="fusion-generation-count"
+            v-model:value="cmfMultiImageCount"
+            :options="imageGenerationCountOptions"
+            class="w-24"
+          />
+        </div>
         <div class="cmf-dialog-actions">
           <Button @click="cmfMultiImageMode = 'choose'">返回</Button>
           <Button
@@ -4523,21 +4661,30 @@ onBeforeUnmount(() => {
       v-model:open="cmfUpscaleOpen"
       :confirm-loading="cmfUpscaleSubmitting"
       ok-text="开始放大"
-      title="选择图像放大倍率"
+      title="图像放大"
       @ok="runCmfUpscale"
     >
-      <p class="continue-description">
-        当前图片会作为原始图像，确认倍率后直接创建图像放大任务。
-      </p>
-      <Select
-        v-model:value="cmfUpscaleFactor"
-        :options="[
-          { label: '2 倍', value: 2 },
-          { label: '4 倍（推荐）', value: 4 },
-          { label: '8 倍', value: 8 },
-        ]"
-        class="w-full"
-      />
+      <p class="continue-description">当前图片会作为原始图像。</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <label for="upscale-factor">放大倍率</label>
+        <Select
+          id="upscale-factor"
+          v-model:value="cmfUpscaleFactor"
+          :options="[
+            { label: '2 倍', value: 2 },
+            { label: '4 倍（推荐）', value: 4 },
+            { label: '8 倍', value: 8 },
+          ]"
+          class="w-32"
+        />
+        <label for="upscale-generation-count">生成数量</label>
+        <Select
+          id="upscale-generation-count"
+          v-model:value="cmfUpscaleCount"
+          :options="imageGenerationCountOptions"
+          class="w-24"
+        />
+      </div>
     </Modal>
 
     <Modal
@@ -4576,6 +4723,28 @@ onBeforeUnmount(() => {
             <small>{{ multiAngleFile?.name ?? '当前使用生成结果' }}</small>
           </span>
         </label>
+        <div class="flex flex-wrap items-center gap-2">
+          <label for="multi-angle-generation-count">生成数量</label>
+          <CameraViewPicker
+            :value="multiAngleViews"
+            :count="multiAngleCount"
+            @change="setMultiAngleViews"
+          />
+          <Select
+            id="multi-angle-generation-count"
+            v-model:value="multiAngleCount"
+            :options="
+              imageGenerationCountOptions.filter(
+                ({ value }) =>
+                  value >=
+                  cameraViewValues(multiAngleViews).filter(
+                    ({ enabled }) => enabled,
+                  ).length,
+              )
+            "
+            class="w-24"
+          />
+        </div>
         <div class="cmf-dialog-actions">
           <Button @click="multiAngleMode = 'choose'">返回</Button>
           <Button

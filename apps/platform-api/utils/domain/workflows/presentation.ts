@@ -54,10 +54,13 @@ export function capabilityPresentationFields(
   );
   return publicParameterSchema(parameterSchema).map((field, index) => {
     const definition = definitions[index];
-    const defaultLabel =
-      (field.key.startsWith('auto_') && definition?.inputName
-        ? translatedInputLabel(definition.inputName)
-        : undefined) ?? field.label;
+    let defaultLabel = field.label;
+    if (field.key.startsWith('auto_') && definition?.inputName) {
+      defaultLabel =
+        definition.inputName === 'batch_size' && field.label.includes('HYPIR')
+          ? '处理批次大小'
+          : (translatedInputLabel(definition.inputName) ?? field.label);
+    }
     const customLabel =
       configurable.has(field.key) && Object.hasOwn(labels, field.key)
         ? labels[field.key]?.trim()

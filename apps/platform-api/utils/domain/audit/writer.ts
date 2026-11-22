@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3';
+import type { TransactionSql } from 'postgres';
 
 import type { CurrentIdentity } from '../../identity';
 
@@ -21,8 +22,11 @@ export interface AuditInput {
   targetType: string;
 }
 
-export async function writeAudit(event: H3Event, input: AuditInput) {
-  const sql = useDatabase();
+export async function writeAudit(
+  event: H3Event,
+  input: AuditInput,
+  sql: ReturnType<typeof useDatabase> | TransactionSql = useDatabase(),
+) {
   const metadata = getRequestMetadata(event);
   const contextualActor = event.context.identity as CurrentIdentity | undefined;
   const actor = input.actor === undefined ? contextualActor : input.actor;

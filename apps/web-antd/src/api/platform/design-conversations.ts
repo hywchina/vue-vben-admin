@@ -82,6 +82,17 @@ export function archiveDesignConversationApi(
   );
 }
 
+export function archiveDesignRoundApi(
+  conversationId: string,
+  jobId: string,
+  projectId: string,
+) {
+  return requestClient.delete<{ archived: boolean; id: string }>(
+    `/design-conversations/${conversationId}/rounds/${jobId}`,
+    { params: { projectId } },
+  );
+}
+
 export function getDesignConversationDraftApi(
   conversationId: string,
   projectId: string,

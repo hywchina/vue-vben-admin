@@ -10,6 +10,12 @@ import {
 import { requireDesignConversation } from '~/utils/domain/design-conversations';
 import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
 import { getModelUpdate } from '~/utils/domain/models/updates';
+import {
+  imageGenerationCountField,
+  normalizeImageGenerationParameters,
+  planImageGeneration,
+  splitImageGenerationParameters,
+} from '~/utils/domain/workflows/image-generation-count';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import {
   hasLocalRegionMarks,
@@ -236,10 +242,30 @@ export default apiHandler(async (event) => {
   }
   if (capability) {
     try {
+      let parameters = input.parameters;
+      if (imageGenerationCountField(input.appKey)) {
+        input.parameters = normalizeImageGenerationParameters(
+          input.appKey,
+          capability.apiJson,
+          capability.parameterSchema,
+          parameters,
+        );
+        const { count, views, workflowParameters } =
+          splitImageGenerationParameters(input.parameters);
+        parameters = workflowParameters;
+        if (count !== undefined)
+          planImageGeneration(
+            input.appKey,
+            capability.apiJson,
+            capability.outputSchema,
+            count,
+            views,
+          );
+      }
       materializeWorkflow(
         capability.apiJson,
         capability.parameterSchema,
-        input.parameters,
+        parameters,
       );
     } catch (error) {
       throw new ApiError(

@@ -1,3 +1,4 @@
+import { splitImageGenerationParameters } from './image-generation-count';
 import { isWorkflowMediaParameter, workflowParameterSchema } from './schema';
 
 export interface WorkspaceDraftAsset {
@@ -8,7 +9,15 @@ export interface WorkspaceDraftAsset {
 export function assertWorkspaceDraftParameterKeys(
   parameterSchema: unknown,
   parameterValues: Record<string, unknown>,
+  allowImageGenerationCount = false,
+  allowCameraViews = false,
 ) {
+  if (allowImageGenerationCount) {
+    const { views, workflowParameters } =
+      splitImageGenerationParameters(parameterValues);
+    if (views && !allowCameraViews) throw new Error('当前功能不支持多视角选择');
+    parameterValues = workflowParameters;
+  }
   const definitions = workflowParameterSchema.array().parse(parameterSchema);
   const allowed = new Set(
     definitions.flatMap((field) =>

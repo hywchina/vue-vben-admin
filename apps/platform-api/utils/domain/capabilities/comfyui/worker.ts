@@ -17,6 +17,11 @@ import { validateFileForKind } from '../../assets/validation';
 import { writeSystemAudit } from '../../audit/writer';
 import { createNotification } from '../../notifications/repository';
 import {
+  imageGenerationCountField,
+  planImageGeneration,
+  splitImageGenerationParameters,
+} from '../../workflows/image-generation-count';
+import {
   materializeWorkflow,
   materializeWorkflowAssets,
   workflowOutputSchema,
@@ -133,6 +138,18 @@ export function extractComfyOutputFiles(
     }
   }
   return mapped;
+}
+
+export function extractRequestedImageOutputs(
+  outputs: Record<string, Record<string, unknown>>,
+  definitions: Array<WorkflowOutputDefinition & { count: number }>,
+) {
+  return definitions.flatMap((definition) => {
+    const files = extractComfyOutputFiles(outputs, [definition]);
+    return [
+      ...new Map(files.map((file) => [file.externalOutputKey, file])).values(),
+    ].slice(0, definition.count);
+  });
 }
 
 function safeError(error: unknown) {
@@ -367,19 +384,45 @@ export class ComfyUiWorker {
   }
 
   async #finalize(job: ExecutionRow, snapshot: ComfyExecutionSnapshot) {
-    const mapped = extractComfyOutputFiles(
-      snapshot.outputs ?? {},
-      job.outputSchema,
-    ).filter((output) => output.definition.role === 'primary');
-    if (mapped.length === 0) {
-      await this.#fail(
-        job,
-        'COMFYUI_OUTPUT_MISSING',
-        'ComfyUI 已完成，但未返回已配置的主要输出',
-      );
-      return;
-    }
     try {
+      const outputs = snapshot.outputs ?? {};
+      const { count, views } = imageGenerationCountField(job.appKey)
+        ? splitImageGenerationParameters(job.parameters)
+        : {};
+      let mapped: ComfyMappedOutput[];
+      if (count === undefined) {
+        mapped = extractComfyOutputFiles(outputs, job.outputSchema);
+      } else {
+        const plan = planImageGeneration(
+          job.appKey,
+          job.apiJson,
+          job.outputSchema,
+          count,
+          views,
+        );
+        const images = extractRequestedImageOutputs(outputs, plan.imageOutputs);
+        if (images.length !== count) {
+          await this.#fail(
+            job,
+            'COMFYUI_OUTPUT_MISSING',
+            `工作流返回 ${images.length} 张图片，少于请求的 ${count} 张`,
+          );
+          return;
+        }
+        mapped = [
+          ...images,
+          ...extractComfyOutputFiles(outputs, plan.otherOutputs),
+        ];
+      }
+      mapped = mapped.filter((output) => output.definition.role === 'primary');
+      if (mapped.length === 0) {
+        await this.#fail(
+          job,
+          'COMFYUI_OUTPUT_MISSING',
+          'ComfyUI 已完成，但未返回已配置的主要输出',
+        );
+        return;
+      }
       for (const output of mapped) {
         await this.#ingestOutput(job, output);
       }
@@ -779,12 +822,31 @@ export class ComfyUiWorker {
     if (!this.#client) return;
     let prompt: Record<string, unknown>;
     try {
+      const { count, views, workflowParameters } = imageGenerationCountField(
+        job.appKey,
+      )
+        ? splitImageGenerationParameters(job.parameters)
+        : {
+            count: undefined,
+            views: undefined,
+            workflowParameters: job.parameters,
+          };
       prompt = materializeWorkflow(
         job.apiJson,
         job.parameterSchema,
-        job.parameters,
+        workflowParameters,
       );
-      prompt = await this.#materializeInputAssets(job, prompt);
+      const materialized = await this.#materializeInputAssets(job, prompt);
+      prompt =
+        count === undefined
+          ? materialized
+          : planImageGeneration(
+              job.appKey,
+              job.apiJson,
+              job.outputSchema,
+              count,
+              views,
+            ).apply(materialized);
     } catch (error) {
       await this.#fail(
         job,

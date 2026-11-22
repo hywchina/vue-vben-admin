@@ -1,4 +1,4 @@
-import { getRouterParam } from 'h3';
+import { getQuery, getRouterParam } from 'h3';
 import { useDatabase } from '~/utils/database';
 import {
   getCapabilityByCode,
@@ -17,7 +17,8 @@ export default apiHandler(async (event) => {
   if (!capability) {
     throw new ApiError(404, 'CAPABILITY_NOT_FOUND', '能力不存在或尚未发布');
   }
-  if (!hasAdministrativeRole(identity)) {
+  const administrator = hasAdministrativeRole(identity);
+  if (!administrator) {
     const sql = useDatabase();
     const [application] = await sql<{ visible: boolean }[]>`
       SELECT visible FROM applications WHERE key = ${capability.appKey}
@@ -26,5 +27,9 @@ export default apiHandler(async (event) => {
       throw new ApiError(404, 'CAPABILITY_NOT_FOUND', '能力不存在或尚未发布');
     }
   }
-  return toPublicCapability(capability, hasAdministrativeRole(identity));
+  return toPublicCapability(
+    capability,
+    administrator,
+    administrator && getQuery(event).view === 'workflow-parameters',
+  );
 });

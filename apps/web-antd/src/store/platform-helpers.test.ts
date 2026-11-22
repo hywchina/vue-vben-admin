@@ -99,6 +99,11 @@ describe('platform store helpers', () => {
         id: 'other-user',
         ownedByCurrentUser: false,
       }),
+      createJob({
+        designConversationId: 'conversation-1',
+        designRoundArchived: true,
+        id: 'archived-round',
+      }),
     ];
 
     expect(

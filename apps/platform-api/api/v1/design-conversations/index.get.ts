@@ -45,7 +45,9 @@ export default apiHandler(async (event) => {
         SELECT latest.app_key
         FROM jobs latest
         WHERE latest.design_conversation_id = conversation.id
-        ORDER BY latest.created_at DESC
+          AND latest.archived_at IS NULL
+          AND latest.design_round_archived_at IS NULL
+        ORDER BY latest.created_at DESC, latest.id
         LIMIT 1
       ) AS "lastAppKey",
       (
@@ -58,11 +60,14 @@ export default apiHandler(async (event) => {
           AND output_asset.kind = 'image'
         WHERE latest.design_conversation_id = conversation.id
           AND latest.archived_at IS NULL
-        ORDER BY latest.created_at DESC, output.position
+          AND latest.design_round_archived_at IS NULL
+        ORDER BY latest.created_at DESC, latest.id, output.position
         LIMIT 1
       ) AS "previewAssetId"
     FROM design_conversations conversation
     LEFT JOIN jobs job ON job.design_conversation_id = conversation.id
+      AND job.archived_at IS NULL
+      AND job.design_round_archived_at IS NULL
     WHERE conversation.user_id = ${identity.id}
       AND conversation.project_id = ${projectId}
       AND conversation.archived_at IS NULL

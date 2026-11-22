@@ -5,6 +5,7 @@ import {
   assertWorkspaceDraftParameterKeys,
   workspaceDraftAssetSelection,
 } from '~/utils/domain/workflows/drafts';
+import { imageGenerationCountField } from '~/utils/domain/workflows/image-generation-count';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
@@ -61,6 +62,8 @@ export default apiHandler(async (event) => {
     assertWorkspaceDraftParameterKeys(
       capability.parameterSchema,
       input.parameterValues,
+      Boolean(imageGenerationCountField(input.appKey)),
+      input.appKey === 'camera-control-multi',
     );
   } catch (error) {
     throw new ApiError(

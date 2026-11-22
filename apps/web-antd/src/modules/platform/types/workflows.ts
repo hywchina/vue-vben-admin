@@ -45,6 +45,8 @@ export interface CapabilityField {
 export interface PlatformCapability {
   presentation?: {
     fieldLabels?: Record<string, string>;
+    legacyGenerationCountKey?: string;
+    legacyGenerationCountMultiplier?: number;
     quickFieldKeys: string[];
     workflowVersionId: string;
   };

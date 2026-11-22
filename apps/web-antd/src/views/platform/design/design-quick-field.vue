@@ -7,10 +7,13 @@ import { IconifyIcon } from '@vben/icons';
 
 import { Input, InputNumber, Popover, Switch, Textarea } from 'ant-design-vue';
 
+import CameraViewPicker from '#/components/platform/camera-view-picker.vue';
+import { cameraViewsKey } from '#/modules/platform/camera-views';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 const props = defineProps<{
   field: CapabilityField;
+  generationCount?: unknown;
   value: unknown;
 }>();
 
@@ -52,7 +55,14 @@ function randomizeSeed() {
 </script>
 
 <template>
+  <CameraViewPicker
+    v-if="field.key === cameraViewsKey"
+    :value="value"
+    :count="generationCount"
+    @change="emit('change', $event)"
+  />
   <Popover
+    v-else
     overlay-class-name="design-quick-popover"
     placement="top"
     trigger="click"
@@ -97,8 +107,10 @@ function randomizeSeed() {
 
         <div v-else-if="field.type === 'number'" class="quick-number-field">
           <InputNumber
+            :aria-label="field.label"
             :max="field.max"
             :min="field.min"
+            :precision="field.integer ? 0 : undefined"
             :step="field.step"
             :value="typeof value === 'number' ? value : undefined"
             @update:value="emit('change', $event ?? field.defaultValue)"

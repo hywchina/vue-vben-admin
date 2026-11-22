@@ -9,6 +9,10 @@ import {
   workspaceDraftAssetSelection,
 } from '~/utils/domain/workflows/drafts';
 import {
+  imageGenerationCountField,
+  splitImageGenerationParameters,
+} from '~/utils/domain/workflows/image-generation-count';
+import {
   localEditModes,
   localEditWorkflow,
   localImageDraftSlots,
@@ -116,9 +120,16 @@ export default apiHandler(async (event) => {
       assertWorkspaceDraftParameterKeys(
         capability.parameterSchema,
         draftParameters,
+        Boolean(imageGenerationCountField(capability.appKey)),
+        capability.appKey === 'camera-control-multi',
       );
-    else if (Object.keys(draftParameters).some((key) => key !== 'prompt'))
-      throw new Error('当前工作流暂不可用，仅可保存编辑指令');
+    else {
+      const { views, workflowParameters: remaining } =
+        splitImageGenerationParameters(draftParameters);
+      if (views) throw new Error('当前功能不支持多视角选择');
+      if (Object.keys(remaining).some((key) => key !== 'prompt'))
+        throw new Error('当前工作流暂不可用，仅可保存编辑指令和生成数量');
+    }
   } catch (error) {
     throw new ApiError(
       400,
