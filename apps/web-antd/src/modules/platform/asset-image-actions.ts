@@ -1,8 +1,9 @@
 import type { PlatformAsset, PlatformJobOutput } from './types';
 
+import { baseEditReplacements, retiredBaseEditKey } from './design-generation';
 import {
   designImageResultActions,
-  designResultActionApplicationKeys,
+  designResultActionAvailable,
 } from './design-result-actions';
 
 // The asset browser has no active design mode: expose the cabin image tools.
@@ -30,12 +31,17 @@ export function assetImageActionUnavailable(
     return '图片或操作不可用';
   if (action.key === 'rerun' && !asset.sourceJobId)
     return '上传图片没有可复用的生成任务';
-  const appKey =
+  if (action.key === 'rerun' && asset.sourceAppKey === retiredBaseEditKey)
+    return baseEditReplacements.some(({ key }) => availableKeys.includes(key))
+      ? ''
+      : '单图设计编辑和双图参考编辑均不可用';
+  const available =
     action.key === 'rerun'
-      ? asset.sourceAppKey
-      : designResultActionApplicationKeys[action.key];
-  if (!appKey || !availableKeys.includes(appKey))
-    return `${action.label}能力未配置或不可用`;
+      ? Boolean(
+          asset.sourceAppKey && availableKeys.includes(asset.sourceAppKey),
+        )
+      : designResultActionAvailable(action.key, availableKeys);
+  if (!available) return `${action.label}能力未配置或不可用`;
   return '';
 }
 export function assetImageOutput(asset: PlatformAsset): PlatformJobOutput {

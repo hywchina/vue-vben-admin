@@ -11,7 +11,9 @@ import {
   getDesignModeApplicationsApi,
   saveDesignModeApplicationsApi,
 } from '#/api/platform';
+import { isReferenceImageWorkflow } from '#/modules/platform/design-generation';
 import { designModes } from '#/modules/platform/design-modes';
+import { isLocalEditWorkflow } from '#/modules/platform/local-image-edit';
 import { usePlatformStore } from '#/store';
 const store = usePlatformStore();
 const open = ref(false);
@@ -27,6 +29,8 @@ const choices = computed(() =>
   applications.value.filter(
     (app) =>
       app.capabilityCode &&
+      !isReferenceImageWorkflow(app.key) &&
+      !isLocalEditWorkflow(app.key) &&
       !['screen-capture-edit', 'text-chat'].includes(app.key),
   ),
 );

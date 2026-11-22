@@ -1169,9 +1169,64 @@ async function run() {
       canManageVisibility: boolean;
       capabilityCode?: string;
       key: string;
+      name: string;
       visible: boolean;
     }>
   >('/applications', { session: admin });
+  const baseApplication = adminApplications.envelope.data.find(
+    (application) => application.key === 'image-edit-base',
+  );
+  assert(
+    baseApplication &&
+      !baseApplication.visible &&
+      !baseApplication.capabilityCode,
+    '双图基础编辑应仅保留应用记录，不能作为新任务入口',
+  );
+  assert(
+    adminApplications.envelope.data.find(
+      (application) => application.key === 'image-edit-kv',
+    )?.name === '双图参考编辑',
+    'KV 应用展示名未更新',
+  );
+  const referenceCapability = await apiRequest<{
+    name: string;
+    workflow: { name: string };
+  }>('/capabilities/image-edit-kv', { session: user1 });
+  assert(
+    referenceCapability.envelope.data.name === '双图参考编辑' &&
+      referenceCapability.envelope.data.workflow.name === '双图参考编辑',
+    '双图参考编辑的能力名称或工作流登记名未更新',
+  );
+  await apiRequest('/capabilities/image-edit-base', {
+    expectedStatus: 404,
+    session: admin,
+  });
+  await apiRequest('/applications/image-edit-base/visibility', {
+    body: { visible: true },
+    method: 'PATCH',
+    expectedStatus: 409,
+    session: admin,
+  });
+  const retirementConversation = await apiRequest<{ id: string }>(
+    '/design-conversations',
+    { body: { projectId }, session: admin },
+  );
+  const retiredSubmission = await apiRequest('/jobs', {
+    body: {
+      appKey: 'image-edit-base',
+      designConversationId: retirementConversation.envelope.data.id,
+      inputAssetIds: [],
+      name: '已停用工作流验收',
+      parameters: {},
+      projectId,
+    },
+    expectedStatus: 409,
+    session: admin,
+  });
+  assert(
+    retiredSubmission.envelope.code === 'APPLICATION_RETIRED',
+    '管理员仍可通过接口启动双图基础编辑',
+  );
   const modeConfigs = await apiRequest<
     Array<{
       applicationKeys: string[];
@@ -1186,6 +1241,12 @@ async function run() {
   assert(
     originalCmf && !originalCmf.applicationKeys.includes('multiview-to-3d'),
     'CMF 默认目录不应显示三维生成',
+  );
+  assert(
+    !originalCmf.applicationKeys.includes('image-edit-base') &&
+      originalCmf.applicationKeys.includes('reference-image-edit') &&
+      !originalCmf.applicationKeys.includes('image-edit-kv'),
+    'CMF 应将三个参考图编辑工作流合并成一个入口',
   );
   const modeInput = {
     applicationKeys: ['multi-image-edit', 'single-image-edit', 'text-to-image'],
@@ -1246,13 +1307,15 @@ async function run() {
     }>
   >('/applications', { session: user1 });
   assert(
-    configuredApps.envelope.data.find((app) => app.key === 'single-image-edit')
-      ?.designModes.cmf?.defaultImage,
+    configuredApps.envelope.data.find(
+      (app) => app.key === 'reference-image-edit',
+    )?.designModes.cmf?.defaultImage,
     '图生图默认功能未从持久配置返回',
   );
   assert(
-    configuredApps.envelope.data.find((app) => app.key === 'multi-image-edit')
-      ?.designModes.cmf?.order === 0,
+    configuredApps.envelope.data.find(
+      (app) => app.key === 'reference-image-edit',
+    )?.designModes.cmf?.order === 0,
     '模块排序未持久化',
   );
   assert(
@@ -1269,6 +1332,245 @@ async function run() {
       expectedRevision: modeSaved.envelope.data.revision,
     },
   });
+  const referenceProject = await apiRequest<{ id: string }>('/projects', {
+    body: { name: `参考图路由验收 ${runId}`, stage: 'concept' },
+    session: user1,
+  });
+  const referenceProjectId = referenceProject.envelope.data.id;
+  disposableProjectIds.push(referenceProjectId);
+  const referenceConversation = await apiRequest<{ id: string }>(
+    '/design-conversations',
+    { body: { projectId: referenceProjectId }, session: user1 },
+  );
+  const referenceConversationId = referenceConversation.envelope.data.id;
+  const referenceAssets = Array.from({ length: 4 }, () => randomUUID());
+  await sql.begin(async (tx) => {
+    for (const id of referenceAssets) {
+      await tx`INSERT INTO assets (id, project_id, name, kind, owner_id, status, saved_at)
+        VALUES (${id}, ${referenceProjectId}, '参考图路由验收', 'image', ${user1.id}, 'available', now())`;
+      await tx`INSERT INTO asset_versions (asset_id, version, storage_kind, text_content, original_filename, mime_type, size_bytes, status, created_by)
+        VALUES (${id}, 1, 'inline', '路由验收夹具', 'reference.png', 'image/png', 6, 'available', ${user1.id})`;
+    }
+  });
+  const referenceDraftPath = `/design-conversations/${referenceConversationId}/drafts/reference-image-edit`;
+  const referenceInput = {
+    projectId: referenceProjectId,
+    designMode: 'cmf',
+    parameterValues: { prompt: '保留布局，融入参考设计' },
+    inputAssetIds: Object.fromEntries(
+      referenceAssets.slice(0, 3).map((id, index) => [index, id]),
+    ),
+  };
+  await apiRequest(referenceDraftPath, {
+    body: referenceInput,
+    method: 'PUT',
+    session: user1,
+  });
+  const restoredReferenceDraft = await apiRequest<{
+    inputAssetIds: Record<string, string>;
+    parameterValues: Record<string, unknown>;
+  }>(`${referenceDraftPath}?projectId=${referenceProjectId}&designMode=cmf`, {
+    session: user1,
+  });
+  assert(
+    isDeepStrictEqual(
+      restoredReferenceDraft.envelope.data.inputAssetIds,
+      referenceInput.inputAssetIds,
+    ),
+    '参考图草稿未恢复完整素材',
+  );
+  assert(
+    isDeepStrictEqual(
+      restoredReferenceDraft.envelope.data.parameterValues,
+      referenceInput.parameterValues,
+    ),
+    '参考图草稿未恢复提示词',
+  );
+  const referenceJobInput = {
+    appKey: 'reference-image-edit',
+    projectId: referenceProjectId,
+    designConversationId: referenceConversationId,
+    designMode: 'cmf',
+    parameters: referenceInput.parameterValues,
+    name: '参考图编辑路由验收',
+  };
+  for (const inputAssetIds of [[], referenceAssets])
+    await apiRequest('/jobs', {
+      body: { ...referenceJobInput, inputAssetIds },
+      expectedStatus: 400,
+      session: user1,
+    });
+  await apiRequest('/jobs', {
+    body: {
+      ...referenceJobInput,
+      inputAssetIds: [referenceAssets[0], referenceAssets[0]],
+    },
+    expectedStatus: 400,
+    session: user1,
+  });
+  for (const [index, appKey] of [
+    'single-image-edit',
+    'image-edit-kv',
+    'multi-image-edit',
+  ].entries()) {
+    const submissionConversation = await apiRequest<{ id: string }>(
+      '/design-conversations',
+      {
+        body: { projectId: referenceProjectId },
+        session: user1,
+      },
+    );
+    const referenceJob = await apiRequest<{ appKey: string; id: string }>(
+      '/jobs',
+      {
+        body: {
+          ...referenceJobInput,
+          designConversationId: submissionConversation.envelope.data.id,
+          inputAssetIds: referenceAssets.slice(0, index + 1),
+        },
+        session: user1,
+      },
+    );
+    assert(
+      referenceJob.envelope.data.appKey === appKey,
+      '图片数量路由了错误的工作流',
+    );
+    const [binding] =
+      await sql`SELECT cw.workflow_version_id = j.workflow_version_id AS matches
+      FROM jobs j JOIN capability_workflows cw ON cw.capability_code = j.app_key AND cw.active
+      WHERE j.id = ${referenceJob.envelope.data.id}`;
+    assert(binding?.matches, '参考图任务未冻结实际绑定的版本');
+  }
+  const [base, reference, derivedMask, annotated] = referenceAssets;
+  assert(
+    base && reference && derivedMask && annotated,
+    '局部编辑夹具缺少输入图',
+  );
+  await sql`UPDATE asset_versions SET metadata = ${sql.json({ derivedFromAssetId: base })}
+    WHERE asset_id IN (${derivedMask}, ${annotated})`;
+  const localDraftPath = `/design-conversations/${referenceConversationId}/drafts/local-image-edit`;
+  const color = 'brush:free:24:1:255,0,0:25,25;75,75';
+  const number = 'brush:square:24:1:255,0,0:1:25,25;75,75';
+  const localParameters = {
+    prompt: '更换为灰色座椅',
+    localEdit: { mode: 'mask', color, number },
+  };
+  const localDraft = {
+    projectId: referenceProjectId,
+    designMode: 'cmf',
+    parameterValues: localParameters,
+    inputAssetIds: { 0: base, 1: reference, 2: derivedMask },
+  };
+  assert(
+    originalCmf.applicationKeys.includes('local-image-edit') &&
+      !originalCmf.applicationKeys.includes('inpaint-single'),
+    '模块入口未统一为局部编辑',
+  );
+  await apiRequest(localDraftPath, {
+    body: localDraft,
+    method: 'PUT',
+    session: user1,
+  });
+  await apiRequest(localDraftPath, {
+    body: { ...localDraft, inputAssetIds: { 0: reference, 2: derivedMask } },
+    expectedStatus: 400,
+    method: 'PUT',
+    session: user1,
+  });
+  const restoredLocal = await apiRequest<{
+    inputAssetIds: Record<string, string>;
+    parameterValues: Record<string, unknown>;
+  }>(`${localDraftPath}?projectId=${referenceProjectId}&designMode=cmf`, {
+    session: user1,
+  });
+  assert(
+    isDeepStrictEqual(
+      restoredLocal.envelope.data.inputAssetIds,
+      localDraft.inputAssetIds,
+    ),
+    '局部编辑草稿未保留底图、参考图与遮罩三个独立位置',
+  );
+  assert(
+    isDeepStrictEqual(
+      restoredLocal.envelope.data.parameterValues,
+      localParameters,
+    ),
+    '局部编辑草稿未恢复各工具的标记',
+  );
+  const localInput = {
+    ...referenceJobInput,
+    appKey: 'local-image-edit',
+    parameters: { prompt: localParameters.prompt },
+  };
+  for (const test of [
+    { mode: 'mask', key: 'inpaint-single', assetIds: [derivedMask] },
+    {
+      mode: 'mask',
+      key: 'inpaint-reference',
+      assetIds: [derivedMask, reference],
+    },
+    { mode: 'color', key: 'region-edit', assetIds: [base], marks: color },
+    {
+      mode: 'number',
+      key: 'region-marker-edit',
+      assetIds: [base],
+      marks: number,
+    },
+  ]) {
+    const scope = await apiRequest<{ id: string }>('/design-conversations', {
+      body: { projectId: referenceProjectId },
+      session: user1,
+    });
+    const job = await apiRequest<{ appKey: string; id: string }>('/jobs', {
+      body: {
+        ...localInput,
+        designConversationId: scope.envelope.data.id,
+        inputAssetIds: test.assetIds,
+        inputAnnotations: test.marks
+          ? [{ assetId: annotated, position: 0 }]
+          : [],
+        localEdit: { baseAssetId: base, mode: test.mode },
+        parameters: {
+          ...localInput.parameters,
+          ...(test.marks ? { regionMarks: test.marks } : {}),
+        },
+      },
+      session: user1,
+    });
+    assert(
+      job.envelope.data.appKey === test.key,
+      '局部编辑提交未按工具与参考图正确分流',
+    );
+    const [version] =
+      await sql`SELECT cw.workflow_version_id = j.workflow_version_id AS matches
+      FROM jobs j JOIN capability_workflows cw ON cw.capability_code = j.app_key AND cw.active
+      WHERE j.id = ${job.envelope.data.id}`;
+    assert(version?.matches, '局部编辑任务未冻结实际绑定版本');
+  }
+  for (const invalid of [
+    { inputAssetIds: [base], localEdit: { baseAssetId: base, mode: 'mask' } },
+    {
+      inputAssetIds: [derivedMask],
+      localEdit: { baseAssetId: reference, mode: 'mask' },
+    },
+    {
+      inputAssetIds: [base, reference],
+      localEdit: { baseAssetId: base, mode: 'color' },
+    },
+    {
+      inputAssetIds: [base],
+      localEdit: { baseAssetId: base, mode: 'number' },
+      inputAnnotations: [{ assetId: annotated, position: 0 }],
+      parameters: { ...localInput.parameters, regionMarks: color },
+    },
+  ]) {
+    await apiRequest('/jobs', {
+      body: { ...localInput, ...invalid },
+      expectedStatus: 400,
+      session: user1,
+    });
+  }
+  await sql`DELETE FROM projects WHERE id = ${referenceProjectId}`;
   const presentationCode = 'text-to-image';
   const presentationPath = `/capabilities/${presentationCode}/presentation`;
   const presentationCapability = await apiRequest<{
@@ -1699,6 +2001,12 @@ async function run() {
   const userApplications = await apiRequest<Array<{ key: string }>>(
     '/applications',
     { session: user1 },
+  );
+  assert(
+    !userApplications.envelope.data.some(
+      (app) => app.key === 'image-edit-base',
+    ),
+    '普通用户仍看到双图基础编辑入口',
   );
   assert(
     !userApplications.envelope.data.some(

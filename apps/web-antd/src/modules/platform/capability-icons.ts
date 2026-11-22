@@ -9,6 +9,8 @@ export const capabilitySemanticIcons: Record<string, string> = {
   'single-image-edit': platformUiIcons.scanLine,
   'screen-capture-edit': platformUiIcons.monitorUp,
   'multi-image-edit': platformUiIcons.images,
+  'reference-image-edit': platformUiIcons.images,
+  'local-image-edit': platformUiIcons.scanLine,
   'inpaint-single': platformSemanticIcons.mask,
   'inpaint-reference': platformUiIcons.blend,
   outpaint: platformUiIcons.expand,

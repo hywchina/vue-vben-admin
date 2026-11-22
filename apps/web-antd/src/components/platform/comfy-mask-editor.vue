@@ -42,6 +42,9 @@ interface CanvasHistoryState {
 }
 
 const props = defineProps<{
+  active?: boolean;
+  embedded?: boolean;
+  maskSrc?: string;
   onSave: (file: File) => Promise<unknown>;
   open: boolean;
   src?: string;
@@ -783,6 +786,14 @@ async function toggleFullscreen() {
   }
 }
 
+async function decodeEditorImage(src: string) {
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.src = src;
+  await image.decode();
+  return image;
+}
+
 async function initializeEditor() {
   const generation = ++loadGeneration;
   history.value = [];
@@ -796,13 +807,13 @@ async function initializeEditor() {
   loading.value = true;
   try {
     await nextTick();
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.src = props.src;
-    await image.decode();
+    const [image, savedMask] = await Promise.all([
+      decodeEditorImage(props.src),
+      props.maskSrc ? decodeEditorImage(props.maskSrc) : undefined,
+    ]);
     if (generation !== loadGeneration || !props.open) return;
-    const width = image.naturalWidth;
-    const height = image.naturalHeight;
+    const width = savedMask?.naturalWidth ?? image.naturalWidth;
+    const height = savedMask?.naturalHeight ?? image.naturalHeight;
     const base = baseCanvasRef.value;
     const mask = maskCanvasRef.value;
     const paint = paintCanvasRef.value;
@@ -819,14 +830,26 @@ async function initializeEditor() {
     baseContext.clearRect(0, 0, width, height);
     baseContext.drawImage(image, 0, 0, width, height);
     paintContext.clearRect(0, 0, width, height);
-    const sourcePixels = baseContext.getImageData(0, 0, width, height);
+    const basePixels = baseContext.getImageData(0, 0, width, height);
+    if (savedMask) maskContext.drawImage(savedMask, 0, 0);
+    const sourcePixels = savedMask
+      ? maskContext.getImageData(0, 0, width, height)
+      : basePixels;
     const maskPixels = maskContext.createImageData(width, height);
     for (let index = 0; index < sourcePixels.data.length; index += 4) {
+      const alpha = sourcePixels.data[index + 3] ?? 255;
       maskPixels.data[index] = maskColor.value.r;
       maskPixels.data[index + 1] = maskColor.value.g;
       maskPixels.data[index + 2] = maskColor.value.b;
-      maskPixels.data[index + 3] = 255 - (sourcePixels.data[index + 3] ?? 255);
+      maskPixels.data[index + 3] = 255 - alpha;
+      if (savedMask && alpha > 0) {
+        basePixels.data[index] = sourcePixels.data[index] ?? 0;
+        basePixels.data[index + 1] = sourcePixels.data[index + 1] ?? 0;
+        basePixels.data[index + 2] = sourcePixels.data[index + 2] ?? 0;
+        basePixels.data[index + 3] = 255;
+      }
     }
+    if (savedMask) baseContext.putImageData(basePixels, 0, 0);
     maskContext.putImageData(maskPixels, 0, 0);
     imageWidth.value = width;
     imageHeight.value = height;
@@ -877,6 +900,11 @@ async function save() {
       mask.height,
     );
     if (!maskPixels) throw new Error('浏览器无法读取遮罩图层');
+    if (
+      props.embedded &&
+      !maskPixels.data.some((value, index) => index % 4 === 3 && value > 0)
+    )
+      throw new Error('请先绘制需要重绘的遮罩');
     for (let index = 0; index < outputPixels.data.length; index += 4) {
       outputPixels.data[index + 3] = 255 - (maskPixels.data[index + 3] ?? 0);
     }
@@ -899,8 +927,14 @@ async function save() {
 }
 
 function keyDown(event: KeyboardEvent) {
-  if (!props.open) return;
+  if (!props.open || props.active === false) return;
   if (event.key === ' ') {
+    if (
+      props.embedded &&
+      event.target instanceof HTMLElement &&
+      event.target.closest('button, input, select, textarea')
+    )
+      return;
     event.preventDefault();
     spacePressed.value = true;
     (document.activeElement as HTMLElement | null)?.blur?.();
@@ -921,7 +955,9 @@ function keyUp(event: KeyboardEvent) {
   if (event.key === ' ') spacePressed.value = false;
 }
 
-watch(() => [props.open, props.src], initializeEditor, { immediate: true });
+watch(() => [props.open, props.src, props.maskSrc], initializeEditor, {
+  immediate: true,
+});
 watch(maskBlendMode, updateMaskBlend);
 watch(
   [selectTolerance, selectionOpacity, comparisonMethod],
@@ -931,7 +967,13 @@ onMounted(() => {
   window.addEventListener('keydown', keyDown);
   window.addEventListener('keyup', keyUp);
   resizeObserver = new ResizeObserver(() => {
-    if (props.open && imageWidth.value && !drawing.value) fitToViewport();
+    if (
+      props.open &&
+      props.active !== false &&
+      imageWidth.value &&
+      !drawing.value
+    )
+      fitToViewport();
   });
   if (viewportRef.value) resizeObserver.observe(viewportRef.value);
 });
@@ -944,14 +986,21 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <Modal
-    :closable="false"
-    :footer="null"
-    :keyboard="false"
-    :mask-closable="false"
-    :open="open"
-    width="100vw"
-    wrap-class-name="comfy-mask-editor-modal"
+  <component
+    :is="embedded ? 'div' : Modal"
+    v-bind="
+      embedded
+        ? { class: 'embedded-mask-editor' }
+        : {
+            closable: false,
+            footer: null,
+            keyboard: false,
+            maskClosable: false,
+            open,
+            width: '100vw',
+            wrapClassName: 'comfy-mask-editor-modal',
+          }
+    "
     @cancel="closeEditor"
   >
     <section class="comfy-mask-editor-shell" @contextmenu.prevent>
@@ -984,12 +1033,16 @@ onBeforeUnmount(() => {
             <IconifyIcon :icon="platformUiIcons.check" />
             {{ saving ? '保存中' : '保存' }}
           </button>
-          <button class="cancel-tool" @click="closeEditor">
+          <button
+            class="cancel-tool"
+            :disabled="embedded && saving"
+            @click="closeEditor"
+          >
             <IconifyIcon :icon="platformUiIcons.close" />
             取消
           </button>
         </div>
-        <div class="mask-editor-window-tools">
+        <div v-if="!embedded" class="mask-editor-window-tools">
           <button title="切换全屏" @click="toggleFullscreen">
             <IconifyIcon :icon="platformUiIcons.maximize2" />
           </button>
@@ -1327,7 +1380,7 @@ onBeforeUnmount(() => {
         </aside>
       </div>
     </section>
-  </Modal>
+  </component>
 </template>
 
 <style scoped>
@@ -1350,6 +1403,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
   background: #15171a;
   border-radius: 0;
+}
+
+.embedded-mask-editor {
+  height: 100%;
 }
 
 .comfy-mask-editor-shell {

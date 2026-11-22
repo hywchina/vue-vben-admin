@@ -11,6 +11,16 @@ import { requireDesignConversation } from '~/utils/domain/design-conversations';
 import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
 import { getModelUpdate } from '~/utils/domain/models/updates';
 import { requireWorkflowWorkspaceInstance } from '~/utils/domain/workflows/instances';
+import {
+  hasLocalRegionMarks,
+  localEditModes,
+  localEditWorkflow,
+  localImageEditKey,
+} from '~/utils/domain/workflows/local-image-edit';
+import {
+  referenceImageEditKey,
+  referenceImageWorkflow,
+} from '~/utils/domain/workflows/reference-image-edit';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
   materializeWorkflow,
@@ -31,6 +41,12 @@ import { parseBody } from '~/utils/validation';
 const createJobSchema = z
   .object({
     appKey: z.string().trim().min(1).max(100),
+    localEdit: z
+      .object({
+        baseAssetId: z.string().uuid(),
+        mode: z.enum(localEditModes),
+      })
+      .optional(),
     modelUpdateId: z.string().uuid().optional(),
     designConversationId: z.string().uuid().optional(),
     designMode: z.enum(['cabin', 'cmf', 'component', 'report']).optional(),
@@ -64,9 +80,58 @@ const createJobSchema = z
 export default apiHandler(async (event) => {
   const identity = await requireIdentity(event);
   requirePermission(identity, 'platform:job:write');
-  const input = await parseBody(event, createJobSchema);
-  await requireProjectAccess(identity, input.projectId, 'write');
+  const request = await parseBody(event, createJobSchema);
+  await requireProjectAccess(identity, request.projectId, 'write');
   const sql = useDatabase();
+  const referenceEdit = request.appKey === referenceImageEditKey;
+  const referenceAppKey = referenceEdit
+    ? referenceImageWorkflow(request.inputAssetIds.length)
+    : undefined;
+  if (referenceEdit) {
+    if (!request.designConversationId || request.designMode === 'report')
+      throw new ApiError(
+        400,
+        'REFERENCE_EDIT_SCOPE_INVALID',
+        '参考图编辑仅在设计会话中使用',
+      );
+    if (!referenceAppKey)
+      throw new ApiError(
+        400,
+        'REFERENCE_EDIT_IMAGE_COUNT_INVALID',
+        '参考图编辑需要 1 至 3 张图片',
+      );
+  }
+  const localEdit =
+    request.appKey === localImageEditKey ? request.localEdit : undefined;
+  if (request.appKey === localImageEditKey) {
+    const count = request.inputAssetIds.length;
+    if (
+      !localEdit ||
+      !request.designConversationId ||
+      request.designMode === 'report' ||
+      request.modelUpdateId ||
+      request.inputTransferIds.length > 0 ||
+      (localEdit.mode === 'mask'
+        ? count < 1 || count > 2 || request.inputAnnotations.length > 0
+        : count !== 1 ||
+          request.inputAssetIds[0] !== localEdit.baseAssetId ||
+          request.inputAnnotations.length !== 1 ||
+          request.inputAnnotations[0]?.position !== 0 ||
+          !hasLocalRegionMarks(request.parameters.regionMarks, localEdit.mode))
+    )
+      throw new ApiError(
+        400,
+        'LOCAL_EDIT_INPUT_INVALID',
+        '局部编辑需要底图和当前工具的有效标记，参考图仅用于遮罩',
+      );
+  }
+  const localAppKey = localEdit
+    ? localEditWorkflow(localEdit.mode, request.inputAssetIds.length === 2)
+    : undefined;
+  const input = {
+    ...request,
+    appKey: localAppKey ?? referenceAppKey ?? request.appKey,
+  };
   const designConversation = input.designConversationId
     ? await requireDesignConversation({
         conversationId: input.designConversationId,
@@ -82,6 +147,19 @@ export default apiHandler(async (event) => {
         userId: identity.id,
       })
     : undefined;
+  if (referenceEdit || localEdit) {
+    const [available] = await sql`
+      SELECT 1 FROM design_mode_applications d
+      JOIN applications a ON a.key = ${request.appKey} AND a.visible
+      WHERE d.design_mode = ${input.designMode ?? 'cabin'} AND d.application_keys ? a.key
+    `;
+    if (!available)
+      throw new ApiError(
+        409,
+        localEdit ? 'LOCAL_EDIT_UNAVAILABLE' : 'REFERENCE_EDIT_UNAVAILABLE',
+        localEdit ? '当前模块未启用局部编辑' : '当前模块未启用参考图编辑',
+      );
+  }
 
   const [application] = await sql<
     { adapterConfigured: boolean; key: string; visible: boolean }[]
@@ -99,6 +177,13 @@ export default apiHandler(async (event) => {
   if (!application.visible && !hasAdministrativeRole(identity)) {
     throw new ApiError(404, 'APPLICATION_NOT_FOUND', '应用不存在');
   }
+  if (input.appKey === 'image-edit-base') {
+    throw new ApiError(
+      409,
+      'APPLICATION_RETIRED',
+      '双图基础编辑已停用，请选择单图设计编辑或双图参考编辑',
+    );
+  }
   if (input.appKey === 'lora-training') {
     throw new ApiError(
       409,
@@ -115,6 +200,14 @@ export default apiHandler(async (event) => {
   }
 
   let capability = await getCapabilityByAppKey(input.appKey);
+  if ((referenceEdit || localEdit) && (!application.visible || !capability))
+    throw new ApiError(
+      409,
+      localEdit ? 'LOCAL_EDIT_UNAVAILABLE' : 'REFERENCE_EDIT_UNAVAILABLE',
+      localEdit
+        ? '当前局部编辑工具对应的工作流暂不可用'
+        : '当前图片张数对应的工作流暂不可用',
+    );
   if (input.modelUpdateId) {
     if (!hasAdministrativeRole(identity))
       throw new ApiError(403, 'FORBIDDEN', '仅管理员可试运行模型更新');
@@ -176,7 +269,8 @@ export default apiHandler(async (event) => {
     notificationMessage = '任务已进入持久化队列，将由 ComfyUI Worker 执行。';
   }
 
-  const orderedInputAssets: Array<{ id: string; kind: string }> = [];
+  const orderedInputAssets: Awaited<ReturnType<typeof getDesignInputAssets>> =
+    [];
   if (input.inputAssetIds.length > 0) {
     if (new Set(input.inputAssetIds).size !== input.inputAssetIds.length) {
       throw new ApiError(
@@ -186,13 +280,29 @@ export default apiHandler(async (event) => {
       );
     }
     const rows = await getDesignInputAssets({
-      assetIds: input.inputAssetIds,
+      assetIds:
+        localEdit?.mode === 'mask'
+          ? [...new Set([...input.inputAssetIds, localEdit.baseAssetId])]
+          : input.inputAssetIds,
       conversationId: input.designConversationId,
       projectId: input.projectId,
       userId: identity.id,
       workspaceInstanceId: input.workspaceInstanceId,
     });
     const byId = new Map(rows.map((asset) => [asset.id, asset]));
+    if (
+      localEdit?.mode === 'mask' &&
+      (byId.get(localEdit.baseAssetId)?.kind !== 'image' ||
+        byId.get(input.inputAssetIds[0] ?? '')?.derivedFromAssetId !==
+          localEdit.baseAssetId ||
+        byId.get(input.inputAssetIds[0] ?? '')?.mimeType !== 'image/png' ||
+        input.inputAssetIds.includes(localEdit.baseAssetId))
+    )
+      throw new ApiError(
+        400,
+        'LOCAL_EDIT_MASK_INVALID',
+        '请使用由当前底图保存的遮罩',
+      );
     for (const assetId of input.inputAssetIds) {
       const asset = byId.get(assetId);
       if (asset) orderedInputAssets.push(asset);
@@ -483,8 +593,9 @@ export default apiHandler(async (event) => {
     inputs: orderedInputAssets.map((asset, position) => ({
       annotationAssetId: annotationsByPosition.get(position),
       assetId: asset.id,
+      derivedFromAssetId: asset.derivedFromAssetId ?? undefined,
       kind: asset.kind,
-      mimeType: '',
+      mimeType: asset.mimeType,
       name: '',
       position,
     })),

@@ -40,8 +40,19 @@ export default apiHandler(async (event) => {
       applications.visible,
       COALESCE((applications.adapter_config ->> 'enabled')::boolean, false)
         AS "adapterEnabled",
-      c.code AS "capabilityCode",
-      (cw.workflow_version_id IS NOT NULL) AS "capabilityReady",
+      CASE WHEN applications.key IN ('reference-image-edit', 'local-image-edit')
+        THEN applications.key ELSE c.code END AS "capabilityCode",
+      CASE WHEN applications.key IN ('reference-image-edit', 'local-image-edit') THEN EXISTS (
+        SELECT 1 FROM capabilities rc
+        JOIN applications ra ON ra.key = rc.app_key AND ra.visible
+        JOIN capability_workflows rw ON rw.capability_code = rc.code AND rw.active
+        JOIN workflow_versions rv ON rv.id = rw.workflow_version_id
+        JOIN workflow_definitions rd ON rd.id = rv.workflow_id
+        WHERE CASE applications.key
+          WHEN 'reference-image-edit' THEN rc.app_key IN ('single-image-edit', 'image-edit-kv', 'multi-image-edit')
+          ELSE rc.app_key IN ('inpaint-single', 'inpaint-reference', 'region-edit', 'region-marker-edit') END
+          AND rc.status = 'published' AND rd.status = 'published' AND rd.deleted_at IS NULL
+      ) ELSE cw.workflow_version_id IS NOT NULL END AS "capabilityReady",
       applications.accepted_asset_types AS "acceptedAssetTypes",
       applications.output_asset_types AS "outputAssetTypes",
       applications.updated_at AS "updatedAt"

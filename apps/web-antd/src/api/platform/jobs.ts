@@ -1,9 +1,11 @@
+import type { LocalEditMode } from '#/modules/platform/local-image-edit';
 import type { JobStatus, PlatformJob } from '#/modules/platform/types';
 
 import { requestClient } from '#/api/request';
 
 export interface CreateJobInput {
   appKey: string;
+  localEdit?: { baseAssetId: string; mode: LocalEditMode };
   modelUpdateId?: string;
   designConversationId?: string;
   designMode?: 'cabin' | 'cmf' | 'component' | 'report';

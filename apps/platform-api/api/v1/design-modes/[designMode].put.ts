@@ -6,6 +6,14 @@ import {
   designModeApplicationsSchema,
   designModeSchema,
 } from '~/utils/domain/design-mode-applications';
+import {
+  localImageEditKey,
+  localImageModeKey,
+} from '~/utils/domain/workflows/local-image-edit';
+import {
+  referenceImageEditKey,
+  referenceImageModeKey,
+} from '~/utils/domain/workflows/reference-image-edit';
 import { requireIdentity, requirePermission } from '~/utils/identity';
 import { ApiError, apiHandler } from '~/utils/response';
 import { parseBody } from '~/utils/validation';
@@ -19,15 +27,24 @@ export default apiHandler(async (event) => {
     throw new ApiError(400, 'VALIDATION_ERROR', '无效的设计模块');
   const mode = parsed.data;
   const input = await parseBody(event, designModeApplicationsSchema);
+  const normalize = (key: string) =>
+    localImageModeKey(referenceImageModeKey(key));
+  const applicationKeys = [
+    ...new Set(input.applicationKeys.map((key) => normalize(key))),
+  ];
+  const defaultImageApplicationKey = normalize(
+    input.defaultImageApplicationKey,
+  );
   const sql = useDatabase();
   const saved = await sql.begin(async (tx) => {
     const allowed = await tx<
       { key: string }[]
     >`SELECT a.key FROM applications a JOIN capabilities c ON c.app_key = a.key AND c.status = 'published' JOIN capability_workflows cw ON cw.capability_code = c.code AND cw.active = true JOIN workflow_versions wv ON wv.id = cw.workflow_version_id JOIN workflow_definitions wd ON wd.id = wv.workflow_id AND wd.status = 'published' FOR SHARE OF a, c, cw, wd`;
-    assertDesignModeApplications(
-      input,
-      allowed.map((item) => item.key),
-    );
+    assertDesignModeApplications(input, [
+      ...allowed.map((item) => item.key),
+      referenceImageEditKey,
+      localImageEditKey,
+    ]);
     const [current] =
       await tx`SELECT revision FROM design_mode_applications WHERE design_mode = ${mode} FOR UPDATE`;
     if (!current || current.revision !== input.expectedRevision)
@@ -37,7 +54,7 @@ export default apiHandler(async (event) => {
         '配置已被其他管理员修改，请重新加载',
       );
     const [result] =
-      await tx`UPDATE design_mode_applications SET application_keys = ${tx.json(input.applicationKeys)}, default_image_application_key = ${input.defaultImageApplicationKey}, revision = revision + 1, updated_by = ${identity.id}, updated_at = now() WHERE design_mode = ${mode} RETURNING design_mode AS "designMode", application_keys AS "applicationKeys", default_image_application_key AS "defaultImageApplicationKey", revision`;
+      await tx`UPDATE design_mode_applications SET application_keys = ${tx.json(applicationKeys)}, default_image_application_key = ${defaultImageApplicationKey}, revision = revision + 1, updated_by = ${identity.id}, updated_at = now() WHERE design_mode = ${mode} RETURNING design_mode AS "designMode", application_keys AS "applicationKeys", default_image_application_key AS "defaultImageApplicationKey", revision`;
     return result;
   });
   await writeAudit(event, {
@@ -47,8 +64,8 @@ export default apiHandler(async (event) => {
     targetType: 'design_mode',
     targetId: mode,
     details: {
-      applicationKeys: input.applicationKeys,
-      defaultImageApplicationKey: input.defaultImageApplicationKey,
+      applicationKeys,
+      defaultImageApplicationKey,
       revision: saved?.revision,
     },
   });

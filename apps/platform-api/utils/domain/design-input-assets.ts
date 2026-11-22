@@ -1,5 +1,12 @@
 import { useDatabase } from '~/utils/database';
 
+interface DesignInputAsset {
+  derivedFromAssetId: null | string;
+  id: string;
+  kind: string;
+  mimeType: string;
+}
+
 // Public assets remain reusable everywhere. Private working images require an
 // owned scope or an explicit reference authorized by the content access policy.
 // Callers still require project access; the query independently checks scope.
@@ -9,13 +16,11 @@ export async function getDesignInputAssets(input: {
   projectId: string;
   userId: string;
   workspaceInstanceId?: string;
-}) {
+}): Promise<DesignInputAsset[]> {
   if (input.assetIds.length === 0) return [];
   const sql = useDatabase();
-  return await sql<
-    { derivedFromAssetId: null | string; id: string; kind: string }[]
-  >`
-    SELECT a.id, a.kind,
+  return await sql<DesignInputAsset[]>`
+    SELECT a.id, a.kind, v.mime_type AS "mimeType",
       v.metadata ->> 'derivedFromAssetId' AS "derivedFromAssetId"
     FROM assets a
     JOIN asset_versions v ON v.asset_id = a.id

@@ -46,4 +46,37 @@ describe('asset image actions', () => {
       assetImageActionUnavailable({ type: 'text' }, 'mask', ['inpaint-single']),
     ).toContain('不可用');
   });
+  it('recognizes grouping when the original result shortcut workflow is unavailable', () => {
+    const asset = { type: 'image' } as const;
+    expect(
+      assetImageActionUnavailable(asset, 'multi-image', [
+        'reference-image-edit',
+        'image-edit-kv',
+      ]),
+    ).toBe('');
+    expect(
+      assetImageActionUnavailable(asset, 'mask', [
+        'local-image-edit',
+        'inpaint-reference',
+      ]),
+    ).toBe('');
+    expect(
+      assetImageActionUnavailable(asset, 'mask', [
+        'local-image-edit',
+        'region-edit',
+      ]),
+    ).toContain('不可用');
+  });
+  it('routes archived Base results through either available replacement', () => {
+    const asset = {
+      sourceAppKey: 'image-edit-base',
+      sourceJobId: 'old-job',
+      type: 'image',
+    } as const;
+    for (const key of ['single-image-edit', 'image-edit-kv'])
+      expect(assetImageActionUnavailable(asset, 'rerun', [key])).toBe('');
+    expect(
+      assetImageActionUnavailable(asset, 'rerun', ['image-edit-base']),
+    ).toContain('均不可用');
+  });
 });

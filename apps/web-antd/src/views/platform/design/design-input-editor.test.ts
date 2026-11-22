@@ -238,20 +238,22 @@ const schemas = generatedSchemas as unknown as Record<
   string,
   CapabilityField[]
 >;
-const cases = Object.entries(schemas).flatMap(([appKey, definitions]) =>
-  definitions
-    .filter(
-      (field) =>
-        ['asset', 'mask', 'region'].includes(field.type) &&
-        field.acceptedKinds?.includes('image'),
-    )
-    .map((field) => ({
-      appKey,
-      key: field.key,
-      type: field.type,
-      index: field.assetIndex,
-    })),
-);
+const cases = Object.entries(schemas)
+  .filter(([appKey]) => appKey !== 'image-edit-base')
+  .flatMap(([appKey, definitions]) =>
+    definitions
+      .filter(
+        (field) =>
+          ['asset', 'mask', 'region'].includes(field.type) &&
+          field.acceptedKinds?.includes('image'),
+      )
+      .map((field) => ({
+        appKey,
+        key: field.key,
+        type: field.type,
+        index: field.assetIndex,
+      })),
+  );
 async function configure(appKey: string, filled = true) {
   mocks.appKey = appKey;
   mocks.store.applications[0].key = appKey;
@@ -529,6 +531,146 @@ describe('direct editor return path', () => {
 });
 
 describe('disabled workflow replay', () => {
+  it.each([
+    ['用单图继续编辑', 'single-image-edit', { 0: 'old-base' }],
+    ['用双图继续编辑', 'image-edit-kv', { 0: 'old-base', 1: 'old-reference' }],
+  ])(
+    'prefills the retired Base job with %s without submitting',
+    async (label, target, inputs) => {
+      const root = await configure('inpaint-single');
+      mocks.store.applications.push({
+        key: target,
+        name: label,
+        shortName: label,
+        capabilityCode: target,
+        visible: true,
+        designModes: { cmf: { order: 0, defaultImage: true } },
+      });
+      mocks.capability.mockResolvedValue({ fields: schemas[target] });
+      mocks.draft.mockResolvedValue({
+        inputAssetIds: {},
+        parameterValues: {},
+      });
+      for (const id of ['old-base', 'old-reference'])
+        mocks.store.currentAssets.push({
+          id,
+          name: id,
+          type: 'image',
+          status: 'available',
+          version: 1,
+        });
+      mocks.store.currentJobs = [
+        {
+          id: 'old-base-job',
+          appKey: 'image-edit-base',
+          designMode: 'cmf',
+          designConversationId: 'conversation',
+          projectId: 'project',
+          ownedByCurrentUser: true,
+          status: 'succeeded',
+          createdAt: '2026-10-22T00:00:00Z',
+          inputs: [
+            { assetId: 'old-base', kind: 'image', position: 0 },
+            { assetId: 'old-reference', kind: 'image', position: 1 },
+          ],
+          outputs: [],
+          parameters: { prompt: '保留客室构图', steps: 20 },
+        },
+      ];
+      await settle();
+      root
+        .querySelector<HTMLButtonElement>('[data-testid="rerun-history"]')
+        ?.click();
+      await settle();
+      const choice = [...root.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === label,
+      );
+      expect(choice).toBeDefined();
+      choice?.click();
+      await settle();
+      expect(mocks.save).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          appKey: target,
+          designMode: 'cmf',
+          inputAssetIds: inputs,
+          parameterValues: expect.objectContaining({
+            prompt: '保留客室构图',
+            steps: 4,
+          }),
+        }),
+      );
+      expect(mocks.submit).not.toHaveBeenCalled();
+    },
+  );
+
+  it('resubmits the original numbered input snapshot without touching the current draft', async () => {
+    const root = await configure('inpaint-single');
+    const priorInputs = [
+      {
+        assetId: 'original',
+        annotationAssetId: 'numbered',
+        kind: 'image',
+        position: 0,
+      },
+    ];
+    mocks.store.applications.push({
+      key: 'region-marker-edit',
+      name: '编号分区',
+      shortName: '编号分区',
+      capabilityCode: 'region-marker-edit',
+      visible: true,
+      designModes: { cmf: { order: 0, defaultImage: true } },
+    });
+    for (const id of ['original', 'numbered'])
+      mocks.store.currentAssets.push({
+        id,
+        name: id,
+        projectId: 'project',
+        type: 'image',
+        status: 'available',
+      });
+    mocks.submit.mockResolvedValue({ status: 'queued' });
+    const parameters = {
+      prompt: '修改 1 号区域',
+      regionMarks: 'brush:square:4:1:255,0,0:1:0,0;10,10',
+    };
+    mocks.store.currentJobs = [
+      {
+        appKey: 'region-marker-edit',
+        createdAt: '2026-10-22T00:00:00Z',
+        designConversationId: 'conversation',
+        designMode: 'cmf',
+        id: 'prior-number-job',
+        inputs: priorInputs,
+        outputs: [],
+        ownedByCurrentUser: true,
+        parameters,
+        projectId: 'project',
+        status: 'succeeded',
+      },
+    ];
+    await settle();
+    root
+      .querySelector<HTMLButtonElement>('[data-testid="rerun-history"]')
+      ?.click();
+    await settle();
+    expect(mocks.submit).toHaveBeenCalledWith(
+      'region-marker-edit',
+      { designConversationId: 'conversation', designMode: 'cmf' },
+      ['original'],
+      parameters,
+      [],
+      [{ assetId: 'numbered', position: 0 }],
+    );
+    expect(mocks.upload).not.toHaveBeenCalled();
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(
+      root.querySelector<HTMLTextAreaElement>(
+        '[data-testid="design-prompt-input"]',
+      )?.value,
+    ).toBe('保留编辑指令');
+  });
+
   it('does not overwrite the current draft or run another workflow for a hidden historical function', async () => {
     const root = await configure('inpaint-single');
     mocks.store.currentJobs = [
@@ -559,5 +701,91 @@ describe('disabled workflow replay', () => {
       )?.value,
     ).toBe('保留编辑指令');
     expect(mocks.submit).not.toHaveBeenCalled();
+  });
+});
+
+describe('unified reference image editing', () => {
+  it('reveals one next slot and preserves the prompt as the workflow changes', async () => {
+    const family = ['single-image-edit', 'image-edit-kv', 'multi-image-edit'];
+    const alias = 'reference-image-edit';
+    mocks.appKey = alias;
+    mocks.store.applications = [alias, ...family].map((key) => ({
+      key,
+      name: key === alias ? '参考图编辑' : key,
+      shortName: key,
+      capabilityCode: key,
+      visible: true,
+      designModes:
+        key === alias ? { cabin: { order: 0, defaultImage: true } } : {},
+    }));
+    const assets = ['base-image', 'style-image', 'material-image'].map(
+      (id) => ({
+        id,
+        name: id,
+        projectId: 'project',
+        type: 'image',
+        status: 'available',
+      }),
+    );
+    mocks.store.currentAssets = assets;
+    mocks.capability.mockImplementation(async (key: string) => ({
+      appKey: key,
+      fields: schemas[key],
+    }));
+    mocks.draft.mockResolvedValue({
+      updatedAt: '2026-11-22',
+      inputAssetIds: {},
+      parameterValues: { prompt: '调整座椅设计' },
+    });
+    mocks.submit.mockResolvedValue(undefined);
+    const root = await render();
+    const input = root.querySelector<HTMLInputElement>('input[type="file"]');
+    const send = root.querySelector<HTMLButtonElement>('.composer-submit');
+    const prompt = root.querySelector<HTMLTextAreaElement>(
+      '[data-testid="design-prompt-input"]',
+    );
+    expect(prompt?.value).toBe('调整座椅设计');
+    const slotLabels = () =>
+      [...root.querySelectorAll('.composer-input-slot')].map((button) =>
+        button.textContent?.trim(),
+      );
+    expect(slotLabels()).toEqual(['添加图片1']);
+    const imageIds: string[] = [];
+    for (const [index, asset] of assets.entries()) {
+      mocks.upload.mockResolvedValueOnce(asset);
+      Object.defineProperty(input, 'files', {
+        configurable: true,
+        value: [new File(['fixture'], 'image.png', { type: 'image/png' })],
+      });
+      input?.dispatchEvent(new Event('change'));
+      await settle();
+      imageIds.push(asset.id);
+      expect(slotLabels()).toEqual(index < 2 ? [`添加图片${index + 2}`] : []);
+      expect(prompt?.value).toBe('调整座椅设计');
+      send?.click();
+      await settle();
+      const last = mocks.submit.mock.lastCall;
+      expect(last?.[0]).toBe(alias);
+      expect(last?.[2]).toEqual(imageIds);
+      expect(last?.[3]).toMatchObject({
+        prompt: '调整座椅设计',
+        steps: expect.any(Number),
+      });
+    }
+    root
+      .querySelector<HTMLButtonElement>('[aria-label="移除style-image"]')
+      ?.click();
+    await settle();
+    expect(slotLabels()).toEqual(['添加图片3']);
+    send?.click();
+    await settle();
+    expect(mocks.submit.mock.lastCall?.[2]).toEqual([
+      'base-image',
+      'material-image',
+    ]);
+    expect(mocks.save.mock.lastCall?.[0]).toMatchObject({
+      appKey: alias,
+      inputAssetIds: { 0: 'base-image', 1: 'material-image' },
+    });
   });
 });

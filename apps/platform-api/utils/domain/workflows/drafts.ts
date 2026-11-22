@@ -39,6 +39,15 @@ export function workspaceDraftAssetSelection(
         : [],
     ),
   );
+  return draftAssetSelection(mediaByIndex, inputAssetIds, assets, strict);
+}
+
+export function draftAssetSelection(
+  mediaByIndex: ReadonlyMap<number, { acceptedKinds: readonly string[] }>,
+  inputAssetIds: Record<string, string>,
+  assets: WorkspaceDraftAsset[],
+  strict = true,
+) {
   const assetById = new Map(assets.map((asset) => [asset.id, asset]));
   const sanitized: Record<string, string> = {};
   const selectedAssetIds = new Set<string>();

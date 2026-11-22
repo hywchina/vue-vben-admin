@@ -5,6 +5,10 @@ import type { DesignGenerationCategory } from '#/modules/platform/design-generat
 import type { DesignModeKey } from '#/modules/platform/design-modes';
 import type { TemplateSize } from '#/modules/platform/image-dimensions';
 import type {
+  LocalEditDraft,
+  LocalEditMode,
+} from '#/modules/platform/local-image-edit';
+import type {
   CapabilityField,
   DesignConversation,
   DesignPromptTemplateMode,
@@ -73,11 +77,16 @@ import {
 } from '#/modules/platform/asset-image-actions';
 import { assetTypeIcons } from '#/modules/platform/asset-types';
 import {
+  baseEditReplacements,
   defaultGenerationApplicationKey,
   designGenerationCategories,
   designGenerationCategory,
   generationApplications,
   isDesignGenerationApplication,
+  isReferenceImageWorkflow,
+  referenceImageEditKey,
+  referenceImageWorkflows,
+  retiredBaseEditKey,
 } from '#/modules/platform/design-generation';
 import {
   applicationsForDesignMode,
@@ -92,6 +101,14 @@ import {
   syncPromptRatio,
   validDimension,
 } from '#/modules/platform/image-dimensions';
+import {
+  isLocalEditWorkflow,
+  localEditDraft,
+  localEditImageFields,
+  localEditTools,
+  localEditWorkflow,
+  localImageEditKey,
+} from '#/modules/platform/local-image-edit';
 import { captureRefreshRateValue } from '#/modules/platform/parameter-presentation';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
@@ -107,14 +124,18 @@ import { createRegionInputAnnotations } from '../workspace/region-annotation';
 import { acceptComposerImageDrop } from './design-composer-drop';
 import {
   assignMediaAssetIds,
+  compactImageSelection,
   mediaInputProgress,
   moveMediaAsset,
   orderedImageMediaFields,
+  referenceImagePlaceholders,
+  referenceImageSlots,
 } from './design-composer-media';
 import DesignImageSize from './design-image-size.vue';
 import { appendTextInput, markdownTextContent } from './design-input-utils';
 import DesignPromptTemplatePopover from './design-prompt-template-popover.vue';
 import DesignQuickField from './design-quick-field.vue';
+import LocalImageEditor from './local-image-editor.vue';
 
 const DEFAULT_APP_KEY = 'text-to-image';
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
@@ -180,6 +201,13 @@ const continueOpen = ref(false);
 const continueAppKey = ref('');
 const continueAssetIndex = ref<number>();
 const continueSubmitting = ref(false);
+const baseEditHistory = ref<{
+  baseAssetId?: string;
+  conversationId: string;
+  job: PlatformJob;
+  prompt: unknown;
+}>();
+const baseEditContinuing = ref<string>();
 const saveOutputOpen = ref(false);
 const saveOutputTarget = ref<PlatformJobOutput>();
 const saveOutputFolderId = ref<string>();
@@ -259,6 +287,7 @@ async function resolveConversationInput(assetId: string) {
   return asset;
 }
 let hydratingDraft = false;
+let groupedDraftWrite = Promise.resolve();
 let pageReady = false;
 
 const activeConversation = computed(() =>
@@ -333,6 +362,66 @@ const defaultApplicationKey = computed(
 const effectiveApplicationKey = computed(
   () => selectedAppKey.value || defaultApplicationKey.value || DEFAULT_APP_KEY,
 );
+const referenceEdit = computed(
+  () => effectiveApplicationKey.value === referenceImageEditKey,
+);
+const localEdit = computed(
+  () => effectiveApplicationKey.value === localImageEditKey,
+);
+const localDraft = ref<LocalEditDraft>({ mode: 'mask' });
+const localMaskAssetId = ref<string>();
+const localEditor = ref<{
+  assetId: string;
+  assetName?: string;
+  baseUrl: string;
+  context: string;
+  maskUrl?: string;
+  mode: LocalEditMode;
+}>();
+let localEditorRequest = 0;
+let localCapabilities: Record<string, PlatformCapability> = {};
+const localCapabilityKeys = ref<string[]>([]);
+const localWorkflowKey = computed(() =>
+  localEditWorkflow(localDraft.value.mode, Boolean(selectedAssets[1])),
+);
+const localEnabledTools = computed(() =>
+  localEditTools
+    .filter(({ mode }) =>
+      mode === 'mask'
+        ? localCapabilityKeys.value.includes('inpaint-single') ||
+          localCapabilityKeys.value.includes('inpaint-reference')
+        : localCapabilityKeys.value.includes(localEditWorkflow(mode, false)),
+    )
+    .map(({ mode }) => mode),
+);
+const localReferenceAvailable = computed(() =>
+  localCapabilityKeys.value.includes('inpaint-reference'),
+);
+const localMarked = computed(() =>
+  localDraft.value.mode === 'mask'
+    ? Boolean(localMaskAssetId.value)
+    : Boolean(localDraft.value[localDraft.value.mode]),
+);
+const referenceImageCount = computed(
+  () => Object.values(selectedAssets).filter(Boolean).length,
+);
+const referenceWorkflowKey = computed(
+  () => referenceImageWorkflows[Math.max(0, referenceImageCount.value - 1)],
+);
+let referenceCapabilities: Record<string, PlatformCapability> = {};
+let referenceParameterWorkflowKey: string | undefined;
+const referencePromptField: CapabilityField = {
+  acceptedKinds: [],
+  advanced: false,
+  integer: false,
+  key: 'prompt',
+  label: '编辑指令',
+  maxLength: 6000,
+  options: [],
+  required: true,
+  type: 'textarea',
+  uiControl: 'default',
+};
 const generationCategory = computed(() =>
   designGenerationCategory(effectiveApplicationKey.value),
 );
@@ -348,13 +437,46 @@ const application = computed(() =>
   ),
 );
 function availableApplicationKeysForMode(mode: DesignModeKey) {
-  return applicationsForDesignMode(
+  const keys = applicationsForDesignMode(
     platformStore.applications,
     getDesignMode(mode),
   )
     .filter((app) => isDesignGenerationApplication(app.key))
     .map((app) => app.key);
+  if (
+    keys.includes(referenceImageEditKey) ||
+    keys.includes(localImageEditKey)
+  ) {
+    // Existing result actions and exact replay keep their real workflow keys.
+    for (const app of platformStore.applications)
+      if (
+        app.visible &&
+        app.capabilityCode &&
+        ((keys.includes(referenceImageEditKey) &&
+          isReferenceImageWorkflow(app.key)) ||
+          (keys.includes(localImageEditKey) && isLocalEditWorkflow(app.key))) &&
+        !keys.includes(app.key)
+      )
+        keys.push(app.key);
+  }
+  return keys;
 }
+const baseEditOptions = computed(() => {
+  const preferredMode =
+    baseEditHistory.value?.job.designMode ?? selectedModeKey.value;
+  return baseEditReplacements.map((option) => ({
+    ...option,
+    mode: designModes
+      .filter((mode) => mode.key !== 'report')
+      .filter((mode) =>
+        availableApplicationKeysForMode(mode.key).includes(option.key),
+      )
+      .toSorted(
+        (a, b) =>
+          Number(b.key === preferredMode) - Number(a.key === preferredMode),
+      )[0],
+  }));
+});
 const activeModePrimaryTools = computed(
   () => activeDesignMode.value.primaryTools ?? [],
 );
@@ -363,11 +485,17 @@ const selectedBusinessTool = computed(() =>
     (tool) => tool.key === selectedBusinessToolKey.value,
   ),
 );
-const composerPlaceholder = computed(
-  () =>
+const composerPlaceholder = computed(() => {
+  if (referenceEdit.value)
+    return referenceImagePlaceholders[
+      Math.max(0, referenceImageCount.value - 1)
+    ];
+  if (localEdit.value) return '描述怎样修改已标记区域，以及需要保留的内容…';
+  return (
     selectedBusinessTool.value?.placeholder ??
-    activeDesignMode.value.placeholder,
-);
+    activeDesignMode.value.placeholder
+  );
+});
 const conversationJobs = computed(() =>
   selectDesignConversationJobs(
     platformStore.currentJobs,
@@ -380,18 +508,31 @@ const activeJob = computed(() =>
     ['cancelling', 'queued', 'running'].includes(job.status),
   ),
 );
-const mediaFields = computed(
-  () =>
+const mediaFields = computed(() => {
+  if (referenceEdit.value) return referenceImageSlots;
+  if (localEdit.value)
+    return localEditImageFields.filter(
+      (field) =>
+        field.assetIndex === 0 ||
+        (localDraft.value.mode === 'mask' && localReferenceAvailable.value),
+    );
+  return (
     capability.value?.fields
       .filter((field) => mediaTypes.has(field.type))
-      .toSorted((a, b) => (a.assetIndex ?? 0) - (b.assetIndex ?? 0)) ?? [],
-);
+      .toSorted((a, b) => (a.assetIndex ?? 0) - (b.assetIndex ?? 0)) ?? []
+  );
+});
 const composerImageFields = computed(() =>
   orderedImageMediaFields(additionalMediaFields.value),
 );
 const composerSlots = computed(() =>
   composerImageFields.value
-    .filter((field) => field.key !== liveInputFieldKey.value)
+    .filter(
+      (field) =>
+        field.key !== liveInputFieldKey.value &&
+        (!referenceEdit.value ||
+          (field.assetIndex ?? 0) <= referenceImageCount.value),
+    )
     .map((field) => ({
       field,
       asset: composerInputs.value.find((item) => item.field.key === field.key)
@@ -431,7 +572,10 @@ const promptField = computed(
         field.key === 'prompt' && ['text', 'textarea'].includes(field.type),
     ) ??
     scalarFields.value.find((field) => field.type === 'textarea') ??
-    scalarFields.value.find((field) => field.type === 'text' && field.required),
+    scalarFields.value.find(
+      (field) => field.type === 'text' && field.required,
+    ) ??
+    (referenceEdit.value || localEdit.value ? referencePromptField : undefined),
 );
 const compactFields = computed(() => {
   const fields = capability.value?.fields ?? [];
@@ -503,6 +647,8 @@ const continueDestinations = computed(() => {
     .map((item) => ({ label: item.name, value: item.key }));
 });
 const continueInputOptions = computed(() => {
+  if ([localImageEditKey, referenceImageEditKey].includes(continueAppKey.value))
+    return [{ label: '图片1（底图）', value: 0 }];
   const target = capabilityCache[continueAppKey.value];
   const kind = actionOutput.value?.kind;
   if (!target || !kind) return [];
@@ -614,6 +760,8 @@ function openMediaPicker() {
 }
 
 function replaceSelectedAssets(nextSelections: Record<number, string>) {
+  if (localEdit.value && selectedAssets[0] !== nextSelections[0])
+    clearLocalMarks();
   for (const key of Object.keys(selectedAssets)) {
     Reflect.deleteProperty(selectedAssets, key);
   }
@@ -740,7 +888,11 @@ async function addComposerAssetIds(assetIds: string[]) {
   const targetField = composerImageFields.value.find(
     (field) => field.key === inputSourceFieldKey.value,
   );
-  if (targetField && assetIds[0]) {
+  if (
+    targetField &&
+    assetIds[0] &&
+    (!referenceEdit.value || selectedAssets[targetField.assetIndex ?? 0])
+  ) {
     await selectAsset(targetField, assetIds[0]);
     composerAssetPickerOpen.value = false;
     queueInputEditor(targetField);
@@ -810,12 +962,14 @@ async function uploadComposerFiles(event: Event) {
   const targetField = composerImageFields.value.find(
     (field) => field.key === inputSourceFieldKey.value,
   );
-  const emptyFields = targetField
-    ? [targetField]
-    : composerImageFields.value.filter(
-        (field) =>
-          field.assetIndex !== undefined && !selectedAssets[field.assetIndex],
-      );
+  const emptyFields =
+    targetField &&
+    (!referenceEdit.value || selectedAssets[targetField.assetIndex ?? 0])
+      ? [targetField]
+      : composerImageFields.value.filter(
+          (field) =>
+            field.assetIndex !== undefined && !selectedAssets[field.assetIndex],
+        );
   const retainedFiles = selectedFiles.slice(0, emptyFields.length);
   const discardedCount = selectedFiles.length - retainedFiles.length;
   if (retainedFiles.length === 0) {
@@ -825,12 +979,14 @@ async function uploadComposerFiles(event: Event) {
     return;
   }
   composerUploading.value = true;
+  const context = captureContextKey.value;
   let uploadedCount = 0;
   try {
     for (const [index, file] of retainedFiles.entries()) {
       const field = emptyFields[index];
-      if (!field) break;
+      if (!field || context !== captureContextKey.value) break;
       await uploadMedia(field, file, { silent: true });
+      if (context !== captureContextKey.value) break;
       uploadedCount += 1;
     }
   } catch (error) {
@@ -838,6 +994,7 @@ async function uploadComposerFiles(event: Event) {
   } finally {
     composerUploading.value = false;
   }
+  if (context !== captureContextKey.value) return;
   if (discardedCount > 0) {
     message.warning(
       `本次选择 ${selectedFiles.length} 张，当前工作流仅剩 ${retainedFiles.length} 个位置，已只保留前 ${retainedFiles.length} 张`,
@@ -848,7 +1005,7 @@ async function uploadComposerFiles(event: Event) {
 }
 
 async function moveComposerInput(field: CapabilityField, direction: -1 | 1) {
-  if (field.assetIndex === undefined) return;
+  if (localEdit.value || field.assetIndex === undefined) return;
   const nextSelections = moveMediaAsset(
     mediaFields.value,
     selectedAssets,
@@ -865,6 +1022,7 @@ function composerInputPosition(field: CapabilityField) {
 }
 
 function composerInputEditorLabel(field: CapabilityField) {
+  if (localEdit.value && field.assetIndex === 0) return '局部编辑';
   if (field.type === 'region')
     return effectiveApplicationKey.value === 'region-marker-edit'
       ? '编号标记编辑'
@@ -875,6 +1033,10 @@ function composerInputEditorLabel(field: CapabilityField) {
 async function openComposerInputEditor(field: CapabilityField) {
   if (field.assetIndex === undefined || !selectedAssets[field.assetIndex])
     return;
+  if (localEdit.value && field.assetIndex === 0) {
+    await openLocalEditor();
+    return;
+  }
   const contextKey = captureContextKey.value;
   directMediaEditor.value = true;
   mediaEditorFieldKey.value = field.key;
@@ -885,6 +1047,10 @@ async function openComposerInputEditor(field: CapabilityField) {
 }
 
 function queueInputEditor(field: CapabilityField) {
+  if (localEdit.value) {
+    if (field.assetIndex === 0) void openLocalEditor();
+    return;
+  }
   if (
     !['mask', 'region'].includes(field.type) ||
     field.assetIndex === undefined ||
@@ -938,6 +1104,7 @@ watch(mediaPickerOpen, (open) => {
   }
 });
 watch(captureContextKey, () => {
+  closeLocalEditor();
   liveInputFieldKey.value = '';
   inputSourceFieldKey.value = '';
   composerSourcePickerOpen.value = false;
@@ -999,16 +1166,120 @@ async function loadMarkdownAsset(assetId: string) {
 async function removeSelectedAsset(field: CapabilityField) {
   if (field.assetIndex === undefined) return;
   Reflect.deleteProperty(selectedAssets, field.assetIndex);
+  if (localEdit.value && field.assetIndex === 0) {
+    clearLocalMarks();
+  }
+  if (referenceEdit.value) {
+    liveInputFieldKey.value = '';
+    replaceSelectedAssets(compactImageSelection(selectedAssets));
+  }
   if (field.type === 'region') parameterValues[field.key] = '';
   await saveDraftNow();
 }
 
-function resetDraftState(nextCapability?: PlatformCapability) {
-  for (const key of Object.keys(parameterValues)) {
-    Reflect.deleteProperty(parameterValues, key);
+function clearLocalMarks() {
+  closeLocalEditor();
+  localMaskAssetId.value = undefined;
+  localDraft.value = { mode: localDraft.value.mode };
+}
+
+function closeLocalEditor() {
+  localEditorRequest += 1;
+  localEditor.value = undefined;
+}
+
+async function openLocalEditor(mode = localDraft.value.mode) {
+  const assetId = selectedAssets[0];
+  if (!localEdit.value || !assetId) return;
+  const fallback = localEnabledTools.value[0];
+  if (!fallback) {
+    message.warning('局部编辑工作流暂不可用');
+    return;
   }
+  const tool = localEnabledTools.value.includes(mode) ? mode : fallback;
+  mediaPickerOpen.value = false;
+  const context = captureContextKey.value;
+  const request = ++localEditorRequest;
+  try {
+    const [base, mask] = await Promise.all([
+      getAssetPreviewApi(assetId),
+      localMaskAssetId.value
+        ? getAssetPreviewApi(localMaskAssetId.value).catch(() => undefined)
+        : undefined,
+    ]);
+    if (
+      request !== localEditorRequest ||
+      context !== captureContextKey.value ||
+      assetId !== selectedAssets[0]
+    )
+      return;
+    if (base.mode !== 'url') throw new Error('底图没有可用预览');
+    localEditor.value = {
+      assetId,
+      context,
+      mode: tool,
+      baseUrl: base.url,
+      assetName: availableInputAssets.value.find(({ id }) => id === assetId)
+        ?.name,
+      maskUrl: mask?.mode === 'url' ? mask.url : undefined,
+    };
+  } catch (error) {
+    if (request === localEditorRequest)
+      message.warning(
+        error instanceof Error ? error.message : '底图预览加载失败',
+      );
+  }
+}
+
+async function saveLocalMask(file: File) {
+  const editor = localEditor.value;
+  if (!editor) return;
+  const mask = await platformStore.uploadAsset({
+    derivedFromAssetId: editor.assetId,
+    designConversationId: activeConversationId.value,
+    description: '设计会话局部编辑遮罩',
+    file,
+    name: file.name.replace(/\.[^.]+$/, ''),
+    tags: ['设计会话输入', '遮罩'],
+    type: 'image',
+  });
+  if (
+    editor !== localEditor.value ||
+    editor.context !== captureContextKey.value ||
+    editor.assetId !== selectedAssets[0]
+  )
+    return;
+  localMaskAssetId.value = mask.id;
+  localDraft.value = { ...localDraft.value, mode: 'mask' };
+  closeLocalEditor();
+  await saveDraftNow();
+}
+
+async function saveLocalRegion(mode: 'color' | 'number', marks: string) {
+  const editor = localEditor.value;
+  if (
+    !editor ||
+    editor.context !== captureContextKey.value ||
+    editor.assetId !== selectedAssets[0]
+  )
+    return;
+  localDraft.value = { ...localDraft.value, [mode]: marks, mode };
+  if (liveInputFieldKey.value === localEditImageFields[1]?.key)
+    liveInputFieldKey.value = '';
+  closeLocalEditor();
+  await saveDraftNow();
+}
+
+function resetDraftState(nextCapability?: PlatformCapability) {
   for (const key of Object.keys(selectedAssets)) {
     Reflect.deleteProperty(selectedAssets, key);
+  }
+  resetCapabilityParameters(nextCapability);
+}
+
+function resetCapabilityParameters(nextCapability?: PlatformCapability) {
+  for (const key of Object.keys(parameterValues)) {
+    Reflect.deleteProperty(parameterValues, key);
   }
   for (const field of nextCapability?.fields ?? []) {
     if (!mediaTypes.has(field.type) || field.type === 'region') {
@@ -1016,6 +1287,33 @@ function resetDraftState(nextCapability?: PlatformCapability) {
     }
   }
 }
+
+watch(referenceWorkflowKey, (workflowKey) => {
+  if (!referenceEdit.value || hydratingDraft || !draftReadyKey.value) return;
+  if (referenceParameterWorkflowKey === workflowKey) return;
+  referenceParameterWorkflowKey = workflowKey;
+  const target = workflowKey ? referenceCapabilities[workflowKey] : undefined;
+  const prompt = parameterValues[promptField.value?.key ?? 'prompt'];
+  capability.value = target ?? null;
+  resetCapabilityParameters(target);
+  parameterValues[promptField.value?.key ?? 'prompt'] = prompt;
+});
+
+watch(localWorkflowKey, (key, previous) => {
+  if (
+    !localEdit.value ||
+    hydratingDraft ||
+    !draftReadyKey.value ||
+    key === previous ||
+    capability.value?.appKey === key
+  )
+    return;
+  const prompt = parameterValues[promptField.value?.key ?? 'prompt'];
+  const target = localCapabilities[key];
+  capability.value = target ?? null;
+  resetCapabilityParameters(target);
+  parameterValues[promptField.value?.key ?? 'prompt'] = prompt;
+});
 
 function draftPayload() {
   const conversationId = activeConversationId.value;
@@ -1025,7 +1323,7 @@ function draftPayload() {
     !conversationId ||
     !appKey ||
     !projectId ||
-    !capability.value ||
+    (!capability.value && !referenceEdit.value && !localEdit.value) ||
     draftReadyKey.value !== `${conversationId}:${appKey}:${draftMode.value}`
   ) {
     return;
@@ -1035,17 +1333,36 @@ function draftPayload() {
     conversationId,
     designMode: draftMode.value,
     inputAssetIds: Object.fromEntries(
-      Object.entries(selectedAssets).filter(([, id]) => Boolean(id)),
+      Object.entries({
+        ...selectedAssets,
+        ...(localEdit.value && localMaskAssetId.value
+          ? { 2: localMaskAssetId.value }
+          : {}),
+      }).filter(([, id]) => Boolean(id)),
     ),
-    parameterValues: taskParameters(),
+    parameterValues: localEdit.value
+      ? { ...taskParameters(), localEdit: localDraft.value }
+      : taskParameters(),
     projectId,
   };
 }
 
 async function saveDraftNow() {
   if (hydratingDraft) return;
+  if (referenceEdit.value || localEdit.value) {
+    const context = captureContextKey.value;
+    await nextTick();
+    if (context !== captureContextKey.value) return;
+  }
   const payload = draftPayload();
   if (!payload) return;
+  if ([localImageEditKey, referenceImageEditKey].includes(payload.appKey)) {
+    groupedDraftWrite = groupedDraftWrite.then(async () => {
+      await saveDesignConversationDraftApi(payload).catch(() => undefined);
+    });
+    await groupedDraftWrite;
+    return;
+  }
   await saveDesignConversationDraftApi(payload).catch(() => undefined);
 }
 
@@ -1071,8 +1388,15 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
   if (!app?.capabilityCode || !conversationId || !projectId) return;
   capabilityLoading.value = true;
   try {
-    const nextCapability = await getCapabilityApi(app.capabilityCode);
-    capabilityCache[appKey] = nextCapability;
+    const unified = appKey === referenceImageEditKey;
+    const local = appKey === localImageEditKey;
+    const loaded =
+      unified || local
+        ? await loadGroupedCapabilities(
+            local ? isLocalEditWorkflow : isReferenceImageWorkflow,
+          )
+        : { [appKey]: await getCapabilityApi(app.capabilityCode) };
+    Object.assign(capabilityCache, loaded);
     const draft = await getDesignConversationDraftApi(
       conversationId,
       projectId,
@@ -1092,15 +1416,48 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
     ) {
       return;
     }
-    capability.value = nextCapability;
+    const draftSelections = unified
+      ? compactImageSelection(draft.inputAssetIds)
+      : draft.inputAssetIds;
+    const nextLocalDraft = localEditDraft(draft.parameterValues.localEdit);
+    let targetKey = unified
+      ? referenceImageWorkflows[
+          Math.max(0, Object.keys(draftSelections).length - 1)
+        ]
+      : appKey;
+    if (local)
+      targetKey = localEditWorkflow(
+        nextLocalDraft.mode,
+        Boolean(draftSelections['1']),
+      );
+    const nextCapability = targetKey ? loaded[targetKey] : undefined;
+    if (unified) {
+      referenceCapabilities = loaded;
+      referenceParameterWorkflowKey = targetKey;
+    }
+    if (local) {
+      localCapabilities = loaded;
+      localCapabilityKeys.value = Object.keys(loaded);
+    }
+    capability.value = nextCapability ?? null;
     for (const asset of draftAssets)
       conversationInputAssets[
         inputCacheKey(projectId, conversationId, asset.id)
       ] = asset;
     hydratingDraft = true;
     resetDraftState(nextCapability);
+    if (local) {
+      localDraft.value = draftSelections['0']
+        ? nextLocalDraft
+        : { mode: nextLocalDraft.mode };
+      localMaskAssetId.value = draftSelections['0']
+        ? draftSelections['2']
+        : undefined;
+    }
+    if (unified || local)
+      parameterValues[promptField.value?.key ?? 'prompt'] = '';
     const scalarKeys = new Set(
-      nextCapability.fields
+      (nextCapability?.fields ?? [referencePromptField])
         .filter(
           (field) => !mediaTypes.has(field.type) || field.type === 'region',
         )
@@ -1114,14 +1471,15 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
     }
     // A saved empty prompt is intentional; only initialize a brand-new draft.
     if (
+      !unified &&
       !draft.updatedAt &&
       promptField.value &&
-      typeof nextCapability.workflow?.defaultPrompt === 'string'
+      typeof nextCapability?.workflow?.defaultPrompt === 'string'
     )
       parameterValues[promptField.value.key] =
         nextCapability.workflow.defaultPrompt;
-    for (const [index, assetId] of Object.entries(draft.inputAssetIds)) {
-      selectedAssets[Number(index)] = assetId;
+    for (const [index, assetId] of Object.entries(draftSelections)) {
+      if (!local || index !== '2') selectedAssets[Number(index)] = assetId;
     }
     draftReadyKey.value = `${conversationId}:${appKey}:${draftMode.value}`;
   } finally {
@@ -1130,6 +1488,26 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
       capabilityLoading.value = false;
     }
   }
+}
+
+async function loadGroupedCapabilities(matches: (key: string) => boolean) {
+  const candidates = platformStore.applications.flatMap(
+    ({ key, capabilityCode, visible }) =>
+      visible && capabilityCode && matches(key)
+        ? [{ key, capabilityCode }]
+        : [],
+  );
+  const results = await Promise.allSettled(
+    candidates.map(
+      async (app) =>
+        [app.key, await getCapabilityApi(app.capabilityCode)] as const,
+    ),
+  );
+  return Object.fromEntries(
+    results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    ),
+  ) as Record<string, PlatformCapability>;
 }
 
 async function hydrateTimelineCapabilities() {
@@ -1260,10 +1638,28 @@ async function selectConversation(
     )
       ? preferredAppKey
       : undefined;
+  const requestedMode =
+    designModes.find(
+      (mode) =>
+        route.query.conversationId === conversationId &&
+        route.query.designMode === mode.key &&
+        availablePreferredApp &&
+        availableApplicationKeysForMode(mode.key).includes(
+          availablePreferredApp,
+        ),
+    ) ??
+    (availablePreferredApp &&
+    [localImageEditKey, referenceImageEditKey].includes(availablePreferredApp)
+      ? designModes.find((mode) =>
+          availableApplicationKeysForMode(mode.key).includes(
+            availablePreferredApp,
+          ),
+        )
+      : undefined);
   if (availablePreferredApp) {
     selectedModeKey.value = designModeForApplication(
       availablePreferredApp,
-      selectedModeKey.value,
+      requestedMode?.key ?? selectedModeKey.value,
     ).key;
   }
   selectedAppKey.value = availablePreferredApp ?? DEFAULT_APP_KEY;
@@ -1272,6 +1668,7 @@ async function selectConversation(
       ...(importingAsset ? route.query : {}),
       conversationId,
       appKey: selectedAppKey.value,
+      ...(requestedMode ? { designMode: requestedMode.key } : {}),
     },
   });
   await loadCapability();
@@ -1279,8 +1676,12 @@ async function selectConversation(
   await scrollToLatestRound();
 }
 
-async function chooseApplication(appKey: string, businessToolKey = '') {
-  if (!designApplications.value.some((app) => app.key === appKey)) {
+async function chooseApplication(
+  appKey: string,
+  businessToolKey = '',
+  modeKey = selectedModeKey.value,
+) {
+  if (!availableApplicationKeysForMode(modeKey).includes(appKey)) {
     message.info('当前模块未启用该功能');
     return false;
   }
@@ -1293,16 +1694,18 @@ async function chooseApplication(appKey: string, businessToolKey = '') {
   appSearch.value = '';
   parameterDrawerOpen.value = false;
   mediaPickerOpen.value = false;
-  if (appKey === selectedAppKey.value && capability.value) {
+  if (
+    modeKey === selectedModeKey.value &&
+    appKey === selectedAppKey.value &&
+    (capability.value ||
+      ((referenceEdit.value || localEdit.value) && draftReadyKey.value))
+  ) {
     selectedBusinessToolKey.value = businessToolKey;
     return true;
   }
   await saveDraftNow();
   const conversationId = activeConversationId.value;
-  selectedModeKey.value = designModeForApplication(
-    appKey,
-    selectedModeKey.value,
-  ).key;
+  selectedModeKey.value = designModeForApplication(appKey, modeKey).key;
   selectedBusinessToolKey.value = businessToolKey;
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
@@ -1317,9 +1720,18 @@ async function chooseApplication(appKey: string, businessToolKey = '') {
       ...(importingAsset ? route.query : {}),
       conversationId: activeConversationId.value,
       appKey,
+      ...([localImageEditKey, referenceImageEditKey].includes(appKey)
+        ? { designMode: selectedModeKey.value }
+        : {}),
     },
   });
-  return effectiveApplicationKey.value === appKey && Boolean(capability.value);
+  return (
+    effectiveApplicationKey.value === appKey &&
+    Boolean(
+      capability.value ||
+      ((referenceEdit.value || localEdit.value) && draftReadyKey.value),
+    )
+  );
 }
 
 async function chooseGenerationCategory(category: DesignGenerationCategory) {
@@ -1365,12 +1777,7 @@ async function chooseDesignMode(modeKey: DesignModeKey) {
     message.info(`${mode.label}当前分类的默认功能不可用，请先检查模块配置`);
     return;
   }
-  await saveDraftNow();
-  selectedModeKey.value = modeKey;
-  selectedBusinessToolKey.value = '';
-  const nextKey = preferredKey;
-  selectedAppKey.value = nextKey;
-  await loadCapability(nextKey);
+  await chooseApplication(preferredKey, '', modeKey);
 }
 
 const dimensionFields = computed(() =>
@@ -1538,6 +1945,8 @@ function archiveConversation(conversation: DesignConversation) {
 }
 
 function taskParameters() {
+  if ((referenceEdit.value || localEdit.value) && !capability.value)
+    return { prompt: parameterValues.prompt };
   return Object.fromEntries(
     (capability.value?.fields ?? [])
       .filter((field) => !mediaTypes.has(field.type) || field.type === 'region')
@@ -1545,10 +1954,14 @@ function taskParameters() {
   );
 }
 
-async function prepareRegionAnnotations() {
+async function prepareRegionAnnotations(
+  fields = mediaFields.value,
+  values = parameterValues,
+  assets: Record<number, string> = selectedAssets,
+) {
   return createRegionInputAnnotations({
-    fields: mediaFields.value,
-    parameterValues,
+    fields,
+    parameterValues: values,
     async resolvePreviewUrl(assetId) {
       const preview = await getAssetPreviewApi(assetId);
       if (preview.mode !== 'url') throw new Error('分区底图没有可用预览');
@@ -1565,7 +1978,7 @@ async function prepareRegionAnnotations() {
         type: 'image',
       });
     },
-    selectedAssets,
+    selectedAssets: assets,
   });
 }
 
@@ -1573,6 +1986,7 @@ async function clearSubmittedComposer() {
   hydratingDraft = true;
   try {
     if (promptField.value) parameterValues[promptField.value.key] = '';
+    if (localEdit.value) clearLocalMarks();
     for (const key of Object.keys(selectedAssets)) {
       Reflect.deleteProperty(selectedAssets, key);
     }
@@ -1590,20 +2004,32 @@ async function runCapability() {
 }
 
 async function submitCapability(
-  options: { isCurrent?: () => boolean; live?: boolean } = {},
+  options: {
+    isCurrent?: () => boolean;
+    live?: boolean;
+    localFrame?: { baseAssetId: string; maskAssetId?: string };
+  } = {},
 ) {
   if (options.isCurrent && !options.isCurrent()) return;
-  if (composerImportingImage.value) {
+  if (composerImportingImage.value || composerUploading.value) {
     message.info('图片正在添加，请完成后再提交');
     return;
   }
   if (!isDesignGenerationApplication(effectiveApplicationKey.value)) return;
   if (
-    !designApplications.value.some(
-      (app) => app.key === effectiveApplicationKey.value,
+    !availableApplicationKeysForMode(selectedModeKey.value).includes(
+      effectiveApplicationKey.value,
     )
   ) {
     message.warning('当前模块未启用此功能，请重新选择功能');
+    return;
+  }
+  if (referenceEdit.value && !capability.value) {
+    message.warning('当前图片张数对应的工作流暂不可用');
+    return;
+  }
+  if (localEdit.value && !capability.value) {
+    message.warning('当前局部编辑工具对应的工作流暂不可用');
     return;
   }
   if (!application.value || !capability.value || !activeConversationId.value) {
@@ -1614,6 +2040,10 @@ async function submitCapability(
     message.warning(
       `当前工作流需要 ${progress.required} 张图片，已上传 ${progress.filled} 张，还需上传 ${progress.missingRequired} 张`,
     );
+    return;
+  }
+  if (localEdit.value && !localMarked.value) {
+    message.warning('请先在编辑器中绘制并保存当前区域');
     return;
   }
   const missingAsset = mediaFields.value.find(
@@ -1642,8 +2072,39 @@ async function submitCapability(
   }
   submitting.value = true;
   const contextKey = captureContextKey.value;
+  const referenceSubmission = referenceEdit.value
+    ? { assetIds: selectedAssetIds.value, parameters: taskParameters() }
+    : undefined;
+  const localMode = localDraft.value.mode;
+  const baseAssetId = options.localFrame?.baseAssetId ?? selectedAssets[0];
+  const maskAssetId = options.localFrame?.maskAssetId ?? localMaskAssetId.value;
+  const localSubmission =
+    localEdit.value && baseAssetId
+      ? {
+          baseAssetId,
+          mode: localMode,
+          assetIds:
+            localMode === 'mask' && maskAssetId
+              ? [maskAssetId, ...(selectedAssets[1] ? [selectedAssets[1]] : [])]
+              : [baseAssetId],
+          parameters:
+            localMode === 'mask'
+              ? taskParameters()
+              : {
+                  ...taskParameters(),
+                  regionMarks: localDraft.value[localMode],
+                },
+          fields: capability.value.fields,
+        }
+      : undefined;
   try {
-    const inputAnnotations = await prepareRegionAnnotations();
+    const inputAnnotations = localSubmission
+      ? await prepareRegionAnnotations(
+          localSubmission.fields,
+          localSubmission.parameters,
+          { 0: localSubmission.baseAssetId },
+        )
+      : await prepareRegionAnnotations();
     if (contextKey !== captureContextKey.value) return;
     if (options.isCurrent && !options.isCurrent()) return;
     const job = await platformStore.runApplication(
@@ -1651,9 +2112,21 @@ async function submitCapability(
       {
         designConversationId: activeConversationId.value,
         designMode: selectedModeKey.value || undefined,
+        ...(localSubmission
+          ? {
+              localEdit: {
+                baseAssetId: localSubmission.baseAssetId,
+                mode: localSubmission.mode,
+              },
+            }
+          : {}),
       },
-      selectedAssetIds.value,
-      taskParameters(),
+      localSubmission?.assetIds ??
+        referenceSubmission?.assetIds ??
+        selectedAssetIds.value,
+      localSubmission?.parameters ??
+        referenceSubmission?.parameters ??
+        taskParameters(),
       [],
       inputAnnotations,
     );
@@ -1702,49 +2175,74 @@ async function runJobSnapshot(
   job: PlatformJob,
   override?: { parameterKey: string; value: string },
 ) {
+  if (job.appKey === retiredBaseEditKey) {
+    openBaseEditHistory(job, undefined, override?.value);
+    return;
+  }
   if (!isDesignGenerationApplication(job.appKey)) {
     message.info('文本生成功能暂不接入设计工作台，历史结果仍可查看');
     return;
   }
   const replayMode = getDesignMode(job.designMode ?? selectedModeKey.value);
-  if (
-    !applicationsForDesignMode(platformStore.applications, replayMode).some(
-      (app) => app.key === job.appKey,
-    )
-  ) {
+  if (!availableApplicationKeysForMode(replayMode.key).includes(job.appKey)) {
     message.info('该历史功能未在当前模块启用，请先调整模块功能设置');
     return;
   }
-  if (activeJob.value) {
+  if (activeJob.value || submitting.value) {
     message.warning('当前设计会话已有任务在运行，请等待完成或停止后再提交');
     return;
   }
+  const conversationId = activeConversationId.value;
+  const projectId = platformStore.currentProjectId;
+  const isCurrent = () =>
+    !composerDisposed &&
+    conversationId === activeConversationId.value &&
+    projectId === platformStore.currentProjectId;
+  if (!conversationId) return;
+  const inputs = job.inputs.toSorted(
+    (left, right) => left.position - right.position,
+  );
+  const inputAnnotations = inputs.flatMap((input) =>
+    input.annotationAssetId
+      ? [{ assetId: input.annotationAssetId, position: input.position }]
+      : [],
+  );
+  const parameters = { ...job.parameters };
+  if (override) parameters[override.parameterKey] = override.value;
+  submitting.value = true;
   try {
-    await Promise.all(
-      job.inputs.map((input) => resolveConversationInput(input.assetId)),
+    await Promise.all([
+      ...inputs.map((input) => resolveConversationInput(input.assetId)),
+      ...inputAnnotations.map(({ assetId }) =>
+        resolveConversationInput(assetId),
+      ),
+    ]);
+    if (!isCurrent()) return;
+    const replayed = await platformStore.runApplication(
+      job.appKey,
+      { designConversationId: conversationId, designMode: replayMode.key },
+      inputs.map(({ assetId }) => assetId),
+      parameters,
+      [],
+      inputAnnotations,
     );
-  } catch {
-    message.error('历史输入已不可用或不属于当前会话，无法重新发送');
-    return;
-  }
-  if (job.designMode) {
-    selectedModeKey.value = job.designMode;
-  }
-  if (!(await chooseApplication(job.appKey))) return;
-  hydratingDraft = true;
-  try {
-    resetDraftState(capability.value ?? undefined);
-    for (const [key, value] of Object.entries(job.parameters)) {
-      parameterValues[key] = value;
+    if (!isCurrent() || !replayed) return;
+    if (replayed.status === 'failed') {
+      message.warning(replayed.error?.message ?? '历史任务执行失败');
+    } else {
+      message.success('已按历史任务的输入重新提交');
+      void scrollToLatestRound();
     }
-    if (override) parameterValues[override.parameterKey] = override.value;
-    for (const input of job.inputs)
-      selectedAssets[input.position] = input.assetId;
+    await refreshConversations();
+    void hydrateTimelineCapabilities();
+  } catch (error) {
+    if (isCurrent())
+      message.error(
+        error instanceof Error ? error.message : '历史输入不可用，无法重新发送',
+      );
   } finally {
-    hydratingDraft = false;
+    submitting.value = false;
   }
-  await saveDraftNow();
-  await runCapability();
 }
 
 async function rerunJob(job: PlatformJob) {
@@ -1765,8 +2263,10 @@ async function selectAsset(
   preserveRegion = false,
 ) {
   if (field.assetIndex === undefined) return;
+  const context = captureContextKey.value;
   if (!availableInputAssets.value.some((asset) => asset.id === assetId))
     await resolveConversationInput(assetId);
+  if (context !== captureContextKey.value || composerDisposed) return;
   const occupied = Object.entries(selectedAssets).find(
     ([index, id]) => Number(index) !== field.assetIndex && id === assetId,
   );
@@ -1775,6 +2275,8 @@ async function selectAsset(
     return;
   }
   const previousAssetId = selectedAssets[field.assetIndex];
+  if (localEdit.value && field.assetIndex === 0 && previousAssetId !== assetId)
+    clearLocalMarks();
   selectedAssets[field.assetIndex] = assetId;
   if (
     !preserveRegion &&
@@ -1807,6 +2309,7 @@ async function uploadMedia(
   });
   if (composerDisposed || contextKey !== captureContextKey.value) return asset;
   await selectAsset(field, asset.id);
+  if (contextKey !== captureContextKey.value || composerDisposed) return asset;
   if (!options.derivedFromAssetId) queueInputEditor(field);
   if (!options.silent) message.success('图片已添加到当前设计，未加入资产中心');
   return asset;
@@ -1881,13 +2384,24 @@ async function runLiveCapture(
     message.warning('请先捕获当前帧并完成分区标记');
     return false;
   }
+  if (localEdit.value && (!selectedAssets[0] || !localMarked.value)) {
+    message.warning('请先捕获当前帧或选择底图，并保存需要编辑的区域');
+    return false;
+  }
+  const localBaseCapture = localEdit.value && field.assetIndex === 0;
+  const localSettings = localDraft.value;
   const contextKey = captureContextKey.value;
   const isCurrent = () =>
     session.isCurrent() &&
+    (!localEdit.value ||
+      (!localEditor.value && localDraft.value === localSettings)) &&
     !composerDisposed &&
     contextKey === captureContextKey.value;
   let maskUrl: string | undefined;
-  if (field.type === 'mask') {
+  if (
+    field.type === 'mask' ||
+    (localBaseCapture && localSettings.mode === 'mask')
+  ) {
     const selectedId =
       field.assetIndex === undefined
         ? undefined
@@ -1895,11 +2409,13 @@ async function runLiveCapture(
     const selected = availableInputAssets.value.find(
       (asset) => asset.id === selectedId,
     );
-    if (!selected?.derivedFromAssetId) {
+    const savedMaskId = selected?.derivedFromAssetId ? selected.id : undefined;
+    const maskId = localBaseCapture ? localMaskAssetId.value : savedMaskId;
+    if (!maskId) {
       message.warning('请先捕获当前帧并完成遮罩编辑');
       return false;
     }
-    const preview = await getAssetPreviewApi(selected.id);
+    const preview = await getAssetPreviewApi(maskId);
     if (!isCurrent()) return false;
     if (preview.mode !== 'url') throw new Error('遮罩图片暂不可用');
     maskUrl = preview.url;
@@ -1908,6 +2424,7 @@ async function runLiveCapture(
     ? await applyCaptureMask(file, maskUrl)
     : undefined;
   if (!isCurrent()) return false;
+  let localFrame: undefined | { baseAssetId: string; maskAssetId?: string };
   return submitCaptureFrame(isCurrent, {
     upload: async () => {
       const original = await platformStore.uploadAsset({
@@ -1918,8 +2435,9 @@ async function runLiveCapture(
         tags: ['设计会话输入', '实时捕获'],
         type: 'image',
       });
+      if (localBaseCapture) localFrame = { baseAssetId: original.id };
       if (!maskedFile || !isCurrent()) return original;
-      return platformStore.uploadAsset({
+      const mask = await platformStore.uploadAsset({
         file: maskedFile,
         type: 'image',
         name: maskedFile.name,
@@ -1927,9 +2445,13 @@ async function runLiveCapture(
         derivedFromAssetId: original.id,
         designConversationId: activeConversationId.value,
       });
+      if (localFrame) localFrame.maskAssetId = mask.id;
+      return mask;
     },
-    select: (assetId) => selectAsset(field, assetId, true),
-    submit: () => submitCapability({ isCurrent, live: true }),
+    select: async (assetId) => {
+      if (!localBaseCapture) await selectAsset(field, assetId, true);
+    },
+    submit: () => submitCapability({ isCurrent, live: true, localFrame }),
     track: (jobId) => {
       if (jobId) liveCaptureJobs.set(session, jobId);
       else liveCaptureJobs.delete(session);
@@ -1991,6 +2513,14 @@ function designModeForOutput(output: PlatformJobOutput) {
 
 async function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
   try {
+    const mode = designModeForOutput(output);
+    const keys = availableApplicationKeysForMode(mode);
+    if (keys.includes(localImageEditKey)) {
+      await continueInLocalEditor(output, mode, 'mask');
+      return;
+    }
+    if (!keys.includes('inpaint-single'))
+      throw new Error('当前模块未启用局部编辑');
     await resolveConversationInput(output.assetId);
     actionOutput.value = output;
     actionDesignMode.value = designModeForOutput(output);
@@ -2004,7 +2534,40 @@ async function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
   }
 }
 
-function openInputMask(input: PlatformJobInput, previewUrl: string) {
+async function openInputMask(input: PlatformJobInput, previewUrl: string) {
+  if (
+    availableApplicationKeysForMode(selectedModeKey.value).includes(
+      localImageEditKey,
+    )
+  ) {
+    try {
+      const context = activeConversationId.value;
+      const baseAsset = await resolveConversationInput(
+        input.derivedFromAssetId ?? input.assetId,
+      );
+      if (
+        !(await chooseApplication(localImageEditKey)) ||
+        context !== activeConversationId.value
+      )
+        return;
+      clearLocalMarks();
+      Reflect.deleteProperty(selectedAssets, 1);
+      localDraft.value = { mode: 'mask' };
+      const field = localEditImageFields[0];
+      if (!field) return;
+      await selectAsset(field, baseAsset.id);
+      localMaskAssetId.value = input.derivedFromAssetId
+        ? input.assetId
+        : undefined;
+      await saveDraftNow();
+      await openLocalEditor();
+    } catch (error) {
+      message.warning(
+        error instanceof Error ? error.message : '历史输入暂不可编辑',
+      );
+    }
+    return;
+  }
   actionOutput.value = undefined;
   maskEditSourceAssetId.value = input.assetId;
   maskEditDerivedFromAssetId.value = input.derivedFromAssetId ?? input.assetId;
@@ -2042,6 +2605,10 @@ async function saveOutputMask(file: File) {
 
 async function loadContinueCapability(appKey: string) {
   continueAssetIndex.value = undefined;
+  if ([localImageEditKey, referenceImageEditKey].includes(appKey)) {
+    continueAssetIndex.value = 0;
+    return;
+  }
   if (capabilityCache[appKey]) return;
   const app = platformStore.applications.find((item) => item.key === appKey);
   if (app?.capabilityCode) {
@@ -2049,7 +2616,114 @@ async function loadContinueCapability(appKey: string) {
   }
 }
 
-function openContinue(output: PlatformJobOutput) {
+function openBaseEditHistory(
+  job: PlatformJob,
+  baseAssetId?: string,
+  prompt = job.parameters.prompt,
+) {
+  baseEditHistory.value = {
+    baseAssetId,
+    conversationId: activeConversationId.value,
+    job,
+    prompt,
+  };
+}
+
+async function continueBaseEdit(
+  option: (typeof baseEditOptions.value)[number],
+) {
+  const history = baseEditHistory.value;
+  const mode = option.mode;
+  if (!history || !mode || baseEditContinuing.value) return;
+  const { conversationId, job, prompt } = history;
+  const { projectId } = job;
+  const isCurrent = () =>
+    !composerDisposed &&
+    baseEditHistory.value === history &&
+    platformStore.currentProjectId === projectId &&
+    activeConversationId.value === conversationId;
+  baseEditContinuing.value = option.key;
+  try {
+    if (!isCurrent()) throw new Error('会话已切换，请重新选择历史任务');
+    const sourceImage =
+      history.baseAssetId ??
+      job.inputs.find((input) => input.kind === 'image' && input.position === 0)
+        ?.assetId;
+    const referenceImage =
+      option.key === 'image-edit-kv'
+        ? job.inputs.find(
+            (input) => input.kind === 'image' && input.position === 1,
+          )?.assetId
+        : undefined;
+    const images = await Promise.all(
+      [
+        sourceImage,
+        referenceImage === sourceImage ? undefined : referenceImage,
+      ].map(async (assetId) => {
+        if (!assetId) return undefined;
+        try {
+          if (job.designConversationId !== conversationId)
+            await referenceDesignConversationInputApi(
+              conversationId,
+              projectId,
+              assetId,
+            );
+          if (!isCurrent()) return undefined;
+          const asset = await resolveConversationInput(assetId);
+          return asset.id;
+        } catch {
+          return undefined;
+        }
+      }),
+    );
+    const targetAppKey = availableApplicationKeysForMode(mode.key).includes(
+      referenceImageEditKey,
+    )
+      ? referenceImageEditKey
+      : option.key;
+    if (!isCurrent() || !(await chooseApplication(targetAppKey, '', mode.key)))
+      return;
+    if (!isCurrent()) return;
+    for (const index of Object.keys(selectedAssets))
+      Reflect.deleteProperty(selectedAssets, index);
+    for (const field of mediaFields.value) {
+      const index = field.assetIndex;
+      if (index === undefined || !field.acceptedKinds.includes('image'))
+        continue;
+      const assetId = images[index];
+      if (assetId) selectedAssets[index] = assetId;
+    }
+    if (promptField.value && typeof prompt === 'string')
+      parameterValues[promptField.value.key] = prompt;
+    await saveDraftNow();
+    if (!isCurrent()) return;
+    await router.replace({
+      query: { appKey: targetAppKey, conversationId, designMode: mode.key },
+    });
+    if (!isCurrent()) return;
+    baseEditHistory.value = undefined;
+    const missingRequiredImage =
+      (option.key === 'image-edit-kv' && !selectedAssets[1]) ||
+      mediaFields.value.some(
+        (field) =>
+          field.required &&
+          field.assetIndex !== undefined &&
+          !selectedAssets[field.assetIndex],
+      );
+    if (missingRequiredImage) message.info('已打开编辑框，请补齐图片后发送');
+    else message.success('已填入历史图片和提示词，请确认后发送');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '无法继续编辑');
+  } finally {
+    baseEditContinuing.value = undefined;
+  }
+}
+
+function openContinue(output: PlatformJobOutput, job: PlatformJob) {
+  if (job.appKey === retiredBaseEditKey) {
+    openBaseEditHistory(job, output.assetId);
+    return;
+  }
   actionOutput.value = output;
   if (continueDestinations.value.length === 0) {
     message.warning('当前没有可接收该结果的应用');
@@ -2073,6 +2747,16 @@ async function continueDesign() {
   const projectId = platformStore.currentProjectId;
   const conversationId = activeConversationId.value;
   try {
+    if (continueAppKey.value === localImageEditKey) {
+      continueOpen.value = false;
+      await continueInLocalEditor(output, selectedModeKey.value, 'mask');
+      return;
+    }
+    if (continueAppKey.value === referenceImageEditKey) {
+      await prepareReferenceResult(output, draftMode.value);
+      continueOpen.value = false;
+      return;
+    }
     await resolveConversationInput(output.assetId);
     if (!(await chooseApplication(continueAppKey.value))) return;
     if (
@@ -2089,6 +2773,8 @@ async function continueDesign() {
     parameterDrawerOpen.value = false;
     mediaPickerOpen.value = false;
     message.success('结果已填入当前会话，未自动加入资产中心');
+  } catch (error) {
+    message.error(error instanceof Error ? error.message : '无法流转图片');
   } finally {
     continueSubmitting.value = false;
   }
@@ -2103,8 +2789,7 @@ async function prepareOutputInComposer(
   const projectId = platformStore.currentProjectId;
   const conversationId = activeConversationId.value;
   await resolveConversationInput(output.assetId);
-  selectedModeKey.value = modeKey;
-  if (!(await chooseApplication(appKey, businessToolKey)))
+  if (!(await chooseApplication(appKey, businessToolKey, modeKey)))
     throw new Error('当前模块未启用目标功能');
   if (
     projectId !== platformStore.currentProjectId ||
@@ -2149,18 +2834,38 @@ function openMultiImage(
   cmfMultiImageOpen.value = true;
 }
 
+async function prepareReferenceResult(
+  output: PlatformJobOutput,
+  mode: Exclude<DesignModeKey, 'report'>,
+) {
+  const keys = availableApplicationKeysForMode(mode);
+  if (!keys.includes(referenceImageEditKey)) {
+    await prepareOutputInComposer(output, 'multi-image-edit', mode);
+    return;
+  }
+  const projectId = platformStore.currentProjectId;
+  const conversationId = activeConversationId.value;
+  await resolveConversationInput(output.assetId);
+  if (
+    !(await chooseApplication(referenceImageEditKey, '', mode)) ||
+    projectId !== platformStore.currentProjectId ||
+    conversationId !== activeConversationId.value
+  )
+    throw new Error('会话已切换或当前模块未启用参考图编辑');
+  resetCapabilityParameters(capability.value ?? undefined);
+  parameterValues[promptField.value?.key ?? 'prompt'] = '';
+  replaceSelectedAssets({ 0: output.assetId });
+  await saveDraftNow();
+}
+
 async function transferCmfMultiImageToComposer() {
   const output = cmfMultiImageOutput.value;
   if (!output) return;
   cmfMultiImageSubmitting.value = true;
   try {
-    await prepareOutputInComposer(
-      output,
-      'multi-image-edit',
-      cmfMultiImageDesignMode.value,
-    );
+    await prepareReferenceResult(output, cmfMultiImageDesignMode.value);
     cmfMultiImageOpen.value = false;
-    message.success('图片已填入“多图融合”编辑框，请继续添加参考图和提示词');
+    message.success('已将结果用作底图，请填写指令或补充参考图');
   } catch (error) {
     message.error(
       error instanceof Error ? error.message : '无法进入多图融合编辑框',
@@ -2183,17 +2888,15 @@ function selectCmfMultiImageFiles(event: Event) {
 async function runCmfMultiImageDialog() {
   const output = cmfMultiImageOutput.value;
   const prompt = cmfMultiImagePrompt.value.trim();
-  if (!output || cmfMultiImageFiles.value.length !== 2 || !prompt) {
+  const files = cmfMultiImageFiles.value;
+  if (!output || files.length !== 2 || !prompt) {
     message.warning('请上传两张参考图并填写融合提示词');
     return;
   }
   cmfMultiImageSubmitting.value = true;
   try {
-    await prepareOutputInComposer(
-      output,
-      'multi-image-edit',
-      cmfMultiImageDesignMode.value,
-    );
+    await prepareReferenceResult(output, cmfMultiImageDesignMode.value);
+    const context = captureContextKey.value;
     const referenceFields = mediaFields.value
       .filter(
         (field) =>
@@ -2207,13 +2910,14 @@ async function runCmfMultiImageDialog() {
     if (referenceFields.length < 2) {
       throw new Error('多图融合能力的参考图输入契约不完整');
     }
-    for (const [index, file] of cmfMultiImageFiles.value.entries()) {
+    for (const [index, file] of files.entries()) {
       const field = referenceFields[index];
       if (!field) continue;
       await uploadMedia(field, file, {
         silent: true,
         tags: ['设计会话输入', `${activeDesignMode.value.label}多图融合`],
       });
+      if (context !== captureContextKey.value) return;
     }
     if (!promptField.value) throw new Error('多图融合能力缺少提示词输入');
     setFieldValue(promptField.value, prompt);
@@ -2262,11 +2966,46 @@ async function runCmfUpscale() {
   }
 }
 
+async function continueInLocalEditor(
+  output: PlatformJobOutput,
+  mode: DesignModeKey,
+  tool: LocalEditMode,
+) {
+  if (output.kind !== 'image') throw new Error('局部编辑需要图片');
+  const conversation = activeConversationId.value;
+  const project = platformStore.currentProjectId;
+  await resolveConversationInput(output.assetId);
+  if (
+    !(await chooseApplication(
+      localImageEditKey,
+      '',
+      mode === 'report' ? 'cabin' : mode,
+    )) ||
+    conversation !== activeConversationId.value ||
+    project !== platformStore.currentProjectId
+  )
+    throw new Error('会话已切换或当前模块未启用局部编辑');
+  // A result begins a new round. The source task keeps its own parameters and markings.
+  clearLocalMarks();
+  Reflect.deleteProperty(selectedAssets, 1);
+  localDraft.value = { mode: tool };
+  if (promptField.value) parameterValues[promptField.value.key] = '';
+  const base = localEditImageFields[0];
+  if (!base) return;
+  const context = captureContextKey.value;
+  await selectAsset(base, output.assetId);
+  if (context === captureContextKey.value) await openLocalEditor(tool);
+}
+
 async function markOutput(
   output: PlatformJobOutput,
   mode: 'cabin' | 'component',
 ) {
   try {
+    if (availableApplicationKeysForMode(mode).includes(localImageEditKey)) {
+      await continueInLocalEditor(output, mode, 'number');
+      return;
+    }
     await prepareOutputInComposer(output, 'region-marker-edit', mode);
     const field = mediaFields.value.find((item) => item.type === 'region');
     if (!field) throw new Error('编号分区能力缺少分区输入位');
@@ -2594,12 +3333,32 @@ async function importAssetAction() {
     await selectConversation(conversation.id);
     selectedModeKey.value = 'cabin';
     const output = assetImageOutput(asset);
-    if (sourceJob) {
-      if (sourceJob.designMode && sourceJob.designMode !== 'report') {
-        selectedModeKey.value = sourceJob.designMode;
+    if (sourceJob?.appKey === retiredBaseEditKey) {
+      openBaseEditHistory(sourceJob, asset.id);
+    } else if (sourceJob) {
+      const conversationId = conversation.id;
+      const isCurrent = () =>
+        route.query.sourceAssetId === assetId &&
+        activeConversationId.value === conversationId &&
+        platformStore.currentProjectId === asset.projectId;
+      for (const input of sourceJob.inputs) {
+        if (!isCurrent()) return;
+        if (sourceJob.designConversationId !== conversationId)
+          await referenceDesignConversationInputApi(
+            conversationId,
+            asset.projectId,
+            input.assetId,
+          );
+        if (!isCurrent()) return;
+        await resolveConversationInput(input.assetId);
       }
-      if (!(await chooseApplication(sourceJob.appKey)))
+      const mode =
+        sourceJob.designMode === 'report' ? 'cabin' : sourceJob.designMode;
+      if (!isCurrent()) return;
+      if (!(await chooseApplication(sourceJob.appKey, '', mode)))
         throw new Error('当前模块未启用来源任务的功能');
+      if (!isCurrent()) return;
+      resetDraftState(capability.value ?? undefined);
       for (const [key, value] of Object.entries(sourceJob.parameters))
         parameterValues[key] = value;
       for (const input of sourceJob.inputs)
@@ -2830,7 +3589,7 @@ onBeforeUnmount(() => {
               @download="downloadOutput"
               @edit-rerun="editAndRerunJob"
               @edit-input="openInputMask"
-              @flow="openContinue"
+              @flow="openContinue($event, job)"
               @mask="openOutputMask"
               @rerun="rerunJob"
               @save="saveOutput"
@@ -2874,7 +3633,7 @@ onBeforeUnmount(() => {
               capture-input
               :capture-scope="captureContextKey"
               :accent="application?.color ?? '#b91c32'"
-              :assets="platformStore.currentAssets"
+              :assets="availableInputAssets"
               :field="field"
               :live-capture="
                 (file, session) => runLiveCapture(field, file, session)
@@ -2936,7 +3695,11 @@ onBeforeUnmount(() => {
                 <div class="composer-slot-entries">
                   <article v-if="item.asset" class="composer-input-asset">
                     <span class="composer-input-number">
-                      图片{{ (item.field.assetIndex ?? 0) + 1 }}
+                      {{
+                        localEdit
+                          ? item.field.label
+                          : `图片${(item.field.assetIndex ?? 0) + 1}`
+                      }}
                     </span>
                     <button
                       :aria-label="`${composerInputEditorLabel(item.field)}：${item.asset.name}`"
@@ -2954,6 +3717,7 @@ onBeforeUnmount(() => {
                     </button>
                     <div class="composer-input-asset__move-actions">
                       <button
+                        v-if="!localEdit"
                         :aria-label="`左移${item.asset.name}`"
                         :disabled="composerInputPosition(item.field) === 0"
                         title="左移"
@@ -2970,15 +3734,18 @@ onBeforeUnmount(() => {
                       >
                         <IconifyIcon
                           :icon="
-                            item.field.type === 'region'
+                            localEdit && item.field.assetIndex === 0
                               ? platformUiIcons.scanLine
-                              : item.field.type === 'mask'
-                                ? platformSemanticIcons.mask
-                                : platformUiIcons.maximize2
+                              : item.field.type === 'region'
+                                ? platformUiIcons.scanLine
+                                : item.field.type === 'mask'
+                                  ? platformSemanticIcons.mask
+                                  : platformUiIcons.maximize2
                           "
                         />
                       </button>
                       <button
+                        v-if="!localEdit"
                         :aria-label="`右移${item.asset.name}`"
                         :disabled="
                           composerInputPosition(item.field) ===
@@ -3062,7 +3829,9 @@ onBeforeUnmount(() => {
                         {{
                           item.asset
                             ? '更换图片'
-                            : `添加图片${(item.field.assetIndex ?? 0) + 1}`
+                            : localEdit
+                              ? item.field.label
+                              : `添加图片${(item.field.assetIndex ?? 0) + 1}`
                         }}
                       </span>
                     </button>
@@ -3093,6 +3862,31 @@ onBeforeUnmount(() => {
           />
           <div v-else class="composer-no-prompt">
             该应用主要使用图片或结构化参数，请添加素材或打开“更多”完成输入。
+          </div>
+          <p
+            v-if="
+              referenceEdit &&
+              referenceImageCount &&
+              !capability &&
+              !capabilityLoading
+            "
+            class="composer-no-prompt"
+            role="status"
+          >
+            当前图片张数对应的工作流暂不可用
+          </p>
+          <div v-if="localEdit && selectedAssets[0]" class="local-edit-status">
+            {{
+              localEditTools.find((tool) => tool.mode === localDraft.mode)
+                ?.label
+            }}
+            · {{ localMarked ? '已保存区域' : '待保存区域' }}
+            <Button size="small" type="link" @click="openLocalEditor()">
+              编辑区域
+            </Button>
+            <span v-if="!capability && !capabilityLoading">
+              当前工具对应的工作流暂不可用
+            </span>
           </div>
           <div class="composer-bottom">
             <div class="composer-toolbar">
@@ -3264,7 +4058,11 @@ onBeforeUnmount(() => {
                 !activeConversationId ||
                 submitting ||
                 activeJob?.status === 'cancelling' ||
-                composerImportingImage
+                composerImportingImage ||
+                composerUploading ||
+                (referenceEdit &&
+                  !activeJob &&
+                  (capabilityLoading || !referenceImageCount || !capability))
               "
               shape="circle"
               type="primary"
@@ -3360,7 +4158,9 @@ onBeforeUnmount(() => {
       </button>
       <div class="media-picker-fields">
         <CapabilityMediaField
-          v-for="field in additionalMediaFields"
+          v-for="field in referenceEdit
+            ? additionalMediaFields.slice(0, referenceImageCount + 1)
+            : additionalMediaFields"
           :key="`${captureContextKey}:${field.key}`"
           accent="#c51f3a"
           :assets="availableInputAssets"
@@ -3389,6 +4189,20 @@ onBeforeUnmount(() => {
         <Button type="primary" @click="mediaPickerOpen = false">完成</Button>
       </div>
     </Modal>
+
+    <LocalImageEditor
+      v-if="localEditor"
+      :asset-id="localEditor.assetId"
+      :asset-name="localEditor.assetName"
+      :base-url="localEditor.baseUrl"
+      :draft="localDraft"
+      :enabled-tools="localEnabledTools"
+      :mask-url="localEditor.maskUrl"
+      :mode="localEditor.mode"
+      :save-mask="saveLocalMask"
+      @close="closeLocalEditor"
+      @save-region="saveLocalRegion"
+    />
 
     <AssetPickerModal
       :accepted-kinds="['text']"
@@ -3569,6 +4383,32 @@ onBeforeUnmount(() => {
     </Modal>
 
     <Modal
+      :open="Boolean(baseEditHistory)"
+      :footer="null"
+      :mask-closable="!baseEditContinuing"
+      :closable="!baseEditContinuing"
+      :keyboard="!baseEditContinuing"
+      title="继续编辑历史任务"
+      @cancel="baseEditHistory = undefined"
+    >
+      <p class="continue-description">
+        选择编辑方式后，系统会填入可用图片和历史提示词。确认输入后发送。
+      </p>
+      <div class="flex flex-wrap gap-2">
+        <Button
+          v-for="option in baseEditOptions"
+          :key="option.key"
+          :disabled="!option.mode || Boolean(baseEditContinuing)"
+          :loading="baseEditContinuing === option.key"
+          :title="option.mode?.label ?? '管理员尚未在设计模块启用此功能'"
+          @click="continueBaseEdit(option)"
+        >
+          {{ option.label }}
+        </Button>
+      </div>
+    </Modal>
+
+    <Modal
       v-model:open="continueOpen"
       :confirm-loading="continueSubmitting"
       :ok-button-props="{ disabled: continueAssetIndex === undefined }"
@@ -3610,11 +4450,19 @@ onBeforeUnmount(() => {
           <IconifyIcon :icon="platformUiIcons.panelBottomOpen" />
           <span>
             <strong>转入下方编辑框</strong>
-            <small>将当前图片带入融合能力，再自行添加素材和提示词</small>
+            <small>将当前图片用作底图，可直接编辑或补充参考图</small>
           </span>
           <IconifyIcon :icon="platformUiIcons.arrowRight" />
         </button>
-        <button type="button" @click="cmfMultiImageMode = 'dialog'">
+        <button
+          v-if="
+            availableApplicationKeysForMode(cmfMultiImageDesignMode).includes(
+              'multi-image-edit',
+            )
+          "
+          type="button"
+          @click="cmfMultiImageMode = 'dialog'"
+        >
           <IconifyIcon :icon="platformSemanticIcons.workbench" />
           <span>
             <strong>在弹窗中完成</strong>
@@ -3816,6 +4664,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.local-edit-status {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 28px;
+  font-size: 12px;
+  color: var(--rail-theme-secondary, #68737e);
+}
+
 .composer-slot-card {
   flex: 0 0 80px;
   width: 80px;

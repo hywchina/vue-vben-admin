@@ -2,7 +2,7 @@
 
 本清单覆盖 rail 主平台 Web 全部业务页、路由、动态应用，以及使用的 Vben 公共外壳与基础 UI 组件。不包含未加载的上游示例、第三方 ComfyUI/AI Toolkit/Presenton 原生界面，或图标库仅导出但未被引入的图形。
 
-业务/类型/操作集中映射共 130 项，动态能力映射 20 项，公共组件图标 63 种；集中映射条目数不是去重后的图形数。
+业务/类型/操作集中映射共 130 项，动态能力映射 22 项，公共组件图标 63 种；集中映射条目数不是去重后的图形数。
 
 ## 使用规则
 
@@ -24,7 +24,7 @@
 | 资产中心、项目资产、加入资产 | `lucide:library-big` | `platformSemanticIcons.assets` | `components/platform/workflow-run-card.vue`<br>`modules/platform/design-result-actions.ts`<br>`router/routes/modules/platform.ts`<br>`views/platform/dashboard/index.vue`<br>`views/platform/design/index.vue`<br>`views/platform/overview/index.vue`<br>`views/platform/projects/index.vue`<br>`views/platform/workspace/asset-picker-modal.vue`<br>`views/platform/workspace/capability-media-field.vue`<br>`views/platform/workspace/index.vue` |
 | 客室效果 | `lucide:train-front` | `platformSemanticIcons.cabin` | `modules/platform/asset-browser.ts`<br>`modules/platform/design-modes.ts` |
 | CMF 色彩、材料与表面工艺 | `lucide:swatch-book` | `platformSemanticIcons.cmf` | `modules/platform/asset-browser.ts`<br>`modules/platform/design-modes.ts` |
-| 客室零部件 | `lucide:boxes` | `platformSemanticIcons.component` | `modules/platform/asset-browser.ts`<br>`modules/platform/design-modes.ts` |
+| 客室零部件 | `lucide:boxes` | `platformSemanticIcons.component` | `modules/platform/asset-browser.ts`<br>`modules/platform/design-modes.ts`<br>`router/routes/modules/platform.ts`<br>`views/platform/overview/workbench-tools.ts` |
 | 操作日志与审计 | `lucide:scroll-text` | `platformSemanticIcons.audit` | `router/routes/modules/platform.ts`<br>`views/platform/overview/workbench-tools.ts` |
 | 会话数量、文本对话能力 | `lucide:messages-square` | `platformSemanticIcons.conversations` | `modules/platform/capability-icons.ts`<br>`views/platform/dashboard/index.vue` |
 | 设计生成入口 | `lucide:message-square-more` | `platformSemanticIcons.design` | `router/routes/modules/platform.ts`<br>`views/platform/jobs/index.vue`<br>`views/platform/overview/index.vue` |
@@ -40,7 +40,7 @@
 | 角色权限、安全状态 | `lucide:shield-check` | `platformSemanticIcons.security` | `router/routes/modules/platform.ts`<br>`views/platform/access/index.vue`<br>`views/platform/workspace/index.vue` |
 | 设计工作台 | `lucide:panels-top-left` | `platformSemanticIcons.workbench` | `router/routes/modules/platform.ts`<br>`views/platform/dashboard/index.vue`<br>`views/platform/design/index.vue` |
 | 工作流管理、工作流版本 | `lucide:workflow` | `platformSemanticIcons.workflow` | `router/routes/modules/platform.ts`<br>`views/platform/jobs/index.vue`<br>`views/platform/overview/workbench-tools.ts` |
-| 遮罩、局部重绘 | `rail:mask` | `platformSemanticIcons.mask` | `bootstrap.ts`<br>`components/platform/comfy-mask-editor.vue`<br>`components/platform/comfy-mask-icon.vue`<br>`modules/platform/capability-icons.ts`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts`<br>`views/platform/design/index.vue` |
+| 遮罩、局部重绘 | `rail:mask` | `platformSemanticIcons.mask` | `bootstrap.ts`<br>`components/platform/comfy-mask-editor.vue`<br>`components/platform/comfy-mask-icon.vue`<br>`modules/platform/capability-icons.ts`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts`<br>`views/platform/design/index.vue`<br>`views/platform/design/local-image-editor.vue` |
 
 ## 八类文件类型
 
@@ -104,14 +104,14 @@
 | 全部分类 | `lucide:layout-grid` | `platformUiIcons.layoutGrid` | `modules/platform/asset-browser.ts` |
 | 列表视图 | `lucide:list` | `platformUiIcons.list` | `views/platform/assets/index.vue`<br>`views/platform/design/design-quick-field.vue`<br>`views/platform/overview/index.vue` |
 | 下拉选项参数 | `lucide:list-filter` | `platformUiIcons.listFilter` | `views/platform/design/design-quick-field.vue` |
-| 加载中 | `lucide:loader-circle` | `platformUiIcons.loaderCircle` | `components/assistant/ai-assistant.vue`<br>`components/platform/asset-model-preview.vue`<br>`components/platform/asset-text-preview.vue`<br>`components/platform/comfy-mask-editor.vue`<br>`components/platform/model3d-viewer.vue`<br>`views/platform/assets/index.vue`<br>`views/platform/dashboard/index.vue`<br>`views/platform/design/index.vue`<br>`views/platform/workspace/capability-media-field.vue` |
+| 加载中 | `lucide:loader-circle` | `platformUiIcons.loaderCircle` | `components/assistant/ai-assistant.vue`<br>`components/platform/asset-model-preview.vue`<br>`components/platform/asset-text-preview.vue`<br>`components/platform/comfy-mask-editor.vue`<br>`components/platform/model3d-viewer.vue`<br>`views/platform/assets/index.vue`<br>`views/platform/dashboard/index.vue`<br>`views/platform/workspace/capability-media-field.vue` |
 | 锁定或固定比例 | `lucide:lock-keyhole` | `platformUiIcons.lockKeyhole` | `views/platform/design/design-image-size.vue` |
 | 解除锁定 | `lucide:lock-keyhole-open` | `platformUiIcons.lockKeyholeOpen` | `views/platform/design/design-image-size.vue` |
 | 平面图填色 | `lucide:map` | `platformUiIcons.map` | `modules/platform/design-modes.ts` |
-| 全屏或展开查看 | `lucide:maximize-2` | `platformUiIcons.maximize2` | `components/platform/comfy-mask-editor.vue`<br>`components/platform/model3d-viewer.vue`<br>`components/platform/workflow-run-card.vue`<br>`views/platform/model-training/index.vue`<br>`views/platform/workspace/capability-media-field.vue` |
+| 全屏或展开查看 | `lucide:maximize-2` | `platformUiIcons.maximize2` | `components/platform/comfy-mask-editor.vue`<br>`components/platform/model3d-viewer.vue`<br>`components/platform/workflow-run-card.vue`<br>`views/platform/design/index.vue`<br>`views/platform/model-training/index.vue`<br>`views/platform/workspace/capability-media-field.vue` |
 | 新建个人会话 | `lucide:message-square-plus` | `platformUiIcons.messageSquarePlus` | `views/platform/dashboard/index.vue` |
 | 退出全屏或还原 | `lucide:minimize-2` | `platformUiIcons.minimize2` | `components/platform/model3d-viewer.vue` |
-| 屏幕捕获 | `lucide:monitor-up` | `platformUiIcons.monitorUp` | `modules/platform/capability-icons.ts`<br>`views/platform/workspace/capability-media-field.vue` |
+| 屏幕捕获 | `lucide:monitor-up` | `platformUiIcons.monitorUp` | `modules/platform/capability-icons.ts`<br>`views/platform/design/index.vue`<br>`views/platform/workspace/capability-media-field.vue` |
 | 选取输入或启动操作 | `lucide:mouse-pointer-click` | `platformUiIcons.mousePointerClick` | `views/platform/workspace/index.vue` |
 | 3D 空间控制 | `lucide:move-3d` | `platformUiIcons.move3d` | `components/platform/model3d-viewer.vue`<br>`views/platform/workspace/camera-angle-control.vue` |
 | 提示词模板 | `lucide:notebook-tabs` | `platformUiIcons.notebookTabs` | `views/platform/design/design-prompt-template-popover.vue` |
@@ -132,8 +132,8 @@
 | 刷新/重试 | `lucide:refresh-cw` | `platformUiIcons.refreshCw` | `components/platform/workflow-run-card.vue`<br>`modules/platform/design-result-actions.ts`<br>`views/platform/model-training/index.vue`<br>`views/platform/report-generation/index.vue`<br>`views/platform/workbench/index.vue` |
 | 向左旋转或重置 | `lucide:rotate-ccw` | `platformUiIcons.rotateCcw` | `components/platform/comfy-mask-editor.vue`<br>`views/_core/profile/avatar-cropper.vue`<br>`views/platform/workspace/camera-angle-control.vue` |
 | 向右旋转 | `lucide:rotate-cw` | `platformUiIcons.rotateCw` | `components/platform/comfy-mask-editor.vue`<br>`views/_core/profile/avatar-cropper.vue` |
-| 查看捕获结果 | `lucide:scan` | `platformUiIcons.scan` | `modules/platform/capability-icons.ts`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts`<br>`views/platform/workspace/capability-media-field.vue` |
-| 区域编辑 | `lucide:scan-line` | `platformUiIcons.scanLine` | `modules/platform/capability-icons.ts`<br>`views/platform/workspace/capability-media-field.vue` |
+| 查看捕获结果 | `lucide:scan` | `platformUiIcons.scan` | `modules/platform/capability-icons.ts`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts`<br>`views/platform/design/index.vue`<br>`views/platform/design/local-image-editor.vue`<br>`views/platform/workspace/capability-media-field.vue` |
+| 区域编辑 | `lucide:scan-line` | `platformUiIcons.scanLine` | `modules/platform/capability-icons.ts`<br>`views/platform/design/index.vue`<br>`views/platform/design/local-image-editor.vue`<br>`views/platform/workspace/capability-media-field.vue` |
 | 图片理解 | `lucide:scan-search` | `platformUiIcons.scanSearch` | `modules/platform/capability-icons.ts`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts` |
 | 搜索 | `lucide:search` | `platformUiIcons.search` | `components/assistant/ai-assistant.vue`<br>`views/platform/access/index.vue`<br>`views/platform/assets/index.vue`<br>`views/platform/audit/index.vue`<br>`views/platform/dashboard/index.vue`<br>`views/platform/design/index.vue`<br>`views/platform/jobs/index.vue`<br>`views/platform/model-training/index.vue`<br>`views/platform/overview/index.vue`<br>`views/platform/projects/index.vue`<br>`views/platform/workspace/asset-picker-modal.vue` |
 | 发送消息 | `lucide:send` | `platformUiIcons.send` | `components/assistant/ai-assistant.vue`<br>`views/platform/design/index.vue` |
@@ -146,7 +146,7 @@
 | 收藏 | `lucide:star` | `platformUiIcons.star` | `modules/platform/asset-browser.ts`<br>`views/platform/assets/index.vue`<br>`views/platform/workspace/asset-picker-modal.vue` |
 | 灯光 | `lucide:sun` | `platformUiIcons.sun` | `components/platform/model3d-viewer.vue`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts` |
 | 环境调整 | `lucide:sun-medium` | `platformUiIcons.sunMedium` | `modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts` |
-| 编号标记编辑 | `lucide:tags` | `platformUiIcons.tags` | `modules/platform/capability-icons.ts`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts` |
+| 编号标记编辑 | `lucide:tags` | `platformUiIcons.tags` | `modules/platform/capability-icons.ts`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts`<br>`views/platform/design/local-image-editor.vue` |
 | 开关参数 | `lucide:toggle-left` | `platformUiIcons.toggleLeft` | `views/platform/design/design-quick-field.vue` |
 | 删除 | `lucide:trash-2` | `platformUiIcons.trash2` | `components/assistant/ai-assistant.vue`<br>`views/platform/assets/index.vue`<br>`views/platform/design/index.vue`<br>`views/platform/jobs/index.vue`<br>`views/platform/overview/index.vue`<br>`views/platform/report-generation/index.vue` |
 | 文本参数 | `lucide:type` | `platformUiIcons.type` | `views/platform/design/design-quick-field.vue` |
@@ -156,7 +156,7 @@
 | 放大图片或图像超分 | `lucide:zoom-in` | `platformUiIcons.zoomIn` | `components/platform/image-lightbox.vue`<br>`modules/platform/capability-icons.ts`<br>`modules/platform/design-modes.ts`<br>`modules/platform/design-result-actions.ts`<br>`views/_core/profile/avatar-cropper.vue` |
 | 缩小图片 | `lucide:zoom-out` | `platformUiIcons.zoomOut` | `components/platform/image-lightbox.vue` |
 | 参考图局部重绘 | `lucide:blend` | `platformUiIcons.blend` | `modules/platform/capability-icons.ts` |
-| KV 双图编辑 | `lucide:layers` | `platformUiIcons.layers` | `modules/platform/capability-icons.ts` |
+| 双图参考编辑 | `lucide:layers` | `platformUiIcons.layers` | `modules/platform/capability-icons.ts` |
 | 水平翻转 | `lucide:flip-horizontal-2` | `platformUiIcons.flipHorizontal2` | `components/platform/comfy-mask-editor.vue` |
 | 垂直翻转 | `lucide:flip-vertical-2` | `platformUiIcons.flipVertical2` | `components/platform/comfy-mask-editor.vue` |
 
@@ -171,6 +171,8 @@
 | `single-image-edit`     | `platformUiIcons.scanLine`                 |
 | `screen-capture-edit`   | `platformUiIcons.monitorUp`                |
 | `multi-image-edit`      | `platformUiIcons.images`                   |
+| `reference-image-edit`  | `platformUiIcons.images`                   |
+| `local-image-edit`      | `platformUiIcons.scanLine`                 |
 | `inpaint-single`        | `platformSemanticIcons.mask`               |
 | `inpaint-reference`     | `platformUiIcons.blend`                    |
 | `outpaint`              | `platformUiIcons.expand`                   |

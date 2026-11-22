@@ -3,7 +3,18 @@ import { z } from 'zod';
 import { useDatabase } from '~/utils/database';
 import { requireDesignConversation } from '~/utils/domain/design-conversations';
 import { getDesignInputAssets } from '~/utils/domain/design-input-assets';
-import { workspaceDraftAssetSelection } from '~/utils/domain/workflows/drafts';
+import {
+  draftAssetSelection,
+  workspaceDraftAssetSelection,
+} from '~/utils/domain/workflows/drafts';
+import {
+  localImageDraftSlots,
+  localImageEditKey,
+} from '~/utils/domain/workflows/local-image-edit';
+import {
+  referenceImageDraftSlots,
+  referenceImageEditKey,
+} from '~/utils/domain/workflows/reference-image-edit';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import { getUuidParam } from '~/utils/http/resource-id';
 import { hasAdministrativeRole, requireIdentity } from '~/utils/identity';
@@ -44,8 +55,13 @@ export default apiHandler(async (event) => {
   ) {
     throw new ApiError(404, 'WORKFLOW_NOT_READY', '工作流尚未就绪');
   }
-  const capability = await getCapabilityByAppKey(appKey);
-  if (!capability) {
+  const draftSlots = new Map([
+    [localImageEditKey, localImageDraftSlots],
+    [referenceImageEditKey, referenceImageDraftSlots],
+  ]);
+  const stagedSlots = draftSlots.get(appKey);
+  const capability = stagedSlots ? null : await getCapabilityByAppKey(appKey);
+  if (!stagedSlots && !capability) {
     throw new ApiError(404, 'WORKFLOW_NOT_READY', '工作流尚未就绪');
   }
   const [draft] = await sql<
@@ -75,12 +91,14 @@ export default apiHandler(async (event) => {
     userId: identity.id,
   });
   return {
-    inputAssetIds: workspaceDraftAssetSelection(
-      capability.parameterSchema,
-      draft.inputAssetIds,
-      assets,
-      false,
-    ),
+    inputAssetIds: stagedSlots
+      ? draftAssetSelection(stagedSlots, draft.inputAssetIds, assets, false)
+      : workspaceDraftAssetSelection(
+          capability?.parameterSchema,
+          draft.inputAssetIds,
+          assets,
+          false,
+        ),
     parameterValues: draft.parameterValues,
     updatedAt: draft.updatedAt.toISOString(),
   };

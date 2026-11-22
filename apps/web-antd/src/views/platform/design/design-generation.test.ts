@@ -45,6 +45,7 @@ const applications = [
   application('inpaint-single'),
   application('text-to-image-lora'),
   application('text-chat'),
+  application('image-edit-base'),
   application('future-workflow'),
   application('hidden', { visible: false }),
   application('unbound', { capabilityCode: undefined }),

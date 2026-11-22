@@ -1252,13 +1252,13 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '使用 KV 缓存模型高效融合底图与参考图，适合多轮设计迭代。',
       icon: 'lucide:layers',
       key: 'image-edit-kv',
-      name: 'KV 双图编辑',
+      name: '双图参考编辑',
       outputAssetTypes: ['image'],
-      shortName: 'KV',
+      shortName: '双图参考',
     },
     capability: {
       description: 'Flux2 Klein KV Cache 双图指令编辑。',
-      name: 'KV 双图编辑',
+      name: '双图参考编辑',
     },
     fileName: 'image-edit-kv-v1.json',
     version: {
@@ -1301,7 +1301,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
     workflow: {
       code: 'flux2-klein-image-edit-kv',
       description: 'Flux2 Klein 9B KV Cache 双图编辑工作流。',
-      name: 'Flux2 Klein KV 双图编辑',
+      name: '双图参考编辑',
     },
   },
 ];

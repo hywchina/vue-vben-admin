@@ -2,6 +2,39 @@ import type { CapabilityField } from '#/modules/platform/types';
 
 const imageMediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 
+export const referenceImageSlots: CapabilityField[] = [
+  '底图',
+  '设计参考',
+  '材质参考',
+].map((label, assetIndex) => ({
+  acceptedKinds: ['image'],
+  advanced: false,
+  assetIndex,
+  integer: false,
+  key: `referenceImage${assetIndex + 1}`,
+  label,
+  options: [],
+  required: assetIndex === 0,
+  type: 'asset',
+  uiControl: 'default',
+}));
+
+export const referenceImagePlaceholders = [
+  '以图1为底图，描述你想修改的内容',
+  '以图1为底图，参考图2调整设计',
+  '以图1为空间基础，融入图2的设计和图3的材质',
+];
+
+export function compactImageSelection(
+  selection: Readonly<Record<string, string>>,
+) {
+  return Object.fromEntries(
+    Object.values(selection)
+      .filter(Boolean)
+      .map((id, index) => [index, id]),
+  );
+}
+
 export interface MediaAssetAssignmentResult {
   acceptedAssetIds: string[];
   discardedCount: number;

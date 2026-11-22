@@ -1,6 +1,8 @@
 import type { DesignModeKey } from './design-modes';
 
 import { assetTypeIcons } from '#/modules/platform/asset-types';
+import { referenceImageEditKey } from '#/modules/platform/design-generation';
+import { localImageEditKey } from '#/modules/platform/local-image-edit';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 
@@ -73,6 +75,20 @@ export const designResultActionApplicationKeys: Partial<
   understand: 'image-understanding',
   upscale: 'image-upscale',
 };
+
+export function designResultActionAvailable(
+  action: DesignImageResultActionKey,
+  availableKeys: string[],
+) {
+  if (action === 'multi-image' && availableKeys.includes(referenceImageEditKey))
+    return true;
+  if (action === 'mask' && availableKeys.includes(localImageEditKey))
+    return ['inpaint-reference', 'inpaint-single'].some((key) =>
+      availableKeys.includes(key),
+    );
+  const key = designResultActionApplicationKeys[action];
+  return !key || availableKeys.includes(key);
+}
 
 export function designImageResultActions(
   mode: Exclude<DesignModeKey, 'report'>,

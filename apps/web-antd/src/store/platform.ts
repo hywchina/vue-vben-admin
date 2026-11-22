@@ -1,3 +1,4 @@
+import type { CreateJobInput } from '#/api/platform/jobs';
 import type {
   AssetGenerationCategory,
   AssetType,
@@ -408,6 +409,7 @@ export const usePlatformStore = defineStore('rail-platform', () => {
       | {
           designConversationId: string;
           designMode?: 'cabin' | 'cmf' | 'component' | 'report';
+          localEdit?: CreateJobInput['localEdit'];
         }
       | { modelUpdateId?: string; workspaceInstanceId: string },
     inputAssetIds: string[],

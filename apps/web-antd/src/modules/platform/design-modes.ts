@@ -4,6 +4,8 @@ import { assetTypeIcons } from '#/modules/platform/asset-types';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 
+import { localImageEditKey } from './local-image-edit';
+
 export type DesignModeKey = 'cabin' | 'cmf' | 'component' | 'report';
 
 export interface DesignModeToolDefinition {
@@ -31,6 +33,7 @@ export interface DesignModeDefinition {
 const defaultDesignMode: DesignModeDefinition = {
   applicationKeys: [
     'text-to-image',
+    localImageEditKey,
     'region-marker-edit',
     'inpaint-single',
     'multi-image-edit',
@@ -115,6 +118,7 @@ export const designModes: readonly DesignModeDefinition[] = [
   {
     applicationKeys: [
       'text-to-image',
+      localImageEditKey,
       'inpaint-single',
       'region-marker-edit',
       'multi-image-edit',
@@ -190,6 +194,7 @@ export const designModes: readonly DesignModeDefinition[] = [
   {
     applicationKeys: [
       'text-to-image',
+      localImageEditKey,
       'inpaint-single',
       'multi-image-edit',
       'image-upscale',
@@ -199,7 +204,6 @@ export const designModes: readonly DesignModeDefinition[] = [
       'text-to-image-lora',
       'single-image-edit',
       'inpaint-reference',
-      'image-edit-base',
       'image-edit-kv',
     ],
     backgroundImage: '/design-modes/cmf.webp',

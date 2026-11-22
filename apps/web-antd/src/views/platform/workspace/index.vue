@@ -47,6 +47,8 @@ import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
+import { referenceImageEditKey } from '#/modules/platform/design-generation';
+import { localImageEditKey } from '#/modules/platform/local-image-edit';
 import { captureRefreshRateValue } from '#/modules/platform/parameter-presentation';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
@@ -202,6 +204,8 @@ const compatibleDestinations = computed(() =>
     .filter(
       (item) =>
         item.key !== application.value?.key &&
+        item.key !== referenceImageEditKey &&
+        item.key !== localImageEditKey &&
         item.visible &&
         item.capabilityCode &&
         item.acceptedAssetTypes.includes(resultKind.value),

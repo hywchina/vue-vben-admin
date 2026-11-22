@@ -20,9 +20,10 @@ import {
   assetTypeLabels,
 } from '#/modules/platform/asset-types';
 import { cameraViewDescriptors } from '#/modules/platform/camera-angles';
+import { retiredBaseEditKey } from '#/modules/platform/design-generation';
 import {
   designImageResultActions,
-  designResultActionApplicationKeys,
+  designResultActionAvailable,
 } from '#/modules/platform/design-result-actions';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
@@ -201,6 +202,13 @@ const showInlineResultActions = computed(
 );
 const promptEntry = computed(() => {
   if (cameraViews.value.length > 0) return undefined;
+  const historicalPrompt = props.job.parameters.prompt;
+  if (
+    props.job.appKey === retiredBaseEditKey &&
+    typeof historicalPrompt === 'string' &&
+    historicalPrompt.trim()
+  )
+    return { key: 'prompt', value: historicalPrompt };
   const preferred = props.fields.find(
     (field) =>
       (field.key === 'prompt' || field.type === 'textarea') &&
@@ -251,19 +259,25 @@ const isBusinessImageResult = computed(() =>
 );
 const resultActions = computed(() => {
   const mode = businessResultMode.value;
-  return mode ? designImageResultActions(mode) : [];
+  if (!mode) return [];
+  const actions = designImageResultActions(mode);
+  return props.job.appKey === retiredBaseEditKey && props.conversationLayout
+    ? actions.map((action) =>
+        action.key === 'rerun' ? { ...action, label: '继续编辑' } : action,
+      )
+    : actions;
 });
 
 function resultActionDisabled(action: DesignImageResultActionKey) {
   if (action === 'save') return Boolean(activeOutput.value?.saved);
-  if (action === 'mask') {
-    return !activeOutput.value || !previewUrls[activeOutput.value.assetId];
-  }
-  const applicationKey = designResultActionApplicationKeys[action];
+  if (
+    action === 'mask' &&
+    (!activeOutput.value || !previewUrls[activeOutput.value.assetId])
+  )
+    return true;
   return Boolean(
-    applicationKey &&
     props.availableApplicationKeys &&
-    !props.availableApplicationKeys.includes(applicationKey),
+    !designResultActionAvailable(action, props.availableApplicationKeys),
   );
 }
 
@@ -290,7 +304,11 @@ function triggerResultAction(action: DesignImageResultActionKey) {
   if (action !== 'download') outputLightboxOpen.value = false;
   if (action === 'download') return emit('download', output);
   if (action === 'save') return requestSaveOutput(output);
-  if (action === 'rerun') return emit('rerun', props.job);
+  if (action === 'rerun') {
+    if (props.conversationLayout && props.job.appKey === retiredBaseEditKey)
+      return requestFlowOutput(output);
+    return emit('rerun', props.job);
+  }
   if (action === 'mask') {
     const previewUrl = previewUrls[output.assetId];
     if (previewUrl) emit('mask', output, previewUrl);

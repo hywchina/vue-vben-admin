@@ -194,7 +194,7 @@ export const platformUiIcons = {
   zoomOut: 'lucide:zoom-out',
   /** 参考图局部重绘 */
   blend: 'lucide:blend',
-  /** KV 双图编辑 */
+  /** 双图参考编辑 */
   layers: 'lucide:layers',
   /** 水平翻转 */
   flipHorizontal2: 'lucide:flip-horizontal-2',

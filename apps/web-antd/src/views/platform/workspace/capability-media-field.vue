@@ -45,6 +45,8 @@ const props = defineProps<{
   captureInput?: boolean;
   captureScope?: string;
   composer?: boolean;
+  editorPreviewUrl?: string;
+  embeddedRegion?: 'color' | 'number';
   field: CapabilityField;
   liveCapture?: (
     file: File,
@@ -61,6 +63,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   editorClosed: [];
+  regionApplied: [value: string];
   select: [assetId: string];
   'update:value': [value: string];
   upload: [file: File];
@@ -72,13 +75,17 @@ const fileInputRef = ref<HTMLInputElement>();
 const previewUrl = ref('');
 const loadingPreview = ref(false);
 const drawing = ref(false);
-const strokes = ref<Stroke[]>([]);
+const strokes = ref<Stroke[]>(parseRegionStrokes(String(props.value ?? '')));
 const activeStroke = ref<Stroke>();
 const brushColor = ref('255,0,0');
 const brushSize = ref(24);
 const brushOpacity = ref(1);
-const activeMarker = ref<string>();
-const drawingTool = ref<'box' | 'erase' | 'free' | 'square'>('free');
+const activeMarker = ref<string | undefined>(
+  props.embeddedRegion === 'number' ? '1' : undefined,
+);
+const drawingTool = ref<'box' | 'erase' | 'free' | 'square'>(
+  props.embeddedRegion === 'number' ? 'square' : 'free',
+);
 const redoHistory = ref<Stroke[][]>([]);
 const undoHistory = ref<Stroke[][]>([]);
 const editorOpen = ref(false);
@@ -146,7 +153,9 @@ async function loadPreview(assetId?: string) {
   if (!assetId) return;
   loadingPreview.value = true;
   try {
-    const preview = await getAssetPreviewApi(assetId);
+    const preview = props.editorPreviewUrl
+      ? { mode: 'url', url: props.editorPreviewUrl }
+      : await getAssetPreviewApi(assetId);
     if (assetId !== props.selectedAssetId || disposed) return;
     if (preview.mode !== 'url') throw new Error('图片资产没有返回预览地址');
     previewUrl.value = preview.url;
@@ -288,6 +297,34 @@ function redoDrawing() {
   strokes.value = cloneStrokes(next);
   redraw();
   syncRegionValue();
+}
+
+function applyRegion() {
+  if (!props.embeddedRegion) {
+    editorOpen.value = false;
+    return;
+  }
+  const valid = strokes.value.some((stroke) => {
+    const first = stroke.points[0];
+    const last = stroke.points.at(-1);
+    if (stroke.mode !== 'brush' || !first || !last) return false;
+    if (props.embeddedRegion === 'number')
+      return Boolean(stroke.marker) && first.x !== last.x && first.y !== last.y;
+    return stroke.type === 'free'
+      ? stroke.points.some(
+          (point) => point.x !== first.x || point.y !== first.y,
+        )
+      : first.x !== last.x && first.y !== last.y;
+  });
+  if (!valid) {
+    message.warning(
+      props.embeddedRegion === 'number'
+        ? '请至少绘制一个编号区域'
+        : '请先绘制需要重绘的颜色分区',
+    );
+    return;
+  }
+  emit('regionApplied', serializeStrokes());
 }
 
 function syncRegionValue() {
@@ -652,7 +689,7 @@ watch(
     maskEditorOpen.value = false;
     lightboxOpen.value = false;
     void loadPreview(assetId);
-    void loadSelectedAssetDetail(assetId);
+    if (!props.embeddedRegion) void loadSelectedAssetDetail(assetId);
   },
   { immediate: true },
 );
@@ -730,260 +767,287 @@ onBeforeUnmount(() => {
     }"
     :style="{ '--field-accent': accent }"
   >
-    <header v-if="compactCapture" class="capture-composer-heading">
-      <div>
-        <span>图片{{ (field.assetIndex ?? 0) + 1 }} · 实时输入</span>
-        <small class="capture-role" :title="field.label">
-          {{ field.label }}
-        </small>
-        <small v-if="captureActive" class="capture-connected">已连接</small>
-      </div>
-      <slot name="capture-switch"></slot>
-    </header>
-    <header v-else>
-      <div>
-        <span>{{ field.label }}</span>
-        <small v-if="field.required">必填</small>
-      </div>
-      <IconifyIcon
-        :icon="
-          field.type === 'capture'
-            ? platformUiIcons.monitorUp
-            : field.type === 'mask'
-              ? platformUiIcons.paintbrush
-              : field.type === 'region'
-                ? platformUiIcons.squareDashedMousePointer
-                : assetTypeIcons.image
-        "
-      />
-    </header>
+    <template v-if="!embeddedRegion">
+      <header v-if="compactCapture" class="capture-composer-heading">
+        <div>
+          <span>图片{{ (field.assetIndex ?? 0) + 1 }} · 实时输入</span>
+          <small class="capture-role" :title="field.label">
+            {{ field.label }}
+          </small>
+          <small v-if="captureActive" class="capture-connected">已连接</small>
+        </div>
+        <slot name="capture-switch"></slot>
+      </header>
+      <header v-else>
+        <div>
+          <span>{{ field.label }}</span>
+          <small v-if="field.required">必填</small>
+        </div>
+        <IconifyIcon
+          :icon="
+            field.type === 'capture'
+              ? platformUiIcons.monitorUp
+              : field.type === 'mask'
+                ? platformUiIcons.paintbrush
+                : field.type === 'region'
+                  ? platformUiIcons.squareDashedMousePointer
+                  : assetTypeIcons.image
+          "
+        />
+      </header>
 
-    <div
-      v-if="captureInput || field.type === 'capture'"
-      class="capture-inline-panel"
-    >
-      <div class="capture-preview-frame inline">
-        <video
-          v-show="false"
-          ref="captureVideoRef"
-          autoplay
-          muted
-          playsinline
-          @loadedmetadata="restoreCaptureCrop"
-        ></video>
-        <canvas
-          v-show="captureActive"
-          ref="capturePreviewCanvasRef"
-          aria-label="当前捕获区域实时预览"
-        ></canvas>
+      <div
+        v-if="captureInput || field.type === 'capture'"
+        class="capture-inline-panel"
+      >
+        <div class="capture-preview-frame inline">
+          <video
+            v-show="false"
+            ref="captureVideoRef"
+            autoplay
+            muted
+            playsinline
+            @loadedmetadata="restoreCaptureCrop"
+          ></video>
+          <canvas
+            v-show="captureActive"
+            ref="capturePreviewCanvasRef"
+            aria-label="当前捕获区域实时预览"
+          ></canvas>
+          <img
+            v-if="!captureActive && previewUrl"
+            alt="已捕获画面"
+            crossorigin="anonymous"
+            :src="previewUrl"
+            @click="lightboxOpen = true"
+          />
+          <div v-if="!captureActive && !previewUrl" class="capture-placeholder">
+            <IconifyIcon :icon="platformUiIcons.monitorUp" />
+            <p v-if="compactCapture">尚未连接</p>
+            <p v-else>共享屏幕或打开摄像头后，可截取当前帧或持续实时运行。</p>
+          </div>
+        </div>
+        <div class="capture-controls">
+          <div class="capture-direct-actions primary-row">
+            <Button
+              :disabled="captureStarting"
+              :type="
+                captureActive && captureMode === 'screen'
+                  ? 'primary'
+                  : 'default'
+              "
+              @click="startCapture('screen')"
+            >
+              <IconifyIcon :icon="platformUiIcons.monitorUp" />
+              共享屏幕
+            </Button>
+            <Button
+              :disabled="captureStarting"
+              :type="
+                captureActive && captureMode === 'camera'
+                  ? 'primary'
+                  : 'default'
+              "
+              @click="startCapture('camera')"
+            >
+              <IconifyIcon :icon="platformUiIcons.camera" />
+              摄像头
+            </Button>
+          </div>
+          <div class="capture-direct-actions">
+            <slot name="capture-settings"></slot>
+            <Button
+              :disabled="!captureActive || liveCapturing"
+              @click="openAreaPicker"
+            >
+              <IconifyIcon :icon="platformUiIcons.scan" />
+              选择区域
+            </Button>
+            <Button
+              v-if="compactCapture"
+              :disabled="!captureActive || liveCapturing"
+              @click="captureFrame"
+            >
+              <IconifyIcon :icon="platformUiIcons.camera" />
+              捕获当前帧
+            </Button>
+            <Button
+              :danger="liveCapturing"
+              :disabled="!captureActive || !liveCapture"
+              :type="liveCapturing ? 'primary' : 'default'"
+              @click="toggleLive"
+            >
+              <IconifyIcon
+                :icon="
+                  liveCapturing ? platformUiIcons.square : platformUiIcons.radio
+                "
+              />
+              {{ liveCapturing ? '停止实时' : '开始实时' }}
+            </Button>
+          </div>
+          <div class="capture-status" role="status" aria-live="polite">
+            <span v-if="captureStarting">等待画面授权…</span>
+            <span v-else-if="liveSubmitting">
+              实时运行中：正在生成，完成后检测下一帧。
+            </span>
+            <span v-else-if="liveCapturing">实时运行中：等待画面变化。</span>
+            <span v-else-if="captureActive">
+              画面已连接，尚未开启实时生成。
+            </span>
+            <span v-else>选择画面来源，填写指令后开始。</span>
+            <span v-if="captureActive && captureCrop">
+              捕获区域 {{ captureCrop.width }} × {{ captureCrop.height }}
+            </span>
+            <span v-else-if="captureActive">当前使用完整画面</span>
+            <span v-if="captureActive && !compactCapture">
+              检测间隔 {{ refreshRate ?? 500 }} ms
+            </span>
+          </div>
+          <div class="capture-direct-actions utility-row">
+            <Button
+              v-if="!compactCapture"
+              :disabled="captureStarting || captureActive"
+              class="asset-picker-button"
+              @click="pickerOpen = true"
+            >
+              <IconifyIcon :icon="platformSemanticIcons.assets" />
+              项目资产
+            </Button>
+            <Button
+              v-if="!compactCapture"
+              :disabled="captureStarting || captureActive"
+              @click="fileInputRef?.click()"
+            >
+              <IconifyIcon :icon="platformUiIcons.upload" />
+              导入
+            </Button>
+            <Button
+              v-if="!compactCapture"
+              :disabled="!captureActive || liveCapturing"
+              @click="captureFrame"
+            >
+              捕获当前帧
+            </Button>
+            <Button
+              v-if="!compactCapture || captureActive || captureStarting"
+              danger
+              :disabled="!captureActive && !captureStarting"
+              @click="stopCapture"
+            >
+              停止共享
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-else
+        class="media-preview"
+        :class="{ interactive: Boolean(previewUrl) }"
+        @click="openSelectedImageEditor"
+      >
         <img
-          v-if="!captureActive && previewUrl"
-          alt="已捕获画面"
+          v-if="previewUrl"
+          alt=""
           crossorigin="anonymous"
           :src="previewUrl"
-          @click="lightboxOpen = true"
         />
-        <div v-if="!captureActive && !previewUrl" class="capture-placeholder">
-          <IconifyIcon :icon="platformUiIcons.monitorUp" />
-          <p v-if="compactCapture">尚未连接</p>
-          <p v-else>共享屏幕或打开摄像头后，可截取当前帧或持续实时运行。</p>
-        </div>
-      </div>
-      <div class="capture-controls">
-        <div class="capture-direct-actions primary-row">
-          <Button
-            :disabled="captureStarting"
-            :type="
-              captureActive && captureMode === 'screen' ? 'primary' : 'default'
+        <span v-if="previewUrl" class="preview-affordance">
+          <ComfyMaskIcon v-if="field.type === 'mask'" :size="15" />
+          <IconifyIcon
+            v-else
+            :icon="
+              isDrawingField
+                ? platformUiIcons.scanLine
+                : platformUiIcons.maximize2
             "
-            @click="startCapture('screen')"
-          >
-            <IconifyIcon :icon="platformUiIcons.monitorUp" />
-            共享屏幕
-          </Button>
-          <Button
-            :disabled="captureStarting"
-            :type="
-              captureActive && captureMode === 'camera' ? 'primary' : 'default'
+          />
+          {{
+            field.type === 'mask'
+              ? '打开遮罩编辑器'
+              : isDrawingField
+                ? '打开可视化编辑器'
+                : '点击放大'
+          }}
+        </span>
+        <div v-if="!previewUrl" class="media-placeholder">
+          <IconifyIcon
+            :icon="
+              loadingPreview
+                ? platformUiIcons.loaderCircle
+                : platformUiIcons.scan
             "
-            @click="startCapture('camera')"
-          >
-            <IconifyIcon :icon="platformUiIcons.camera" />
-            摄像头
-          </Button>
-        </div>
-        <div class="capture-direct-actions">
-          <slot name="capture-settings"></slot>
-          <Button
-            :disabled="!captureActive || liveCapturing"
-            @click="openAreaPicker"
-          >
-            <IconifyIcon :icon="platformUiIcons.scan" />
-            选择区域
-          </Button>
-          <Button
-            v-if="compactCapture"
-            :disabled="!captureActive || liveCapturing"
-            @click="captureFrame"
-          >
-            <IconifyIcon :icon="platformUiIcons.camera" />
-            捕获当前帧
-          </Button>
-          <Button
-            :danger="liveCapturing"
-            :disabled="!captureActive || !liveCapture"
-            :type="liveCapturing ? 'primary' : 'default'"
-            @click="toggleLive"
-          >
-            <IconifyIcon
-              :icon="
-                liveCapturing ? platformUiIcons.square : platformUiIcons.radio
-              "
-            />
-            {{ liveCapturing ? '停止实时' : '开始实时' }}
-          </Button>
-        </div>
-        <div class="capture-status" role="status" aria-live="polite">
-          <span v-if="captureStarting">等待画面授权…</span>
-          <span v-else-if="liveSubmitting">
-            实时运行中：正在生成，完成后检测下一帧。
-          </span>
-          <span v-else-if="liveCapturing">实时运行中：等待画面变化。</span>
-          <span v-else-if="captureActive">画面已连接，尚未开启实时生成。</span>
-          <span v-else>选择画面来源，填写指令后开始。</span>
-          <span v-if="captureActive && captureCrop">
-            捕获区域 {{ captureCrop.width }} × {{ captureCrop.height }}
-          </span>
-          <span v-else-if="captureActive">当前使用完整画面</span>
-          <span v-if="captureActive && !compactCapture">
-            检测间隔 {{ refreshRate ?? 500 }} ms
-          </span>
-        </div>
-        <div class="capture-direct-actions utility-row">
-          <Button
-            v-if="!compactCapture"
-            :disabled="captureStarting || captureActive"
-            class="asset-picker-button"
-            @click="pickerOpen = true"
-          >
-            <IconifyIcon :icon="platformSemanticIcons.assets" />
-            项目资产
-          </Button>
-          <Button
-            v-if="!compactCapture"
-            :disabled="captureStarting || captureActive"
-            @click="fileInputRef?.click()"
-          >
-            <IconifyIcon :icon="platformUiIcons.upload" />
-            导入
-          </Button>
-          <Button
-            v-if="!compactCapture"
-            :disabled="!captureActive || liveCapturing"
-            @click="captureFrame"
-          >
-            捕获当前帧
-          </Button>
-          <Button
-            v-if="!compactCapture || captureActive || captureStarting"
-            danger
-            :disabled="!captureActive && !captureStarting"
-            @click="stopCapture"
-          >
-            停止共享
-          </Button>
+          />
+          <p>
+            {{ loadingPreview ? '正在读取预览' : '选择项目资产或导入图像' }}
+          </p>
         </div>
       </div>
-    </div>
 
-    <div
-      v-else
-      class="media-preview"
-      :class="{ interactive: Boolean(previewUrl) }"
-      @click="openSelectedImageEditor"
-    >
-      <img v-if="previewUrl" alt="" crossorigin="anonymous" :src="previewUrl" />
-      <span v-if="previewUrl" class="preview-affordance">
-        <ComfyMaskIcon v-if="field.type === 'mask'" :size="15" />
-        <IconifyIcon
-          v-else
-          :icon="
-            isDrawingField
-              ? platformUiIcons.scanLine
-              : platformUiIcons.maximize2
-          "
-        />
-        {{
-          field.type === 'mask'
-            ? '打开遮罩编辑器'
-            : isDrawingField
-              ? '打开可视化编辑器'
-              : '点击放大'
-        }}
-      </span>
-      <div v-if="!previewUrl" class="media-placeholder">
-        <IconifyIcon
-          :icon="
-            loadingPreview ? platformUiIcons.loaderCircle : platformUiIcons.scan
-          "
-        />
-        <p>{{ loadingPreview ? '正在读取预览' : '选择项目资产或导入图像' }}</p>
+      <p v-if="field.help && !composer" class="media-help">{{ field.help }}</p>
+
+      <div
+        v-if="!captureInput && field.type !== 'capture'"
+        class="media-actions"
+      >
+        <Button class="asset-picker-button" @click="pickerOpen = true">
+          <IconifyIcon :icon="platformSemanticIcons.assets" />
+          从项目资产选择
+        </Button>
+        <Button @click="fileInputRef?.click()">
+          <IconifyIcon :icon="platformUiIcons.upload" />
+          导入
+        </Button>
       </div>
-    </div>
+      <input
+        ref="fileInputRef"
+        accept="image/*"
+        hidden
+        type="file"
+        @change="handleFile"
+      />
 
-    <p v-if="field.help && !composer" class="media-help">{{ field.help }}</p>
+      <footer v-if="selectedAsset && !composer">
+        <span>{{ selectedAsset.name }}</span>
+        <small>V{{ selectedAsset.version }}</small>
+      </footer>
 
-    <div v-if="!captureInput && field.type !== 'capture'" class="media-actions">
-      <Button class="asset-picker-button" @click="pickerOpen = true">
-        <IconifyIcon :icon="platformSemanticIcons.assets" />
-        从项目资产选择
-      </Button>
-      <Button @click="fileInputRef?.click()">
-        <IconifyIcon :icon="platformUiIcons.upload" />
-        导入
-      </Button>
-    </div>
-    <input
-      ref="fileInputRef"
-      accept="image/*"
-      hidden
-      type="file"
-      @change="handleFile"
-    />
-
-    <footer v-if="selectedAsset && !composer">
-      <span>{{ selectedAsset.name }}</span>
-      <small>V{{ selectedAsset.version }}</small>
-    </footer>
-
-    <AssetPickerModal
-      v-model:open="pickerOpen"
-      :accepted-kinds="field.acceptedKinds"
-      :assets="assets"
-      :project-id="projectId"
-      :selected-asset-id="selectedAssetId"
-      @select="handleAssetSelect"
-    />
-    <ImageLightbox
-      v-model:open="lightboxOpen"
-      :title="selectedAsset?.name"
-      :url="previewUrl"
-    />
-    <ComfyMaskEditor
-      v-if="field.type === 'mask' && saveMask"
-      v-model:open="maskEditorOpen"
-      :on-save="saveMask"
-      :src="previewUrl"
-      :title="selectedAsset?.name ?? field.label"
-    />
-
-    <Modal
+      <AssetPickerModal
+        v-model:open="pickerOpen"
+        :accepted-kinds="field.acceptedKinds"
+        :assets="assets"
+        :project-id="projectId"
+        :selected-asset-id="selectedAssetId"
+        @select="handleAssetSelect"
+      />
+      <ImageLightbox
+        v-model:open="lightboxOpen"
+        :title="selectedAsset?.name"
+        :url="previewUrl"
+      />
+      <ComfyMaskEditor
+        v-if="field.type === 'mask' && saveMask"
+        v-model:open="maskEditorOpen"
+        :on-save="saveMask"
+        :src="previewUrl"
+        :title="selectedAsset?.name ?? field.label"
+      />
+    </template>
+    <component
+      :is="embeddedRegion ? 'section' : Modal"
       v-if="field.type === 'region'"
-      v-model:open="editorOpen"
-      :footer="null"
-      title="分区重绘编辑器"
-      width="min(1180px, 96vw)"
-      wrap-class-name="workflow-image-editor"
+      v-bind="
+        embeddedRegion
+          ? {}
+          : {
+              open: editorOpen,
+              footer: null,
+              title: '分区重绘编辑器',
+              width: 'min(1180px, 96vw)',
+              wrapClassName: 'workflow-image-editor',
+            }
+      "
+      @update:open="editorOpen = $event"
     >
       <div class="editor-toolbar">
         <Button
@@ -1054,7 +1118,7 @@ onBeforeUnmount(() => {
             activeMarker = undefined;
           "
         ></button>
-        <div class="marker-buttons">
+        <div v-if="embeddedRegion !== 'color'" class="marker-buttons">
           <button
             v-for="marker in ['1', '2', '3', '4', '5', '6']"
             :key="marker"
@@ -1113,10 +1177,19 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <div class="editor-footer">
-        <span>不同颜色表示不同重绘分区，可撤销、重做或擦除。</span>
-        <Button type="primary" @click="editorOpen = false">应用分区</Button>
+        <span v-if="embeddedRegion === 'number'">
+          选择编号后，在底图上拖出区域。
+        </span>
+        <span v-else>不同颜色表示不同重绘分区，可撤销、重做或擦除。</span>
+        <Button
+          :aria-label="embeddedRegion ? '保存' : undefined"
+          type="primary"
+          @click="applyRegion"
+        >
+          {{ embeddedRegion ? '保存' : '应用分区' }}
+        </Button>
       </div>
-    </Modal>
+    </component>
 
     <Modal
       v-model:open="areaOpen"
