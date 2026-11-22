@@ -71,6 +71,7 @@ import {
 import AssetSaveModal from '#/components/platform/asset-save-modal.vue';
 import CameraViewPicker from '#/components/platform/camera-view-picker.vue';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
+import WorkflowLoraPicker from '#/components/platform/workflow-lora-picker.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import {
   assetImageAction,
@@ -154,7 +155,7 @@ import LocalImageEditor from './local-image-editor.vue';
 const DEFAULT_APP_KEY = 'text-to-image';
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 type BusinessResultAction =
-  | 'environment'
+  | 'image-edit'
   | 'mark'
   | 'multi-angle'
   | 'multi-image'
@@ -591,7 +592,12 @@ const compactFields = computed(() => {
   const fields = capability.value?.fields ?? [];
   const keys = capability.value?.presentation?.quickFieldKeys;
   return keys
-    ? keys.flatMap((key) => fields.find((field) => field.key === key) ?? [])
+    ? [
+        ...fields.filter((field) => field.loraCapabilityCode),
+        ...keys.flatMap(
+          (key) => fields.find((field) => field.key === key) ?? [],
+        ),
+      ]
     : scalarFields.value.filter(
         (field) =>
           field.key !== promptField.value?.key &&
@@ -3059,19 +3065,19 @@ async function markOutput(
   }
 }
 
-async function changeEnvironment(output: PlatformJobOutput) {
+async function editImage(
+  output: PlatformJobOutput,
+  mode: Exclude<DesignModeKey, 'report'>,
+) {
   try {
-    await prepareOutputInComposer(
-      output,
-      'single-image-edit',
-      'cabin',
-      'environment-change',
+    if (!availableApplicationKeysForMode(mode).includes(referenceImageEditKey))
+      throw new Error('当前模块未启用参考图编辑');
+    await prepareReferenceResult(output, mode);
+    message.success(
+      '图片已作为图1填入，请填写编辑指令或补充参考图（最多3张），确认后发送',
     );
-    message.success('图片已填入“环境更改”编辑框，请选择环境模板并确认后发送');
   } catch (error) {
-    message.error(
-      error instanceof Error ? error.message : '无法进入环境更改编辑框',
-    );
+    message.error(error instanceof Error ? error.message : '无法进入图片编辑');
   }
 }
 
@@ -3252,9 +3258,7 @@ function handleBusinessResultAction(
   if (action === 'upscale') return openUpscale(output, mode);
   if (action === 'understand') return understandOutput(output, mode);
   if (action === 'mark' && mode !== 'cmf') return markOutput(output, mode);
-  if (action === 'environment' && mode === 'cabin') {
-    return changeEnvironment(output);
-  }
+  if (action === 'image-edit') return editImage(output, mode);
   if (action === 'multi-angle' && mode !== 'cmf') {
     return openMultiAngle(output, mode);
   }
@@ -4056,6 +4060,7 @@ onBeforeUnmount(() => {
                     :field="cameraCountField(field, parameterValues)"
                     :value="parameterValues[field.key]"
                     :generation-count="parameterValues.generationCount"
+                    :parameters="taskParameters()"
                     @change="setQuickFieldValue(field, $event)"
                   />
                   <DesignImageSize
@@ -4375,8 +4380,15 @@ onBeforeUnmount(() => {
               <em v-if="field.advanced">高级</em>
             </span>
             <small v-if="field.help">{{ field.help }}</small>
+            <WorkflowLoraPicker
+              v-if="field.loraCapabilityCode"
+              :code="field.loraCapabilityCode"
+              :value="parameterValues[field.key]"
+              :parameters="taskParameters()"
+              @change="setFieldValue(field, $event)"
+            />
             <Textarea
-              v-if="field.type === 'textarea'"
+              v-else-if="field.type === 'textarea'"
               :value="fieldTextValue(field)"
               :maxlength="field.maxLength"
               :placeholder="field.placeholder"

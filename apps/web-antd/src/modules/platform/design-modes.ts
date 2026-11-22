@@ -4,6 +4,7 @@ import { assetTypeIcons } from '#/modules/platform/asset-types';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 
+import { referenceImageEditKey } from './design-generation';
 import { localImageEditKey } from './local-image-edit';
 
 export type DesignModeKey = 'cabin' | 'cmf' | 'component' | 'report';
@@ -14,7 +15,6 @@ export interface DesignModeToolDefinition {
   key: string;
   label: string;
   placeholder?: string;
-  templateCategoryIds?: readonly string[];
 }
 
 export interface DesignModeDefinition {
@@ -70,6 +70,12 @@ const defaultDesignMode: DesignModeDefinition = {
       label: '标记生成',
     },
     {
+      appKey: referenceImageEditKey,
+      icon: platformUiIcons.pencil,
+      key: 'image-edit',
+      label: '图片编辑',
+    },
+    {
       appKey: 'inpaint-single',
       icon: platformSemanticIcons.mask,
       key: 'inpaint-single',
@@ -88,15 +94,6 @@ const defaultDesignMode: DesignModeDefinition = {
       label: '平面图填色',
       placeholder:
         '上传客室平面图，并描述需要填充的区域、颜色、材质及整体风格……',
-    },
-    {
-      appKey: 'single-image-edit',
-      icon: platformUiIcons.sunMedium,
-      key: 'environment-change',
-      label: '环境更改',
-      placeholder:
-        '描述需要调整的光环境与窗外环境，如白天、夜晚、森林或城市等……',
-      templateCategoryIds: ['light-environment', 'outside-environment'],
     },
     {
       appKey: 'image-upscale',

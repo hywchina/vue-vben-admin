@@ -1,4 +1,5 @@
 import { splitImageGenerationParameters } from './image-generation-count';
+import { splitOptionalLora } from './optional-lora';
 import { isWorkflowMediaParameter, workflowParameterSchema } from './schema';
 
 export interface WorkspaceDraftAsset {
@@ -12,6 +13,7 @@ export function assertWorkspaceDraftParameterKeys(
   allowImageGenerationCount = false,
   allowCameraViews = false,
 ) {
+  parameterValues = splitOptionalLora(parameterValues).workflowParameters;
   if (allowImageGenerationCount) {
     const { views, workflowParameters } =
       splitImageGenerationParameters(parameterValues);

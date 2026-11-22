@@ -24,6 +24,11 @@ import {
   localImageEditKey,
 } from '~/utils/domain/workflows/local-image-edit';
 import {
+  assertFixedWorkflowModels,
+  splitOptionalLora,
+  validateOptionalLora,
+} from '~/utils/domain/workflows/optional-lora';
+import {
   referenceImageEditKey,
   referenceImageWorkflow,
 } from '~/utils/domain/workflows/reference-image-edit';
@@ -262,12 +267,24 @@ export default apiHandler(async (event) => {
             views,
           );
       }
-      materializeWorkflow(
+      const materialized = materializeWorkflow(
         capability.apiJson,
         capability.parameterSchema,
         parameters,
       );
+      assertFixedWorkflowModels(
+        capability.apiJson,
+        materialized,
+        capability.parameterSchema,
+      );
+      await validateOptionalLora(
+        materialized,
+        splitOptionalLora(input.parameters).lora,
+        undefined,
+        capability.outputSchema,
+      );
     } catch (error) {
+      if (error instanceof ApiError) throw error;
       throw new ApiError(
         400,
         'WORKFLOW_PARAMETER_INVALID',

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ASSET_KINDS } from '../assets/validation';
+import { splitOptionalLora } from './optional-lora';
 
 export const workflowScalarParameterTypeSchema = z.enum([
   'boolean',
@@ -370,6 +371,7 @@ export function materializeWorkflow(
   parameterSchema: unknown,
   parameters: Record<string, unknown>,
 ) {
+  parameters = splitOptionalLora(parameters).workflowParameters;
   const workflow = parseApiWorkflow(structuredClone(apiJson));
   const definitions = z.array(workflowParameterSchema).parse(parameterSchema);
   const scalarDefinitions = definitions.filter(
@@ -497,6 +499,8 @@ export function publicParameterSchema(value: unknown) {
 
 export function parseWorkflowVersion(input: unknown) {
   const parsed = workflowVersionSchema.parse(input);
+  if (parsed.parameterSchema.some((field) => field.key === 'optionalLora'))
+    throw new Error('optionalLora 是平台保留参数，不能映射到工作流输入');
   const workflow = parseApiWorkflow(parsed.apiJson);
   validateWorkflowMappings(
     workflow,

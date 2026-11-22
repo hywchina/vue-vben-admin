@@ -18,6 +18,7 @@ import {
   localImageDraftSlots,
   localImageEditKey,
 } from '~/utils/domain/workflows/local-image-edit';
+import { splitOptionalLora } from '~/utils/domain/workflows/optional-lora';
 import {
   referenceImageDraftSlots,
   referenceImageEditKey,
@@ -125,7 +126,9 @@ export default apiHandler(async (event) => {
       );
     else {
       const { views, workflowParameters: remaining } =
-        splitImageGenerationParameters(draftParameters);
+        splitImageGenerationParameters(
+          splitOptionalLora(draftParameters).workflowParameters,
+        );
       if (views) throw new Error('当前功能不支持多视角选择');
       if (Object.keys(remaining).some((key) => key !== 'prompt'))
         throw new Error('当前工作流暂不可用，仅可保存编辑指令和生成数量');

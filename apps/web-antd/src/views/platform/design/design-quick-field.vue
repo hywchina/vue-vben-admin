@@ -8,12 +8,14 @@ import { IconifyIcon } from '@vben/icons';
 import { Input, InputNumber, Popover, Switch, Textarea } from 'ant-design-vue';
 
 import CameraViewPicker from '#/components/platform/camera-view-picker.vue';
+import WorkflowLoraPicker from '#/components/platform/workflow-lora-picker.vue';
 import { cameraViewsKey } from '#/modules/platform/camera-views';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 const props = defineProps<{
   field: CapabilityField;
   generationCount?: unknown;
+  parameters?: Record<string, unknown>;
   value: unknown;
 }>();
 
@@ -55,8 +57,15 @@ function randomizeSeed() {
 </script>
 
 <template>
+  <WorkflowLoraPicker
+    v-if="field.loraCapabilityCode"
+    :code="field.loraCapabilityCode"
+    :value="value"
+    :parameters="parameters"
+    @change="emit('change', $event)"
+  />
   <CameraViewPicker
-    v-if="field.key === cameraViewsKey"
+    v-else-if="field.key === cameraViewsKey"
     :value="value"
     :count="generationCount"
     @change="emit('change', $event)"

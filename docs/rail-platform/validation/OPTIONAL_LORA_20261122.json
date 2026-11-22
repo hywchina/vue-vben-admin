@@ -1,0 +1,147 @@
+{
+  "date": "2026-11-22",
+  "scope": "local source development and acceptance; no deployment or delivery synchronization",
+  "gitBase": "f4b76b1d50ca4f064220e5c54d6708c427346d2d",
+  "databaseMigration": null,
+  "implementation": {
+    "catalogWorkflows": 18,
+    "runtimeAdapters": ["MODEL", "RUN_CONTEXT", "CLIP", "HYPIR/PEFT"],
+    "targets": "only model ancestors of primary published outputs; unused camera restoration preview excluded",
+    "defaults": "optional LoRA disabled; no catalog dependency when disabled",
+    "history": "published API JSON and old tasks unchanged; original test LoRA bypass applies only to new optional requests",
+    "requiredLoras": "camera acceleration and control adapters retained",
+    "identity": "full SHA-256 for selected LoRA and actual base weights; metadata variant + every target matrix/layer checked; Worker and node revalidate",
+    "candidateModelTests": "catalog uses candidate snapshot and locked replacement fields; administrator only; changed/published candidates rejected",
+    "fixedDependencies": "New requests cannot override versioned model filenames through old scalar fields, including when optionalLora is omitted. Normal forms hide these fields; administrator version inspection and controlled model updates remain available. Old task records/results are unchanged; old pending tasks retain their execution path."
+  },
+  "checks": {
+    "typecheck": "pnpm typecheck:rail passed",
+    "apiUnit": {
+      "files": 44,
+      "tests": 279
+    },
+    "webUnit": {
+      "files": 50,
+      "tests": 366
+    },
+    "pythonCompatibility": {
+      "tests": 6,
+      "command": "python code/ComfyUI/custom_nodes/rail_optional_lora/test_compatibility.py"
+    },
+    "nativeAdapters": {
+      "tests": 3,
+      "command": "python code/ComfyUI/custom_nodes/rail_optional_lora/test_adapters.py",
+      "environment": "ComfyUI Python environment",
+      "scope": "real ComfyUI patch mapping on tiny CPU model/encoder, wrapped text encoder mapping, context immutability, real diffusers/PEFT forward with existing adapter retained"
+    },
+    "integration": {
+      "groups": 7,
+      "modelManagementHttpChecks": 68,
+      "storage": "isolated real PostgreSQL/MinIO/filesystem",
+      "comfyService": "protocol fixture; distinct from GPU checks"
+    },
+    "productionBuild": "pnpm build:rail passed",
+    "scopedFormatEslintStylelint": "passed; changed application files only",
+    "globalOxlint": "type-aware passed",
+    "globalLint": {
+      "status": "blocked by existing files",
+      "formatFiles": 59,
+      "preserved": "unrelated existing contract materials kept unchanged",
+      "additionalBaselineEslint": "direct broad scan also finds two existing catalog-specifier errors in unchanged apps/platform-api/package.json (@xmldom/xmldom and fflate); changed-code ESLint passes"
+    },
+    "environment": {
+      "node": "24.16.0",
+      "pnpm": "11.16.0",
+      "timezone": "Asia/Shanghai"
+    },
+    "productionDependencyImage": {
+      "image": "rail-comfyui:2026.10.10",
+      "result": "3 native adapter tests passed",
+      "scope": "current ComfyUI source mounted read-only into the existing production dependency image; isolated --rm container with --network none; tiny CPU models, not full inference or a rebuilt image"
+    }
+  },
+  "gpu": {
+    "device": "NVIDIA GeForce RTX 3090",
+    "driver": "595.99.02",
+    "scope": "real local CUDA; Flux2 Klein 9B text-to-image off/on and numbered region editing with optional context LoRA",
+    "modelPatches": 112,
+    "directGenerations": [
+      {
+        "enabled": false,
+        "promptId": "3110114c-0de1-4103-96aa-a558a25f5980",
+        "bytes": 446407,
+        "path": "assets/optional-lora-20261122/gpu-disabled.png"
+      },
+      {
+        "enabled": true,
+        "promptId": "3612bf7e-5d2d-4766-bbca-5f9d1787a0b2",
+        "bytes": 429633,
+        "path": "assets/optional-lora-20261122/gpu-enabled.png",
+        "selection": {
+          "name": "flux2_klein_9b_interior_lora_smoke.safetensors",
+          "sha256": "1f8088d31fddf1e5454e43614e41e0e593969549ba648b2823d22e30482011d4",
+          "targetId": "branch-0",
+          "baseFingerprint": "865ba09f5b4c3cbd3468a4bd3acb9fcb2f8740c54317482f0bcd4ed1d3655cee",
+          "strength": 0.8
+        }
+      }
+    ],
+    "pixelComparison": {
+      "size": [512, 512],
+      "changedPixels": 259155,
+      "fraction": 0.9885978698730469,
+      "meanAbsoluteChannelDifference": [
+        9.288013458251953, 8.832103729248047, 8.5059814453125
+      ]
+    },
+    "context": {
+      "status": "succeeded",
+      "promptId": "06bd03b3-edbe-4919-a964-801f257ce51d",
+      "bytes": 1026955,
+      "selection": {
+        "name": "flux2_klein_9b_interior_lora_smoke.safetensors",
+        "sha256": "1f8088d31fddf1e5454e43614e41e0e593969549ba648b2823d22e30482011d4",
+        "targetId": "branch-0",
+        "baseFingerprint": "865ba09f5b4c3cbd3468a4bd3acb9fcb2f8740c54317482f0bcd4ed1d3655cee",
+        "strength": 0.7
+      },
+      "workflow": "region-marker-edit",
+      "path": "assets/optional-lora-20261122/gpu-context.png"
+    }
+  },
+  "browser": {
+    "login": true,
+    "compatibleSelection": true,
+    "strength": 0.7,
+    "draftReload": true,
+    "realGpuJob": "3b1cba58-8f3a-48ee-95dd-eb9854180390",
+    "status": "succeeded",
+    "desktop": true,
+    "mobile": true,
+    "administratorWorkspace": true,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  "limitations": [
+    "No full-size GPU LoRA effect acceptance for Qwen image editing, Qwen text generators, Hunyuan3D or HYPIR; no suitable declared test adapters supplied for these architectures. Their graph/contracts and native loader units are covered separately.",
+    "Unknown model variants, absent declarations and unsupported LoRA formats are excluded; compatible loading does not establish design quality.",
+    "No Git commit/push, local delivery regeneration, server sync or server deployment in this task."
+  ],
+  "evidence": [
+    "assets/optional-lora-20261122/browser-lora-desktop.png",
+    "assets/optional-lora-20261122/browser-lora-mobile.png",
+    "assets/optional-lora-20261122/browser-lora-result.png",
+    "assets/optional-lora-20261122/browser-lora-workspace.png",
+    "assets/optional-lora-20261122/gpu-enabled.png",
+    "assets/optional-lora-20261122/gpu-disabled.png",
+    "assets/optional-lora-20261122/gpu-context.png"
+  ],
+  "comfySourceSha256": {
+    "code/ComfyUI/custom_nodes/rail_optional_lora/__init__.py": "e04436e10c26c378477a80a9c41a0962e1aeb3c68a9ae77ef4701e2e6c8e186d",
+    "code/ComfyUI/custom_nodes/rail_optional_lora/compatibility.py": "3d2c3ffe1445db9495a34f41e6a94caf5a4e78b8f0ce8c11499962233b9d690d",
+    "code/ComfyUI/custom_nodes/rail_optional_lora/known_bases.json": "3cb86c14f936a87f2aaa1c25cab447d9e2674fe3b5dba5b32f79da8c83543b2a",
+    "code/ComfyUI/custom_nodes/rail_optional_lora/test_adapters.py": "5b325feb1354e4c419fb355a7c57c8a804d2a95bbdfcd7880df5a73925eacd16",
+    "code/ComfyUI/custom_nodes/rail_optional_lora/test_compatibility.py": "8f0d4f8d0fde360a8027ede76ab5e47f0e6e8a9136fa994507eb1bc34958beec"
+  },
+  "sourceComfyMode": "ComfyUI extension source tracked by this SHA-256 snapshot for subsequent controlled delivery; no remote ComfyUI push required by project workflow."
+}

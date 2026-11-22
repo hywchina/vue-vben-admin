@@ -74,6 +74,7 @@ async function renderResult(
   outputs: PlatformJobOutput[],
   conversationLayout = true,
   options: {
+    availableKeys?: string[];
     comparison?: boolean;
     fields?: CapabilityField[];
     job?: Partial<PlatformJob>;
@@ -102,6 +103,7 @@ async function renderResult(
     ...options.job,
   };
   const events = {
+    businessAction: vi.fn(),
     download: vi.fn(),
     save: vi.fn(),
     rerun: vi.fn(),
@@ -112,12 +114,14 @@ async function renderResult(
   document.body.append(root);
   const app = createApp(WorkflowRunCard, {
     accent: '#b91c32',
+    availableApplicationKeys: options.availableKeys,
     conversationLayout,
     fields: options.fields ?? [],
     flowLabel: '深化设计',
     job,
     round: 1,
     supportsImageComparison: options.comparison ?? false,
+    onBusinessAction: events.businessAction,
     onDownload: events.download,
     onSave: events.save,
     onRerun: events.rerun,
@@ -135,6 +139,70 @@ async function renderResult(
 }
 
 describe('workflow result actions', () => {
+  it.each(['cabin', 'component', 'cmf'] as const)(
+    'offers image editing before local repaint and transfers the selected batch result in %s',
+    async (designMode) => {
+      const first = output('image');
+      const second = { ...first, assetId: 'second-image', position: 1 };
+      const { root, events } = await renderResult([first, second], true, {
+        availableKeys: [
+          'reference-image-edit',
+          'image-edit-kv',
+          'local-image-edit',
+          'inpaint-single',
+        ],
+        job: { appKey: 'text-to-image', designMode },
+      });
+      root
+        .querySelectorAll<HTMLButtonElement>('.gallery-thumbnails button')
+        .item(1)
+        .click();
+      await nextTick();
+      const bar = required(
+        root.querySelector(`[data-testid="${designMode}-result-actions"]`),
+      );
+      const buttons = [...bar.querySelectorAll<HTMLButtonElement>('button')];
+      const index = buttons.findIndex(
+        (button) => button.getAttribute('aria-label') === '图片编辑',
+      );
+      expect(index).toBeGreaterThan(-1);
+      expect(buttons[index + 1]?.getAttribute('aria-label')).toBe('局部重绘');
+      expect(buttons[index]?.disabled).toBe(false);
+      buttons[index]?.click();
+      expect(events.businessAction).toHaveBeenLastCalledWith(
+        'image-edit',
+        second,
+        designMode,
+      );
+      expect(events.rerun).not.toHaveBeenCalled();
+      expect(events.save).not.toHaveBeenCalled();
+      root.querySelector<HTMLButtonElement>('.gallery-main')?.click();
+      await nextTick();
+      root
+        .querySelector<HTMLButtonElement>(
+          '[data-testid="result-lightbox"] [aria-label="图片编辑"]',
+        )
+        ?.click();
+      expect(events.businessAction).toHaveBeenCalledTimes(2);
+      expect(events.businessAction).toHaveBeenLastCalledWith(
+        'image-edit',
+        second,
+        designMode,
+      );
+    },
+  );
+  it('disables image editing when only the old single-image shortcut is enabled', async () => {
+    const { root, events } = await renderResult([output('image')], true, {
+      availableKeys: ['single-image-edit'],
+      job: { appKey: 'text-to-image', designMode: 'cabin' },
+    });
+    const button = root.querySelector<HTMLButtonElement>(
+      '[aria-label="图片编辑"]',
+    );
+    expect(button?.disabled).toBe(true);
+    button?.click();
+    expect(events.businessAction).not.toHaveBeenCalled();
+  });
   it('closes the image lightbox before opening the separate continue or save dialog', async () => {
     const result = output('image');
     const { root, events } = await renderResult([

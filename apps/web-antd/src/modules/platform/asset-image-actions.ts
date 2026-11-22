@@ -11,7 +11,8 @@ export const assetImageActions = designImageResultActions('cabin').filter(
   (action) => action.key !== 'download' && action.key !== 'save',
 );
 export function assetImageAction(key: unknown) {
-  return assetImageActions.find((action) => action.key === key);
+  const actionKey = key === 'environment' ? 'image-edit' : key;
+  return assetImageActions.find((action) => action.key === actionKey);
 }
 export function assetImageActionUnavailable(
   asset: Pick<

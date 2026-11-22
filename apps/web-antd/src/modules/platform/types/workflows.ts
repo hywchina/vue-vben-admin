@@ -19,6 +19,7 @@ export type WorkflowUiControl =
   | 'default';
 
 export interface CapabilityField {
+  loraCapabilityCode?: string;
   acceptedKinds: AssetType[];
   advanced: boolean;
   assetIndex?: number;

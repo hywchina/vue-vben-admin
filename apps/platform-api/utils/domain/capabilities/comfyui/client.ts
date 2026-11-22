@@ -147,6 +147,18 @@ export class ComfyUiClient {
     };
   }
 
+  async loraOptions(targets: unknown[]) {
+    return this.#requestJson(
+      'rail/lora/options',
+      {
+        body: JSON.stringify({ targets }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      },
+      Math.max(this.#timeoutMs, 180_000),
+    );
+  }
+
   async objectInfo() {
     return this.#requestJson('object_info');
   }
@@ -203,9 +215,13 @@ export class ComfyUiClient {
     };
   }
 
-  async #request(path: string, init?: RequestInit) {
+  async #request(
+    path: string,
+    init?: RequestInit,
+    timeoutMs = this.#timeoutMs,
+  ) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.#timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const headers = new Headers(init?.headers);
     headers.set('Accept', headers.get('Accept') ?? 'application/json');
     if (this.#apiToken) {
@@ -233,8 +249,12 @@ export class ComfyUiClient {
     }
   }
 
-  async #requestJson(path: string, init?: RequestInit) {
-    const response = await this.#request(path, init);
+  async #requestJson(
+    path: string,
+    init?: RequestInit,
+    timeoutMs = this.#timeoutMs,
+  ) {
+    const response = await this.#request(path, init, timeoutMs);
     return (await response.json()) as Record<string, unknown>;
   }
 }

@@ -10,6 +10,7 @@ import {
   imageGenerationCountField,
   legacyImageCountKey,
 } from './image-generation-count';
+import { fixedWorkflowModelFields, optionalLoraField } from './optional-lora';
 import {
   capabilityPresentationFields,
   resolveQuickFieldKeys,
@@ -198,16 +199,43 @@ export function toPublicCapability(
   const legacyQuantityKey = quantity
     ? legacyImageCountKey(row.apiJson, row.parameterSchema)
     : undefined;
+  const mappedFields = row.parameterSchema as {
+    key: string;
+    nodeId?: string;
+  }[];
+  const legacyLoraNode =
+    !rawWorkflowParameters && row.appKey === 'text-to-image-lora'
+      ? mappedFields.find((field) => field.key === 'loraStrength')?.nodeId
+      : undefined;
+  const legacyLoraKeys = new Set(
+    legacyLoraNode
+      ? mappedFields
+          .filter((field) => field.nodeId === legacyLoraNode)
+          .map((field) => field.key)
+      : [],
+  );
+  const fixedModelKeys = new Set(
+    rawWorkflowParameters
+      ? []
+      : fixedWorkflowModelFields(row.apiJson, row.parameterSchema).map(
+          (field) => field.key,
+        ),
+  );
   const workflowFields = capabilityPresentationFields(
     row.parameterSchema,
     row.apiJson,
     fieldLabels,
     includeParameterSources,
-  ).filter((field) => field.key !== legacyQuantityKey);
+  ).filter(
+    (field) =>
+      field.key !== legacyQuantityKey &&
+      !legacyLoraKeys.has(field.key) &&
+      !fixedModelKeys.has(field.key),
+  );
   const quickFieldKeys = resolveQuickFieldKeys(
     row.parameterSchema,
     row.quickFieldKeys,
-  ).filter((key) => key !== legacyQuantityKey);
+  ).filter((key) => key !== legacyQuantityKey && !legacyLoraKeys.has(key));
   return {
     appKey: row.appKey,
     code: row.code,
@@ -216,6 +244,7 @@ export function toPublicCapability(
       ...(views ? [views] : []),
       ...(quantity ? [quantity] : []),
       ...workflowFields,
+      ...(rawWorkflowParameters ? [] : [optionalLoraField(row.code)]),
     ],
     presentation: {
       fieldLabels,
@@ -223,9 +252,11 @@ export function toPublicCapability(
         legacyGenerationCountKey: legacyQuantityKey,
         legacyGenerationCountMultiplier: quantity?.defaultValue,
       }),
-      quickFieldKeys: quantity
-        ? [...(views ? [views.key] : []), quantity.key, ...quickFieldKeys]
-        : quickFieldKeys,
+      quickFieldKeys: [
+        ...(views ? [views.key] : []),
+        ...(quantity ? [quantity.key] : []),
+        ...quickFieldKeys,
+      ],
       workflowVersionId: row.workflowVersionId,
     },
     name: row.name,

@@ -20,6 +20,41 @@ export function getCapabilityApi(code: string, view?: 'workflow-parameters') {
   });
 }
 
+export interface LoraSelection {
+  targetId: string;
+  name: string;
+  sha256: string;
+  baseFingerprint: string;
+  strength: number;
+}
+export interface OptionalLora {
+  enabled: boolean;
+  selections: LoraSelection[];
+}
+export interface LoraCatalog {
+  targets: Array<{
+    base: string;
+    baseFingerprint: string;
+    family: string;
+    id: string;
+    label: string;
+    options: Array<{ name: string; sha256: string }>;
+    reason?: string;
+    rejected: number;
+  }>;
+}
+export function getWorkflowLorasApi(
+  code: string,
+  parameters: Record<string, unknown>,
+  modelUpdateId?: string,
+) {
+  return requestClient.post<LoraCatalog>(
+    `/capabilities/${encodeURIComponent(code)}/loras`,
+    { parameters, modelUpdateId },
+    { timeout: 180_000 },
+  );
+}
+
 export function getWorkflowManagementApi() {
   return requestClient.get<WorkflowManagementResult>('/workflow-management');
 }

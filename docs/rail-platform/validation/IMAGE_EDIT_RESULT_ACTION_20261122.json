@@ -1,0 +1,79 @@
+{
+  "date": "2026-11-22",
+  "scope": "local source only; no Git commit/push, delivery update, remote synchronization or deployment",
+  "gitBase": "f4b76b1d50ca4f064220e5c54d6708c427346d2d",
+  "databaseMigration": null,
+  "implementation": {
+    "action": "image-edit",
+    "label": "图片编辑",
+    "order": "before mask / 局部重绘 in cabin, component and cmf result actions, including image lightbox and asset actions",
+    "routing": {
+      "1": "single-image-edit",
+      "2": "image-edit-kv",
+      "3": "multi-image-edit"
+    },
+    "transfer": "Reuse reference-image-edit; selected output becomes input 0 in same conversation/project/mode; clear old target inputs/prompt; user must submit explicitly",
+    "compatibility": "assetAction=environment aliases image-edit; history, existing fusion/local-edit actions, generation max 8 and optional LoRA preserved"
+  },
+  "checks": {
+    "typecheck": "pnpm typecheck:rail passed",
+    "unit": {
+      "apiFiles": 44,
+      "apiTests": 279,
+      "webFiles": 50,
+      "webTests": 371,
+      "command": "pnpm test:rail"
+    },
+    "integration": "pnpm test:rail:integration: seven isolated PostgreSQL/MinIO groups passed; no GPU jobs",
+    "build": "pnpm build:rail passed",
+    "eslint": "eight changed TS/Vue files, zero errors; existing component mock warnings in workflow-result-actions.test.ts",
+    "stylelint": "changed Vue files passed",
+    "oxlint": "whole-repository type-aware Oxlint passed",
+    "format": "change scope passed; whole-repository check retains 59 pre-existing unrelated contract-document issues, left unchanged",
+    "diff": "git diff --check passed"
+  },
+  "browser": {
+    "fixture": "isolated real PostgreSQL/MinIO/API + CPU image fixture, no GPU execution",
+    "results": [
+      {
+        "count": 1,
+        "workflow": "single-image-edit",
+        "status": "queued",
+        "sourcePreserved": true,
+        "autoSaved": false,
+        "autoSubmitted": false,
+        "staleDraftCleared": true
+      },
+      {
+        "count": 2,
+        "workflow": "image-edit-kv",
+        "status": "queued",
+        "sourcePreserved": true,
+        "autoSaved": false,
+        "autoSubmitted": false,
+        "staleDraftCleared": true
+      },
+      {
+        "count": 3,
+        "workflow": "multi-image-edit",
+        "status": "queued",
+        "sourcePreserved": true,
+        "autoSaved": false,
+        "autoSubmitted": false,
+        "staleDraftCleared": true
+      }
+    ],
+    "desktop": true,
+    "mobile": true,
+    "pageErrors": [],
+    "consoleErrors": []
+  },
+  "limitations": [
+    "Browser uses stored test images (a prior local generated image reused as fixture); real Chrome, login, upload, API and persistence verified through queued jobs. This change does not claim new GPU quality acceptance.",
+    "No server or delivery directory changed."
+  ],
+  "screenshots": [
+    "../assets/image-edit-20261122/desktop.png",
+    "../assets/image-edit-20261122/mobile.png"
+  ]
+}

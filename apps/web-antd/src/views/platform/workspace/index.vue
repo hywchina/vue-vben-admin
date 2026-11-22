@@ -47,6 +47,7 @@ import AssetSaveModal from '#/components/platform/asset-save-modal.vue';
 import CameraViewPicker from '#/components/platform/camera-view-picker.vue';
 import ComfyMaskEditor from '#/components/platform/comfy-mask-editor.vue';
 import StatusPill from '#/components/platform/status-pill.vue';
+import WorkflowLoraPicker from '#/components/platform/workflow-lora-picker.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import { assetTypeLabels } from '#/modules/platform/asset-types';
 import {
@@ -1198,8 +1199,20 @@ onBeforeUnmount(() => {
                 范围 {{ field.min ?? '不限' }}–{{ field.max ?? '不限' }}，默认
                 {{ field.defaultValue ?? '空' }}
               </small>
+              <WorkflowLoraPicker
+                v-if="field.loraCapabilityCode"
+                :code="field.loraCapabilityCode"
+                :model-update-id="
+                  typeof route.query.modelUpdateId === 'string'
+                    ? route.query.modelUpdateId
+                    : undefined
+                "
+                :value="parameterValues[field.key]"
+                :parameters="taskParameters()"
+                @change="setFieldValue(field, $event)"
+              />
               <Textarea
-                v-if="field.type === 'textarea'"
+                v-else-if="field.type === 'textarea'"
                 :value="fieldTextValue(field)"
                 :maxlength="field.maxLength"
                 :placeholder="field.placeholder"

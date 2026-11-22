@@ -12,6 +12,7 @@ import {
   readObject,
   storeObject,
 } from '../../../infrastructure/storage';
+import { ApiError } from '../../../response';
 import { allocateGeneratedAssetName } from '../../assets/generated-names';
 import { validateFileForKind } from '../../assets/validation';
 import { writeSystemAudit } from '../../audit/writer';
@@ -21,6 +22,12 @@ import {
   planImageGeneration,
   splitImageGenerationParameters,
 } from '../../workflows/image-generation-count';
+import {
+  applyOptionalLora,
+  assertFixedWorkflowModels,
+  splitOptionalLora,
+  validateOptionalLora,
+} from '../../workflows/optional-lora';
 import {
   materializeWorkflow,
   materializeWorkflowAssets,
@@ -836,13 +843,30 @@ export class ComfyUiWorker {
         job.parameterSchema,
         workflowParameters,
       );
+      const { lora } = splitOptionalLora(job.parameters);
+      if (lora)
+        assertFixedWorkflowModels(job.apiJson, prompt, job.parameterSchema);
+      await validateOptionalLora(prompt, lora, this.#client, job.outputSchema);
+      const legacyTestNode =
+        job.appKey === 'text-to-image-lora'
+          ? workflowParameterSchema
+              .array()
+              .parse(job.parameterSchema)
+              .find((field) => field.key === 'loraStrength')?.nodeId
+          : undefined;
+      prompt = applyOptionalLora(
+        prompt,
+        lora,
+        legacyTestNode,
+        job.outputSchema,
+      );
       const materialized = await this.#materializeInputAssets(job, prompt);
       prompt =
         count === undefined
           ? materialized
           : planImageGeneration(
               job.appKey,
-              job.apiJson,
+              prompt,
               job.outputSchema,
               count,
               views,
@@ -850,7 +874,7 @@ export class ComfyUiWorker {
     } catch (error) {
       await this.#fail(
         job,
-        'WORKFLOW_PARAMETER_INVALID',
+        error instanceof ApiError ? error.code : 'WORKFLOW_PARAMETER_INVALID',
         workflowValidationErrorMessage(error),
       );
       return;

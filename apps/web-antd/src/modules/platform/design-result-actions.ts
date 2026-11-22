@@ -1,14 +1,17 @@
 import type { DesignModeKey } from './design-modes';
 
 import { assetTypeIcons } from '#/modules/platform/asset-types';
-import { referenceImageEditKey } from '#/modules/platform/design-generation';
+import {
+  referenceImageEditKey,
+  referenceImageWorkflows,
+} from '#/modules/platform/design-generation';
 import { localImageEditKey } from '#/modules/platform/local-image-edit';
 import { platformSemanticIcons } from '#/modules/platform/semantic-icons';
 import { platformUiIcons } from '#/modules/platform/ui-icons';
 
 export type DesignImageResultActionKey =
   | 'download'
-  | 'environment'
+  | 'image-edit'
   | 'mark'
   | 'mask'
   | 'multi-angle'
@@ -29,6 +32,7 @@ const commonActions: readonly DesignImageResultAction[] = [
   { icon: platformUiIcons.download, key: 'download', label: '下载' },
   { icon: platformSemanticIcons.assets, key: 'save', label: '添加至资产中心' },
   { icon: platformUiIcons.refreshCw, key: 'rerun', label: '重新绘制' },
+  { icon: platformUiIcons.pencil, key: 'image-edit', label: '图片编辑' },
   { icon: platformSemanticIcons.mask, key: 'mask', label: '局部重绘' },
 ];
 
@@ -44,7 +48,6 @@ const modeActions: Record<
       label: '部件/材质融合',
     },
     { icon: platformUiIcons.zoomIn, key: 'upscale', label: '图像放大' },
-    { icon: platformUiIcons.sunMedium, key: 'environment', label: '环境更改' },
     { icon: platformUiIcons.scanSearch, key: 'understand', label: '图像理解' },
     { icon: platformUiIcons.orbit, key: 'multi-angle', label: '多角度生成' },
   ],
@@ -66,7 +69,7 @@ const modeActions: Record<
 export const designResultActionApplicationKeys: Partial<
   Record<DesignImageResultActionKey, string>
 > = {
-  environment: 'single-image-edit',
+  'image-edit': referenceImageEditKey,
   mark: 'region-marker-edit',
   mask: 'inpaint-single',
   'multi-angle': 'camera-control-multi',
@@ -80,6 +83,11 @@ export function designResultActionAvailable(
   action: DesignImageResultActionKey,
   availableKeys: string[],
 ) {
+  if (action === 'image-edit')
+    return (
+      availableKeys.includes(referenceImageEditKey) &&
+      referenceImageWorkflows.some((key) => availableKeys.includes(key))
+    );
   if (action === 'multi-image' && availableKeys.includes(referenceImageEditKey))
     return true;
   if (action === 'mask' && availableKeys.includes(localImageEditKey))

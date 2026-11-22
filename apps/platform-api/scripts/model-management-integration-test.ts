@@ -19,6 +19,8 @@ const png = Buffer.from(
   'base64',
 );
 let executionFailure = false;
+let loraChanged = false;
+let loraUnavailable = false;
 let submitted: Record<string, unknown> | undefined;
 async function inventory(path: string, prefix = ''): Promise<string[]> {
   try {
@@ -38,6 +40,35 @@ async function inventory(path: string, prefix = ''): Promise<string[]> {
 const comfy = createServer(async (req, res) => {
   res.setHeader('content-type', 'application/json');
   const url = new URL(req.url ?? '/', 'http://localhost');
+  if (url.pathname === '/rail/lora/options') {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(Buffer.from(chunk));
+    if (loraUnavailable) {
+      res.statusCode = 503;
+      res.end('{}');
+      return;
+    }
+    const { targets } = JSON.parse(Buffer.concat(chunks).toString()) as {
+      targets: Array<{ base: string; id: string; label: string }>;
+    };
+    res.end(
+      JSON.stringify({
+        targets: targets.map((target) => ({
+          ...target,
+          family: 'flux2_klein_9b',
+          baseFingerprint: 'b'.repeat(64),
+          rejected: 2,
+          options: [
+            {
+              name: 'compatible.safetensors',
+              sha256: (loraChanged ? 'c' : 'a').repeat(64),
+            },
+          ],
+        })),
+      }),
+    );
+    return;
+  }
   if (url.pathname === '/object_info') {
     res.end(
       JSON.stringify({
@@ -78,6 +109,15 @@ const comfy = createServer(async (req, res) => {
               : [],
           },
           outputs: {
+            '356': {
+              images: [
+                {
+                  filename: 'optional-lora.png',
+                  type: 'output',
+                  subfolder: '',
+                },
+              ],
+            },
             '2': {
               images: [{ filename: 'test.png', type: 'output', subfolder: '' }],
             },
@@ -213,6 +253,203 @@ try {
   }
   const admin = await user('admin');
   const ordinary = await user('user');
+  // Real API/DB/object storage with a ComfyUI protocol fixture; GPU coverage is separate.
+  const { WORKFLOW_CATALOG } =
+    await import('../utils/domain/workflows/catalog');
+  const entry = WORKFLOW_CATALOG.find(
+    (item) => item.application.key === 'text-to-image',
+  );
+  assert.ok(entry);
+  const savedCapability = await request<{
+    presentation: { workflowVersionId: string };
+  }>('/capabilities/text-to-image', admin.token);
+  const loraWorkflow = await request<{ version: { id: string } }>(
+    '/workflow-management',
+    admin.token,
+    {
+      code: `optional-lora-${marker}`,
+      name: 'Optional LoRA integration',
+      publish: true,
+      version: {
+        ...entry.version,
+        apiJson: JSON.parse(
+          await readFile(
+            new URL(`../workflows/comfyui/${entry.fileName}`, import.meta.url),
+            'utf8',
+          ),
+        ),
+      },
+    },
+  );
+  await request(
+    '/capabilities/text-to-image/workflow',
+    admin.token,
+    { workflowVersionId: loraWorkflow.version.id },
+    'PUT',
+  );
+  await request('/capabilities/text-to-image/loras', null, {}, 'POST', 401);
+  const catalog = await request<{ targets: Array<{ options: unknown[] }> }>(
+    '/capabilities/text-to-image/loras',
+    ordinary.token,
+    {},
+  );
+  assert.equal(catalog.targets[0]?.options.length, 1);
+  await sql`UPDATE applications SET visible=false WHERE key='text-to-image'`;
+  await request(
+    '/capabilities/text-to-image/loras',
+    ordinary.token,
+    {},
+    'POST',
+    404,
+  );
+  await request('/capabilities/text-to-image/loras', admin.token, {});
+  await sql`UPDATE applications SET visible=true WHERE key='text-to-image'`;
+  const loraProject = await request<{ id: string }>('/projects', admin.token, {
+    name: `Optional LoRA ${marker}`,
+  });
+  const loraInstance = await request<{ id: string }>(
+    '/workflow-instances',
+    admin.token,
+    { projectId: loraProject.id, appKey: 'text-to-image' },
+  );
+  const selection = {
+    targetId: 'branch-0',
+    name: 'compatible.safetensors',
+    sha256: 'a'.repeat(64),
+    baseFingerprint: 'b'.repeat(64),
+    strength: 0.7,
+  };
+  const optionalLora = { enabled: true, selections: [selection] };
+  const loraJob = {
+    projectId: loraProject.id,
+    workspaceInstanceId: loraInstance.id,
+    appKey: 'text-to-image',
+    name: 'Optional LoRA HTTP validation',
+    parameters: { optionalLora },
+  };
+  const rawDependency = entry.version.parameterSchema.find(
+    (value) => (value as { inputName?: string }).inputName === 'unet_name',
+  ) as undefined | { key: string };
+  assert.ok(rawDependency);
+  await request(
+    '/jobs',
+    admin.token,
+    {
+      ...loraJob,
+      parameters: { [rawDependency.key]: 'arbitrary.safetensors' },
+    },
+    'POST',
+    400,
+  );
+  await request(
+    '/jobs',
+    admin.token,
+    {
+      ...loraJob,
+      parameters: {
+        optionalLora: {
+          enabled: true,
+          selections: [{ ...selection, name: '../incompatible.safetensors' }],
+        },
+      },
+    },
+    'POST',
+    409,
+  );
+  await request(
+    '/jobs',
+    admin.token,
+    {
+      ...loraJob,
+      parameters: {
+        optionalLora: {
+          enabled: true,
+          selections: [{ ...selection, strength: 3 }],
+        },
+      },
+    },
+    'POST',
+    400,
+  );
+  await request(
+    '/workflow-drafts',
+    admin.token,
+    {
+      projectId: loraProject.id,
+      workspaceInstanceId: loraInstance.id,
+      appKey: 'text-to-image',
+      parameterValues: { optionalLora },
+      inputAssetIds: {},
+    },
+    'PUT',
+  );
+  const loraDraft = await request<{ parameterValues: Record<string, unknown> }>(
+    `/workflow-drafts?projectId=${loraProject.id}&workspaceInstanceId=${loraInstance.id}&appKey=text-to-image`,
+    admin.token,
+  );
+  assert.deepEqual(loraDraft.parameterValues.optionalLora, optionalLora);
+  const optionalJobIds: string[] = [];
+  for (const mode of ['enabled', 'changed', 'disabled', 'legacy'] as const) {
+    const job = await request<{ id: string }>('/jobs', admin.token, {
+      ...loraJob,
+      parameters:
+        mode === 'legacy'
+          ? {}
+          : {
+              optionalLora:
+                mode === 'disabled'
+                  ? { enabled: false, selections: [] }
+                  : optionalLora,
+            },
+    });
+    optionalJobIds.push(job.id);
+    loraChanged = mode === 'changed';
+    loraUnavailable = mode === 'disabled';
+    const before = submitted;
+    const worker = new ComfyUiWorker({ jobIds: [job.id] });
+    for (let i = 0; i < 6; i++) {
+      await worker.runOnce();
+      const [row] =
+        await sql`SELECT status,error,parameters FROM jobs WHERE id=${job.id}`;
+      if (row && ['failed', 'succeeded'].includes(row.status)) {
+        assert.equal(row.status, mode === 'changed' ? 'failed' : 'succeeded');
+        if (mode === 'changed') {
+          assert.equal(row.error.code, 'LORA_INCOMPATIBLE');
+          assert.equal(submitted, before);
+        } else
+          assert.equal(
+            'rail_lora_branch-0' in (submitted ?? {}),
+            mode === 'enabled',
+          );
+        break;
+      }
+      if (i === 5) throw new Error('Optional LoRA fixture job did not finish');
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    loraChanged = false;
+    loraUnavailable = false;
+  }
+  const firstOptionalJob = optionalJobIds[0];
+  assert.ok(firstOptionalJob);
+  const [frozen] =
+    await sql`SELECT parameters FROM jobs WHERE id=${firstOptionalJob}`;
+  assert.deepEqual(frozen?.parameters.optionalLora, optionalLora);
+  const [version] =
+    await sql`SELECT api_json FROM workflow_versions WHERE id=${loraWorkflow.version.id}`;
+  assert.ok(!JSON.stringify(version?.api_json).includes('RailModelLora'));
+  const optionalOutputs = await sql<
+    { objectKey: string }[]
+  >`SELECT av.object_key AS "objectKey" FROM job_outputs jo JOIN asset_versions av ON av.asset_id=jo.asset_id WHERE jo.job_id=ANY(${optionalJobIds}::uuid[])`;
+  objects.push(...optionalOutputs.map((row) => row.objectKey));
+  await request(
+    '/capabilities/text-to-image/workflow',
+    admin.token,
+    { workflowVersionId: savedCapability.presentation.workflowVersionId },
+    'PUT',
+  );
+  console.warn(
+    'PASS optional LoRA: authenticated catalog, visibility, incompatible rejection, persistent draft/snapshot, Worker recheck, enabled/disabled/legacy execution and immutable workflow version.',
+  );
   await request('/model-management', null, undefined, 'GET', 401);
   await request('/model-management', ordinary.token, undefined, 'GET', 403);
   await request(
@@ -447,6 +684,25 @@ try {
     admin.token,
   );
   await request(
+    '/capabilities/text-to-image/loras',
+    ordinary.token,
+    { modelUpdateId: update.id },
+    'POST',
+    403,
+  );
+  await request(
+    '/capabilities/single-image-edit/loras',
+    admin.token,
+    { modelUpdateId: update.id },
+    'POST',
+    409,
+  );
+  // The candidate's locked model field must replace the caller value before materialization.
+  await request('/capabilities/text-to-image/loras', admin.token, {
+    modelUpdateId: update.id,
+    parameters: { lora: 'caller-must-not-override.safetensors' },
+  });
+  await request(
     `/model-management/updates/${update.id}/publish`,
     admin.token,
     {},
@@ -532,6 +788,13 @@ try {
     { id: string }[]
   >`SELECT workflow_version_id AS id FROM capability_workflows WHERE capability_code='text-to-image' AND active=true`;
   assert.equal(binding?.id, candidate.versionId);
+  await request(
+    '/capabilities/text-to-image/loras',
+    admin.token,
+    { modelUpdateId: update.id },
+    'POST',
+    409,
+  );
   const [old] = await sql<
     { api: Record<string, { inputs: { lora_name: string } }> }[]
   >`SELECT api_json AS api FROM workflow_versions WHERE id=${created.version.id}`;

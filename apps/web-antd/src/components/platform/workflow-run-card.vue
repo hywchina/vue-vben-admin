@@ -62,7 +62,7 @@ const emit = defineEmits<{
   archiveRound: [job: PlatformJob];
   businessAction: [
     action:
-      | 'environment'
+      | 'image-edit'
       | 'mark'
       | 'multi-angle'
       | 'multi-image'
@@ -275,8 +275,9 @@ const parameterEntries = computed(() => {
     .filter(([, value]) => value !== undefined && value !== '')
     .map(([key, value]) => ({
       key,
-      label: labels.get(key) ?? key,
-      value: formatValue(value),
+      label: key === 'optionalLora' ? 'LoRA' : (labels.get(key) ?? key),
+      value:
+        key === 'optionalLora' ? formatOptionalLora(value) : formatValue(value),
     }));
 });
 const isActive = computed(() =>
@@ -356,6 +357,18 @@ function formatValue(value: unknown) {
   if (typeof value === 'boolean') return value ? '开启' : '关闭';
   if (typeof value === 'string') return value;
   return JSON.stringify(value);
+}
+
+function formatOptionalLora(value: unknown) {
+  const settings = value as {
+    enabled?: boolean;
+    selections?: Array<{ name: string; strength: number }>;
+  };
+  return settings?.enabled
+    ? (settings.selections ?? [])
+        .map((item) => `${item.name}（强度 ${item.strength}）`)
+        .join('、')
+    : '关闭';
 }
 
 function formatDate(value: string) {

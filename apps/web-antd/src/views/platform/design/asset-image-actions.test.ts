@@ -10,16 +10,46 @@ describe('asset image actions', () => {
   it('exposes the eight requested tools without duplicate asset registration', () => {
     expect(assetImageActions.map((action) => action.key)).toEqual([
       'rerun',
+      'image-edit',
       'mask',
       'mark',
       'multi-image',
       'upscale',
-      'environment',
       'understand',
       'multi-angle',
     ]);
     expect(assetImageAction('save')).toBeUndefined();
     expect(assetImageAction('invalid')).toBeUndefined();
+  });
+  it('maps old environment links to count-dispatched image editing', () => {
+    expect(assetImageAction('environment')?.key).toBe('image-edit');
+    const asset = { type: 'image' } as const;
+    for (const workflow of [
+      'single-image-edit',
+      'image-edit-kv',
+      'multi-image-edit',
+    ]) {
+      expect(
+        assetImageActionUnavailable(asset, 'image-edit', [
+          'reference-image-edit',
+          workflow,
+        ]),
+      ).toBe('');
+      expect(
+        assetImageActionUnavailable(asset, 'image-edit', [workflow]),
+      ).toContain('不可用');
+    }
+    expect(
+      assetImageActionUnavailable(asset, 'image-edit', [
+        'reference-image-edit',
+      ]),
+    ).toContain('不可用');
+    expect(
+      assetImageActionUnavailable(asset, 'environment', [
+        'reference-image-edit',
+        'single-image-edit',
+      ]),
+    ).toBe('');
   });
   it('requires an available workflow and a genuine source job for rerun', () => {
     expect(
