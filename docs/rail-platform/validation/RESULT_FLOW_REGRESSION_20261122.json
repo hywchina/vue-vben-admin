@@ -1,0 +1,137 @@
+{
+  "日期": "2026-11-22",
+  "范围": "本地源目录；未提交或推送 Git，未生成交付包，未同步或部署服务器",
+  "基线提交": "a3b9878ecea14ffcaf3014ebac97e64de8d45837",
+  "数据库迁移": null,
+  "修复": [
+    "新结果流转统一重建目标输入及默认参数，清除旧参考图、标记和可选 LoRA，应用目标管理员默认提示词；旧任务快照及历史重发不变",
+    "修复三维旧槽位已包含当前图片时去重导致底图未填入的问题",
+    "URL保存业务模块，旧独占工作流链接推断可用模块；刷新恢复已保存草稿",
+    "资产操作按所属类别匹配可用模式，成功后消费一次性URL参数，后续刷新不覆盖用户修改",
+    "能力切换、引用、异步上传、直接提交、弹窗取消/返回和多视角元数据加载校验上下文及操作序号，忽略失效响应",
+    "主动切换会话、功能或模块使操作序号失效；返回相同上下文不能复活先前请求"
+  ],
+  "检查": {
+    "单元测试": {
+      "命令": "pnpm test:unit",
+      "测试文件": 148,
+      "通过": 1083
+    },
+    "类型检查": {
+      "命令": "pnpm typecheck:rail",
+      "结果": "通过：API tsc及Web vue-tsc"
+    },
+    "集成测试": {
+      "命令": "pnpm test:rail:integration",
+      "组数": 7,
+      "结果": "通过；隔离PostgreSQL/MinIO，覆盖权限、草稿、显式图片复用、Worker协议、命名、LoRA数据集、模型管理和资产目录；其中报告使用真实CPU渲染，不是AI/GPU报告"
+    },
+    "生产构建": {
+      "命令": "pnpm build:rail",
+      "结果": "通过：API/Web"
+    },
+    "静态检查": {
+      "变更范围ESLint": "通过",
+      "全仓类型感知Oxlint": "pnpm exec oxlint --type-aware --quiet 通过",
+      "全仓Stylelint": "通过",
+      "变更范围格式": "通过",
+      "差异检查": "git diff --check 通过"
+    },
+    "完整lint": {
+      "结果": "未通过；保留既有无关问题，不能称全仓规范全部通过",
+      "格式问题文件数": 59,
+      "说明": "均为既有合同资料，按用户要求保持原样",
+      "独立全仓ESLint": {
+        "错误": 44,
+        "警告": 162,
+        "既有错误分布": {
+          ".rail-platform-runtime/design-input-browser-20261027.mjs": 4,
+          ".rail-platform-runtime/design-input-browser-phase2-20261027.mjs": 9,
+          ".rail-platform-runtime/report-browser-20261027.mjs": 7,
+          ".rail-platform-runtime/report-render-20261027.ts": 3,
+          ".rail-platform-runtime/report-worker-20261027.ts": 3,
+          ".rail-platform-runtime/theme-proof-20261027.mjs": 9,
+          "apps/platform-api/package.json": 2,
+          "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/assets/v2-9/export-figures-v2-9.cjs": 2,
+          "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/tools/export_figures_v2_14.cjs": 1,
+          "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/tools/export_figures_v2_15.cjs": 1,
+          "docs/rail-platform/contract-deliverables/RAIL-CONTRACT-RP-001-interior-module-partition-rapid-design/tools/export_figures_v2_7.cjs": 1
+        },
+        "说明": "完整命令报44项错误：35项旧Git忽略的本机运行脚本、5项合同脚本、2项API包catalog规范；检查器会自动向pnpm-workspace.yaml添加两个catalog项并额外报2项未使用。已仅撤销检查器加入的两行，保持原依赖配置。未改动上述无关脚本或API包；本轮源码和测试的定向ESLint通过。",
+        "检查器临时副作用错误": 2
+      }
+    }
+  },
+  "浏览器": {
+    "命令": "RAIL_BROWSER_EXECUTABLE=/usr/bin/google-chrome node scripts/run-with-env.mjs apps/platform-api/.env -- pnpm test:rail:browser --result-flows",
+    "环境": "真实Chrome、独立随机PostgreSQL数据库和角色、MinIO桶、API及Web；明确的CPU图片夹具，不启动推理Worker",
+    "通过": 42,
+    "覆盖": [
+      "客室/零部件/CMF实际提供的全部图片结果流转入口",
+      "1/2/3图实际API分派及弹窗直接入队",
+      "目标旧草稿、旧LoRA及重复引用底图的清理",
+      "批量结果选中图、历史重发、撤下Base工作流续编",
+      "全部模式URL刷新、资产操作一次性导入、二图草稿刷新",
+      "两会话草稿往返、已保存空提示词、慢保存期间连续切换",
+      "图片/能力慢响应期间切换会话或新功能",
+      "三种弹窗上传期间切换、关闭及返回取消待执行流转",
+      "桌面1560px及窄屏390px",
+      "离开会话后返回相同会话，旧输入响应仍不得切换功能或填入图片"
+    ],
+    "页面错误": [],
+    "控制台错误": [],
+    "详细结果": "../assets/result-flow-20261122/results.json",
+    "截图": [
+      "../assets/result-flow-20261122/asset-flow-desktop.png",
+      "../assets/result-flow-20261122/asset-flow-mobile.png"
+    ]
+  },
+  "真实GPU": {
+    "环境": "本机RTX 3090；独立本地API/数据库/桶和Worker；ComfyUI使用上轮已验证的同代码镜像；无远程生产任务",
+    "链路": "reference-image-edit单图 → local-image-edit遮罩 → reference-image-edit双图；真实生成的未入库结果作为后续输入",
+    "结果": [
+      {
+        "工作流": "single-image-edit",
+        "状态": "succeeded",
+        "图片字节": 1405535,
+        "sha256": "84790fa9f6ccbd166c3a3613e224425eeeaf64bd075eccd8fc2b695219a9f496",
+        "结果入库": false
+      },
+      {
+        "工作流": "inpaint-single",
+        "状态": "succeeded",
+        "图片字节": 1517457,
+        "sha256": "cb498c7eb3c1fe96cf80cd4103cb594d4d78754cb526f87378e4e283165d6be9",
+        "结果入库": false
+      },
+      {
+        "工作流": "image-edit-kv",
+        "状态": "succeeded",
+        "图片字节": 775970,
+        "sha256": "ea9070aca9964673449e7c0c9d1b4429093298db3a6f4cd06a088556ff86d872",
+        "结果入库": false
+      }
+    ],
+    "边界": "合成底图与低步数链路冒烟，只验证执行、输出文件和私有结果复用，不据此评价图像质量",
+    "运行证据目录": "相对rail-system项目根目录：scripts/deployment/work/result-flow-regression-20261122/gpu；日志中的旧production文案是复用脚本标签，实际端点为本地回环API"
+  },
+  "源码SHA256": {
+    "apps/web-antd/src/views/platform/design/index.vue": "4513ab795aedccb279f78052cd86eed085baeacfa819f46632fefb987519474b",
+    "apps/web-antd/src/modules/platform/asset-image-actions.ts": "49b3ed756b826801db9d4f179ecbea20c4630e311fb372e468eaf06a00e0eae8",
+    "apps/web-antd/src/views/platform/design/asset-image-actions.test.ts": "4a4a62ef436498bb22f78762cbc92639be7a608fa8e35ceb78d5dbd6c9e1457a",
+    "scripts/browser-workflow-acceptance.ts": "21143840ed2c61c1e73f384cd95ff4cabf5c2b29d369b2316e7361c193c8b6d2",
+    "scripts/browser-result-flow-acceptance.mjs": "770a81fcbd766a12f6e643688269cd5ec96c97828e1981f0fabb75d411c73ed2"
+  },
+  "清理": "本轮隔离数据库、角色、桶、API/Web/Worker进程及临时GPU容器已清理；未动开发/生产业务数据和其他容器",
+  "限制": [
+    "未逐项运行全部18工作流的完整GPU效果、全架构LoRA样本、长时训练、AI报告质量或并发压力测试；浏览器入队检查与代表性GPU链路分开记录",
+    "草稿保持现有500ms自动保存，刷新恢复用例核验已保存的数据；不承诺网络故障、浏览器崩溃或保存尚未发出时强制关闭页面的数据持久性",
+    "未执行原有完整浏览器大套件的每一页；本轮执行全仓单测、七组集成和结果流转专项"
+  ],
+  "修复前反例": {
+    "场景": "图片结果图像理解请求延迟；切换到会话B再返回会话A；最后释放旧响应",
+    "预期": "保留返回时的text-to-image且无输入图",
+    "实际": "旧响应跳转至image-understanding并填入图片",
+    "修复后": "42项专项中的input-return通过"
+  }
+}

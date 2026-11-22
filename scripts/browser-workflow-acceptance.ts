@@ -2425,19 +2425,20 @@ async function runBrowserAcceptance() {
           '下载',
           '添加至资产中心',
           '重新绘制',
+          '图片编辑',
           '局部重绘',
           '多图融合',
           '图像放大',
           '图像理解',
         ]),
-      `CMF 图片结果没有按固定七项操作显示：${JSON.stringify(cmfResultActionLabels)}`,
+      `CMF 图片结果没有按固定八项操作显示：${JSON.stringify(cmfResultActionLabels)}`,
     );
     const regionBeforeUrl = await regionComparisonRound
-      .getByRole('img', { name: '标记前原图' })
+      .getByRole('img', { name: '带标记输入图' })
       .getAttribute('src');
     assert(
-      regionBeforeUrl?.includes(comparisonOriginalAssetId),
-      '分区输出对比左图没有使用标记前原图',
+      regionBeforeUrl?.includes(comparisonMaskAssetId),
+      '分区输出对比左图没有使用带标记输入快照',
     );
     assert(
       Boolean(
@@ -4467,23 +4468,27 @@ async function runBrowserAcceptance() {
   }
 }
 
-let failed = false;
-try {
-  await runBrowserAcceptance();
-  console.warn(
-    `浏览器验收通过，截图：${[dashboardScreenshotPath, projectSpaceScreenshotPath, assetFoldersScreenshotPath, jobsScreenshotPath, designDefaultScreenshotPath, designLongInputScreenshotPath, designScreenshotPath, designQuickScreenshotPath, designInputScreenshotPath, designInputHoverScreenshotPath, designMarkdownScreenshotPath, designRunningScreenshotPath, model3dScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
-  );
-} catch (error) {
-  failed = true;
-  console.error('浏览器验收失败', error);
-} finally {
+if (process.argv.includes('--result-flows')) {
+  await import('./browser-result-flow-acceptance.mjs');
+} else {
+  let failed = false;
   try {
-    await cleanupAcceptanceData();
+    await runBrowserAcceptance();
+    console.warn(
+      `浏览器验收通过，截图：${[dashboardScreenshotPath, projectSpaceScreenshotPath, assetFoldersScreenshotPath, jobsScreenshotPath, designDefaultScreenshotPath, designLongInputScreenshotPath, designScreenshotPath, designQuickScreenshotPath, designInputScreenshotPath, designInputHoverScreenshotPath, designMarkdownScreenshotPath, designRunningScreenshotPath, model3dScreenshotPath, captureScreenshotPath, cameraScreenshotPath, regionScreenshotPath, maskScreenshotPath, conversationScreenshotPath, comparisonScreenshotPath, screenshotPath].join('、')}`,
+    );
   } catch (error) {
     failed = true;
-    console.error('浏览器验收清理失败', error);
+    console.error('浏览器验收失败', error);
+  } finally {
+    try {
+      await cleanupAcceptanceData();
+    } catch (error) {
+      failed = true;
+      console.error('浏览器验收清理失败', error);
+    }
+    await closeDatabase();
   }
-  await closeDatabase();
-}
 
-if (failed) process.exitCode = 1;
+  if (failed) process.exitCode = 1;
+}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assetImageAction,
+  assetImageActionMode,
   assetImageActions,
   assetImageActionUnavailable,
 } from '#/modules/platform/asset-image-actions';
@@ -50,6 +51,41 @@ describe('asset image actions', () => {
         'single-image-edit',
       ]),
     ).toBe('');
+  });
+  it('keeps the asset category when enabled and picks a supported mode for specialized actions', () => {
+    const keys = () => [
+      'reference-image-edit',
+      'single-image-edit',
+      'region-marker-edit',
+      'camera-control-multi',
+    ];
+    expect(
+      assetImageActionMode({ generationCategory: 'cmf' }, 'image-edit', keys),
+    ).toBe('cmf');
+    expect(
+      assetImageActionMode(
+        { generationCategory: 'component' },
+        'multi-angle',
+        keys,
+      ),
+    ).toBe('component');
+    expect(
+      assetImageActionMode({ generationCategory: 'cmf' }, 'mark', keys),
+    ).toBe('cabin');
+    expect(
+      assetImageActionMode(
+        { generationCategory: 'cmf' },
+        'image-edit',
+        () => [],
+      ),
+    ).toBeUndefined();
+    expect(
+      assetImageActionMode(
+        { generationCategory: 'cmf' },
+        'image-edit',
+        (mode) => (mode === 'component' ? keys() : []),
+      ),
+    ).toBe('component');
   });
   it('requires an available workflow and a genuine source job for rerun', () => {
     expect(

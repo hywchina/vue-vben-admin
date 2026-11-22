@@ -1,0 +1,280 @@
+{
+  "fixture": "isolated authenticated API/PostgreSQL/MinIO; CPU images and queued jobs; no GPU quality claim",
+  "results": [
+    {
+      "mode": "cabin",
+      "action": "图片编辑",
+      "target": "reference-image-edit",
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cabin",
+      "action": "局部重绘",
+      "target": "local-image-edit",
+      "editor": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cabin",
+      "action": "图像理解",
+      "target": "image-understanding",
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cabin",
+      "action": "部件/材质融合",
+      "target": "reference-image-edit",
+      "dialog": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cabin",
+      "action": "图像放大",
+      "target": "image-upscale",
+      "submit": true,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "cabin",
+      "action": "标记修改",
+      "target": "local-image-edit",
+      "editor": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cabin",
+      "action": "多角度生成",
+      "target": "camera-control-multi",
+      "dialog": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cabin",
+      "action": "多角度生成",
+      "target": "camera-control-multi",
+      "direct": true,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "component",
+      "action": "图片编辑",
+      "target": "reference-image-edit",
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "component",
+      "action": "局部重绘",
+      "target": "local-image-edit",
+      "editor": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "component",
+      "action": "图像理解",
+      "target": "image-understanding",
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "component",
+      "action": "多图融合",
+      "target": "reference-image-edit",
+      "dialog": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "component",
+      "action": "图像放大",
+      "target": "image-upscale",
+      "submit": true,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "component",
+      "action": "标记修改",
+      "target": "local-image-edit",
+      "editor": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "component",
+      "action": "多角度生成",
+      "target": "camera-control-multi",
+      "dialog": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "component",
+      "action": "多角度生成",
+      "target": "camera-control-multi",
+      "direct": true,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "component",
+      "action": "三维生成",
+      "target": "multiview-to-3d",
+      "dialog": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "component",
+      "action": "三维生成",
+      "target": "multiview-to-3d",
+      "direct": true,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "cmf",
+      "action": "图片编辑",
+      "target": "reference-image-edit",
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cmf",
+      "action": "局部重绘",
+      "target": "local-image-edit",
+      "editor": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cmf",
+      "action": "图像理解",
+      "target": "image-understanding",
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cmf",
+      "action": "多图融合",
+      "target": "reference-image-edit",
+      "dialog": true,
+      "passed": true,
+      "reload": true
+    },
+    {
+      "mode": "cmf",
+      "action": "图像放大",
+      "target": "image-upscale",
+      "submit": true,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "cabin",
+      "action": "部件/材质融合",
+      "target": "reference-image-edit",
+      "direct": true,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "cmf",
+      "action": "图片编辑",
+      "target": "reference-image-edit",
+      "count": 1,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "cmf",
+      "action": "图片编辑",
+      "target": "reference-image-edit",
+      "count": 2,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "mode": "cmf",
+      "action": "图片编辑",
+      "target": "reference-image-edit",
+      "count": 3,
+      "passed": true,
+      "reload": false
+    },
+    {
+      "race": "input",
+      "passed": true
+    },
+    {
+      "race": "capability",
+      "passed": true
+    },
+    {
+      "race": "function",
+      "passed": true
+    },
+    {
+      "race": "input-return",
+      "passed": true
+    },
+    {
+      "race": "rapid conversation switches with late draft save",
+      "passed": true
+    },
+    {
+      "race": "upload multiview-to-3d",
+      "passed": true
+    },
+    {
+      "race": "upload camera-control-multi",
+      "passed": true
+    },
+    {
+      "race": "upload reference-image-edit",
+      "passed": true
+    },
+    {
+      "batchSelection": 4,
+      "passed": true
+    },
+    {
+      "historyReplayPreservesDraft": true,
+      "passed": true
+    },
+    {
+      "retiredBaseContinues": true,
+      "passed": true
+    },
+    {
+      "race": "cancel pending result close",
+      "passed": true
+    },
+    {
+      "race": "cancel pending result back",
+      "passed": true
+    },
+    {
+      "conversationDraftIsolation": true,
+      "savedEmptyPrompt": true,
+      "passed": true
+    },
+    {
+      "assetCategory": "cmf",
+      "consumedAction": true,
+      "reloadDraftWithTwoImages": true,
+      "passed": true
+    }
+  ],
+  "pageErrors": [],
+  "consoleErrors": []
+}

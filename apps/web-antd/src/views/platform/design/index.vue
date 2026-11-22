@@ -75,6 +75,7 @@ import WorkflowLoraPicker from '#/components/platform/workflow-lora-picker.vue';
 import WorkflowRunCard from '#/components/platform/workflow-run-card.vue';
 import {
   assetImageAction,
+  assetImageActionMode,
   assetImageActionUnavailable,
   assetImageOutput,
 } from '#/modules/platform/asset-image-actions';
@@ -240,6 +241,8 @@ const cmfUpscaleFactor = ref(4);
 const cmfUpscaleCount = ref(1);
 const cmfUpscaleSubmitting = ref(false);
 const multiAngleOpen = ref(false);
+const multiAngleLoading = ref(false);
+let multiAngleRequest = 0;
 const multiAngleMode = ref<'choose' | 'dialog'>('choose');
 const multiAngleOutput = ref<PlatformJobOutput>();
 const multiAngleDesignMode = ref<'cabin' | 'component'>('component');
@@ -264,6 +267,8 @@ const draftReadyKey = ref('');
 let draftTimer: ReturnType<typeof setTimeout> | undefined;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let loadGeneration = 0;
+let applicationSelectionRequest = 0;
+let resultFlowRequest = 0;
 // Context-local display cache, never merged into the saved asset-center list.
 const conversationInputAssets = reactive<Record<string, PlatformAsset>>({});
 const availableInputAssets = computed(() => {
@@ -1106,6 +1111,12 @@ watch(mediaPickerOpen, (open) => {
 });
 watch(captureContextKey, () => {
   closeLocalEditor();
+  continueOpen.value = false;
+  cmfMultiImageOpen.value = false;
+  cmfUpscaleOpen.value = false;
+  multiAngleOpen.value = false;
+  threeDOpen.value = false;
+  outputMaskEditorOpen.value = false;
   liveInputFieldKey.value = '';
   inputSourceFieldKey.value = '';
   composerSourcePickerOpen.value = false;
@@ -1300,6 +1311,15 @@ function resetCapabilityParameters(
     parameterValues[imageGenerationCountKey] = count;
 }
 
+function applyResultPrompt() {
+  const field = promptField.value;
+  if (!field) return;
+  const configured = capability.value?.workflow.defaultPrompt;
+  if (typeof configured === 'string') parameterValues[field.key] = configured;
+  else if (referenceEdit.value || localEdit.value)
+    parameterValues[field.key] = '';
+}
+
 watch(referenceWorkflowKey, (workflowKey) => {
   if (!referenceEdit.value || hydratingDraft || !draftReadyKey.value) return;
   if (referenceParameterWorkflowKey === workflowKey) return;
@@ -1492,7 +1512,6 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
       );
     // A saved empty prompt is intentional; only initialize a brand-new draft.
     if (
-      !unified &&
       !draft.updatedAt &&
       promptField.value &&
       typeof nextCapability?.workflow?.defaultPrompt === 'string'
@@ -1643,6 +1662,10 @@ async function selectConversation(
   conversationId: string,
   preferredAppKey?: string,
 ) {
+  if (conversationId) {
+    applicationSelectionRequest += 1;
+    cancelResultFlow();
+  }
   if (!conversationId || activeConversationId.value === conversationId) {
     if (conversationId) {
       await loadCapability();
@@ -1675,7 +1698,10 @@ async function selectConversation(
         ),
     ) ??
     (availablePreferredApp &&
-    [localImageEditKey, referenceImageEditKey].includes(availablePreferredApp)
+    ([localImageEditKey, referenceImageEditKey].includes(
+      availablePreferredApp,
+    ) ||
+      !availableApplicationKeysForMode('cabin').includes(availablePreferredApp))
       ? designModes.find((mode) =>
           availableApplicationKeysForMode(mode.key).includes(
             availablePreferredApp,
@@ -1715,6 +1741,9 @@ async function chooseApplication(
     message.info('文本生成功能暂不接入设计工作台，历史结果仍可查看');
     return false;
   }
+  const request = ++applicationSelectionRequest;
+  const projectId = platformStore.currentProjectId;
+  const conversationId = activeConversationId.value;
   generationMenuOpen.value = false;
   functionMenuOpen.value = false;
   appSearch.value = '';
@@ -1730,12 +1759,22 @@ async function chooseApplication(
     return true;
   }
   await saveDraftNow();
-  const conversationId = activeConversationId.value;
+  if (
+    request !== applicationSelectionRequest ||
+    projectId !== platformStore.currentProjectId ||
+    conversationId !== activeConversationId.value ||
+    composerDisposed
+  )
+    return false;
   selectedModeKey.value = designModeForApplication(appKey, modeKey).key;
   selectedBusinessToolKey.value = businessToolKey;
   selectedAppKey.value = appKey;
   await loadCapability(appKey);
   if (
+    composerDisposed ||
+    request !== applicationSelectionRequest ||
+    projectId !== platformStore.currentProjectId ||
+    selectedModeKey.value !== modeKey ||
     activeConversationId.value !== conversationId ||
     selectedAppKey.value !== appKey ||
     effectiveApplicationKey.value !== appKey
@@ -1746,12 +1785,14 @@ async function chooseApplication(
       ...(importingAsset ? route.query : {}),
       conversationId: activeConversationId.value,
       appKey,
-      ...([localImageEditKey, referenceImageEditKey].includes(appKey)
-        ? { designMode: selectedModeKey.value }
-        : {}),
+      designMode: selectedModeKey.value,
     },
   });
   return (
+    request === applicationSelectionRequest &&
+    projectId === platformStore.currentProjectId &&
+    activeConversationId.value === conversationId &&
+    selectedModeKey.value === modeKey &&
     effectiveApplicationKey.value === appKey &&
     Boolean(
       capability.value ||
@@ -1761,6 +1802,7 @@ async function chooseApplication(
 }
 
 async function chooseGenerationCategory(category: DesignGenerationCategory) {
+  cancelResultFlow();
   generationMenuOpen.value = false;
   if (category === generationCategory.value) return;
   const appKey = defaultGenerationApplicationKey(
@@ -1780,6 +1822,7 @@ async function chooseGenerationCategory(category: DesignGenerationCategory) {
 }
 
 async function chooseDesignMode(modeKey: DesignModeKey) {
+  cancelResultFlow();
   const mode = getDesignMode(modeKey);
   if (mode.standalonePath) {
     await router.push(mode.standalonePath);
@@ -2555,6 +2598,7 @@ function designModeForOutput(output: PlatformJobOutput) {
 }
 
 async function openOutputMask(output: PlatformJobOutput, previewUrl: string) {
+  resultFlowRequest += 1;
   try {
     const mode = designModeForOutput(output);
     const keys = availableApplicationKeysForMode(mode);
@@ -2585,17 +2629,24 @@ async function openInputMask(input: PlatformJobInput, previewUrl: string) {
   ) {
     try {
       const context = activeConversationId.value;
+      const sourceContext = captureContextKey.value;
       const baseAsset = await resolveConversationInput(
         input.derivedFromAssetId ?? input.assetId,
       );
+      if (sourceContext !== captureContextKey.value || composerDisposed) return;
       if (
         !(await chooseApplication(localImageEditKey)) ||
         context !== activeConversationId.value
       )
         return;
       clearLocalMarks();
-      Reflect.deleteProperty(selectedAssets, 1);
+      replaceSelectedAssets({});
       localDraft.value = { mode: 'mask' };
+      const targetContext = captureContextKey.value;
+      await nextTick();
+      if (targetContext !== captureContextKey.value || composerDisposed) return;
+      resetCapabilityParameters(capability.value ?? undefined);
+      applyResultPrompt();
       const field = localEditImageFields[0];
       if (!field) return;
       await selectAsset(field, baseAsset.id);
@@ -2642,6 +2693,8 @@ async function saveOutputMask(file: File) {
     (field) => field.type === 'mask' && field.assetIndex !== undefined,
   );
   if (!maskField) throw new Error('局部重绘能力缺少遮罩输入位');
+  resetDraftState(capability.value ?? undefined);
+  applyResultPrompt();
   await selectAsset(maskField, maskAsset.id);
   message.success('遮罩已保存并填入“局部重绘”编辑框，请确认提示词后发送');
 }
@@ -2736,6 +2789,9 @@ async function continueBaseEdit(
       const assetId = images[index];
       if (assetId) selectedAssets[index] = assetId;
     }
+    await nextTick();
+    if (!isCurrent()) return;
+    resetCapabilityParameters(capability.value ?? undefined);
     if (promptField.value && typeof prompt === 'string')
       parameterValues[promptField.value.key] = prompt;
     await saveDraftNow();
@@ -2763,6 +2819,7 @@ async function continueBaseEdit(
 }
 
 function openContinue(output: PlatformJobOutput, job: PlatformJob) {
+  resultFlowRequest += 1;
   if (job.appKey === retiredBaseEditKey) {
     openBaseEditHistory(job, output.assetId);
     return;
@@ -2787,8 +2844,6 @@ async function continueDesign() {
     return;
   }
   continueSubmitting.value = true;
-  const projectId = platformStore.currentProjectId;
-  const conversationId = activeConversationId.value;
   try {
     if (continueAppKey.value === localImageEditKey) {
       continueOpen.value = false;
@@ -2800,18 +2855,13 @@ async function continueDesign() {
       continueOpen.value = false;
       return;
     }
-    await resolveConversationInput(output.assetId);
-    if (!(await chooseApplication(continueAppKey.value))) return;
-    if (
-      projectId !== platformStore.currentProjectId ||
-      conversationId !== activeConversationId.value
-    )
-      throw new Error('会话已切换，请重新选择图片');
-    const target = mediaFields.value.find(
-      (field) => field.assetIndex === continueAssetIndex.value,
+    await prepareOutputInComposer(
+      output,
+      continueAppKey.value,
+      draftMode.value,
+      '',
+      continueAssetIndex.value,
     );
-    if (!target) throw new Error('目标应用输入位已变化，请重新选择');
-    await selectAsset(target, output.assetId);
     continueOpen.value = false;
     parameterDrawerOpen.value = false;
     mediaPickerOpen.value = false;
@@ -2828,26 +2878,47 @@ async function prepareOutputInComposer(
   appKey: string,
   modeKey = designModeForOutput(output),
   businessToolKey = '',
+  assetIndex?: number,
 ) {
   const projectId = platformStore.currentProjectId;
   const conversationId = activeConversationId.value;
+  const flowRequest = resultFlowRequest;
+  const sourceContext = captureContextKey.value;
   await resolveConversationInput(output.assetId);
-  if (!(await chooseApplication(appKey, businessToolKey, modeKey)))
-    throw new Error('当前模块未启用目标功能');
   if (
+    sourceContext !== captureContextKey.value ||
+    composerDisposed ||
+    flowRequest !== resultFlowRequest
+  )
+    throw new Error('编辑位置已切换，请重新选择图片');
+  if (!(await chooseApplication(appKey, businessToolKey, modeKey)))
+    throw new Error('当前模块未启用目标功能或编辑位置已切换');
+  if (
+    flowRequest !== resultFlowRequest ||
     projectId !== platformStore.currentProjectId ||
     conversationId !== activeConversationId.value
   )
     throw new Error('会话已切换，请重新选择图片');
   const target = mediaFields.value.find(
     (field) =>
-      field.assetIndex !== undefined && field.acceptedKinds.includes('image'),
+      field.assetIndex !== undefined &&
+      (assetIndex === undefined || field.assetIndex === assetIndex) &&
+      field.acceptedKinds.includes(output.kind),
   );
-  if (!target) throw new Error('目标能力没有可接收图像的输入位');
+  if (!target) throw new Error('目标能力没有可接收该结果的输入位');
+  const targetContext = captureContextKey.value;
+  resetDraftState(capability.value ?? undefined);
+  applyResultPrompt();
   await selectAsset(target, output.assetId);
   parameterDrawerOpen.value = false;
   mediaPickerOpen.value = false;
   await nextTick();
+  if (
+    targetContext !== captureContextKey.value ||
+    composerDisposed ||
+    flowRequest !== resultFlowRequest
+  )
+    throw new Error('编辑位置已切换，请重新选择图片');
   return target;
 }
 
@@ -2889,17 +2960,40 @@ async function prepareReferenceResult(
   }
   const projectId = platformStore.currentProjectId;
   const conversationId = activeConversationId.value;
+  const flowRequest = resultFlowRequest;
+  const sourceContext = captureContextKey.value;
   await resolveConversationInput(output.assetId);
   if (
+    sourceContext !== captureContextKey.value ||
+    composerDisposed ||
+    flowRequest !== resultFlowRequest
+  )
+    throw new Error('编辑位置已切换，请重新选择图片');
+  if (
     !(await chooseApplication(referenceImageEditKey, '', mode)) ||
+    flowRequest !== resultFlowRequest ||
     projectId !== platformStore.currentProjectId ||
     conversationId !== activeConversationId.value
   )
     throw new Error('会话已切换或当前模块未启用参考图编辑');
-  resetCapabilityParameters(capability.value ?? undefined);
-  parameterValues[promptField.value?.key ?? 'prompt'] = '';
+  const targetContext = captureContextKey.value;
   replaceSelectedAssets({ 0: output.assetId });
+  await nextTick();
+  if (
+    targetContext !== captureContextKey.value ||
+    composerDisposed ||
+    flowRequest !== resultFlowRequest
+  )
+    throw new Error('编辑位置已切换，请重新选择图片');
+  resetCapabilityParameters(capability.value ?? undefined);
+  applyResultPrompt();
   await saveDraftNow();
+  if (
+    targetContext !== captureContextKey.value ||
+    composerDisposed ||
+    flowRequest !== resultFlowRequest
+  )
+    throw new Error('编辑位置已切换，请重新选择图片');
 }
 
 async function transferCmfMultiImageToComposer() {
@@ -2930,9 +3024,11 @@ function selectCmfMultiImageFiles(event: Event) {
 }
 
 async function runCmfMultiImageDialog() {
+  const flowRequest = resultFlowRequest;
   const output = cmfMultiImageOutput.value;
   const prompt = cmfMultiImagePrompt.value.trim();
-  const files = cmfMultiImageFiles.value;
+  const files = [...cmfMultiImageFiles.value];
+  const count = cmfMultiImageCount.value;
   if (!output || files.length !== 2 || !prompt) {
     message.warning('请上传两张参考图并填写融合提示词');
     return;
@@ -2961,14 +3057,30 @@ async function runCmfMultiImageDialog() {
         silent: true,
         tags: ['设计会话输入', `${activeDesignMode.value.label}多图融合`],
       });
-      if (context !== captureContextKey.value) return;
+      if (
+        context !== captureContextKey.value ||
+        composerDisposed ||
+        flowRequest !== resultFlowRequest
+      )
+        return;
     }
     if (!promptField.value) throw new Error('多图融合能力缺少提示词输入');
     setFieldValue(promptField.value, prompt);
-    parameterValues[imageGenerationCountKey] = cmfMultiImageCount.value;
+    parameterValues[imageGenerationCountKey] = count;
     await saveDraftNow();
+    if (
+      context !== captureContextKey.value ||
+      composerDisposed ||
+      flowRequest !== resultFlowRequest
+    )
+      return;
     cmfMultiImageOpen.value = false;
-    await runCapability();
+    await submitCapability({
+      isCurrent: () =>
+        context === captureContextKey.value &&
+        !composerDisposed &&
+        flowRequest === resultFlowRequest,
+    });
   } catch (error) {
     message.error(error instanceof Error ? error.message : '多图融合提交失败');
   } finally {
@@ -2988,7 +3100,10 @@ function openUpscale(
 }
 
 async function runCmfUpscale() {
+  const flowRequest = resultFlowRequest;
   const output = cmfUpscaleOutput.value;
+  const factor = cmfUpscaleFactor.value;
+  const count = cmfUpscaleCount.value;
   if (!output) return;
   cmfUpscaleSubmitting.value = true;
   try {
@@ -2997,15 +3112,27 @@ async function runCmfUpscale() {
       'image-upscale',
       cmfUpscaleDesignMode.value,
     );
+    const context = captureContextKey.value;
     const factorField = scalarFields.value.find(
       (field) => field.key === 'upscaleFactor',
     );
     if (!factorField) throw new Error('图像放大能力缺少倍率参数');
-    setFieldValue(factorField, cmfUpscaleFactor.value);
-    parameterValues[imageGenerationCountKey] = cmfUpscaleCount.value;
+    setFieldValue(factorField, factor);
+    parameterValues[imageGenerationCountKey] = count;
     await saveDraftNow();
+    if (
+      context !== captureContextKey.value ||
+      composerDisposed ||
+      flowRequest !== resultFlowRequest
+    )
+      return;
     cmfUpscaleOpen.value = false;
-    await runCapability();
+    await submitCapability({
+      isCurrent: () =>
+        context === captureContextKey.value &&
+        !composerDisposed &&
+        flowRequest === resultFlowRequest,
+    });
   } catch (error) {
     message.error(error instanceof Error ? error.message : '图像放大提交失败');
   } finally {
@@ -3021,27 +3148,45 @@ async function continueInLocalEditor(
   if (output.kind !== 'image') throw new Error('局部编辑需要图片');
   const conversation = activeConversationId.value;
   const project = platformStore.currentProjectId;
+  const flowRequest = resultFlowRequest;
+  const sourceContext = captureContextKey.value;
   await resolveConversationInput(output.assetId);
+  if (
+    sourceContext !== captureContextKey.value ||
+    composerDisposed ||
+    flowRequest !== resultFlowRequest
+  )
+    throw new Error('编辑位置已切换，请重新选择图片');
   if (
     !(await chooseApplication(
       localImageEditKey,
       '',
       mode === 'report' ? 'cabin' : mode,
     )) ||
+    flowRequest !== resultFlowRequest ||
     conversation !== activeConversationId.value ||
     project !== platformStore.currentProjectId
   )
     throw new Error('会话已切换或当前模块未启用局部编辑');
   // A result begins a new round. The source task keeps its own parameters and markings.
+  const context = captureContextKey.value;
   clearLocalMarks();
-  Reflect.deleteProperty(selectedAssets, 1);
+  replaceSelectedAssets({});
   localDraft.value = { mode: tool };
-  if (promptField.value) parameterValues[promptField.value.key] = '';
+  await nextTick();
+  if (
+    context !== captureContextKey.value ||
+    composerDisposed ||
+    flowRequest !== resultFlowRequest
+  )
+    return;
+  resetCapabilityParameters(capability.value ?? undefined);
+  applyResultPrompt();
   const base = localEditImageFields[0];
   if (!base) return;
-  const context = captureContextKey.value;
   await selectAsset(base, output.assetId);
-  if (context === captureContextKey.value) await openLocalEditor(tool);
+  if (context === captureContextKey.value && flowRequest === resultFlowRequest)
+    await openLocalEditor(tool);
 }
 
 async function markOutput(
@@ -3085,6 +3230,8 @@ async function openMultiAngle(
   output: PlatformJobOutput,
   mode: 'cabin' | 'component',
 ) {
+  const request = ++multiAngleRequest;
+  const context = captureContextKey.value;
   multiAngleOutput.value = output;
   multiAngleDesignMode.value = mode;
   multiAngleMode.value = 'choose';
@@ -3092,19 +3239,33 @@ async function openMultiAngle(
   multiAngleFile.value = undefined;
   multiAngleOpen.value = true;
   multiAngleViews.value = [];
+  multiAngleLoading.value = true;
   try {
     const app = platformStore.applications.find(
       ({ key }) => key === 'camera-control-multi',
     );
     if (app?.capabilityCode) {
       const loaded = await getCapabilityApi(app.capabilityCode);
+      if (
+        request !== multiAngleRequest ||
+        context !== captureContextKey.value ||
+        !multiAngleOpen.value
+      )
+        return;
       multiAngleViews.value = restoreCameraViews(loaded.fields, {});
       multiAngleCount.value = cameraViewValues(multiAngleViews.value).filter(
         ({ enabled }) => enabled,
       ).length;
     }
   } catch {
-    message.error('多视角参数加载失败，请重新打开');
+    if (
+      request === multiAngleRequest &&
+      context === captureContextKey.value &&
+      multiAngleOpen.value
+    )
+      message.error('多视角参数加载失败，请重新打开');
+  } finally {
+    if (request === multiAngleRequest) multiAngleLoading.value = false;
   }
 }
 
@@ -3149,7 +3310,11 @@ async function transferMultiAngleToComposer() {
 }
 
 async function runMultiAngleDialog() {
+  const flowRequest = resultFlowRequest;
   const output = multiAngleOutput.value;
+  const file = multiAngleFile.value;
+  const count = multiAngleCount.value;
+  const views = multiAngleViews.value;
   if (!output) return;
   multiAngleSubmitting.value = true;
   try {
@@ -3158,17 +3323,35 @@ async function runMultiAngleDialog() {
       'camera-control-multi',
       multiAngleDesignMode.value,
     );
-    if (multiAngleFile.value) {
-      await uploadMedia(sourceField, multiAngleFile.value, {
+    const context = captureContextKey.value;
+    if (file) {
+      await uploadMedia(sourceField, file, {
         silent: true,
         tags: ['设计会话输入', '多角度生成'],
       });
     }
-    parameterValues[imageGenerationCountKey] = multiAngleCount.value;
-    parameterValues[cameraViewsKey] = multiAngleViews.value;
+    if (
+      context !== captureContextKey.value ||
+      composerDisposed ||
+      flowRequest !== resultFlowRequest
+    )
+      return;
+    parameterValues[imageGenerationCountKey] = count;
+    parameterValues[cameraViewsKey] = views;
     await saveDraftNow();
+    if (
+      context !== captureContextKey.value ||
+      composerDisposed ||
+      flowRequest !== resultFlowRequest
+    )
+      return;
     multiAngleOpen.value = false;
-    await runCapability();
+    await submitCapability({
+      isCurrent: () =>
+        context === captureContextKey.value &&
+        !composerDisposed &&
+        flowRequest === resultFlowRequest,
+    });
   } catch (error) {
     message.error(
       error instanceof Error ? error.message : '多角度生成提交失败',
@@ -3211,14 +3394,17 @@ async function transferThreeDToComposer() {
 }
 
 async function runThreeDDialog() {
+  const flowRequest = resultFlowRequest;
   const output = threeDOutput.value;
-  if (!output || threeDFiles.value.length !== 3) {
+  const files = [...threeDFiles.value];
+  if (!output || files.length !== 3) {
     message.warning('请补充后、左、右三张视图');
     return;
   }
   threeDSubmitting.value = true;
   try {
     await prepareOutputInComposer(output, 'multiview-to-3d', 'component');
+    const context = captureContextKey.value;
     const viewFields = mediaFields.value
       .filter(
         (field) =>
@@ -3231,17 +3417,34 @@ async function runThreeDDialog() {
       );
     if (viewFields.length < 3)
       throw new Error('三维生成能力缺少四视图输入契约');
-    for (const [index, file] of threeDFiles.value.entries()) {
+    for (const [index, file] of files.entries()) {
       const field = viewFields[index];
       if (!field) continue;
       await uploadMedia(field, file, {
         silent: true,
         tags: ['设计会话输入', '三维生成多视图'],
       });
+      if (
+        context !== captureContextKey.value ||
+        composerDisposed ||
+        flowRequest !== resultFlowRequest
+      )
+        return;
     }
     await saveDraftNow();
+    if (
+      context !== captureContextKey.value ||
+      composerDisposed ||
+      flowRequest !== resultFlowRequest
+    )
+      return;
     threeDOpen.value = false;
-    await runCapability();
+    await submitCapability({
+      isCurrent: () =>
+        context === captureContextKey.value &&
+        !composerDisposed &&
+        flowRequest === resultFlowRequest,
+    });
   } catch (error) {
     message.error(error instanceof Error ? error.message : '三维生成提交失败');
   } finally {
@@ -3249,11 +3452,16 @@ async function runThreeDDialog() {
   }
 }
 
+function cancelResultFlow() {
+  resultFlowRequest += 1;
+}
+
 function handleBusinessResultAction(
   action: BusinessResultAction,
   output: PlatformJobOutput,
   mode: Exclude<DesignModeKey, 'report'>,
 ) {
+  resultFlowRequest += 1;
   if (action === 'multi-image') return openMultiImage(output, mode);
   if (action === 'upscale') return openUpscale(output, mode);
   if (action === 'understand') return understandOutput(output, mode);
@@ -3312,7 +3520,12 @@ function stopPolling() {
 // One design page owns its sidebar; query changes must not create a second
 // composer or reset the workflow when continuing from a task/asset entry.
 watch(
-  () => [route.query.conversationId, route.query.appKey, loading.value],
+  () => [
+    route.query.conversationId,
+    route.query.appKey,
+    route.query.designMode,
+    loading.value,
+  ],
   async () => {
     if (
       !pageReady ||
@@ -3333,8 +3546,18 @@ watch(
           error instanceof Error ? error.message : '无法打开设计会话',
         );
       }
-    } else if (appKey && appKey !== selectedAppKey.value)
-      await chooseApplication(appKey);
+    } else if (appKey) {
+      const mode = designModes.find(
+        ({ key }) => key !== 'report' && key === route.query.designMode,
+      )?.key;
+      if (
+        appKey !== selectedAppKey.value ||
+        (mode && mode !== selectedModeKey.value)
+      ) {
+        cancelResultFlow();
+        await chooseApplication(appKey, '', mode ?? selectedModeKey.value);
+      }
+    }
   },
 );
 
@@ -3404,7 +3627,14 @@ async function importAssetAction() {
     if (route.query.sourceAssetId !== assetId) return;
     activeConversationId.value = '';
     await selectConversation(conversation.id);
-    selectedModeKey.value = 'cabin';
+    if (route.query.sourceAssetId !== assetId) return;
+    const mode = assetImageActionMode(
+      asset,
+      action.key,
+      availableApplicationKeysForMode,
+    );
+    if (!mode) throw new Error('管理员尚未在设计模块启用此图片操作');
+    selectedModeKey.value = mode;
     const output = assetImageOutput(asset);
     if (sourceJob?.appKey === retiredBaseEditKey) {
       openBaseEditHistory(sourceJob, asset.id);
@@ -3447,24 +3677,36 @@ async function importAssetAction() {
       action.key !== 'save' &&
       action.key !== 'download'
     ) {
-      await handleBusinessResultAction(action.key, output, 'cabin');
+      await handleBusinessResultAction(action.key, output, mode);
     }
+    if (route.query.sourceAssetId === assetId)
+      await router.replace({
+        query: {
+          conversationId: activeConversationId.value,
+          appKey: effectiveApplicationKey.value,
+          designMode: draftMode.value,
+        },
+      });
   } catch (error) {
     message.error(error instanceof Error ? error.message : '无法打开图片操作');
-    await router.replace({
-      query: activeConversationId.value
-        ? { conversationId: activeConversationId.value }
-        : {},
-    });
+    if (route.query.sourceAssetId === assetId)
+      await router.replace({
+        query: activeConversationId.value
+          ? { conversationId: activeConversationId.value }
+          : {},
+      });
   } finally {
     importingAsset = false;
     pageReady = true;
     loading.value = false;
+    if (route.query.sourceAssetId && route.query.sourceAssetId !== assetId)
+      void importAssetAction();
   }
 }
 watch(
   () => route.query.sourceAssetId,
   () => {
+    if (importingAsset && route.query.sourceAssetId) cancelResultFlow();
     if (pageReady && route.query.sourceAssetId) void importAssetAction();
   },
 );
@@ -4020,7 +4262,10 @@ onBeforeUnmount(() => {
                         :data-app-key="item.key"
                         :aria-pressed="item.key === selectedAppKey"
                         type="button"
-                        @click="chooseApplication(item.key)"
+                        @click="
+                          cancelResultFlow();
+                          chooseApplication(item.key);
+                        "
                       >
                         <IconifyIcon :icon="item.icon" />
                         <span>{{ item.name || item.shortName }}</span>
@@ -4494,6 +4739,7 @@ onBeforeUnmount(() => {
 
     <Modal
       v-model:open="continueOpen"
+      @cancel="cancelResultFlow"
       :confirm-loading="continueSubmitting"
       :ok-button-props="{ disabled: continueAssetIndex === undefined }"
       ok-text="继续编辑"
@@ -4501,7 +4747,7 @@ onBeforeUnmount(() => {
       @ok="continueDesign"
     >
       <p class="continue-description">
-        图片直接填入本会话所选功能，不会自动加入资产中心，也无需下载和重新上传。跨会话复用请先主动加入资产中心。
+        图片直接填入本会话所选功能，不会自动加入资产中心，也无需下载和重新上传。本人其他会话中的图片经权限校验并建立引用后可继续编辑；跨用户共享需主动加入资产中心。
       </p>
       <Select
         v-model:value="continueAppKey"
@@ -4519,6 +4765,7 @@ onBeforeUnmount(() => {
 
     <Modal
       v-model:open="cmfMultiImageOpen"
+      @cancel="cancelResultFlow"
       :footer="null"
       :title="
         cmfMultiImageDesignMode === 'cabin' ? '部件/材质融合' : '多图融合'
@@ -4597,7 +4844,14 @@ onBeforeUnmount(() => {
           />
         </div>
         <div class="cmf-dialog-actions">
-          <Button @click="cmfMultiImageMode = 'choose'">返回</Button>
+          <Button
+            @click="
+              cancelResultFlow();
+              cmfMultiImageMode = 'choose';
+            "
+          >
+            返回
+          </Button>
           <Button
             :disabled="
               cmfMultiImageFiles.length !== 2 || !cmfMultiImagePrompt.trim()
@@ -4614,6 +4868,7 @@ onBeforeUnmount(() => {
 
     <Modal
       v-model:open="cmfUpscaleOpen"
+      @cancel="cancelResultFlow"
       :confirm-loading="cmfUpscaleSubmitting"
       ok-text="开始放大"
       title="图像放大"
@@ -4644,6 +4899,7 @@ onBeforeUnmount(() => {
 
     <Modal
       v-model:open="multiAngleOpen"
+      @cancel="cancelResultFlow"
       :footer="null"
       title="多角度生成"
       width="min(720px, 94vw)"
@@ -4701,9 +4957,20 @@ onBeforeUnmount(() => {
           />
         </div>
         <div class="cmf-dialog-actions">
-          <Button @click="multiAngleMode = 'choose'">返回</Button>
           <Button
-            :loading="multiAngleSubmitting"
+            @click="
+              cancelResultFlow();
+              multiAngleMode = 'choose';
+            "
+          >
+            返回
+          </Button>
+          <Button
+            :loading="multiAngleSubmitting || multiAngleLoading"
+            :disabled="
+              multiAngleLoading ||
+              !cameraViewValues(multiAngleViews).some(({ enabled }) => enabled)
+            "
             type="primary"
             @click="runMultiAngleDialog"
           >
@@ -4715,6 +4982,7 @@ onBeforeUnmount(() => {
 
     <Modal
       v-model:open="threeDOpen"
+      @cancel="cancelResultFlow"
       :footer="null"
       title="三维生成"
       width="min(720px, 94vw)"
@@ -4764,7 +5032,14 @@ onBeforeUnmount(() => {
           </span>
         </div>
         <div class="cmf-dialog-actions">
-          <Button @click="threeDMode = 'choose'">返回</Button>
+          <Button
+            @click="
+              cancelResultFlow();
+              threeDMode = 'choose';
+            "
+          >
+            返回
+          </Button>
           <Button
             :disabled="threeDFiles.length !== 3"
             :loading="threeDSubmitting"

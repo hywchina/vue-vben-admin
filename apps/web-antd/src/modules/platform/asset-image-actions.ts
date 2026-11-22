@@ -1,3 +1,5 @@
+import type { DesignModeKey } from './design-modes';
+import type { DesignImageResultActionKey } from './design-result-actions';
 import type { PlatformAsset, PlatformJobOutput } from './types';
 
 import { baseEditReplacements, retiredBaseEditKey } from './design-generation';
@@ -13,6 +15,24 @@ export const assetImageActions = designImageResultActions('cabin').filter(
 export function assetImageAction(key: unknown) {
   const actionKey = key === 'environment' ? 'image-edit' : key;
   return assetImageActions.find((action) => action.key === actionKey);
+}
+export function assetImageActionMode(
+  asset: Pick<PlatformAsset, 'generationCategory'>,
+  action: DesignImageResultActionKey,
+  availableKeysForMode: (mode: DesignModeKey) => string[],
+) {
+  const modes = ['cabin', 'component', 'cmf'] as const;
+  return modes
+    .toSorted(
+      (left, right) =>
+        Number(right === asset.generationCategory) -
+        Number(left === asset.generationCategory),
+    )
+    .find(
+      (mode) =>
+        designImageResultActions(mode).some((item) => item.key === action) &&
+        designResultActionAvailable(action, availableKeysForMode(mode)),
+    );
 }
 export function assetImageActionUnavailable(
   asset: Pick<
