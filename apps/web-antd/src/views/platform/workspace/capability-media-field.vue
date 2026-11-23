@@ -1178,7 +1178,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="editor-footer">
         <span v-if="embeddedRegion === 'number'">
-          可直接用颜色画笔、方框或色块标记，也可选择编号后拖出区域。
+          请框选或涂满完整编辑范围；方框内部都会修改。可选编号后拖出整个区域，小编号仅用于标注时请放入对应方框内。
         </span>
         <span v-else>不同颜色表示不同重绘分区，可撤销、重做或擦除。</span>
         <Button

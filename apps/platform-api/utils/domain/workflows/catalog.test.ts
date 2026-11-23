@@ -111,8 +111,10 @@ describe('comfyUI workflow catalog', () => {
         entry.version.parameterSchema,
         { prompt: '座椅改成红色' },
       );
+      const expectedGuidance =
+        key === 'region-marker-edit' ? '座椅改成红色' : '移除这些辅助标记';
       expect(result[promptField.nodeId]?.inputs.prompt).toContain(
-        '移除这些辅助标记',
+        expectedGuidance,
       );
       expect(result[promptField.nodeId]?.inputs.prompt).toContain(
         '座椅改成红色',
@@ -245,7 +247,7 @@ describe('comfyUI workflow catalog', () => {
     );
   });
 
-  it('preserves the required red-mask removal protocol for outpainting', async () => {
+  it('uses a clean outpaint reference without red-marker instructions', async () => {
     const outpaint = WORKFLOW_CATALOG.find(
       (entry) => entry.application.key === 'outpaint',
     );
@@ -274,7 +276,10 @@ describe('comfyUI workflow catalog', () => {
       parsed.parameterSchema,
       parameters,
     );
-    expect(result['367']?.inputs.value).toContain('删除红色扩展标记区域');
+    expect(result['367']?.inputs.value).not.toContain('红色');
+    expect(result['351']?.inputs.pixels).toEqual(['369', 0]);
+    expect(result['356']?.inputs.noise_mask).toBe(true);
+    expect(result['358']?.inputs.latent_image).toEqual(['356', 2]);
     expect(result['367']?.inputs.value).toContain(
       '延展原图中的客室结构、顶板、地板与灯光',
     );

@@ -18,8 +18,30 @@ const objectInfo = JSON.parse(await readFile(objectInfoPath, 'utf8')) as Record<
   string,
   never
 >;
-const parameterSchemas: Record<string, unknown> = {};
-for (const entry of WORKFLOW_CATALOG_BASE) {
+const schemaUrl = new URL(
+  '../workflows/comfyui/parameter-schemas.generated.json',
+  import.meta.url,
+);
+const selected = argument('--applications')?.split(',');
+if (process.argv.includes('--applications') && !selected) {
+  throw new Error('--applications 缺少工作流标识');
+}
+if (
+  selected?.some(
+    (key) =>
+      !WORKFLOW_CATALOG_BASE.some((entry) => entry.application.key === key),
+  )
+) {
+  throw new Error('--applications 只能包含已注册的工作流标识，以逗号分隔');
+}
+// Node metadata contains live model choices; keep unrelated version schemas stable.
+const parameterSchemas: Record<string, unknown> = selected
+  ? JSON.parse(await readFile(schemaUrl, 'utf8'))
+  : {};
+const entries = WORKFLOW_CATALOG_BASE.filter(
+  (entry) => !selected || selected.includes(entry.application.key),
+);
+for (const entry of entries) {
   const workflowJson = JSON.parse(
     await readFile(
       new URL(`../workflows/comfyui/${entry.fileName}`, import.meta.url),
@@ -34,13 +56,5 @@ for (const entry of WORKFLOW_CATALOG_BASE) {
     );
 }
 
-await writeFile(
-  new URL(
-    '../workflows/comfyui/parameter-schemas.generated.json',
-    import.meta.url,
-  ),
-  `${JSON.stringify(parameterSchemas, null, 2)}\n`,
-);
-console.warn(
-  `已同步 ${Object.keys(parameterSchemas).length} 项工作流的完整参数。`,
-);
+await writeFile(schemaUrl, `${JSON.stringify(parameterSchemas, null, 2)}\n`);
+console.warn(`已同步 ${entries.length} 项工作流的完整参数。`);

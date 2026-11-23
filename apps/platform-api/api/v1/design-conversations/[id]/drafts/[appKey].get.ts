@@ -68,20 +68,27 @@ export default apiHandler(async (event) => {
     {
       inputAssetIds: Record<string, string>;
       parameterValues: Record<string, unknown>;
+      revision: number;
       updatedAt: Date;
     }[]
   >`
     SELECT
       parameter_values AS "parameterValues",
       input_asset_ids AS "inputAssetIds",
-      updated_at AS "updatedAt"
+      updated_at AS "updatedAt",
+      revision::float8 AS revision
     FROM design_conversation_drafts
     WHERE conversation_id = ${conversationId}
       AND app_key = ${appKey}
       AND design_mode = ${designMode}
   `;
   if (!draft) {
-    return { inputAssetIds: {}, parameterValues: {}, updatedAt: undefined };
+    return {
+      inputAssetIds: {},
+      parameterValues: {},
+      updatedAt: undefined,
+      revision: 0,
+    };
   }
   const assetIds = Object.values(draft.inputAssetIds);
   const assets = await getDesignInputAssets({
@@ -101,5 +108,6 @@ export default apiHandler(async (event) => {
         ),
     parameterValues: draft.parameterValues,
     updatedAt: draft.updatedAt.toISOString(),
+    revision: draft.revision,
   };
 });

@@ -72,6 +72,7 @@ import CameraAngleControl from './camera-angle-control.vue';
 import CapabilityMediaField from './capability-media-field.vue';
 import { canonicalWorkspaceQuery } from './model-update-context';
 import { createRegionInputAnnotations } from './region-annotation';
+import RegionPromptFields from './region-prompt-fields.vue';
 
 const mediaTypes = new Set(['asset', 'capture', 'mask', 'region']);
 const route = useRoute();
@@ -1220,6 +1221,12 @@ onBeforeUnmount(() => {
                 show-count
                 @update:value="setFieldValue(field, $event)"
               />
+              <RegionPromptFields
+                v-else-if="field.key === 'regionPrompts'"
+                :marks="String(parameterValues.regionMarks ?? '')"
+                :value="parameterValues[field.key]"
+                @change="setFieldValue(field, $event)"
+              />
               <Textarea
                 v-else-if="
                   field.type === 'json' && field.key !== cameraViewsKey
@@ -1325,6 +1332,12 @@ onBeforeUnmount(() => {
                     :value="fieldTextValue(field)"
                     :rows="4"
                     @update:value="setFieldValue(field, $event)"
+                  />
+                  <RegionPromptFields
+                    v-else-if="field.key === 'regionPrompts'"
+                    :marks="String(parameterValues.regionMarks ?? '')"
+                    :value="parameterValues[field.key]"
+                    @change="setFieldValue(field, $event)"
                   />
                   <Textarea
                     v-else-if="

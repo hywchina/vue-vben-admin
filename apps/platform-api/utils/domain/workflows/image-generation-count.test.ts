@@ -95,7 +95,6 @@ describe('image generation count', () => {
     ['single-image-edit', '388'],
     ['image-edit-kv', '129'],
     ['multi-image-edit', '17'],
-    ['outpaint', '356'],
     ['screen-capture-edit', '388'],
     ['camera-control-single', '26'],
   ])('uses the native latent batch of %s', async (app, id) => {
@@ -111,8 +110,9 @@ describe('image generation count', () => {
   it.each([
     ['inpaint-single', 'RandomNoise', 'noise_seed'],
     ['inpaint-reference', 'RandomNoise', 'noise_seed'],
+    ['outpaint', 'RandomNoise', 'noise_seed'],
     ['region-edit', 'sum_Ksampler', 'seed'],
-    ['region-marker-edit', 'sum_Ksampler', 'seed'],
+    ['region-marker-edit', 'RandomNoise', 'noise_seed'],
     ['image-upscale', 'HYPIRAdvancedRestoration', 'seed'],
   ])(
     'adds independent outputs to %s without duplicating its media input',

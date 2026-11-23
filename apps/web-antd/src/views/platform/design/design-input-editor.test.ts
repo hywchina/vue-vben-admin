@@ -10,6 +10,8 @@ import Design from './index.vue';
 
 const mocks = vi.hoisted(() => ({
   appKey: 'region-edit',
+  leave: vi.fn(),
+  unload: vi.fn(),
   input: vi.fn(),
   preview: vi.fn(),
   capability: vi.fn(),
@@ -24,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   store: undefined as any,
 }));
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: mocks.leave,
   useRoute: () => ({
     query: { conversationId: 'conversation', appKey: mocks.appKey },
   }),
@@ -42,6 +45,7 @@ vi.mock('#/api', () => ({
   getDesignConversationInputAssetApi: mocks.input,
   getDesignConversationsApi: mocks.conversations,
   saveDesignConversationDraftApi: mocks.save,
+  saveDesignConversationDraftOnUnloadApi: mocks.unload,
   archiveDesignConversationApi: vi.fn(),
   createDesignConversationApi: vi.fn(),
   getAssetApi: vi.fn(),
@@ -73,7 +77,15 @@ vi.mock('ant-design-vue', () => {
   });
   const input = defineComponent({
     props: ['value'],
-    setup: (props) => () => h('textarea', { value: props.value }),
+    emits: ['update:value'],
+    setup:
+      (props, { emit }) =>
+      () =>
+        h('textarea', {
+          value: props.value,
+          onInput: (event: Event) =>
+            emit('update:value', (event.target as HTMLTextAreaElement).value),
+        }),
   });
   return {
     Button: button,
@@ -212,6 +224,7 @@ beforeEach(() => {
   );
   mocks.initialize.mockResolvedValue(undefined);
   mocks.save.mockResolvedValue(undefined);
+  mocks.unload.mockResolvedValue({});
   mocks.conversations.mockResolvedValue([
     { id: 'conversation', projectId: 'project', title: '设计', legacy: false },
   ]);
@@ -931,5 +944,55 @@ describe('unified reference image editing', () => {
       appKey: alias,
       inputAssetIds: { 0: 'base-image', 1: 'material-image' },
     });
+  });
+});
+
+describe('draft lifecycle protection', () => {
+  it('warns and flushes the last keystroke when refreshing inside the debounce window', async () => {
+    const root = await configure('text-to-image');
+    const area = root.querySelector<HTMLTextAreaElement>(
+      '[data-testid="design-prompt-input"]',
+    );
+    if (!area) throw new Error('Missing prompt input');
+    area.value = '刚输入就刷新';
+    area.dispatchEvent(new Event('input', { bubbles: true }));
+    await nextTick();
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(mocks.unload.mock.lastCall?.[0].parameterValues.prompt).toBe(
+      '刚输入就刷新',
+    );
+    await settle();
+  });
+  it('shows failure, prevents in-app leave, and clears the warning only after a successful retry', async () => {
+    const root = await configure('text-to-image');
+    mocks.save.mockRejectedValue(new Error('服务暂不可用'));
+    const area = root.querySelector<HTMLTextAreaElement>(
+      '[data-testid="design-prompt-input"]',
+    );
+    if (!area) throw new Error('Missing prompt input');
+    area.value = '需要保留的草稿';
+    area.dispatchEvent(new Event('input', { bubbles: true }));
+    await settle();
+    const guard = mocks.leave.mock.lastCall?.[0];
+    expect(await guard()).toBe(false);
+    await settle();
+    expect(root.querySelector('.draft-save-state')?.textContent).toContain(
+      '草稿未保存',
+    );
+    mocks.save.mockResolvedValue({ revision: 1 });
+    const retry = [...root.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('重试保存'),
+    );
+    if (!retry) throw new Error('Missing retry button');
+    retry.click();
+    await settle();
+    expect(root.querySelector('.draft-save-state')?.textContent).toContain(
+      '草稿已保存',
+    );
+    expect(mocks.save.mock.lastCall?.[0].parameterValues.prompt).toBe(
+      '需要保留的草稿',
+    );
   });
 });

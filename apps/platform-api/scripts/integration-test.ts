@@ -1277,6 +1277,11 @@ async function run() {
     },
     { ...modeInput, applicationKeys: ['unknown'] },
     { ...modeInput, defaultImageApplicationKey: 'text-to-image' },
+    {
+      ...modeInput,
+      applicationKeys: [...modeInput.applicationKeys, 'text-to-image-lora'],
+      defaultImageApplicationKey: 'text-to-image-lora',
+    },
     { ...modeInput, defaultImageApplicationKey: 'inpaint-single' },
     {
       ...modeInput,
@@ -1535,7 +1540,12 @@ async function run() {
   const localParameters = {
     generationCount: 3,
     prompt: '更换为灰色座椅',
-    localEdit: { mode: 'mask', color, number },
+    localEdit: {
+      mode: 'mask',
+      color,
+      number,
+      regionPrompts: { number_1: '改成蓝色双人座椅' },
+    },
   };
   const localDraft = {
     projectId: referenceProjectId,
@@ -1634,6 +1644,12 @@ async function run() {
       assetIds: [base],
       marks: number,
     },
+    {
+      mode: 'number',
+      key: 'region-marker-edit',
+      assetIds: [base, reference],
+      marks: number,
+    },
   ]) {
     const scope = await apiRequest<{ id: string }>('/design-conversations', {
       body: { projectId: referenceProjectId },
@@ -1650,7 +1666,12 @@ async function run() {
         localEdit: { baseAssetId: base, mode: test.mode },
         parameters: {
           ...localInput.parameters,
-          ...(test.marks ? { regionMarks: test.marks } : {}),
+          ...(test.marks
+            ? {
+                regionMarks: test.marks,
+                regionPrompts: { number_1: '改成蓝色双人座椅' },
+              }
+            : {}),
         },
       },
       session: user1,
@@ -3373,6 +3394,122 @@ async function run() {
       restoredDesignDraft.envelope.data.parameterValues.prompt ===
         '在同一设计会话中继续编辑',
     '设计会话没有按应用恢复输入资产与参数草稿',
+  );
+  const draftState = async () => {
+    const result = await apiRequest<{
+      parameterValues: Record<string, unknown>;
+      revision: number;
+    }>(`${designDraftPath}?projectId=${projectId}`, { session: user1 });
+    return result.envelope.data;
+  };
+  const writerA = randomUUID();
+  const writerB = randomUUID();
+  const writeOrderedDraft = (
+    prompt: string,
+    writerId: string,
+    sequence: number,
+    baseRevision: number,
+    expectedStatus = 200,
+  ) =>
+    apiRequest<{ applied: boolean; revision: number }>(designDraftPath, {
+      method: 'PUT',
+      session: user1,
+      expectedStatus,
+      body: {
+        projectId,
+        inputAssetIds: { 0: prepared.envelope.data.asset.id },
+        parameterValues: { prompt },
+        writeToken: { writerId, sequence, baseRevision },
+      },
+    });
+  const initialState = await draftState();
+  const initialRevision = initialState.revision;
+  const latestDraft = await writeOrderedDraft(
+    '关闭前的最后输入',
+    writerA,
+    2,
+    initialRevision,
+  );
+  assert(latestDraft.envelope.data.applied, '最新草稿未保存');
+  const staleDraft = await writeOrderedDraft(
+    '迟到旧输入',
+    writerA,
+    1,
+    initialRevision,
+  );
+  const repeatedDraft = await writeOrderedDraft(
+    '关闭前的最后输入',
+    writerA,
+    2,
+    initialRevision,
+  );
+  assert(
+    !staleDraft.envelope.data.applied && !repeatedDraft.envelope.data.applied,
+    '旧请求或重试重复改写草稿',
+  );
+  const afterRepeat = await draftState();
+  assert(
+    afterRepeat.revision === latestDraft.envelope.data.revision,
+    '幂等重试错误递增版本',
+  );
+  await Promise.all([
+    writeOrderedDraft('同页面新内容', writerA, 4, initialRevision),
+    writeOrderedDraft('同页面旧内容', writerA, 3, initialRevision),
+  ]);
+  const afterConcurrent = await draftState();
+  assert(
+    afterConcurrent.parameterValues.prompt === '同页面新内容',
+    '并发迟到请求覆盖最新草稿',
+  );
+  const newPage = await writeOrderedDraft(
+    '刷新后新页面',
+    writerB,
+    1,
+    afterConcurrent.revision,
+  );
+  await writeOrderedDraft('刷新前旧页面迟到', writerA, 5, initialRevision, 409);
+  const afterNewPage = await draftState();
+  assert(
+    afterNewPage.parameterValues.prompt === '刷新后新页面',
+    '旧页面覆盖新页面草稿',
+  );
+  for (const writeToken of [
+    { writerId: writerB, sequence: 0, baseRevision: 0 },
+    { writerId: 'invalid', sequence: 2, baseRevision: 0 },
+    { writerId: writerB, sequence: 2, baseRevision: -1 },
+  ])
+    await apiRequest(designDraftPath, {
+      method: 'PUT',
+      session: user1,
+      expectedStatus: 400,
+      body: { projectId, inputAssetIds: {}, parameterValues: {}, writeToken },
+    });
+  await apiRequest(designDraftPath, {
+    method: 'PUT',
+    session: user2,
+    expectedStatus: 404,
+    body: {
+      projectId,
+      inputAssetIds: {},
+      parameterValues: { prompt: '越权' },
+      writeToken: {
+        writerId: writerB,
+        sequence: 9,
+        baseRevision: newPage.envelope.data.revision,
+      },
+    },
+  });
+  await apiRequest(designDraftPath, {
+    method: 'PUT',
+    session: user1,
+    body: {
+      projectId,
+      inputAssetIds: { 0: prepared.envelope.data.asset.id },
+      parameterValues: { prompt: '在同一设计会话中继续编辑' },
+    },
+  });
+  console.warn(
+    '草稿写入顺序通过：关闭前最新快照、同页乱序、幂等重试、跨页冲突、权限和旧客户端兼容。',
   );
   await apiRequest(designDraftPath, {
     body: {

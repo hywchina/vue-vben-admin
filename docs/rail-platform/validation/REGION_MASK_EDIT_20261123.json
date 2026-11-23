@@ -1,0 +1,204 @@
+{
+  "date": "2026-11-23",
+  "scope": "local source development and validation only; no commit/push, delivery or deployment",
+  "sourceBase": "726ee6a3960f284573e3dd3f0751ce671e7c0960",
+  "sourceBranch": "dev-1001",
+  "runtimeImage": "sha256:795166b1c76f0c3f2eacace9b7271dc085109a65c1a505a5f4520c4b135145df",
+  "runtime": "existing locked container image with current source mounted read-only; not a newly built release image",
+  "gpu": "RTX 3090 24GiB; sequential, no load/concurrency test",
+  "models": "existing Flux2 Klein 9B distilled, Qwen3 and Flux2 VAE; no new weights",
+  "plugins": {
+    "CropAndStitch": {
+      "version": "3.0.20",
+      "commit": "6005efc02f7745649118edd89cdd084c2b9bd3ae",
+      "license": "GPL-3.0"
+    },
+    "RailRegionInputs": "clean original + raster masks + per-region text lists",
+    "RailRegionReference": "optional bounded object reference latent",
+    "RailRegionComposite": "original-resolution protected composition"
+  },
+  "compatibility": [
+    "v1 workflow file unchanged; old versions/tasks remain immutable",
+    "builtin seed selects new v2 checksum/version; managed published model bindings preserved",
+    "existing image generation limit 1..8 and optional LoRA compatibility retained",
+    "same-base tool drafts kept; new result/base clears marks, region requirements and LoRA"
+  ],
+  "tests": {
+    "apiUnit": 285,
+    "webUnit": 386,
+    "pythonRasterization": 5,
+    "pythonNodeContracts": 3,
+    "typecheck": "passed",
+    "build": "passed",
+    "integration": "isolated PostgreSQL/MinIO suite passed; protocol fixtures are not GPU inference",
+    "eslintOxlintStylelint": "passed for changed files",
+    "format": "changed files checked; global lint blocked by 59 preexisting contract report files left unchanged"
+  },
+  "gpuRuns": [
+    {
+      "case": "single",
+      "promptId": "4f00c9a1-31d0-40f3-a5ec-dc7fc73b4bad",
+      "status": "success",
+      "seconds": 9.222,
+      "outputs": 1
+    },
+    {
+      "case": "multi-reference",
+      "promptId": "b90f1cfe-9ba0-485f-ae49-a1305d8dc457",
+      "status": "success",
+      "seconds": 17.057,
+      "outputs": 1
+    },
+    {
+      "case": "multi-context25",
+      "promptId": "caa0fc59-4f7e-4519-b8d4-9e71b5ee08f4",
+      "status": "success",
+      "seconds": 15.941,
+      "outputs": 1
+    },
+    {
+      "case": "eight",
+      "promptId": "18a53bd2-7e3b-47bc-a88e-22af1289aff9",
+      "status": "success",
+      "seconds": 69.327,
+      "outputs": 8
+    }
+  ],
+  "pixelChecks": [
+    {
+      "case": "single",
+      "file": "rail/region-marker_00001_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 72368,
+      "status": "success"
+    },
+    {
+      "case": "multi-reference",
+      "file": "rail/region-multi-reference_00001_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 240590,
+      "status": "success"
+    },
+    {
+      "case": "multi-context25",
+      "file": "rail/region-multi-context25_00001_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 239876,
+      "status": "success"
+    },
+    {
+      "case": "eight",
+      "file": "rail/v2-eight_00001_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 153855,
+      "status": "success"
+    },
+    {
+      "case": "eight",
+      "file": "rail/v2-eight_00002_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 153827,
+      "status": "success"
+    },
+    {
+      "case": "eight",
+      "file": "rail/v2-eight_00003_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 153715,
+      "status": "success"
+    },
+    {
+      "case": "eight",
+      "file": "rail/v2-eight_00004_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 151623,
+      "status": "success"
+    },
+    {
+      "case": "eight",
+      "file": "rail/v2-eight_00005_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 153138,
+      "status": "success"
+    },
+    {
+      "case": "eight",
+      "file": "rail/v2-eight_00006_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 152448,
+      "status": "success"
+    },
+    {
+      "case": "eight",
+      "file": "rail/v2-eight_00007_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 151557,
+      "status": "success"
+    },
+    {
+      "case": "eight",
+      "file": "rail/v2-eight_00008_.png",
+      "outsideMax255": 0,
+      "outsideMae255": 0.0,
+      "changedInsidePixels": 153255,
+      "status": "success"
+    }
+  ],
+  "browser": {
+    "environment": "isolated local database, role, bucket, API and Web; CUA browser",
+    "checked": [
+      "restore separate region requirements and optional reference",
+      "blank regional requirement persists and falls back to main prompt in CPU node test",
+      "switch conversation isolates inputs; explicit return to local edit restores saved draft",
+      "actual canvas number drawing and save creates matching per-region fields",
+      "browser submission with compatible LoRA, two region requirements and reference",
+      "real ComfyUI Worker successful result, private annotation comparison, unsaved output",
+      "new result continues region edit with no inherited marks, region requirements, reference or LoRA",
+      "refresh restores newly drawn ranges, per-region requirements and common prompt"
+    ],
+    "jobId": "4c1430e0-52b7-4b9a-8a52-00470af72779",
+    "jobStatus": "succeeded",
+    "outputCount": 1,
+    "automaticallySavedOutputs": 0,
+    "loraEnabled": true,
+    "compatibleLora": "flux2_klein_9b_interior_lora_smoke.safetensors",
+    "incompatibleFilesFiltered": 2,
+    "consoleNotes": "existing Form/Storage warnings; initial stale prior-test browser token caused auth/navigation warning before login; no new error during region generation/restore flow"
+  },
+  "evidenceDirectory": "scripts/deployment/work/region-quality-20261123",
+  "limitations": [
+    "semantic object counts/shape are model-dependent; tight masks may cut inserted parts",
+    "independent per-region original-context generation may not produce globally coherent interacting objects",
+    "global formatting baseline remains unresolved",
+    "no new release image build, delivery validation, remote deployment or concurrency validation"
+  ],
+  "sourceFilesSha256": {
+    "code/vue-vben-admin/apps/platform-api/workflows/comfyui/region-marker-edit-v2.json": "f87c77c0c6abb69b72de9b79ecf5f43e059c46837987b1d4a232fa96725b6a1b",
+    "code/vue-vben-admin/apps/platform-api/workflows/comfyui/region-marker-edit-v1.json": "db136432af9a5a83b41a8fd0f9e75d6182ef72d0fa6417d990e4d02280c19760",
+    "code/ComfyUI/custom_nodes/rail_region_edit/regions.py": "5ea1a383380d8e7073f5732df28dd5909d4c04a2e78eb89f9559ca3da01902b7",
+    "code/ComfyUI/custom_nodes/rail_region_edit/test_nodes.py": "5f1c214deba0fb73d723332fea7ddd34a0c48cd1b88e45f8a8189399c3f0b8fa",
+    "code/ComfyUI/custom_nodes/rail_region_edit/__init__.py": "909e66760c9e5cdf0c6bb9762003836e5e2ddbe3b8a30ef453da574dcd83ad67",
+    "code/ComfyUI/custom_nodes/rail_region_edit/test_regions.py": "2bce749cf2c9a6a214f5f55ce0a0d55001df14be23ec5a254ef00b7999b1ae09",
+    "code/ComfyUI/custom_nodes/ComfyUI-Inpaint-CropAndStitch/inpaint_cropandstitch.py": "fcf500b8b71d7d0c1f4448370023be704a6922f64a78531c97e22dd25f3cfeea",
+    "code/ComfyUI/custom_nodes/ComfyUI-Inpaint-CropAndStitch/__init__.py": "43c97220d856f7527952538e550a185cb16b5bae33714061dc4ef0854aabdfa1",
+    "code/ComfyUI/custom_nodes/ComfyUI-Inpaint-CropAndStitch/pyproject.toml": "edcdfda9afb10d84a2b7b360f2c389d69544b3e6ef14bcc15602fbdd265fb4c6",
+    "code/ComfyUI/custom_nodes/ComfyUI-Inpaint-CropAndStitch/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "code/ComfyUI/custom_nodes/ComfyUI-Inpaint-CropAndStitch/UPSTREAM.md": "fecf73ea1828d8e1f0d2978701fa95ca28bb25ab64f2dbe763f6aa3d295f66e1"
+  },
+  "verificationNotes": [
+    "Legacy v1 bytes equal HEAD",
+    "Only region-marker-edit entry in generated parameter schemas changed",
+    "Vendored runtime files match pinned experiment checkout byte-for-byte; license retained",
+    "Changed-file format, ESLint, Oxlint and Stylelint pass; global lint still blocked solely by 59 original contract document files"
+  ]
+}

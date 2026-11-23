@@ -22,7 +22,9 @@ export function assertDesignModeApplications(
         ['screen-capture-edit', 'text-chat'].includes(key),
     ) ||
     !keys.includes(input.defaultImageApplicationKey) ||
-    input.defaultImageApplicationKey === 'text-to-image'
+    ['text-to-image', 'text-to-image-lora'].includes(
+      input.defaultImageApplicationKey,
+    )
   )
     throw new ApiError(
       400,

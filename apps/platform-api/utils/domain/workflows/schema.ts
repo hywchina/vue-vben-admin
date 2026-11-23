@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { ASSET_KINDS } from '../assets/validation';
 import { splitOptionalLora } from './optional-lora';
+import { normalizeRegionPrompts, validateRegionMarks } from './region-inputs';
 
 export const workflowScalarParameterTypeSchema = z.enum([
   'boolean',
@@ -393,7 +394,8 @@ export function materializeWorkflow(
     if (
       definition.key === 'prompt' &&
       typeof value === 'string' &&
-      definitions.some((field) => field.type === 'region')
+      definitions.some((field) => field.type === 'region') &&
+      workflow[definition.nodeId ?? '']?.class_type !== 'RailRegionInputs'
     )
       value = `${value}\n仅将输入中的颜色区域、编号、框线作为编辑指引，完成指定修改后移除这些辅助标记。最终只输出自然、干净的设计图片，不保留或生成编号、色块、框线、文字标签。`;
     if (
@@ -409,6 +411,12 @@ export function materializeWorkflow(
       }
       const node = workflow[definition.nodeId];
       if (!node) throw new Error('工作流参数映射已失效');
+      if (node.class_type === 'RailRegionInputs') {
+        if (definition.inputName === 'region_prompts')
+          value = JSON.stringify(normalizeRegionPrompts(value));
+        if (definition.inputName === 'brush_data' && value)
+          validateRegionMarks(value);
+      }
       node.inputs[definition.inputName] = value;
     }
   }

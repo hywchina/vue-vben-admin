@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   store: undefined as any,
 }));
 vi.mock('vue-router', () => ({
+  onBeforeRouteLeave: vi.fn(),
   useRoute: () => ({
     query: { conversationId: 'conversation', appKey: 'single-image-edit' },
   }),
@@ -56,6 +57,7 @@ vi.mock('#/api', () => ({
   getDesignConversationsApi: mocks.conversations,
   getDesignConversationApi: mocks.resolveConversation,
   saveDesignConversationDraftApi: mocks.save,
+  saveDesignConversationDraftOnUnloadApi: vi.fn().mockResolvedValue({}),
   archiveDesignConversationApi: vi.fn(),
   createDesignConversationApi: vi.fn(),
   getAssetApi: vi.fn(),

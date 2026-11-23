@@ -39,6 +39,14 @@ const localDraftSchema = z.object({
   mode: z.enum(localEditModes),
   color: z.string().max(1_000_000).optional(),
   number: z.string().max(1_000_000).optional(),
+  regionPrompts: z
+    .record(
+      z
+        .string()
+        .regex(/^(number_[1-6]|color_(black|white|red|green|blue|gray))$/),
+      z.string().max(2000),
+    )
+    .optional(),
 });
 const schema = z.object({
   designMode: z.enum(['cabin', 'cmf', 'component']).default('cabin'),
@@ -52,6 +60,14 @@ const schema = z.object({
     .record(z.string(), z.unknown())
     .refine((value) => Object.keys(value).length <= 200, '参数不能超过 200 个'),
   projectId: z.string().uuid(),
+  writeToken: z
+    .object({
+      writerId: z.string().uuid(),
+      sequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+      baseRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    })
+    .strict()
+    .optional(),
 });
 
 export default apiHandler(async (event) => {
@@ -169,25 +185,73 @@ export default apiHandler(async (event) => {
       error instanceof Error ? error.message : '工作流草稿资产无效',
     );
   }
-  const [draft] = await sql<{ updatedAt: Date }[]>`
+  const token = input.writeToken;
+  const [draft] = await sql<{ revision: number; updatedAt: Date }[]>`
     INSERT INTO design_conversation_drafts (
-      conversation_id, app_key, design_mode, parameter_values, input_asset_ids
-    ) VALUES (
+      conversation_id, app_key, design_mode, parameter_values, input_asset_ids,
+      revision, writer_id, writer_sequence
+    ) SELECT
       ${conversationId},
       ${appKey},
       ${input.designMode},
       ${sql.json(JSON.parse(JSON.stringify(input.parameterValues)))},
-      ${sql.json(inputAssetIds)}
+      ${sql.json(inputAssetIds)},
+      1, ${token?.writerId ?? null}::uuid, ${token?.sequence ?? 0}
+    WHERE ${!token || token.baseRevision === 0} OR EXISTS (
+      SELECT 1 FROM design_conversation_drafts
+      WHERE conversation_id = ${conversationId} AND app_key = ${appKey}
+        AND design_mode = ${input.designMode}
     )
     ON CONFLICT (conversation_id, app_key, design_mode) DO UPDATE SET
       parameter_values = EXCLUDED.parameter_values,
       input_asset_ids = EXCLUDED.input_asset_ids,
-      updated_at = now()
-    RETURNING updated_at AS "updatedAt"
+      updated_at = now(),
+      revision = design_conversation_drafts.revision + 1,
+      writer_id = EXCLUDED.writer_id,
+      writer_sequence = EXCLUDED.writer_sequence
+    WHERE ${!token}
+      OR (design_conversation_drafts.writer_id = EXCLUDED.writer_id
+        AND design_conversation_drafts.writer_sequence < EXCLUDED.writer_sequence)
+      OR (design_conversation_drafts.writer_id IS DISTINCT FROM EXCLUDED.writer_id
+        AND design_conversation_drafts.revision = ${token?.baseRevision ?? 0})
+    RETURNING updated_at AS "updatedAt", revision::float8 AS revision
   `;
+  if (!draft) {
+    const [current] = await sql<
+      {
+        revision: number;
+        sequence: number;
+        updatedAt: Date;
+        writerId: null | string;
+      }[]
+    >`
+      SELECT writer_id AS "writerId", writer_sequence::float8 AS sequence,
+        revision::float8 AS revision, updated_at AS "updatedAt"
+      FROM design_conversation_drafts
+      WHERE conversation_id = ${conversationId} AND app_key = ${appKey}
+        AND design_mode = ${input.designMode}
+    `;
+    if (
+      token &&
+      current?.writerId === token.writerId &&
+      current.sequence >= token.sequence
+    )
+      return {
+        applied: false,
+        revision: current.revision,
+        updatedAt: current.updatedAt.toISOString(),
+      };
+    throw new ApiError(
+      409,
+      'DESIGN_DRAFT_CONFLICT',
+      '草稿已在其他页面更新，请先保留当前内容，再重新载入',
+    );
+  }
   return {
     inputAssetIds,
     parameterValues: input.parameterValues,
     updatedAt: draft?.updatedAt.toISOString(),
+    revision: draft.revision,
+    applied: true,
   };
 });

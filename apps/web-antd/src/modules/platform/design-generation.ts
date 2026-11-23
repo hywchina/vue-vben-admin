@@ -37,7 +37,9 @@ export function isDesignGenerationApplication(appKey: string) {
 export function designGenerationCategory(
   appKey: string,
 ): DesignGenerationCategory {
-  return appKey === 'text-to-image' ? 'text' : 'image';
+  return ['text-to-image', 'text-to-image-lora'].includes(appKey)
+    ? 'text'
+    : 'image';
 }
 
 export function generationApplications(

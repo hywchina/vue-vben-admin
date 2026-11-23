@@ -20,6 +20,10 @@ describe('design module function settings', () => {
     { applicationKeys: ['single-image-edit', 'single-image-edit'] },
     { applicationKeys: ['unknown'] },
     { defaultImageApplicationKey: 'text-to-image' },
+    {
+      applicationKeys: ['text-to-image-lora'],
+      defaultImageApplicationKey: 'text-to-image-lora',
+    },
     { defaultImageApplicationKey: 'inpaint-single' },
     {
       applicationKeys: ['screen-capture-edit'],
@@ -32,6 +36,7 @@ describe('design module function settings', () => {
       expect(() =>
         assertDesignModeApplications({ ...config, ...override }, [
           ...config.applicationKeys,
+          'text-to-image-lora',
           'screen-capture-edit',
           'text-chat',
         ]),

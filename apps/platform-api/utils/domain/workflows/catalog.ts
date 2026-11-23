@@ -18,7 +18,7 @@ interface ScalarFieldInput {
   placeholder?: string;
   required?: boolean;
   step?: number;
-  type: 'boolean' | 'number' | 'select' | 'text' | 'textarea';
+  type: 'boolean' | 'json' | 'number' | 'select' | 'text' | 'textarea';
   uiControl?:
     | 'camera-horizontal'
     | 'camera-vertical'
@@ -199,7 +199,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '将业务提示词与受控生成参数映射到 Flux2 Klein 工作流。',
       name: '文生图',
     },
-    fileName: 'flux2-klein-text-to-image-v1.json',
+    fileName: 'flux2-klein-text-to-image-v2.json',
     version: {
       modelRequirements: fluxModels,
       outputSchema: [output('356', 'images', 'image', ['ComfyUI', '文生图'])],
@@ -215,11 +215,12 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           integer: true,
           key: 'width',
           label: '图片宽度',
+          help: '最终图片按所选像素尺寸输出，模型内部按16像素对齐采样后恢复尺寸。',
           max: 4096,
           min: 512,
           nodeId: '358',
           required: true,
-          step: 64,
+          step: 1,
           type: 'number',
         }),
         scalar({
@@ -228,11 +229,12 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           integer: true,
           key: 'height',
           label: '图片高度',
+          help: '最终图片按所选像素尺寸输出，模型内部按16像素对齐采样后恢复尺寸。',
           max: 4096,
           min: 512,
           nodeId: '359',
           required: true,
-          step: 64,
+          step: 1,
           type: 'number',
         }),
         scalar({
@@ -275,7 +277,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '使用内饰 LoRA 约束生成风格。',
       name: 'LoRA 客室生成',
     },
-    fileName: 'text-to-image-lora-v1.json',
+    fileName: 'text-to-image-lora-v2.json',
     version: {
       modelRequirements: [
         ...fluxModels,
@@ -294,11 +296,12 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           integer: true,
           key: 'width',
           label: '图片宽度',
+          help: '最终图片按所选像素尺寸输出，模型内部按16像素对齐采样后恢复尺寸。',
           max: 4096,
           min: 512,
           nodeId: '358',
           required: true,
-          step: 64,
+          step: 1,
           type: 'number',
         }),
         scalar({
@@ -307,11 +310,12 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           integer: true,
           key: 'height',
           label: '图片高度',
+          help: '最终图片按所选像素尺寸输出，模型内部按16像素对齐采样后恢复尺寸。',
           max: 4096,
           min: 512,
           nodeId: '359',
           required: true,
-          step: 64,
+          step: 1,
           type: 'number',
         }),
         scalar({
@@ -491,14 +495,14 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '使用 PNG Alpha 遮罩进行单图局部重绘。',
       name: '单图局部重绘',
     },
-    fileName: 'inpaint-single-v1.json',
+    fileName: 'inpaint-single-v2.json',
     version: {
       modelRequirements: fluxModels,
       outputSchema: [output('363', 'images', 'image', ['ComfyUI', '局部重绘'])],
       parameterSchema: [
         media({
           assetIndex: 0,
-          help: '可在工作区中绘制透明遮罩并保存为新资产。',
+          help: '在工作区绘制遮罩；结果恢复底图尺寸并保护范围外像素，过程图不自动入库。',
           key: 'maskedImage',
           label: '底图与遮罩',
           targets: [{ inputName: 'image', nodeId: '368' }],
@@ -557,7 +561,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '基于透明遮罩和参考图的局部替换。',
       name: '参考图局部重绘',
     },
-    fileName: 'inpaint-reference-v1.json',
+    fileName: 'inpaint-reference-v2.json',
     version: {
       modelRequirements: fluxModels,
       outputSchema: [output('370', 'images', 'image', ['ComfyUI', '参考重绘'])],
@@ -632,7 +636,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '可控四边尺寸的 Flux2 外补画。',
       name: '智能扩图',
     },
-    fileName: 'outpaint-v1.json',
+    fileName: 'outpaint-v2.json',
     version: {
       modelRequirements: fluxModels,
       outputSchema: [output('366', 'images', 'image', ['ComfyUI', '扩图'])],
@@ -757,10 +761,11 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       shortName: '区域标记',
     },
     capability: {
-      description: '基于 EasyMark 颜色与编号笔画的分区编辑。',
+      description:
+        '颜色与编号定义真实编辑范围，支持每区域指令及可选设计参考图。',
       name: '区域标记',
     },
-    fileName: 'region-marker-edit-v1.json',
+    fileName: 'region-marker-edit-v2.json',
     version: {
       modelRequirements: fluxModels,
       outputSchema: [output('366', 'images', 'image', ['ComfyUI', '编号分区'])],
@@ -781,21 +786,47 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           type: 'region',
         }),
         scalar({
-          defaultValue: '黑色 1 区域替换为座椅，绿色 2 区域替换为扶手',
+          defaultValue:
+            '按各区域修改要求调整设计，保持原有空间透视、光照和未标记区域不变',
           inputName: 'prompt',
           key: 'prompt',
-          label: '标记编辑指令',
+          label: '共同修改要求',
           maxLength: 6000,
-          nodeId: '363',
+          nodeId: '362',
           required: true,
           type: 'textarea',
         }),
-        seed('359', 'seed', 396),
+        scalar({
+          key: 'regionPrompts',
+          label: '每区域修改要求',
+          type: 'json',
+          nodeId: '362',
+          inputName: 'region_prompts',
+          defaultValue: {},
+          advanced: true,
+          help: '可选；未填写的区域沿用共同修改要求。',
+        }),
+        media({
+          key: 'regionReference',
+          label: '设计参考图（选填）',
+          type: 'asset',
+          assetIndex: 1,
+          required: false,
+          targets: [
+            {
+              nodeId: '362',
+              inputName: 'reference_base64',
+              transport: 'data-url',
+            },
+            { nodeId: '367', inputName: 'image_base64', transport: 'data-url' },
+          ],
+        }),
+        seed('371', 'noise_seed', 396),
       ],
     },
     workflow: {
       code: 'flux2-klein-region-marker-edit',
-      description: 'EasyMark 颜色或编号区域驱动的 Flux2 分区编辑工作流。',
+      description: 'Flux2 原图裁剪、逐区域遮罩编辑和原尺寸保护回贴。',
       name: 'Flux2 Klein 区域标记',
     },
   },
@@ -815,7 +846,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '使用 Hunyuan3D 从四向参考图生成 GLB 模型。',
       name: '多视图生三维',
     },
-    fileName: 'multiview-to-3d-v1.json',
+    fileName: 'multiview-to-3d-v2.json',
     version: {
       modelRequirements: ['hunyuan3d-dit-v2-mv.safetensors'],
       outputSchema: [output('83', '3d', 'model3d', ['ComfyUI', 'Hunyuan3D'])],
@@ -919,7 +950,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           max: 8192,
           min: 64,
           nodeId: '3',
-          step: 64,
+          step: 1,
           type: 'number',
         }),
       ],
@@ -972,7 +1003,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           max: 16_384,
           min: 64,
           nodeId: '7',
-          step: 64,
+          step: 1,
           type: 'number',
         }),
         scalar({
@@ -1069,7 +1100,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '使用 Qwen Image Edit 生成单个可控镜头视角。',
       name: '单视角镜头控制',
     },
-    fileName: 'camera-control-single-v1.json',
+    fileName: 'camera-control-single-v2.json',
     version: {
       modelRequirements: [
         'qwen_2.5_vl_7b_fp8_scaled.safetensors',
@@ -1084,10 +1115,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           assetIndex: 0,
           key: 'sourceImage',
           label: '原始视图',
-          targets: [
-            { inputName: 'image', nodeId: '20' },
-            { inputName: 'image', nodeId: '85:50' },
-          ],
+          targets: [{ inputName: 'image', nodeId: '20' }],
           type: 'asset',
         }),
         ...[
@@ -1260,7 +1288,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: 'Flux2 Klein KV Cache 双图指令编辑。',
       name: '双图参考编辑',
     },
-    fileName: 'image-edit-kv-v1.json',
+    fileName: 'image-edit-kv-v2.json',
     version: {
       modelRequirements: [
         'flux-2-klein-9b-kv-fp8.safetensors',
@@ -1306,26 +1334,14 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
   },
 ];
 
-const OUTPAINT_REQUIRED_PROMPT_PREFIX =
-  '删除红色扩展标记区域，并参考原图内容向画布外自然延展。不要保留红色、纯色边框或遮罩痕迹。具体设计要求：';
-
 export const WORKFLOW_CATALOG: WorkflowCatalogEntry[] =
   WORKFLOW_CATALOG_BASE.map((entry) => ({
     ...entry,
     version: {
       ...entry.version,
-      parameterSchema: (
+      parameterSchema:
         generatedParameterSchemas[
           entry.application.key as keyof typeof generatedParameterSchemas
-        ] ?? entry.version.parameterSchema
-      ).map((field) =>
-        entry.application.key === 'outpaint' && field.key === 'prompt'
-          ? {
-              ...field,
-              help: '平台会自动附加清除红色扩展标记的必要指令；这里只需描述希望延展出的设计内容。',
-              valuePrefix: OUTPAINT_REQUIRED_PROMPT_PREFIX,
-            }
-          : field,
-      ),
+        ] ?? entry.version.parameterSchema,
     },
   }));

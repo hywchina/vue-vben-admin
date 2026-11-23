@@ -11,7 +11,10 @@ import {
   getDesignModeApplicationsApi,
   saveDesignModeApplicationsApi,
 } from '#/api/platform';
-import { isReferenceImageWorkflow } from '#/modules/platform/design-generation';
+import {
+  designGenerationCategory,
+  isReferenceImageWorkflow,
+} from '#/modules/platform/design-generation';
 import { designModes } from '#/modules/platform/design-modes';
 import { isLocalEditWorkflow } from '#/modules/platform/local-image-edit';
 import { usePlatformStore } from '#/store';
@@ -46,7 +49,7 @@ const rows = computed(() => {
 });
 const defaults = computed(() =>
   (current.value?.applicationKeys ?? [])
-    .filter((key) => key !== 'text-to-image')
+    .filter((key) => designGenerationCategory(key) === 'image')
     .map((key) => ({
       value: key,
       label: applications.value.find((app) => app.key === key)?.name ?? key,
@@ -76,7 +79,9 @@ function toggle(key: string, checked: boolean) {
     : config.applicationKeys.filter((item) => item !== key);
   if (!config.applicationKeys.includes(config.defaultImageApplicationKey))
     config.defaultImageApplicationKey =
-      config.applicationKeys.find((item) => item !== 'text-to-image') ?? '';
+      config.applicationKeys.find(
+        (item) => designGenerationCategory(item) === 'image',
+      ) ?? '';
 }
 function move(key: string, direction: number) {
   const keys = current.value?.applicationKeys;

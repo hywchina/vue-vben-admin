@@ -1,8 +1,15 @@
 import type {
+  DesignDraftPayload,
+  DraftWriteToken,
+} from '#/modules/platform/design-draft-save';
+import type {
   DesignConversation,
   PlatformAsset,
   WorkflowWorkspaceDraft,
 } from '#/modules/platform/types';
+
+import { useAppConfig } from '@vben/hooks';
+import { useAccessStore } from '@vben/stores';
 
 import { requestClient } from '#/api/request';
 
@@ -105,14 +112,9 @@ export function getDesignConversationDraftApi(
   );
 }
 
-export function saveDesignConversationDraftApi(input: {
-  appKey: string;
-  conversationId: string;
-  designMode?: 'cabin' | 'cmf' | 'component';
-  inputAssetIds: Record<string, string>;
-  parameterValues: Record<string, unknown>;
-  projectId: string;
-}) {
+export function saveDesignConversationDraftApi(
+  input: DesignDraftPayload & { writeToken?: DraftWriteToken },
+) {
   return requestClient.put<WorkflowWorkspaceDraft>(
     `/design-conversations/${input.conversationId}/drafts/${encodeURIComponent(input.appKey)}`,
     {
@@ -120,6 +122,38 @@ export function saveDesignConversationDraftApi(input: {
       inputAssetIds: input.inputAssetIds,
       parameterValues: input.parameterValues,
       projectId: input.projectId,
+      writeToken: input.writeToken,
+    },
+    { showErrorMessage: false },
+  );
+}
+
+export async function saveDesignConversationDraftOnUnloadApi(
+  input: DesignDraftPayload & { writeToken: DraftWriteToken },
+) {
+  const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
+  const token = useAccessStore().accessToken;
+  const response = await fetch(
+    `${apiURL.replace(/\/$/, '')}/design-conversations/${input.conversationId}/drafts/${encodeURIComponent(input.appKey)}`,
+    {
+      method: 'PUT',
+      credentials: 'include',
+      keepalive: true,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token ?? ''}`,
+      },
+      body: JSON.stringify({
+        projectId: input.projectId,
+        designMode: input.designMode,
+        parameterValues: input.parameterValues,
+        inputAssetIds: input.inputAssetIds,
+        writeToken: input.writeToken,
+      }),
     },
   );
+  const result = await response.json();
+  if (!response.ok || result.code !== 0)
+    throw new Error(result.message ?? '草稿保存失败，请重试');
+  return result.data as WorkflowWorkspaceDraft;
 }

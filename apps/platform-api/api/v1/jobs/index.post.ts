@@ -32,6 +32,7 @@ import {
   referenceImageEditKey,
   referenceImageWorkflow,
 } from '~/utils/domain/workflows/reference-image-edit';
+import { validateRegionMarks } from '~/utils/domain/workflows/region-inputs';
 import { getCapabilityByAppKey } from '~/utils/domain/workflows/repository';
 import {
   materializeWorkflow,
@@ -124,7 +125,8 @@ export default apiHandler(async (event) => {
       request.inputTransferIds.length > 0 ||
       (localEdit.mode === 'mask'
         ? count < 1 || count > 2 || request.inputAnnotations.length > 0
-        : count !== 1 ||
+        : count < 1 ||
+          count > 2 ||
           request.inputAssetIds[0] !== localEdit.baseAssetId ||
           request.inputAnnotations.length !== 1 ||
           request.inputAnnotations[0]?.position !== 0 ||
@@ -133,7 +135,7 @@ export default apiHandler(async (event) => {
       throw new ApiError(
         400,
         'LOCAL_EDIT_INPUT_INVALID',
-        '局部编辑需要底图和当前工具的有效标记，参考图仅用于遮罩',
+        '局部编辑需要底图和当前工具的有效标记，可另选一张设计参考图',
       );
   }
   const localAppKey = localEdit
@@ -272,6 +274,13 @@ export default apiHandler(async (event) => {
         capability.parameterSchema,
         parameters,
       );
+      if (
+        Object.values(materialized).some(
+          (node) => node.class_type === 'RailRegionInputs',
+        )
+      )
+        validateRegionMarks(parameters.regionMarks);
+
       assertFixedWorkflowModels(
         capability.apiJson,
         materialized,

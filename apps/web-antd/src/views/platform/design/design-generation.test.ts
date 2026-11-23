@@ -57,14 +57,14 @@ const applications = [
 ];
 
 describe('design generation categories', () => {
-  it('keeps text-to-image as the first category and only workflow', () => {
+  it('groups both text-only workflows together while retaining the default', () => {
     expect(designGenerationCategories.map((item) => item.label)).toEqual([
       '文生图',
       '图生图',
     ]);
     expect(
       generationApplications(applications, 'text').map((item) => item.key),
-    ).toEqual(['text-to-image']);
+    ).toEqual(['text-to-image', 'text-to-image-lora']);
     expect(defaultGenerationApplicationKey(applications, 'text')).toBe(
       'text-to-image',
     );
@@ -73,12 +73,7 @@ describe('design generation categories', () => {
   it('excludes text generation while retaining LoRA and new published workflows', () => {
     expect(
       generationApplications(applications, 'image').map((item) => item.key),
-    ).toEqual([
-      'image-upscale',
-      'inpaint-single',
-      'text-to-image-lora',
-      'future-workflow',
-    ]);
+    ).toEqual(['image-upscale', 'inpaint-single', 'future-workflow']);
     expect(isDesignGenerationApplication('text-chat')).toBe(false);
     expect(isDesignGenerationApplication('text-to-image-lora')).toBe(true);
   });
@@ -126,12 +121,12 @@ describe('design generation categories', () => {
 
   it('derives the category for historical replay and output editing without extra state', () => {
     expect(designGenerationCategory('text-to-image')).toBe('text');
+    expect(designGenerationCategory('text-to-image-lora')).toBe('text');
     for (const key of [
       'inpaint-single',
       'image-upscale',
       'multi-image-edit',
       'camera-control-multi',
-      'text-to-image-lora',
     ]) {
       expect(designGenerationCategory(key)).toBe('image');
     }
@@ -146,7 +141,10 @@ describe('design generation categories', () => {
     expect(keys('component')).toEqual(keys('cabin'));
     expect(keys('cmf')).toEqual(keys('cabin'));
     expect(keys('cabin')).not.toContain('text-chat');
-    expect(keys('cabin')).toContain('text-to-image-lora');
+    expect(keys('cabin')).not.toContain('text-to-image-lora');
+    expect(
+      generationApplications(applications, 'text').map((app) => app.key),
+    ).toContain('text-to-image-lora');
   });
 });
 
@@ -172,4 +170,17 @@ describe('unified region marking', () => {
     });
     expect(old.number).toBe('older-number-marks');
   });
+});
+
+it('restores optional region requirements across tool switches without accepting invalid keys', () => {
+  const value = localEditDraft({
+    mode: 'color',
+    color: 'marks',
+    regionPrompts: { number_1: '蓝色座椅', wrong: 'invalid' },
+  });
+  expect(value.mode).toBe('number');
+  expect(value.regionPrompts).toEqual({ number_1: '蓝色座椅' });
+  expect(localEditDraft({ ...value, mode: 'mask' }).regionPrompts).toEqual(
+    value.regionPrompts,
+  );
 });

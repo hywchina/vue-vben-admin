@@ -28,7 +28,7 @@ import {
   ref,
   watch,
 } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 
@@ -63,6 +63,7 @@ import {
   referenceDesignConversationInputApi,
   renameDesignConversationApi,
   saveDesignConversationDraftApi,
+  saveDesignConversationDraftOnUnloadApi,
 } from '#/api';
 import {
   assetImageDragType,
@@ -87,6 +88,7 @@ import {
   restoreCameraViews,
   setCameraViewParameters,
 } from '#/modules/platform/camera-views';
+import { DesignDraftSaver } from '#/modules/platform/design-draft-save';
 import {
   baseEditReplacements,
   defaultGenerationApplicationKey,
@@ -137,6 +139,7 @@ import CapabilityMediaField from '../workspace/capability-media-field.vue';
 import { applyCaptureMask } from '../workspace/capture-frame';
 import { submitCaptureFrame } from '../workspace/capture-session';
 import { createRegionInputAnnotations } from '../workspace/region-annotation';
+import RegionPromptFields from '../workspace/region-prompt-fields.vue';
 import { acceptComposerImageDrop } from './design-composer-drop';
 import {
   assignMediaAssetIds,
@@ -311,7 +314,14 @@ async function resolveConversationInput(assetId: string) {
   return asset;
 }
 let hydratingDraft = false;
-let groupedDraftWrite = Promise.resolve();
+const draftSaveRevision = ref(0);
+const draftSaver = new DesignDraftSaver(saveDesignConversationDraftApi, () => {
+  draftSaveRevision.value++;
+});
+const draftSaveStatus = computed(() => {
+  void draftSaveRevision.value;
+  return draftSaver.status;
+});
 let pageReady = false;
 
 const activeConversation = computed(() =>
@@ -358,9 +368,12 @@ const designApplications = computed(() =>
     activeDesignMode.value,
   ).filter((item) => isDesignGenerationApplication(item.key)),
 );
+const categoryApplications = computed(() =>
+  generationApplications(designApplications.value, generationCategory.value),
+);
 const availableApplications = computed(() => {
   const query = appSearch.value.trim().toLowerCase();
-  return generationApplications(designApplications.value, 'image').filter(
+  return categoryApplications.value.filter(
     (item) =>
       !query ||
       `${item.name}${item.shortName}${item.description}`
@@ -410,7 +423,13 @@ const localEnabledTools = computed(() =>
     .map(({ mode }) => mode),
 );
 const localReferenceAvailable = computed(() =>
-  localCapabilityKeys.value.includes('inpaint-reference'),
+  localDraft.value.mode === 'mask'
+    ? localCapabilityKeys.value.includes('inpaint-reference')
+    : Boolean(
+        localCapabilities['region-marker-edit']?.fields.some(
+          (field) => field.assetIndex === 1,
+        ),
+      ),
 );
 const localMarked = computed(() =>
   localDraft.value.mode === 'mask'
@@ -528,9 +547,7 @@ const mediaFields = computed(() => {
   if (referenceEdit.value) return referenceImageSlots;
   if (localEdit.value)
     return localEditImageFields.filter(
-      (field) =>
-        field.assetIndex === 0 ||
-        (localDraft.value.mode === 'mask' && localReferenceAvailable.value),
+      (field) => field.assetIndex === 0 || localReferenceAvailable.value,
     );
   return (
     capability.value?.fields
@@ -572,7 +589,10 @@ const liveCaptureJobs = new Map<CaptureSession, string>();
 const scalarFields = computed(
   () =>
     capability.value?.fields.filter(
-      (field) => !mediaTypes.has(field.type) && field.uiControl === 'default',
+      (field) =>
+        !mediaTypes.has(field.type) &&
+        field.uiControl === 'default' &&
+        !(localEdit.value && field.key === 'regionPrompts'),
     ) ?? [],
 );
 const cameraFields = computed(
@@ -1299,6 +1319,11 @@ async function saveLocalMask(file: File) {
   await saveDraftNow();
 }
 
+function setRegionPrompts(value: Record<string, string>) {
+  localDraft.value = { ...localDraft.value, regionPrompts: value };
+  scheduleDraftSave();
+}
+
 async function saveLocalRegion(mode: 'color' | 'number', marks: string) {
   const editor = localEditor.value;
   if (
@@ -1411,7 +1436,7 @@ function draftPayload() {
   };
 }
 
-async function saveDraftNow() {
+async function saveDraftNow(supersedePending = true) {
   if (hydratingDraft) return;
   if (referenceEdit.value || localEdit.value) {
     const context = captureContextKey.value;
@@ -1420,22 +1445,17 @@ async function saveDraftNow() {
   }
   const payload = draftPayload();
   if (!payload) return;
-  if ([localImageEditKey, referenceImageEditKey].includes(payload.appKey)) {
-    groupedDraftWrite = groupedDraftWrite.then(async () => {
-      await saveDesignConversationDraftApi(payload).catch(() => undefined);
-    });
-    await groupedDraftWrite;
-    return;
-  }
-  await saveDesignConversationDraftApi(payload).catch(() => undefined);
+  await draftSaver.save(payload, supersedePending);
 }
 
 function scheduleDraftSave() {
-  if (hydratingDraft || !draftPayload()) return;
+  const payload = draftPayload();
+  if (hydratingDraft || !payload) return;
+  draftSaver.stage(payload);
   if (draftTimer) clearTimeout(draftTimer);
   draftTimer = setTimeout(() => {
     draftTimer = undefined;
-    void saveDraftNow();
+    void saveDraftNow(false);
   }, 500);
 }
 
@@ -1461,11 +1481,16 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
           )
         : { [appKey]: await getCapabilityApi(app.capabilityCode) };
     Object.assign(capabilityCache, loaded);
-    const draft = await getDesignConversationDraftApi(
+    const remoteDraft = await getDesignConversationDraftApi(
       conversationId,
       projectId,
       appKey,
       mode,
+    );
+    if (generation !== loadGeneration) return;
+    const draft = draftSaver.restore(
+      { conversationId, projectId, appKey, designMode: mode },
+      remoteDraft,
     );
     const draftAssets = await Promise.all(
       Object.values(draft.inputAssetIds).map((id) =>
@@ -2083,7 +2108,12 @@ function taskParameters() {
   return Object.fromEntries(
     (capability.value?.fields ?? [])
       .filter((field) => !mediaTypes.has(field.type) || field.type === 'region')
-      .map((field) => [field.key, parameterValues[field.key]]),
+      .map((field) => [
+        field.key,
+        localEdit.value && field.key === 'regionPrompts'
+          ? (localDraft.value.regionPrompts ?? {})
+          : parameterValues[field.key],
+      ]),
   );
 }
 
@@ -2238,13 +2268,23 @@ async function submitCapability(
           assetIds:
             localMode === 'mask' && maskAssetId
               ? [maskAssetId, ...(selectedAssets[1] ? [selectedAssets[1]] : [])]
-              : [baseAssetId],
+              : [
+                  baseAssetId,
+                  ...(localReferenceAvailable.value && selectedAssets[1]
+                    ? [selectedAssets[1]]
+                    : []),
+                ],
           parameters:
             localMode === 'mask'
               ? taskParameters()
               : {
                   ...taskParameters(),
                   regionMarks: localDraft.value[localMode],
+                  ...(capability.value.fields.some(
+                    (field) => field.key === 'regionPrompts',
+                  )
+                    ? { regionPrompts: localDraft.value.regionPrompts ?? {} }
+                    : {}),
                 },
           fields: capability.value.fields,
         }
@@ -3767,6 +3807,44 @@ watch(
   },
 );
 
+function flushDraftOnUnload(event?: BeforeUnloadEvent) {
+  if (draftTimer) {
+    const payload = draftPayload();
+    if (payload) draftSaver.stage(payload);
+    clearTimeout(draftTimer);
+    draftTimer = undefined;
+  }
+  if (!draftSaver.status.dirty) return;
+  draftSaver.flushForUnload(saveDesignConversationDraftOnUnloadApi);
+  if (event) {
+    event.preventDefault();
+    event.returnValue = '';
+  }
+}
+function saveDraftWhenHidden() {
+  if (document.visibilityState === 'hidden') void saveDraftNow();
+}
+async function retryDraftSave() {
+  await saveDraftNow();
+  await draftSaver.flush();
+}
+onBeforeRouteLeave(async () => {
+  await saveDraftNow();
+  await draftSaver.flush();
+  if (draftSaver.status.dirty) {
+    message.error('草稿尚未保存，请重试成功后再离开');
+    return false;
+  }
+  return true;
+});
+onMounted(() => {
+  window.addEventListener('beforeunload', flushDraftOnUnload);
+  window.addEventListener('pagehide', flushDraftOnPageHide);
+  document.addEventListener('visibilitychange', saveDraftWhenHidden);
+});
+function flushDraftOnPageHide() {
+  flushDraftOnUnload();
+}
 onMounted(async () => {
   loading.value = true;
   try {
@@ -3811,6 +3889,9 @@ watch(
 );
 onBeforeUnmount(() => {
   composerDisposed = true;
+  window.removeEventListener('beforeunload', flushDraftOnUnload);
+  window.removeEventListener('pagehide', flushDraftOnPageHide);
+  document.removeEventListener('visibilitychange', saveDraftWhenHidden);
   stopPolling();
   if (draftTimer) clearTimeout(draftTimer);
   void saveDraftNow();
@@ -4222,6 +4303,17 @@ onBeforeUnmount(() => {
             type="file"
             @change="uploadComposerFiles"
           />
+          <RegionPromptFields
+            v-if="
+              localEdit &&
+              localDraft.mode !== 'mask' &&
+              localMarked &&
+              capability?.fields.some((field) => field.key === 'regionPrompts')
+            "
+            :marks="localDraft[localDraft.mode] ?? ''"
+            :value="localDraft.regionPrompts"
+            @change="setRegionPrompts($event)"
+          />
           <Textarea
             v-if="promptField"
             :auto-size="{ minRows: 2, maxRows: 8 }"
@@ -4262,6 +4354,33 @@ onBeforeUnmount(() => {
               当前工具对应的工作流暂不可用
             </span>
           </div>
+          <div
+            v-if="draftSaveStatus.initialized"
+            class="draft-save-state"
+            role="status"
+            aria-live="polite"
+          >
+            <span>
+              {{
+                draftSaveStatus.saving
+                  ? '正在保存草稿…'
+                  : draftSaveStatus.error
+                    ? `草稿未保存：${draftSaveStatus.error}`
+                    : draftSaveStatus.dirty
+                      ? '草稿待保存'
+                      : '草稿已保存'
+              }}
+            </span>
+            <Button
+              v-if="draftSaveStatus.error"
+              :loading="draftSaveStatus.saving"
+              type="link"
+              size="small"
+              @click="retryDraftSave"
+            >
+              重试保存
+            </Button>
+          </div>
           <div class="composer-bottom">
             <div class="composer-toolbar">
               <Popover
@@ -4301,7 +4420,10 @@ onBeforeUnmount(() => {
                 </button>
               </Popover>
               <Popover
-                v-if="generationCategory === 'image'"
+                v-if="
+                  generationCategory === 'image' ||
+                  categoryApplications.length > 1
+                "
                 v-model:open="functionMenuOpen"
                 placement="topLeft"
                 trigger="click"
@@ -4703,6 +4825,12 @@ onBeforeUnmount(() => {
               :placeholder="field.placeholder"
               :rows="4"
               @update:value="setFieldValue(field, $event)"
+            />
+            <RegionPromptFields
+              v-else-if="field.key === 'regionPrompts'"
+              :marks="String(parameterValues.regionMarks ?? '')"
+              :value="parameterValues[field.key]"
+              @change="setFieldValue(field, $event)"
             />
             <Textarea
               v-else-if="field.type === 'json' && field.key !== cameraViewsKey"
@@ -5127,6 +5255,14 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.draft-save-state {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--rail-theme-secondary, #68737e);
+}
+
 .local-edit-status {
   display: flex;
   gap: 6px;

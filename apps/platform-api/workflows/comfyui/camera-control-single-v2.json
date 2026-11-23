@@ -1,0 +1,157 @@
+{
+  "20": {
+    "inputs": {
+      "image": "生成座椅正面视图.png"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "加载图像"
+    }
+  },
+  "21": {
+    "inputs": {
+      "prompt": ["22", 0],
+      "clip": ["23", 0],
+      "vae": ["24", 0],
+      "image1": ["20", 0]
+    },
+    "class_type": "TextEncodeQwenImageEditPlus",
+    "_meta": {
+      "title": "文本编码（QwenImageEditPlus）"
+    }
+  },
+  "22": {
+    "inputs": {
+      "horizontal_angle": 180,
+      "vertical_angle": 30,
+      "zoom": 1,
+      "default_prompts": false,
+      "camera_view": false,
+      "image": ["20", 0]
+    },
+    "class_type": "QwenMultiangleCameraNode",
+    "_meta": {
+      "title": "Qwen Multiangle Camera"
+    }
+  },
+  "23": {
+    "inputs": {
+      "clip_name": "qwen_2.5_vl_7b_fp8_scaled.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "加载CLIP"
+    }
+  },
+  "24": {
+    "inputs": {
+      "vae_name": "qwen_image_vae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "加载VAE"
+    }
+  },
+  "25": {
+    "inputs": {
+      "image": ["20", 0]
+    },
+    "class_type": "easy imageSize",
+    "_meta": {
+      "title": "图像尺寸"
+    }
+  },
+  "26": {
+    "inputs": {
+      "width": ["25", 0],
+      "height": ["25", 1],
+      "batch_size": 1
+    },
+    "class_type": "EmptyLatentImage",
+    "_meta": {
+      "title": "空Latent图像"
+    }
+  },
+  "27": {
+    "inputs": {
+      "seed": 449781229599932,
+      "steps": 8,
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": ["34", 0],
+      "positive": ["21", 0],
+      "negative": ["28", 0],
+      "latent_image": ["26", 0]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "K采样器"
+    }
+  },
+  "28": {
+    "inputs": {
+      "text": "",
+      "clip": ["23", 0]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "CLIP文本编码"
+    }
+  },
+  "29": {
+    "inputs": {
+      "samples": ["27", 0],
+      "vae": ["24", 0]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "VAE解码"
+    }
+  },
+  "31": {
+    "inputs": {
+      "unet_name": "qwen_image_edit_2511_bf16.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "UNet加载器"
+    }
+  },
+  "33": {
+    "inputs": {
+      "lora_name": "Qwen-Image-Edit-2511-Lightning-8steps-V1.0-BF16_千问2511-8步-fp32.safetensors",
+      "strength_model": 0.8,
+      "model": ["31", 0]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  },
+  "34": {
+    "inputs": {
+      "lora_name": "Qwen-Image-Edit-2511-多角度镜头控制_v1.safetensors",
+      "strength_model": 1,
+      "model": ["33", 0]
+    },
+    "class_type": "LoraLoaderModelOnly",
+    "_meta": {
+      "title": "LoRA加载器（仅模型）"
+    }
+  },
+  "36": {
+    "inputs": {
+      "filename_prefix": "ComfyUI",
+      "images": ["29", 0]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "保存图像"
+    }
+  }
+}

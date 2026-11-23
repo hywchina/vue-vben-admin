@@ -14,6 +14,7 @@ export interface LocalEditDraft {
   color?: string;
   mode: LocalEditMode;
   number?: string;
+  regionPrompts?: Record<string, string>;
 }
 
 export function isLocalEditWorkflow(key: string) {
@@ -44,13 +45,29 @@ export function localEditDraft(value: unknown): LocalEditDraft {
         : (localEditTools.find(({ mode }) => mode === draft.mode)?.mode ??
           'mask'),
     color: typeof draft.color === 'string' ? draft.color : undefined,
+    ...(draft.regionPrompts &&
+    typeof draft.regionPrompts === 'object' &&
+    !Array.isArray(draft.regionPrompts)
+      ? {
+          regionPrompts: Object.fromEntries(
+            Object.entries(draft.regionPrompts).filter(
+              ([key, text]) =>
+                /^(number_[1-6]|color_(black|white|red|green|blue|gray))$/.test(
+                  key,
+                ) &&
+                typeof text === 'string' &&
+                text.length <= 2000,
+            ),
+          ),
+        }
+      : {}),
     number: typeof marks === 'string' ? marks : undefined,
   };
 }
 
 export const localEditImageFields: CapabilityField[] = [
   '编辑底图',
-  '遮罩参考图（选填）',
+  '设计参考图（选填）',
 ].map((label, assetIndex) => ({
   acceptedKinds: ['image'],
   advanced: false,

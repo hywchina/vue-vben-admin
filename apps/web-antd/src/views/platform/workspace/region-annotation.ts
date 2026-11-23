@@ -56,6 +56,68 @@ export function parseRegionStrokes(value: string) {
   });
 }
 
+const regionColors: Record<string, [string, string]> = {
+  '0,0,0': ['black', '黑色'],
+  '255,255,255': ['white', '白色'],
+  '255,0,0': ['red', '红色'],
+  '0,255,0': ['green', '绿色'],
+  '0,0,255': ['blue', '蓝色'],
+  '128,128,128': ['gray', '灰色'],
+};
+
+export function regionPromptGroups(value: string) {
+  const strokes = parseRegionStrokes(value).filter(
+    (stroke) => stroke.mode === 'brush',
+  );
+  const bounds = strokes.map((stroke) => {
+    const xs = stroke.points.map(({ x }) => x);
+    const ys = stroke.points.map(({ y }) => y);
+    return [
+      Math.min(...xs),
+      Math.min(...ys),
+      Math.max(...xs),
+      Math.max(...ys),
+    ] as const;
+  });
+  const keys = strokes.map((stroke) =>
+    stroke.marker
+      ? `number_${stroke.marker}`
+      : `color_${regionColors[stroke.color]?.[0] ?? 'red'}`,
+  );
+  strokes.forEach((stroke, index) => {
+    if (!stroke.marker) return;
+    const [x, y, right, bottom] = bounds[index] ?? [0, 0, 0, 0];
+    const frame = strokes
+      .map((item, j) => ({
+        item,
+        j,
+        box: bounds[j] ?? ([0, 0, 0, 0] as const),
+      }))
+      .filter(
+        ({ item, box: [a, b, c, d] }) =>
+          !item.marker &&
+          item.type === 'box' &&
+          a <= x &&
+          right <= c &&
+          b <= y &&
+          bottom <= d &&
+          (right - x) * (bottom - y) < (c - a) * (d - b) * 0.5,
+      )
+      .toSorted(
+        (a, b) =>
+          (a.box[2] - a.box[0]) * (a.box[3] - a.box[1]) -
+          (b.box[2] - b.box[0]) * (b.box[3] - b.box[1]),
+      )[0];
+    if (frame) keys[frame.j] = keys[index] ?? keys[frame.j] ?? 'color_red';
+  });
+  return [...new Set(keys)].map((key) => ({
+    key,
+    label: key.startsWith('number_')
+      ? `区域${key.slice(7)}`
+      : `${Object.values(regionColors).find(([name]) => key === `color_${name}`)?.[1] ?? '颜色'}区域`,
+  }));
+}
+
 export function drawRegionStroke(
   context: CanvasRenderingContext2D,
   stroke: RegionStroke,
