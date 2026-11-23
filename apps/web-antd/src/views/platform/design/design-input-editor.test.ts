@@ -10,6 +10,7 @@ import Design from './index.vue';
 
 const mocks = vi.hoisted(() => ({
   appKey: 'region-edit',
+  input: vi.fn(),
   preview: vi.fn(),
   capability: vi.fn(),
   draft: vi.fn(),
@@ -38,16 +39,7 @@ vi.mock('#/store', () => ({ usePlatformStore: () => mocks.store }));
 vi.mock('#/api', () => ({
   getCapabilityApi: mocks.capability,
   getDesignConversationDraftApi: mocks.draft,
-  getDesignConversationInputAssetApi: (
-    _conversation: string,
-    _project: string,
-    id: string,
-  ) =>
-    Promise.resolve(
-      mocks.store.currentAssets.find(
-        (asset: { id: string }) => asset.id === id,
-      ),
-    ),
+  getDesignConversationInputAssetApi: mocks.input,
   getDesignConversationsApi: mocks.conversations,
   saveDesignConversationDraftApi: mocks.save,
   archiveDesignConversationApi: vi.fn(),
@@ -212,6 +204,12 @@ beforeEach(() => {
     refreshCurrentProjectData: mocks.refresh,
     cancelJob: mocks.cancel,
   });
+  mocks.input.mockImplementation(
+    async (_conversation: string, _project: string, id: string) =>
+      mocks.store.currentAssets.find(
+        (asset: { id: string }) => asset.id === id,
+      ),
+  );
   mocks.initialize.mockResolvedValue(undefined);
   mocks.save.mockResolvedValue(undefined);
   mocks.conversations.mockResolvedValue([
@@ -343,6 +341,152 @@ describe('workflow input editor routing', () => {
     expect(root.textContent?.includes('应用分区')).toBe(
       appKey.startsWith('region-'),
     );
+  });
+});
+
+describe('conversation navigation ownership', () => {
+  const conversations = [
+    {
+      id: 'conversation',
+      projectId: 'project',
+      title: '设计 A',
+      legacy: false,
+    },
+    { id: 'second', projectId: 'project', title: '设计 B', legacy: false },
+    { id: 'third', projectId: 'project', title: '设计 C', legacy: false },
+  ];
+
+  it('keeps the latest conversation when an earlier draft save completes late', async () => {
+    mocks.conversations.mockResolvedValue(conversations);
+    const root = await configure('inpaint-single');
+    let finishFirst!: () => void;
+    mocks.save.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishFirst = resolve;
+        }),
+    );
+    root.querySelector<HTMLElement>('[data-conversation-id="second"]')?.click();
+    await settle();
+    expect(finishFirst).toBeDefined();
+    root.querySelector<HTMLElement>('[data-conversation-id="third"]')?.click();
+    await settle();
+    expect(
+      root.querySelector<HTMLElement>('.conversation-item.active')?.dataset
+        .conversationId,
+    ).toBe('third');
+    finishFirst();
+    await settle();
+    expect(
+      root.querySelector<HTMLElement>('.conversation-item.active')?.dataset
+        .conversationId,
+    ).toBe('third');
+  });
+
+  it('does not clear a restored draft when an earlier submission returns after leaving and revisiting the conversation', async () => {
+    mocks.conversations.mockResolvedValue(conversations);
+    const root = await configure('text-to-image');
+    let finishSubmit!: (job: any) => void;
+    mocks.submit.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSubmit = resolve;
+        }),
+    );
+    root.querySelector<HTMLButtonElement>('[aria-label="发送"]')?.click();
+    await settle();
+    expect(finishSubmit).toBeDefined();
+    root.querySelector<HTMLElement>('[data-conversation-id="second"]')?.click();
+    await settle();
+    root
+      .querySelector<HTMLElement>('[data-conversation-id="conversation"]')
+      ?.click();
+    await settle();
+    const prompt = () =>
+      root.querySelector<HTMLTextAreaElement>(
+        '.composer-box textarea[placeholder]',
+      )?.value;
+    expect(prompt()).toBe('保留编辑指令');
+    finishSubmit({ id: 'old-submission', status: 'queued' });
+    await settle();
+    expect(prompt()).toBe('保留编辑指令');
+  });
+
+  it('cancels a historical resend when input resolution completes after a conversation round trip', async () => {
+    mocks.conversations.mockResolvedValue(conversations);
+    const root = await configure('text-to-image');
+    let finishInput!: (asset: any) => void;
+    mocks.input.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishInput = resolve;
+        }),
+    );
+    mocks.store.currentJobs = [
+      {
+        id: 'historical-resend',
+        appKey: 'text-to-image',
+        designMode: 'cabin',
+        designConversationId: 'conversation',
+        projectId: 'project',
+        ownedByCurrentUser: true,
+        status: 'succeeded',
+        createdAt: '2026-11-22T00:00:00Z',
+        inputs: [{ position: 0, assetId: 'historical-input' }],
+        outputs: [],
+        parameters: { prompt: '历史指令' },
+      },
+    ];
+    await settle();
+    root
+      .querySelector<HTMLButtonElement>('[data-testid="rerun-history"]')
+      ?.click();
+    await settle();
+    expect(finishInput).toBeDefined();
+    root.querySelector<HTMLElement>('[data-conversation-id="second"]')?.click();
+    await settle();
+    root
+      .querySelector<HTMLElement>('[data-conversation-id="conversation"]')
+      ?.click();
+    await settle();
+    finishInput({
+      id: 'historical-input',
+      projectId: 'project',
+      type: 'image',
+      status: 'available',
+    });
+    await settle();
+    expect(mocks.submit).not.toHaveBeenCalled();
+  });
+
+  it('closes retired-workflow continuation when leaving its conversation', async () => {
+    mocks.conversations.mockResolvedValue(conversations);
+    const root = await configure('inpaint-single');
+    mocks.store.currentJobs = [
+      {
+        id: 'legacy-navigation-job',
+        appKey: 'image-edit-base',
+        designMode: 'cabin',
+        designConversationId: 'conversation',
+        projectId: 'project',
+        ownedByCurrentUser: true,
+        status: 'succeeded',
+        createdAt: '2026-11-22T00:00:00Z',
+        inputs: [],
+        outputs: [],
+        parameters: { prompt: '历史编辑指令' },
+      },
+    ];
+    await settle();
+    root
+      .querySelector<HTMLButtonElement>('[data-testid="rerun-history"]')
+      ?.click();
+    await settle();
+    expect(root.textContent).toContain('选择编辑方式后');
+    root.querySelector<HTMLElement>('[data-conversation-id="second"]')?.click();
+    await settle();
+    expect(root.textContent).not.toContain('选择编辑方式后');
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 });
 

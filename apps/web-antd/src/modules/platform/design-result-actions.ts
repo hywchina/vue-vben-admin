@@ -41,7 +41,7 @@ const modeActions: Record<
   readonly DesignImageResultAction[]
 > = {
   cabin: [
-    { icon: platformUiIcons.tags, key: 'mark', label: '标记修改' },
+    { icon: platformUiIcons.tags, key: 'mark', label: '区域标记' },
     {
       icon: platformUiIcons.images,
       key: 'multi-image',
@@ -57,7 +57,7 @@ const modeActions: Record<
     { icon: platformUiIcons.scanSearch, key: 'understand', label: '图像理解' },
   ],
   component: [
-    { icon: platformUiIcons.tags, key: 'mark', label: '标记修改' },
+    { icon: platformUiIcons.tags, key: 'mark', label: '区域标记' },
     { icon: platformUiIcons.images, key: 'multi-image', label: '多图融合' },
     { icon: platformUiIcons.zoomIn, key: 'upscale', label: '图像放大' },
     { icon: platformUiIcons.scanSearch, key: 'understand', label: '图像理解' },

@@ -19,7 +19,13 @@ vi.mock('ant-design-vue', () => {
         h('div', [slots.default?.(), slots.footer?.(), slots.action?.()]),
   });
   return {
-    Alert: box,
+    Alert: defineComponent({
+      props: ['message'],
+      setup:
+        (props, { slots }) =>
+        () =>
+          h('div', [props.message, slots.action?.()]),
+    }),
     Empty: box,
     Spin: box,
     Tag: box,
@@ -142,6 +148,34 @@ describe('report image picker scope', () => {
       expect.objectContaining({ folderId: 'root' }),
     );
   });
+  it('resolves cross-project selections before emitting target input IDs and shows failures', async () => {
+    vi.mocked(getAssetsApi).mockResolvedValue([image('source', 'a')]);
+    const resolveAsset = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('来源项目无权限'))
+      .mockResolvedValue(image('private-copy', 'destination'));
+    const onSelectMultiple = vi.fn();
+    const root = await render({
+      projects: [{ id: 'a', name: '来源项目' }],
+      multiple: true,
+      resolveAsset,
+      onSelectMultiple,
+    });
+    root.querySelector<HTMLButtonElement>('.asset-picker-grid button')?.click();
+    await settle();
+    const confirm = [...root.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('使用所选资产'),
+    );
+    if (!confirm) throw new Error('Missing confirm button');
+    confirm.click();
+    await settle();
+    expect(onSelectMultiple).not.toHaveBeenCalled();
+    expect(root.textContent).toContain('来源项目无权限');
+    confirm.click();
+    await settle();
+    expect(onSelectMultiple).toHaveBeenCalledWith(['private-copy']);
+  });
+
   it('keeps existing workflow and training pickers limited to their current project', async () => {
     vi.mocked(getAssetsApi).mockResolvedValue([
       image('current-image', 'destination'),

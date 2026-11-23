@@ -12,6 +12,7 @@ import {
   onBeforeUnmount,
   onMounted,
   ref,
+  useId,
   watch,
 } from 'vue';
 
@@ -63,6 +64,8 @@ const imageWidth = ref(0);
 const imageHeight = ref(0);
 const loading = ref(false);
 const saving = ref(false);
+const settingsOpen = ref(false);
+const settingsPanelId = useId();
 const tool = ref<MaskTool>('mask');
 const activeLayer = ref<DrawingLayer>('mask');
 const brushShape = ref<BrushShape>('circle');
@@ -1041,6 +1044,15 @@ onBeforeUnmount(() => {
             <IconifyIcon :icon="platformUiIcons.close" />
             取消
           </button>
+          <button
+            class="text-tool mask-settings-toggle"
+            aria-label="笔刷与图层设置"
+            :aria-controls="settingsPanelId"
+            :aria-expanded="settingsOpen"
+            @click="settingsOpen = !settingsOpen"
+          >
+            {{ settingsOpen ? '收起设置' : '工具设置' }}
+          </button>
         </div>
         <div v-if="!embedded" class="mask-editor-window-tools">
           <button title="切换全屏" @click="toggleFullscreen">
@@ -1052,7 +1064,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
-      <div class="mask-editor-body">
+      <div :class="{ 'settings-open': settingsOpen }" class="mask-editor-body">
         <aside class="mask-tool-rail" aria-label="遮罩工具">
           <button
             :class="{ active: tool === 'mask' }"
@@ -1144,7 +1156,11 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <aside class="mask-settings-panel">
+        <aside
+          :id="settingsPanelId"
+          aria-label="笔刷与图层设置"
+          class="mask-settings-panel"
+        >
           <section v-if="tool === 'fill'" class="tool-settings">
             <h3>填充设置</h3>
             <label class="simple-slider">
@@ -1422,6 +1438,7 @@ onBeforeUnmount(() => {
 .mask-editor-topbar {
   z-index: 5;
   display: flex;
+  flex-wrap: wrap;
   gap: 14px;
   align-items: center;
   min-height: 54px;
@@ -1438,18 +1455,23 @@ onBeforeUnmount(() => {
 
 .mask-editor-top-tools {
   display: flex;
+  flex: 1;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  min-width: 0;
 }
 
 .mask-editor-top-tools button {
   display: flex;
+  flex: 0 0 auto;
   gap: 5px;
   align-items: center;
   justify-content: center;
   width: 50px;
   height: 30px;
   color: #e7e7e7;
+  white-space: nowrap;
   cursor: pointer;
   background: #202328;
   border: 1px solid #484b51;
@@ -1521,6 +1543,7 @@ onBeforeUnmount(() => {
 }
 
 .mask-editor-body {
+  position: relative;
   display: grid;
   flex: 1;
   grid-template-columns: 64px minmax(0, 1fr) 220px;
@@ -1532,6 +1555,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   background: #17191d;
+}
+
+.mask-editor-top-tools .mask-settings-toggle {
+  display: none;
+  width: auto;
+  padding: 0 8px;
 }
 
 .mask-tool-rail > button {
@@ -1914,7 +1943,15 @@ onBeforeUnmount(() => {
   }
 
   .mask-editor-topbar {
-    overflow-x: auto;
+    gap: 6px;
+  }
+
+  .mask-editor-top-tools {
+    gap: 6px;
+  }
+
+  .mask-editor-top-tools .mask-settings-toggle {
+    display: flex;
   }
 
   .mask-editor-window-tools {
@@ -1932,6 +1969,15 @@ onBeforeUnmount(() => {
 
   .mask-settings-panel {
     display: none;
+  }
+
+  .settings-open .mask-settings-panel {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 6;
+    display: block;
+    width: min(220px, calc(100% - 52px));
+    box-shadow: -6px 0 20px #0006;
   }
 }
 </style>

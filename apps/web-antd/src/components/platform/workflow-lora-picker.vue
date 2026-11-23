@@ -231,12 +231,18 @@ function stale(target: LoraCatalog['targets'][number]) {
   padding: 7px 10px;
   font-size: 13px;
   white-space: nowrap;
-  border: 1px solid hsl(var(--border));
+  background: transparent;
+  border: 0;
   border-radius: 8px;
 }
 
+.lora-trigger:hover,
 .lora-trigger.active {
   color: hsl(var(--primary));
-  background: hsl(var(--primary) / 6%);
+}
+
+.lora-trigger:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
 }
 </style>

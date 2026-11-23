@@ -12,7 +12,7 @@ const localEditWorkflows = [
 export function localEditWorkflow(mode: LocalEditMode, hasReference: boolean) {
   switch (mode) {
     case 'color': {
-      return 'region-edit';
+      return 'region-marker-edit';
     }
     case 'number': {
       return 'region-marker-edit';
@@ -34,7 +34,7 @@ export const localImageDraftSlots = new Map(
   [0, 1, 2].map((index) => [index, { acceptedKinds: ['image'] }]),
 );
 
-export function hasLocalRegionMarks(value: unknown, mode: 'color' | 'number') {
+export function hasLocalRegionMarks(value: unknown, _mode: 'color' | 'number') {
   if (typeof value !== 'string' || value.length > 1_000_000) return false;
   return value.split('|').some((stroke) => {
     const parts = stroke.split(':');
@@ -44,7 +44,7 @@ export function hasLocalRegionMarks(value: unknown, mode: 'color' | 'number') {
     if (kind !== 'brush' || !['box', 'free', 'square'].includes(shape ?? ''))
       return false;
     if (
-      mode === 'number' &&
+      numberedPoints !== undefined &&
       (shape !== 'square' || !/^[1-6]$/.test(markerOrPoints ?? ''))
     )
       return false;

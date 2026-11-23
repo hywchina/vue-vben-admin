@@ -159,7 +159,9 @@ describe('workflow result actions', () => {
         .click();
       await nextTick();
       const bar = required(
-        root.querySelector(`[data-testid="${designMode}-result-actions"]`),
+        root.querySelector(
+          `.round-output__footer [data-testid="${designMode}-result-actions"]`,
+        ),
       );
       const buttons = [...bar.querySelectorAll<HTMLButtonElement>('button')];
       const index = buttons.findIndex(

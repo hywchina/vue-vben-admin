@@ -67,7 +67,7 @@ const defaultDesignMode: DesignModeDefinition = {
       appKey: 'region-marker-edit',
       icon: platformUiIcons.tags,
       key: 'marker-generate',
-      label: '标记生成',
+      label: '区域标记',
     },
     {
       appKey: referenceImageEditKey,
@@ -154,7 +154,7 @@ export const designModes: readonly DesignModeDefinition[] = [
         appKey: 'region-marker-edit',
         icon: platformUiIcons.tags,
         key: 'marker-edit',
-        label: '标记修改',
+        label: '区域标记',
       },
       {
         appKey: 'multi-image-edit',

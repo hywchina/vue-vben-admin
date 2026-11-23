@@ -228,12 +228,7 @@ const imageComparison = computed(() => {
   }
   return { afterLabel, afterSrc, beforeLabel, beforeSrc };
 });
-const showInlineResultActions = computed(
-  () =>
-    !showConversationImageGallery.value ||
-    Boolean(imageComparison.value) ||
-    imageOutputs.value.length <= 1,
-);
+const showInlineResultActions = computed(() => !outputLightboxOpen.value);
 const promptEntry = computed(() => {
   if (cameraViews.value.length > 0) return undefined;
   const historicalPrompt = props.job.parameters.prompt;
@@ -1151,11 +1146,7 @@ onMounted(() => void loadPreviews());
       @previous="moveOutputImage(-1)"
     >
       <template
-        v-if="
-          conversationLayout &&
-          imageOutputs.length > 1 &&
-          activeOutput?.kind === 'image'
-        "
+        v-if="conversationLayout && activeOutput?.kind === 'image'"
         #actions
       >
         <div

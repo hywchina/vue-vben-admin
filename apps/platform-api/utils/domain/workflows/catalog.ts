@@ -752,13 +752,13 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
         '使用颜色和编号标记座椅、扶手、地板等部件，精确描述每个编辑目标。',
       icon: 'lucide:tags',
       key: 'region-marker-edit',
-      name: '编号分区编辑',
+      name: '区域标记',
       outputAssetTypes: ['image'],
-      shortName: '标记',
+      shortName: '区域标记',
     },
     capability: {
       description: '基于 EasyMark 颜色与编号笔画的分区编辑。',
-      name: '编号分区编辑',
+      name: '区域标记',
     },
     fileName: 'region-marker-edit-v1.json',
     version: {
@@ -769,7 +769,7 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
           assetIndex: 0,
           inputName: 'brush_data',
           key: 'regionMarks',
-          label: '颜色与编号分区',
+          label: '区域标记',
           nodeId: '362',
           targets: [
             {
@@ -795,8 +795,8 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
     },
     workflow: {
       code: 'flux2-klein-region-marker-edit',
-      description: 'EasyMark 编号区域驱动的 Flux2 分区编辑工作流。',
-      name: 'Flux2 Klein 编号分区编辑',
+      description: 'EasyMark 颜色或编号区域驱动的 Flux2 分区编辑工作流。',
+      name: 'Flux2 Klein 区域标记',
     },
   },
   {

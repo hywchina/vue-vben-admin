@@ -1579,6 +1579,28 @@ async function run() {
     ),
     '局部编辑草稿未恢复各工具的标记和生成数量',
   );
+  const regionMigration = await readFile(
+    new URL('../migrations/051_unify_region_marking.sql', import.meta.url),
+    'utf8',
+  );
+  await sql.begin(async (transaction) => {
+    const [before] =
+      await transaction`SELECT md5(string_agg(row_to_json(v)::text, '' ORDER BY id)) AS digest FROM workflow_versions v`;
+    await transaction`UPDATE applications SET name = '编号分区编辑', short_name = '标记' WHERE key = 'region-marker-edit'`;
+    await transaction.unsafe(regionMigration);
+    const [after] =
+      await transaction`SELECT md5(string_agg(row_to_json(v)::text, '' ORDER BY id)) AS digest FROM workflow_versions v`;
+    const [renamed] =
+      await transaction`SELECT name FROM applications WHERE key = 'region-marker-edit'`;
+    assert(
+      renamed &&
+        before &&
+        after &&
+        renamed.name === '区域标记' &&
+        before.digest === after.digest,
+      '区域标记升级未改名或改写历史工作流版本',
+    );
+  });
   const localInput = {
     ...referenceJobInput,
     appKey: 'local-image-edit',
@@ -1594,7 +1616,18 @@ async function run() {
       key: 'inpaint-reference',
       assetIds: [derivedMask, reference],
     },
-    { mode: 'color', key: 'region-edit', assetIds: [base], marks: color },
+    {
+      mode: 'color',
+      key: 'region-marker-edit',
+      assetIds: [base],
+      marks: color,
+    },
+    {
+      mode: 'number',
+      key: 'region-marker-edit',
+      assetIds: [base],
+      marks: color,
+    },
     {
       mode: 'number',
       key: 'region-marker-edit',
@@ -1650,7 +1683,7 @@ async function run() {
       inputAssetIds: [base],
       localEdit: { baseAssetId: base, mode: 'number' },
       inputAnnotations: [{ assetId: annotated, position: 0 }],
-      parameters: { ...localInput.parameters, regionMarks: color },
+      parameters: { ...localInput.parameters, regionMarks: '' },
     },
   ]) {
     await apiRequest('/jobs', {
@@ -4137,6 +4170,129 @@ async function run() {
   await settleJobsForIntegration(
     [savedReuseJob.envelope.data.id],
     '主动入库跨会话复用验收完成',
+  );
+  const imageImportProject = await apiRequest<{ id: string }>('/projects', {
+    body: { name: `${runId}-image-import`, description: '跨项目选图测试' },
+    session: user1,
+  });
+  const destination = imageImportProject.envelope.data.id;
+  disposableProjectIds.push(destination);
+  const importConversation = await apiRequest<{ id: string }>(
+    '/design-conversations',
+    { body: { projectId: destination }, session: user1 },
+  );
+  const importPath = `/design-conversations/${importConversation.envelope.data.id}/input-assets/${prepared.envelope.data.asset.id}`;
+  const importedImage = await apiRequest<{
+    id: string;
+    projectId: string;
+    saved: boolean;
+  }>(importPath, {
+    body: { projectId: destination },
+    method: 'POST',
+    session: user1,
+  });
+  assert(
+    importedImage.envelope.data.projectId === destination &&
+      !importedImage.envelope.data.saved &&
+      importedImage.envelope.data.id !== prepared.envelope.data.asset.id,
+    '跨项目图片未建立私有目标副本',
+  );
+  const repeatedImport = await apiRequest<{ id: string }>(importPath, {
+    body: { projectId: destination },
+    method: 'POST',
+    session: user1,
+  });
+  assert(
+    repeatedImport.envelope.data.id === importedImage.envelope.data.id,
+    '重复选图未复用当前来源版本',
+  );
+  await apiRequest(
+    `/design-conversations/${importConversation.envelope.data.id}/input-assets/${importedImage.envelope.data.id}?projectId=${destination}`,
+    { session: user1 },
+  );
+  await apiRequest(`/assets/${importedImage.envelope.data.id}/preview`, {
+    session: user1,
+  });
+  const sourcePreview = await apiRequest<{ url: string }>(
+    `/assets/${prepared.envelope.data.asset.id}/preview`,
+    { session: user1 },
+  );
+  const copyPreview = await apiRequest<{ url: string }>(
+    `/assets/${importedImage.envelope.data.id}/preview`,
+    { session: user1 },
+  );
+  const originalFile = await fetch(sourcePreview.envelope.data.url);
+  const importedFile = await fetch(copyPreview.envelope.data.url);
+  assert(originalFile.ok && importedFile.ok, '跨项目图片对象不可读取');
+  assert(
+    Buffer.from(await originalFile.arrayBuffer()).equals(
+      Buffer.from(await importedFile.arrayBuffer()),
+    ),
+    '跨项目图片副本内容不一致',
+  );
+  const importedList = await apiRequest<Array<{ id: string }>>(
+    `/assets?projectId=${destination}`,
+    { session: user1 },
+  );
+  assert(
+    !importedList.envelope.data.some(
+      (a) => a.id === importedImage.envelope.data.id,
+    ),
+    '跨项目过程图意外入库',
+  );
+  await apiRequest(importPath, {
+    body: { projectId: destination },
+    method: 'POST',
+    session: user4,
+    expectedStatus: 404,
+  });
+  await sql`INSERT INTO project_members (project_id, user_id, project_role) VALUES (${destination}, ${user4.id}, 'editor')`;
+  const otherConversation = await apiRequest<{ id: string }>(
+    '/design-conversations',
+    { body: { projectId: destination }, session: user4 },
+  );
+  await apiRequest(
+    `/design-conversations/${otherConversation.envelope.data.id}/input-assets/${prepared.envelope.data.asset.id}`,
+    {
+      body: { projectId: destination },
+      method: 'POST',
+      session: user4,
+      expectedStatus: 404,
+    },
+  );
+  await apiRequest(`/assets/${importedImage.envelope.data.id}/preview`, {
+    session: user4,
+    expectedStatus: 404,
+  });
+  await apiRequest(
+    `/design-conversations/${importConversation.envelope.data.id}/input-assets/${workingId}`,
+    {
+      body: { projectId: destination },
+      method: 'POST',
+      session: user1,
+      expectedStatus: 404,
+    },
+  );
+  const importedJob = await apiRequest<{ id: string }>('/jobs', {
+    body: {
+      ...reuseBody,
+      projectId: destination,
+      designConversationId: importConversation.envelope.data.id,
+      inputAssetIds: [importedImage.envelope.data.id],
+      inputAnnotations: [],
+    },
+    session: user1,
+  });
+  await settleJobsForIntegration(
+    [importedJob.envelope.data.id],
+    '跨项目图片输入任务校验完成',
+  );
+  await apiRequest(`/projects/${destination}`, {
+    method: 'DELETE',
+    session: user1,
+  });
+  console.warn(
+    '跨项目选图通过：目标私有副本、版本复用、刷新读取、实际任务、来源/目标权限与不自动入库。',
   );
   console.warn(
     '图片复用验收通过：输入/草稿/标记不入库，跨会话须显式引用，跨用户/无效版本/伪造来源拒绝，主动保存后进入资产中心。',

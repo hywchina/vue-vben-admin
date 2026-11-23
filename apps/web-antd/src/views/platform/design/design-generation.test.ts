@@ -13,6 +13,11 @@ import {
   applicationsForDesignMode,
   getDesignMode,
 } from '#/modules/platform/design-modes';
+import {
+  localEditDraft,
+  localEditTools,
+  localEditWorkflow,
+} from '#/modules/platform/local-image-edit';
 
 function application(
   key: string,
@@ -142,5 +147,29 @@ describe('design generation categories', () => {
     expect(keys('cmf')).toEqual(keys('cabin'));
     expect(keys('cabin')).not.toContain('text-chat');
     expect(keys('cabin')).toContain('text-to-image-lora');
+  });
+});
+
+describe('unified region marking', () => {
+  it('offers only mask and region marking, using the same workflow for color and number', () => {
+    expect(localEditTools.map((tool) => tool.label)).toEqual([
+      '遮罩',
+      '区域标记',
+    ]);
+    expect(localEditWorkflow('number', false)).toBe('region-marker-edit');
+    expect(localEditWorkflow('color', false)).toBe('region-marker-edit');
+  });
+  it('restores legacy color marks as the active unified region draft without changing the original', () => {
+    const old = {
+      mode: 'color',
+      color: 'old-color-marks',
+      number: 'older-number-marks',
+    };
+    expect(localEditDraft(old)).toEqual({
+      mode: 'number',
+      color: 'old-color-marks',
+      number: 'old-color-marks',
+    });
+    expect(old.number).toBe('older-number-marks');
   });
 });

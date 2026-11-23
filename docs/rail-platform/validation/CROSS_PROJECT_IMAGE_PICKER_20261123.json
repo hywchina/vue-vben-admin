@@ -1,0 +1,37 @@
+{
+  "date": "2026-11-23",
+  "scope": "本地设计图片跨项目资产选择；无服务器部署或 Git 推送",
+  "implementation": [
+    "默认全部可访问项目，项目筛选位于搜索工具栏，卡片显示来源项目",
+    "当前会话输入从有读权限来源的已入库图片复制；目标项目写权限和会话归属不放宽",
+    "来源版本元数据、私有目标副本、同会话重复选图复用、数据库失败对象清理",
+    "原图与来源项目不改动，副本默认不进入资产中心，沿用现有草稿、遮罩和任务契约",
+    "参数抽屉和实时图片来源复用相同策略，其他未传入项目目录的选择器保持原范围"
+  ],
+  "validation": {
+    "unit": {
+      "files": 148,
+      "passed": 1090
+    },
+    "types": "passed",
+    "build": "passed",
+    "integration": "7 isolated PostgreSQL/MinIO groups passed; includes byte-identical copied object, private preview, repeated import, target input resolution and real job submission; source/target access and unsaved image rejection",
+    "browser": [
+      "CUA: default all projects lists saved images from both fixture projects",
+      "CUA: source project filter displays only selected project images",
+      "CUA: selected image from other project enters current conversation",
+      "CUA: browser refresh restores the imported image and keeps current project/conversation"
+    ],
+    "static": "changed-scope Oxfmt, ESLint (existing test stub warnings), type-aware Oxlint, Stylelint and diff checks",
+    "evidenceDirectory": "scripts/deployment/work/asset-picker-20261123",
+    "screenshots": ["project-filter.jpg", "restored-image.jpg"],
+    "environment": "random isolated databases and buckets; CPU image fixtures; no inference Worker and no new GPU jobs",
+    "setupNotes": "基础设施最初未启动；启动既有开发基础设施后重测。单测修正了按钮更新等待和 Alert 测试替身；集成修正了内联假图片、权限状态码和测试项目对首页统计的影响，未放宽生产校验。首次浏览器刷新遇测试进程已退出，重建独立测试环境后刷新成功；沿用旧测试 Cookie 启动时记录 refresh-token 失效，重新登录后业务操作未新增运行错误。"
+  },
+  "compatibility": {
+    "migration": null,
+    "sourceTaskAndAssets": "preserved",
+    "priorUncommittedFixes": "preserved; included in current full unit and build checks",
+    "deployment": "not performed"
+  }
+}

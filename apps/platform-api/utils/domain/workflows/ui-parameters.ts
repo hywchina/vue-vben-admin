@@ -63,6 +63,7 @@ const labelTranslations: Record<string, string> = {
   proportional_height: '高度比例',
   proportional_width: '宽度比例',
   refresh_rate: '捕获间隔（毫秒）',
+  resolution_steps: '尺寸对齐步长',
   sampler_name: '采样器',
   scheduler: '调度器',
   seed: '随机种子',

@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
 
 import { WORKFLOW_CATALOG } from './catalog';
+import { hasLocalRegionMarks, localEditWorkflow } from './local-image-edit';
 import {
   materializeWorkflow,
   parseWorkflowVersion,
@@ -282,5 +283,23 @@ describe('comfyUI workflow catalog', () => {
         (field) => field.key === 'prompt',
       ),
     ).not.toHaveProperty('valuePrefix');
+  });
+});
+
+describe('region marking compatibility', () => {
+  it('accepts color-only, numbered and mixed marks through the canonical workflow', () => {
+    const color = 'brush:free:8:1:255,0,0:0,0;10,10';
+    const numbered = 'brush:square:8:1:0,0,255:1:0,0;10,10';
+    for (const value of [color, numbered, `${color}|${numbered}`])
+      expect(hasLocalRegionMarks(value, 'number')).toBe(true);
+    expect(localEditWorkflow('color', false)).toBe('region-marker-edit');
+    expect(localEditWorkflow('number', false)).toBe('region-marker-edit');
+    expect(hasLocalRegionMarks('', 'number')).toBe(false);
+    expect(
+      hasLocalRegionMarks(
+        numbered.replace('0,0,255:1:', '0,0,255:7:'),
+        'number',
+      ),
+    ).toBe(false);
   });
 });

@@ -2,6 +2,7 @@ import type { CapabilityField } from '#/modules/platform/types';
 
 import { createApp, defineComponent, h, nextTick } from 'vue';
 
+import { message } from 'ant-design-vue';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import CapabilityMediaField from './capability-media-field.vue';
@@ -352,4 +353,45 @@ describe('compact per-slot realtime presentation', () => {
     expect(source.track.stop).toHaveBeenCalledOnce();
     expect(root.textContent).not.toContain('已连接');
   });
+});
+
+describe('unified region marking', () => {
+  it.each([
+    'brush:box:8:1:255,0,0:20.00,30.00;80.00,90.00',
+    'brush:square:8:1:255,0,0:1:20.00,30.00;80.00,90.00',
+    '',
+  ])(
+    'saves color or numbered marks, rejecting an empty region (%s)',
+    async (value) => {
+      const saved = vi.fn();
+      const root = document.createElement('div');
+      document.body.append(root);
+      const app = createApp(CapabilityMediaField, {
+        accent: '#c51f3a',
+        assets: [],
+        field: { ...field, type: 'region' },
+        embeddedRegion: 'number',
+        value,
+        onRegionApplied: saved,
+      });
+      app.mount(root);
+      cleanup.push(() => {
+        app.unmount();
+        root.remove();
+      });
+      await settle();
+      expect(root.querySelectorAll('.marker-buttons button')).toHaveLength(6);
+      expect(root.querySelector('.marker-buttons .active')).toBeNull();
+      const save = [...root.querySelectorAll('button')].find(
+        (button) => button.textContent?.trim() === '保存',
+      );
+      expect(save).toBeDefined();
+      save?.click();
+      await settle();
+      expect(saved.mock.calls).toEqual(value ? [[value]] : []);
+      expect(vi.mocked(message.warning).mock.calls).toEqual(
+        value ? [] : [['请先绘制颜色或编号标记区域']],
+      );
+    },
+  );
 });

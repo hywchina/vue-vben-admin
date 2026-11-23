@@ -4,11 +4,11 @@ export const localImageEditKey = 'local-image-edit';
 
 export const localEditTools = [
   { label: '遮罩', mode: 'mask', workflow: 'inpaint-single' },
-  { label: '颜色分区', mode: 'color', workflow: 'region-edit' },
-  { label: '编号分区', mode: 'number', workflow: 'region-marker-edit' },
+  { label: '区域标记', mode: 'number', workflow: 'region-marker-edit' },
 ] as const;
 
-export type LocalEditMode = (typeof localEditTools)[number]['mode'];
+// Keep the former color mode readable for existing drafts and history.
+export type LocalEditMode = 'color' | 'mask' | 'number';
 
 export interface LocalEditDraft {
   color?: string;
@@ -19,11 +19,13 @@ export interface LocalEditDraft {
 export function isLocalEditWorkflow(key: string) {
   return (
     key === 'inpaint-reference' ||
+    key === 'region-edit' ||
     localEditTools.some(({ workflow }) => workflow === key)
   );
 }
 
 export function localEditWorkflow(mode: LocalEditMode, hasReference: boolean) {
+  if (mode === 'color') return 'region-marker-edit';
   if (mode === 'mask' && hasReference) return 'inpaint-reference';
   return (
     localEditTools.find((tool) => tool.mode === mode)?.workflow ??
@@ -34,11 +36,15 @@ export function localEditWorkflow(mode: LocalEditMode, hasReference: boolean) {
 export function localEditDraft(value: unknown): LocalEditDraft {
   if (!value || typeof value !== 'object') return { mode: 'mask' };
   const draft = value as Partial<LocalEditDraft>;
+  const marks = draft.mode === 'color' ? draft.color : draft.number;
   return {
     mode:
-      localEditTools.find(({ mode }) => mode === draft.mode)?.mode ?? 'mask',
+      draft.mode === 'color'
+        ? 'number'
+        : (localEditTools.find(({ mode }) => mode === draft.mode)?.mode ??
+          'mask'),
     color: typeof draft.color === 'string' ? draft.color : undefined,
-    number: typeof draft.number === 'string' ? draft.number : undefined,
+    number: typeof marks === 'string' ? marks : undefined,
   };
 }
 

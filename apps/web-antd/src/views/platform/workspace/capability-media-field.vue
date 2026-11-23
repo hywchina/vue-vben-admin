@@ -54,7 +54,9 @@ const props = defineProps<{
   ) => Promise<boolean | undefined>;
   openEditorRequest?: number;
   projectId?: string;
+  projects?: Array<{ id: string; name: string }>;
   refreshRate?: number;
+  resolveAsset?: (asset: PlatformAsset) => Promise<PlatformAsset>;
   saveMask?: (file: File) => Promise<unknown>;
   selectedAssetId?: string;
   stopLiveCapture?: (session?: CaptureSession) => Promise<void>;
@@ -80,9 +82,7 @@ const activeStroke = ref<Stroke>();
 const brushColor = ref('255,0,0');
 const brushSize = ref(24);
 const brushOpacity = ref(1);
-const activeMarker = ref<string | undefined>(
-  props.embeddedRegion === 'number' ? '1' : undefined,
-);
+const activeMarker = ref<string>();
 const drawingTool = ref<'box' | 'erase' | 'free' | 'square'>(
   props.embeddedRegion === 'number' ? 'square' : 'free',
 );
@@ -308,8 +308,6 @@ function applyRegion() {
     const first = stroke.points[0];
     const last = stroke.points.at(-1);
     if (stroke.mode !== 'brush' || !first || !last) return false;
-    if (props.embeddedRegion === 'number')
-      return Boolean(stroke.marker) && first.x !== last.x && first.y !== last.y;
     return stroke.type === 'free'
       ? stroke.points.some(
           (point) => point.x !== first.x || point.y !== first.y,
@@ -319,7 +317,7 @@ function applyRegion() {
   if (!valid) {
     message.warning(
       props.embeddedRegion === 'number'
-        ? '请至少绘制一个编号区域'
+        ? '请先绘制颜色或编号标记区域'
         : '请先绘制需要重绘的颜色分区',
     );
     return;
@@ -1018,6 +1016,8 @@ onBeforeUnmount(() => {
         :assets="assets"
         :project-id="projectId"
         :selected-asset-id="selectedAssetId"
+        :projects="field.acceptedKinds.includes('image') ? projects : undefined"
+        :resolve-asset="resolveAsset"
         @select="handleAssetSelect"
       />
       <ImageLightbox
@@ -1178,7 +1178,7 @@ onBeforeUnmount(() => {
       </div>
       <div class="editor-footer">
         <span v-if="embeddedRegion === 'number'">
-          选择编号后，在底图上拖出区域。
+          可直接用颜色画笔、方框或色块标记，也可选择编号后拖出区域。
         </span>
         <span v-else>不同颜色表示不同重绘分区，可撤销、重做或擦除。</span>
         <Button

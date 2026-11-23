@@ -1,0 +1,130 @@
+{
+  "date": "2026-11-23",
+  "source": {
+    "branch": "dev-1001",
+    "baseCommit": "c6c0ab343d2a54c4edbdd94f1cb4d8eba4a7317c",
+    "changes": "local uncommitted follow-up fixes; frozen delivery and remote input unchanged",
+    "databaseMigration": false
+  },
+  "reproducedAndFixed": [
+    {
+      "issue": "Earlier conversation selection returns after draft save and overrides a newer selection",
+      "before": "navigation-before.log: 2 failed / 39 passed",
+      "fix": "Selection operation ownership checked after asynchronous boundaries"
+    },
+    {
+      "issue": "Retired Base workflow continuation remains open after switching conversations",
+      "fix": "Cancel and invalidate history continuation together with other result flows"
+    },
+    {
+      "issue": "Submission returning after leaving and revisiting the same conversation clears the restored draft",
+      "before": "submission-aba-before.log: 1 failed / 41 passed",
+      "fix": "Context revision, selection operation and submission ownership checks"
+    },
+    {
+      "issue": "Historical resend resumes after input resolution finishes on a conversation round trip",
+      "before": "history-aba-before.log: 1 failed / 42 passed",
+      "fix": "Invalidate historical resend and loading state by context and operation ownership"
+    },
+    {
+      "issue": "Batch result actions are only available after opening full screen",
+      "before": "batch-actions-before.log: 3 failed / 17 passed",
+      "fix": "Inline selected-image toolbar and full-screen toolbar; avoid duplicate inline actions while full screen is open"
+    },
+    {
+      "issue": "Narrow mask editor hides all brush and layer settings; toolbar labels overflow",
+      "fix": "Expandable settings panel at <=900px; wrapping tools with non-wrapping button labels"
+    },
+    {
+      "issue": "Automatically exposed node internals crowd the composer and resolution_steps is misleading",
+      "fix": "Default non-common auto_ fields to More, retain all parameters and explicit administrator settings; translate and explain pixel alignment"
+    }
+  ],
+  "validation": {
+    "unit": {
+      "files": 148,
+      "passed": 1089,
+      "log": "unit-final.log"
+    },
+    "types": {
+      "passed": true,
+      "log": "types-final.log"
+    },
+    "build": {
+      "passed": true,
+      "log": "build-final.log"
+    },
+    "integration": {
+      "passed": true,
+      "groups": 7,
+      "log": "integration-final.log",
+      "isolatedDatabaseCleaned": true,
+      "gpu": false
+    },
+    "static": {
+      "changedScopePassed": [
+        "Oxfmt",
+        "ESLint (0 errors; existing mock-component warnings)",
+        "type-aware Oxlint",
+        "Stylelint",
+        "git diff --check"
+      ],
+      "logs": [
+        "eslint-final.log",
+        "eslint-navigation-final.log",
+        "oxlint-final.log",
+        "stylelint-final.log"
+      ],
+      "wholeRepositoryLint": "blocked by 59 existing unrelated contract formatting files, preserved unchanged",
+      "logsWholeRepository": ["lint-full.log", "format-full.log"]
+    },
+    "intermediateFailure": {
+      "test": "form-integration.test.ts model-update validation callback timing",
+      "observed": "One unrelated failure under full concurrent suite",
+      "followup": "Untouched test passes independently (27 tests), full final suite passes (1089); retained failure log",
+      "logs": ["unit-form-timing-failure.log", "form-recheck.log"]
+    },
+    "browser": {
+      "tool": "Codex in-app browser via CUA",
+      "environment": "isolated local PostgreSQL/MinIO with real API; explicitly seeded image/job fixtures; no inference worker",
+      "passed": [
+        "Batch third thumbnail transfers the selected image only, LoRA off and target defaults",
+        "Reference inputs 1/2/3, duplicate rejection, prompt preservation and maximum quantity 8",
+        "Three-image reference draft with prompt and quantity 8 restored after refresh; actual API queue submission",
+        "Changing conversations does not show previous input images or previous task stop state",
+        "Component result opens local mask editor automatically with a clean base",
+        "Actual pointer-drawn mask saved privately; mask and instruction restore after refresh",
+        "Actual local-edit API task queued as inpaint-single/component in the original conversation with mask input and generationCount 1",
+        "CMF third image transfers through inline and full-screen actions, retains CMF mode and no stale reference",
+        "864px and 390px settings panel can expand; brush thickness changed to 32 and retained through collapse/expand; 1440px desktop panel present",
+        "More retains hidden internal fields; default quick controls reduce to common controls; explicit administrator configuration protected by unit tests"
+      ],
+      "console": "No application runtime errors observed. Two Vite client errors correspond to setup-origin mismatch / intentional test-server stop and restart, retained rather than reported as zero errors.",
+      "screenshots": [
+        "mask-settings-864.jpg",
+        "mask-settings-390.jpg",
+        "local-mask-restored.jpg",
+        "cmf-inline-actions.jpg"
+      ],
+      "apiEvidence": "local-submission-check.json"
+    },
+    "limits": [
+      "No new GPU image generation or image quality claim in this audit",
+      "No complete LoRA architecture/training or AI report quality reacceptance",
+      "Target server release acceptance blocked because new deployment not submitted; browser also requires user certificate trust handoff"
+    ]
+  },
+  "remote": {
+    "checkedAt": "2026-11-23 08:35:50 CST",
+    "currentLatestTask": "20261122T085224Z-89ab2c4f-0dd8-4223-8c9b-c9d5de7ad391",
+    "newTaskSubmitted": false,
+    "sudoWaitingPid": 2525572,
+    "sudoNonInteractive": "password required",
+    "existingContainers": "healthy previous version",
+    "frozenDeliverySha256": "fca0c64912fab069b93185a347dfaa870c66899bce82f0b2a6e944757ea437ee",
+    "browser": "Direct remote endpoint connection closed; SSH tunnel reachable but ERR_CERT_AUTHORITY_INVALID, user handoff requested; no bypass",
+    "log": "remote-final.log"
+  },
+  "evidenceDirectory": "scripts/deployment/work/usability-20261123",
+  "release": "No new Git commit/push, delivery generation, rsync or deployment performed for these follow-up fixes"
+}

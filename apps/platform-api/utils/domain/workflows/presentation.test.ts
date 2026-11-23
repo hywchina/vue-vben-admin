@@ -44,6 +44,35 @@ describe('capability parameter presentation', () => {
     expect(resolveQuickFieldKeys(fields)).toEqual(['width']);
     expect(resolveQuickFieldKeys(fields, [])).toEqual([]);
   });
+  it('keeps node internals in More by default and preserves common controls and administrator selections', () => {
+    const resizing = [
+      'proportional_width',
+      'proportional_height',
+      'resolution_steps',
+      'noise_mask',
+      'mask_color',
+      'mask_opacity',
+    ].flatMap((inputName) =>
+      [1, 2, 3].map((nodeId) => ({
+        ...fields[1],
+        key: `auto_${nodeId}_${inputName}`,
+        nodeId: String(nodeId),
+        inputName,
+      })),
+    );
+    const common = { ...fields[1], key: 'auto_cfg', inputName: 'cfg' };
+    const schema = [...fields, ...resizing, common];
+    expect(resolveQuickFieldKeys(schema)).toEqual(['width', 'auto_cfg']);
+    const configured = [
+      'auto_2_resolution_steps',
+      'auto_1_proportional_width',
+      'width',
+    ];
+    expect(resolveQuickFieldKeys(schema, configured)).toEqual(configured);
+    expect(capabilityPresentationFields(schema, workflow)).toHaveLength(
+      schema.length,
+    );
+  });
   it('preserves administrator ordering, allows advanced scalars, drops obsolete fields after rebinding', () => {
     assertQuickFieldKeys(fields, ['seed', 'width']);
     expect(
@@ -74,6 +103,26 @@ const workflow = {
   '3': { class_type: 'Image', inputs: { image: '' } },
 };
 describe('administrator field labels', () => {
+  it('explains resize alignment in pixels and keeps a custom name', () => {
+    const schema = [
+      {
+        ...fields[1],
+        key: 'auto_resolution_steps',
+        inputName: 'resolution_steps',
+        defaultValue: 1,
+      },
+    ];
+    const result = capabilityPresentationFields(schema, workflow, {
+      auto_resolution_steps: '底图尺寸对齐',
+    });
+    expect(result[0]).toMatchObject({
+      label: '底图尺寸对齐',
+      defaultLabel: '尺寸对齐步长',
+      defaultValue: 1,
+    });
+    expect(result[0]?.help).toContain('不是输出宽高');
+    expect(result[0]?.help).toContain('不是采样步数');
+  });
   it('overrides labels without changing keys, constraints, options or source schema', () => {
     const before = JSON.stringify(fields);
     const base = capabilityPresentationFields(fields, workflow);

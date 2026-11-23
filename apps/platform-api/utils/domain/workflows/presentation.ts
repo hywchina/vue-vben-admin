@@ -82,6 +82,16 @@ export function capabilityPresentationFields(
               .join(' '),
           }
         : {}),
+      ...(definition?.inputName === 'resolution_steps'
+        ? {
+            help: [
+              field.help,
+              '将缩放后的宽高对齐到该像素步长的整数倍；1 表示按 1 像素取整，不是输出宽高，也不是采样步数。',
+            ]
+              .filter(Boolean)
+              .join(' '),
+          }
+        : {}),
       ...(includeSources && definition?.nodeId && definition.inputName
         ? {
             source: {
@@ -118,11 +128,35 @@ export function resolveQuickFieldKeys(
   configured?: null | string[],
 ) {
   const fields = presentationFields(parameterSchema);
+  const commonAutoInputs = new Set([
+    'batch_size',
+    'cfg',
+    'denoise',
+    'guidance',
+    'noise_seed',
+    'scale_by',
+    'seed',
+    'steps',
+    'strength',
+    'upscale_by',
+  ]);
+  const defaultAdvancedKeys = new Set(
+    z
+      .array(workflowParameterSchema)
+      .parse(parameterSchema)
+      .filter(
+        (field) =>
+          field.key.startsWith('auto_') &&
+          !commonAutoInputs.has(field.inputName ?? ''),
+      )
+      .map((field) => field.key),
+  );
   return configured === undefined || configured === null
     ? fields
         .filter(
           (field) =>
             !field.advanced &&
+            !defaultAdvancedKeys.has(field.key) &&
             field.uiControl === 'default' &&
             ['boolean', 'number', 'select', 'text'].includes(field.type),
         )

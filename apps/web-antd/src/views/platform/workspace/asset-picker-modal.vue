@@ -43,6 +43,7 @@ const props = defineProps<{
   open: boolean;
   projectId?: string;
   projects?: Array<{ id: string; name: string }>;
+  resolveAsset?: (asset: PlatformAsset) => Promise<PlatformAsset>;
   selectedAssetId?: string;
   selectedAssetIds?: string[];
 }>();
@@ -53,6 +54,7 @@ const emit = defineEmits<{
   'update:open': [open: boolean];
 }>();
 const keyword = ref('');
+const confirming = ref(false);
 const sourceProjectId = ref('all');
 const loadError = ref('');
 const sourceProject = computed(() =>
@@ -213,6 +215,7 @@ async function loadFolderAssets() {
 }
 
 async function initializePicker() {
+  confirming.value = false;
   if (props.multiple) {
     selected.value = [...(props.selectedAssetIds ?? [])];
   } else {
@@ -242,15 +245,24 @@ async function initializePicker() {
 }
 
 async function changeSourceProject() {
+  confirming.value = false;
+  const generation = ++loadGeneration;
+  loading.value = true;
+  loadError.value = '';
   currentFolderId.value = null;
   folders.value = [];
   displayedAssets.value = [];
   try {
     if (sourceProject.value && sourceProject.value !== 'all') {
-      folders.value = await getAssetFoldersApi(sourceProject.value);
+      const loaded = await getAssetFoldersApi(sourceProject.value);
+      if (generation !== loadGeneration || !props.open) return;
+      folders.value = loaded;
     }
+    if (generation !== loadGeneration || !props.open) return;
     await loadFolderAssets();
   } catch (error) {
+    if (generation !== loadGeneration) return;
+    loading.value = false;
     loadError.value =
       error instanceof Error ? error.message : '资产加载失败，请重试';
   }
@@ -261,15 +273,39 @@ function enterFolder(folderId: null | string) {
   if (!props.multiple) selected.value = [];
 }
 
-function confirmSelection() {
-  if (selected.value.length === 0) return;
-  if (props.multiple) emit('selectMultiple', selected.value);
-  else {
-    const selectedAssetId = selected.value[0];
-    if (!selectedAssetId) return;
-    emit('select', selectedAssetId);
+async function confirmSelection() {
+  if (selected.value.length === 0 || confirming.value) return;
+  const generation = loadGeneration;
+  const ids = [...selected.value];
+  confirming.value = true;
+  try {
+    const resolved = [];
+    for (const id of ids) {
+      const asset =
+        displayedAssets.value.find((item) => item.id === id) ??
+        (await getAssetApi(id));
+      if (!props.open || generation !== loadGeneration) return;
+      const imported = props.resolveAsset
+        ? await props.resolveAsset(asset)
+        : asset;
+      resolved.push(imported.id);
+      if (!props.open || generation !== loadGeneration) return;
+    }
+
+    if (props.multiple) emit('selectMultiple', resolved);
+    else {
+      const selectedAssetId = resolved[0];
+      if (!selectedAssetId) return;
+      emit('select', selectedAssetId);
+    }
+    emit('update:open', false);
+  } catch (error) {
+    if (generation === loadGeneration)
+      loadError.value =
+        error instanceof Error ? error.message : '选图失败，请重试';
+  } finally {
+    if (generation === loadGeneration) confirming.value = false;
   }
-  emit('update:open', false);
 }
 
 function confirmSelectionOnDoubleClick() {
@@ -290,6 +326,7 @@ watch(
   () => props.open,
   (open) => {
     if (open) void initializePicker();
+    else loadGeneration += 1;
   },
 );
 watch([currentFolderId, sortValue], () => {
@@ -303,24 +340,30 @@ watch(compatibleAssets, () => {
 <template>
   <Modal
     :open="open"
-    :title="projects ? '从可访问图片选择' : '从当前项目资产选择'"
+    :title="projects ? '从项目资产选择' : '从当前项目资产选择'"
     width="960px"
     @cancel="emit('update:open', false)"
   >
-    <Select
-      v-if="projects"
-      v-model:value="sourceProjectId"
-      :options="projectOptions"
-      aria-label="图片来源项目"
-      style="width: 100%; margin-bottom: 12px"
-      @change="changeSourceProject"
-    />
     <Alert v-if="loadError" :message="loadError" type="error" show-icon>
       <template #action>
         <Button @click="changeSourceProject">重试</Button>
       </template>
     </Alert>
-    <div class="asset-picker-toolbar">
+    <div
+      class="asset-picker-toolbar"
+      :class="{ 'asset-picker-toolbar--projects': projects }"
+    >
+      <Select
+        v-if="projects"
+        v-model:value="sourceProjectId"
+        :options="projectOptions"
+        aria-label="图片来源项目"
+        class="asset-picker-project"
+        show-search
+        option-filter-prop="label"
+        @change="changeSourceProject"
+      />
+
       <Input
         v-model:value="keyword"
         allow-clear
@@ -437,7 +480,8 @@ watch(compatibleAssets, () => {
     <template #footer>
       <Button @click="emit('update:open', false)">取消</Button>
       <Button
-        :disabled="selected.length === 0"
+        :disabled="selected.length === 0 || loading"
+        :loading="confirming"
         type="primary"
         @click="confirmSelection"
       >
@@ -453,6 +497,10 @@ watch(compatibleAssets, () => {
   grid-template-columns: minmax(260px, 1fr) 170px 205px;
   gap: 10px;
   margin-bottom: 12px;
+}
+
+.asset-picker-toolbar--projects {
+  grid-template-columns: minmax(190px, 1fr) minmax(220px, 2fr) 150px 180px;
 }
 
 .asset-picker-breadcrumbs {
@@ -622,7 +670,8 @@ watch(compatibleAssets, () => {
 }
 
 @media (max-width: 760px) {
-  .asset-picker-toolbar {
+  .asset-picker-toolbar,
+  .asset-picker-toolbar--projects {
     grid-template-columns: 1fr;
   }
 

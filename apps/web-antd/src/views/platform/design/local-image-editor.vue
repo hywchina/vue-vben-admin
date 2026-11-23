@@ -52,7 +52,7 @@ const regionField: CapabilityField = {
   assetIndex: 0,
   integer: false,
   key: 'regionMarks',
-  label: '分区标记',
+  label: '区域标记',
   options: [],
   required: true,
   type: 'region',

@@ -54,6 +54,7 @@ export function generationApplications(
   return applications.filter(
     (application) =>
       application.visible &&
+      application.key !== 'region-edit' &&
       application.capabilityCode &&
       isDesignGenerationApplication(application.key) &&
       !(unified && isReferenceImageWorkflow(application.key)) &&

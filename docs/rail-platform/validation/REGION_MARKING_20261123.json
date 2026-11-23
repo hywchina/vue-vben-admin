@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-23",
+  "scope": "本地合并颜色分区与编号分区为区域标记；未推送或部署",
+  "implementation": [
+    "局部编辑仅显示遮罩、区域标记两个工具",
+    "区域标记支持颜色画笔、方框、色块及可选编号1–6，默认不选编号",
+    "前后端新颜色与编号操作统一分派 region-marker-edit",
+    "旧 color 草稿转换为统一工具且保留笔画；保留原草稿字段、region-edit 注册及历史重发能力",
+    "051 迁移只更新显示名称，不改写工作流版本、历史任务或结果"
+  ],
+  "validation": {
+    "fullUnit": { "files": 148, "passed": 1096 },
+    "railUnit": { "files": 94, "passed": 664 },
+    "types": "passed; API and Web",
+    "build": "passed; API and Web production build",
+    "integration": "seven isolated PostgreSQL/MinIO groups passed; color/number routing and actual task submission, empty region rejection, migration rename and immutable workflow version digest",
+    "components": "real component save handler: unnumbered color and numbered marks emit saved strokes, empty marks rejected, six optional number buttons and no default selected number",
+    "static": "changed-scope Oxfmt, ESLint (existing component stub warnings), type-aware Oxlint, Stylelint and diff checks passed",
+    "browser": {
+      "status": "not_completed",
+      "reason": "CUA kernel initialization and fresh HTTP tab creation repeatedly timed out; no current page outcome or console verification obtained",
+      "setup": "first local fixture setup also failed because the built API entry was absent after test/build operations; own isolated resources were cleaned; no UI result claimed"
+    },
+    "gpu": "not run; CPU fixtures and queued execution validation do not prove new generation quality",
+    "baseline": "59 previously recorded contract-document formatting failures preserved; no full-repository lint pass claimed",
+    "evidenceDirectory": "scripts/deployment/work/region-marking-20261123",
+    "logs": [
+      "unit-all-final.log",
+      "unit-verified.log",
+      "types-verified.log",
+      "build-final.log",
+      "integration.log",
+      "eslint-verified.log",
+      "oxlint-verified.log",
+      "style-final.log",
+      "format-verified.log"
+    ],
+    "notes": "Initial checks caught import/format issues, an assertion test expecting unnormalized coordinates and missing database-row guards in the new migration test; corrected without loosening production checks. One concurrent build refresh of Vite stubs interrupted a test startup; sequential rerun passed. Earlier failed logs retained."
+  },
+  "compatibility": {
+    "migration": "051_unify_region_marking.sql",
+    "workflowVersions": "preserved, verified by database digest",
+    "historicalTasksResultsDrafts": "preserved; no bulk rewrite or deletion",
+    "earlierUncommittedChanges": "preserved",
+    "gitPushDeliverySyncDeployment": "not performed"
+  }
+}
