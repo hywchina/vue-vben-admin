@@ -9,6 +9,8 @@ import {
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { designModeDefaultPrompt } from '#/modules/platform/design-modes';
+
 import Design from './index.vue';
 
 const mocks = vi.hoisted(() => ({
@@ -589,7 +591,7 @@ describe('administrator workflow default prompts', () => {
   it.each([
     [null, '', ''],
     ['2026-10-23', '新管理员默认', ''],
-    [null, null, '默认指令'],
+    [null, null, designModeDefaultPrompt('cabin', 'single-image-edit')],
   ])(
     'preserves an explicit empty default or cleared draft (%s, %s)',
     async (updatedAt, defaultPrompt, expected) => {

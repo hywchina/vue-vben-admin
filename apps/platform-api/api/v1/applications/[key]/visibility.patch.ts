@@ -16,6 +16,9 @@ export default apiHandler(async (event) => {
     throw new ApiError(400, 'APPLICATION_KEY_REQUIRED', '缺少应用标识');
   }
   const input = await parseBody(event, schema);
+  if (key === 'text-to-image-lora' && input.visible) {
+    throw new ApiError(409, 'APPLICATION_RETIRED', '请使用文生图及 LoRA 开关');
+  }
   if (key === 'image-edit-base' && input.visible) {
     throw new ApiError(409, 'APPLICATION_RETIRED', '双图基础编辑已停用');
   }

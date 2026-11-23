@@ -57,25 +57,25 @@ const applications = [
 ];
 
 describe('design generation categories', () => {
-  it('groups both text-only workflows together while retaining the default', () => {
+  it('exposes only the standard text workflow, even with a stale visible LoRA catalog', () => {
     expect(designGenerationCategories.map((item) => item.label)).toEqual([
       '文生图',
       '图生图',
     ]);
     expect(
       generationApplications(applications, 'text').map((item) => item.key),
-    ).toEqual(['text-to-image', 'text-to-image-lora']);
+    ).toEqual(['text-to-image']);
     expect(defaultGenerationApplicationKey(applications, 'text')).toBe(
       'text-to-image',
     );
   });
 
-  it('excludes text generation while retaining LoRA and new published workflows', () => {
+  it('excludes retired entries while retaining new published workflows', () => {
     expect(
       generationApplications(applications, 'image').map((item) => item.key),
     ).toEqual(['image-upscale', 'inpaint-single', 'future-workflow']);
     expect(isDesignGenerationApplication('text-chat')).toBe(false);
-    expect(isDesignGenerationApplication('text-to-image-lora')).toBe(true);
+    expect(isDesignGenerationApplication('text-to-image-lora')).toBe(false);
   });
 
   it('uses the module administrator default and excludes standalone capture', () => {
@@ -144,7 +144,7 @@ describe('design generation categories', () => {
     expect(keys('cabin')).not.toContain('text-to-image-lora');
     expect(
       generationApplications(applications, 'text').map((app) => app.key),
-    ).toContain('text-to-image-lora');
+    ).not.toContain('text-to-image-lora');
   });
 });
 

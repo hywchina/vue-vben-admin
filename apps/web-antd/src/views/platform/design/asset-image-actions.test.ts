@@ -133,6 +133,25 @@ describe('asset image actions', () => {
       ]),
     ).toContain('不可用');
   });
+  it('keeps legacy LoRA output rerun available through standard text generation', () => {
+    const asset = {
+      type: 'image',
+      sourceJobId: 'legacy',
+      sourceAppKey: 'text-to-image-lora',
+    } as const;
+    expect(assetImageActionUnavailable(asset, 'rerun', ['text-to-image'])).toBe(
+      '',
+    );
+    expect(
+      assetImageActionUnavailable(asset, 'rerun', ['text-to-image-lora']),
+    ).toContain('不可用');
+    expect(
+      assetImageActionUnavailable(asset, 'image-edit', [
+        'reference-image-edit',
+        'single-image-edit',
+      ]),
+    ).toBe('');
+  });
   it('routes archived Base results through either available replacement', () => {
     const asset = {
       sourceAppKey: 'image-edit-base',

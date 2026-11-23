@@ -19,7 +19,9 @@ export function assertDesignModeApplications(
     keys.some(
       (key) =>
         !allowedKeys.includes(key) ||
-        ['screen-capture-edit', 'text-chat'].includes(key),
+        ['screen-capture-edit', 'text-chat', 'text-to-image-lora'].includes(
+          key,
+        ),
     ) ||
     !keys.includes(input.defaultImageApplicationKey) ||
     ['text-to-image', 'text-to-image-lora'].includes(

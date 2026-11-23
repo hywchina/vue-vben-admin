@@ -7,6 +7,7 @@ import { isLocalEditWorkflow, localImageEditKey } from './local-image-edit';
 export type DesignGenerationCategory = 'image' | 'text';
 
 export const retiredBaseEditKey = 'image-edit-base';
+export const retiredLoraTextKey = 'text-to-image-lora';
 export const referenceImageEditKey = 'reference-image-edit';
 export const referenceImageWorkflows = [
   'single-image-edit',
@@ -28,9 +29,12 @@ export const designGenerationCategories = [
 ] as const;
 
 export function isDesignGenerationApplication(appKey: string) {
-  return ![retiredBaseEditKey, 'screen-capture-edit', 'text-chat'].includes(
-    appKey,
-  );
+  return ![
+    retiredBaseEditKey,
+    retiredLoraTextKey,
+    'screen-capture-edit',
+    'text-chat',
+  ].includes(appKey);
 }
 
 // 分类是输入器分组，不改变既有工作流的输入、输出或执行契约。

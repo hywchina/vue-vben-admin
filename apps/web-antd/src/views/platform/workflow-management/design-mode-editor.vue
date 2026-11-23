@@ -13,6 +13,7 @@ import {
 } from '#/api/platform';
 import {
   designGenerationCategory,
+  isDesignGenerationApplication,
   isReferenceImageWorkflow,
 } from '#/modules/platform/design-generation';
 import { designModes } from '#/modules/platform/design-modes';
@@ -34,7 +35,7 @@ const choices = computed(() =>
       app.capabilityCode &&
       !isReferenceImageWorkflow(app.key) &&
       !isLocalEditWorkflow(app.key) &&
-      !['screen-capture-edit', 'text-chat'].includes(app.key),
+      isDesignGenerationApplication(app.key),
   ),
 );
 const rows = computed(() => {

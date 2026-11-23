@@ -100,13 +100,14 @@ import {
   referenceImageEditKey,
   referenceImageWorkflows,
   retiredBaseEditKey,
+  retiredLoraTextKey,
 } from '#/modules/platform/design-generation';
 import {
   applicationsForDesignMode,
-  designModeDefaults,
   designModeForApplication,
   designModes,
   getDesignMode,
+  resolveDesignPrompt,
 } from '#/modules/platform/design-modes';
 import {
   imageDimensionFields,
@@ -194,6 +195,8 @@ const capabilityLoading = ref(false);
 const capabilityCache = reactive<Record<string, PlatformCapability>>({});
 const selectedAssets = reactive<Record<number, string>>({});
 const parameterValues = reactive<Record<string, unknown>>({});
+// Only untouched defaults may follow automatic workflow selection.
+let automaticPromptValue: string | undefined;
 const parameterDrawerOpen = ref(false);
 const mediaPickerOpen = ref(false);
 const markdownPickerOpen = ref(false);
@@ -743,6 +746,7 @@ function fieldJsonValue(field: CapabilityField) {
 }
 
 function setFieldValue(field: CapabilityField, value: unknown) {
+  if (field.key === promptField.value?.key) automaticPromptValue = undefined;
   if (field.key === cameraViewsKey)
     setCameraViewParameters(parameterValues, value);
   else parameterValues[field.key] = value;
@@ -1350,6 +1354,7 @@ function resetCapabilityParameters(
   nextCapability?: PlatformCapability,
   preserveImageCount = false,
 ) {
+  automaticPromptValue = undefined;
   const count = preserveImageCount
     ? parameterValues[imageGenerationCountKey]
     : undefined;
@@ -1371,10 +1376,20 @@ function resetCapabilityParameters(
 function applyResultPrompt() {
   const field = promptField.value;
   if (!field) return;
-  const configured = capability.value?.workflow.defaultPrompt;
-  if (typeof configured === 'string') parameterValues[field.key] = configured;
-  else if (referenceEdit.value || localEdit.value)
-    parameterValues[field.key] = '';
+  let appKey = effectiveApplicationKey.value;
+  if (referenceEdit.value) appKey = referenceWorkflowKey.value ?? appKey;
+  else if (localEdit.value) appKey = localWorkflowKey.value;
+  const value = resolveDesignPrompt(
+    selectedModeKey.value,
+    appKey,
+    capability.value?.workflow?.defaultPrompt,
+    field.defaultValue,
+    selectedBusinessToolKey.value,
+  );
+  if (value !== undefined) {
+    parameterValues[field.key] = value;
+    automaticPromptValue = value;
+  }
 }
 
 watch(referenceWorkflowKey, (workflowKey) => {
@@ -1383,9 +1398,12 @@ watch(referenceWorkflowKey, (workflowKey) => {
   referenceParameterWorkflowKey = workflowKey;
   const target = workflowKey ? referenceCapabilities[workflowKey] : undefined;
   const prompt = parameterValues[promptField.value?.key ?? 'prompt'];
+  const followsDefault =
+    automaticPromptValue !== undefined && prompt === automaticPromptValue;
   capability.value = target ?? null;
   resetCapabilityParameters(target, true);
-  parameterValues[promptField.value?.key ?? 'prompt'] = prompt;
+  if (followsDefault) applyResultPrompt();
+  else parameterValues[promptField.value?.key ?? 'prompt'] = prompt;
 });
 
 watch(localWorkflowKey, (key, previous) => {
@@ -1398,10 +1416,13 @@ watch(localWorkflowKey, (key, previous) => {
   )
     return;
   const prompt = parameterValues[promptField.value?.key ?? 'prompt'];
+  const followsDefault =
+    automaticPromptValue !== undefined && prompt === automaticPromptValue;
   const target = localCapabilities[key];
   capability.value = target ?? null;
   resetCapabilityParameters(target, true);
-  parameterValues[promptField.value?.key ?? 'prompt'] = prompt;
+  if (followsDefault) applyResultPrompt();
+  else parameterValues[promptField.value?.key ?? 'prompt'] = prompt;
 });
 
 function draftPayload() {
@@ -1552,9 +1573,7 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
         )
         .map((field) => field.key),
     );
-    const values = draft.updatedAt
-      ? draft.parameterValues
-      : designModeDefaults(mode, appKey);
+    const values = draft.updatedAt ? draft.parameterValues : {};
     for (const [key, value] of Object.entries(values)) {
       if (scalarKeys.has(key)) parameterValues[key] = value;
     }
@@ -1568,13 +1587,7 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
         { ...values, generationCount: parameterValues.generationCount },
       );
     // A saved empty prompt is intentional; only initialize a brand-new draft.
-    if (
-      !draft.updatedAt &&
-      promptField.value &&
-      typeof nextCapability?.workflow?.defaultPrompt === 'string'
-    )
-      parameterValues[promptField.value.key] =
-        nextCapability.workflow.defaultPrompt;
+    if (!draft.updatedAt) applyResultPrompt();
     for (const [index, assetId] of Object.entries(draftSelections)) {
       if (!local || index !== '2') selectedAssets[Number(index)] = assetId;
     }
@@ -1682,15 +1695,19 @@ async function ensureConversation() {
     if (!regularConversations.value.some((item) => item.id === requestedId))
       throw new Error('该会话暂不能在设计生成中打开');
   }
+  const requestedKey =
+    route.query.appKey === retiredLoraTextKey
+      ? DEFAULT_APP_KEY
+      : route.query.appKey;
   const requestedAppKey =
-    typeof route.query.appKey === 'string' &&
+    typeof requestedKey === 'string' &&
     platformStore.applications.some(
       (item) =>
-        item.key === route.query.appKey &&
+        item.key === requestedKey &&
         item.visible &&
         isDesignGenerationApplication(item.key),
     )
-      ? route.query.appKey
+      ? requestedKey
       : undefined;
   const target =
     regularConversations.value.find((item) => item.id === requestedId) ??
@@ -1719,6 +1736,7 @@ async function selectConversation(
   conversationId: string,
   preferredAppKey?: string,
 ) {
+  if (preferredAppKey === retiredLoraTextKey) preferredAppKey = DEFAULT_APP_KEY;
   const request = ++applicationSelectionRequest;
   const projectId = platformStore.currentProjectId;
   const isCurrent = () =>
@@ -1820,7 +1838,15 @@ async function chooseApplication(
     (capability.value ||
       ((referenceEdit.value || localEdit.value) && draftReadyKey.value))
   ) {
+    const followsDefault =
+      automaticPromptValue !== undefined &&
+      parameterValues[promptField.value?.key ?? 'prompt'] ===
+        automaticPromptValue;
     selectedBusinessToolKey.value = businessToolKey;
+    if (followsDefault) {
+      applyResultPrompt();
+      scheduleDraftSave();
+    }
     return true;
   }
   await saveDraftNow();
@@ -2146,6 +2172,7 @@ async function prepareRegionAnnotations(
 }
 
 async function clearSubmittedComposer() {
+  automaticPromptValue = undefined;
   hydratingDraft = true;
   try {
     if (promptField.value) parameterValues[promptField.value.key] = '';
@@ -2359,10 +2386,82 @@ async function cancelActiveJob() {
   }
 }
 
+async function reuseRetiredLoraJob(job: PlatformJob, values = job.parameters) {
+  if (activeJob.value || submitting.value) {
+    message.warning('当前会话已有任务在运行，请等待完成后再复用');
+    return;
+  }
+  const modes: (DesignModeKey | undefined)[] = [
+    job.designMode,
+    selectedModeKey.value,
+    'cabin',
+    'component',
+    'cmf',
+  ];
+  const mode = modes.find((key): key is Exclude<DesignModeKey, 'report'> =>
+    Boolean(
+      key &&
+      key !== 'report' &&
+      availableApplicationKeysForMode(key).includes(DEFAULT_APP_KEY),
+    ),
+  );
+  if (!mode) {
+    message.info('当前没有启用文生图的设计模块，请先检查模块设置');
+    return;
+  }
+  cancelResultFlow();
+  const flow = resultFlowRequest;
+  const projectId = platformStore.currentProjectId;
+  const conversationId = activeConversationId.value;
+  const isCurrent = () =>
+    !composerDisposed &&
+    flow === resultFlowRequest &&
+    projectId === platformStore.currentProjectId &&
+    conversationId === activeConversationId.value;
+  try {
+    if (!(await chooseApplication(DEFAULT_APP_KEY, '', mode)) || !isCurrent())
+      return;
+    resetDraftState(capability.value ?? undefined);
+    for (const key of [
+      'prompt',
+      'width',
+      'height',
+      'seed',
+      'steps',
+      'batchSize',
+    ]) {
+      if (
+        values[key] !== undefined &&
+        scalarFields.value.some((field) => field.key === key)
+      )
+        parameterValues[key] = values[key];
+    }
+    // Never silently load a legacy fixed LoRA or its obsolete model fields.
+    parameterValues.optionalLora = { enabled: false, selections: [] };
+    await saveDraftNow();
+    if (isCurrent())
+      message.info(
+        '已转入文生图并预填历史参数，请确认后发送；如需 LoRA，请通过旁边的开关重新选择',
+      );
+  } catch (error) {
+    if (isCurrent())
+      message.error(
+        error instanceof Error ? error.message : '无法复用历史文生图任务',
+      );
+  }
+}
+
 async function runJobSnapshot(
   job: PlatformJob,
   override?: { parameterKey: string; value: string },
 ) {
+  if (job.appKey === retiredLoraTextKey) {
+    await reuseRetiredLoraJob(job, {
+      ...job.parameters,
+      ...(override ? { [override.parameterKey]: override.value } : {}),
+    });
+    return;
+  }
   if (job.appKey === retiredBaseEditKey) {
     openBaseEditHistory(job, undefined, override?.value);
     return;
@@ -3732,7 +3831,9 @@ async function importAssetAction() {
     if (!mode) throw new Error('管理员尚未在设计模块启用此图片操作');
     selectedModeKey.value = mode;
     const output = assetImageOutput(asset);
-    if (sourceJob?.appKey === retiredBaseEditKey) {
+    if (sourceJob?.appKey === retiredLoraTextKey) {
+      await reuseRetiredLoraJob(sourceJob);
+    } else if (sourceJob?.appKey === retiredBaseEditKey) {
       openBaseEditHistory(sourceJob, asset.id);
     } else if (sourceJob) {
       const conversationId = conversation.id;
@@ -4420,10 +4521,7 @@ onBeforeUnmount(() => {
                 </button>
               </Popover>
               <Popover
-                v-if="
-                  generationCategory === 'image' ||
-                  categoryApplications.length > 1
-                "
+                v-if="generationCategory === 'image'"
                 v-model:open="functionMenuOpen"
                 placement="topLeft"
                 trigger="click"

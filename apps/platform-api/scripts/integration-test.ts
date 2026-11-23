@@ -1227,6 +1227,39 @@ async function run() {
     retiredSubmission.envelope.code === 'APPLICATION_RETIRED',
     '管理员仍可通过接口启动双图基础编辑',
   );
+  const retiredLoraApp = adminApplications.envelope.data.find(
+    (app) => app.key === 'text-to-image-lora',
+  );
+  assert(
+    retiredLoraApp && !retiredLoraApp.visible && !retiredLoraApp.capabilityCode,
+    'LoRA 独立入口未撤下',
+  );
+  await apiRequest('/capabilities/text-to-image-lora', {
+    expectedStatus: 404,
+    session: admin,
+  });
+  await apiRequest('/applications/text-to-image-lora/visibility', {
+    body: { visible: true },
+    method: 'PATCH',
+    expectedStatus: 409,
+    session: admin,
+  });
+  const retiredLoraSubmission = await apiRequest('/jobs', {
+    body: {
+      appKey: 'text-to-image-lora',
+      designConversationId: retirementConversation.envelope.data.id,
+      inputAssetIds: [],
+      name: '旧 LoRA 入口拒绝新任务',
+      parameters: {},
+      projectId,
+    },
+    expectedStatus: 409,
+    session: admin,
+  });
+  assert(
+    retiredLoraSubmission.envelope.code === 'APPLICATION_RETIRED',
+    '旧 LoRA 入口仍可创建任务',
+  );
   const modeConfigs = await apiRequest<
     Array<{
       applicationKeys: string[];
@@ -1244,6 +1277,7 @@ async function run() {
   );
   assert(
     !originalCmf.applicationKeys.includes('image-edit-base') &&
+      !originalCmf.applicationKeys.includes('text-to-image-lora') &&
       originalCmf.applicationKeys.includes('reference-image-edit') &&
       !originalCmf.applicationKeys.includes('image-edit-kv'),
     'CMF 应将三个参考图编辑工作流合并成一个入口',
@@ -2146,10 +2180,10 @@ async function run() {
     { session: user1 },
   );
   assert(
-    !userApplications.envelope.data.some(
-      (app) => app.key === 'image-edit-base',
+    !userApplications.envelope.data.some((app) =>
+      ['image-edit-base', 'text-to-image-lora'].includes(app.key),
     ),
-    '普通用户仍看到双图基础编辑入口',
+    '普通用户仍看到已撤下的工作流入口',
   );
   assert(
     !userApplications.envelope.data.some(
@@ -3372,6 +3406,115 @@ async function run() {
   await settleJobsForIntegration(
     [activeDesignJobId, parallelDesignJob.envelope.data.id],
     '设计会话并发验收完成',
+  );
+
+  // Simulate an already completed legacy job; retirement must preserve its
+  // immutable workflow, private output references and unsent draft verbatim.
+  const [legacyLoraVersion] = await sql<{ id: string }[]>`
+    SELECT wv.id FROM capability_workflows cw JOIN workflow_versions wv ON wv.id=cw.workflow_version_id
+    WHERE cw.capability_code='text-to-image-lora' AND cw.active=true LIMIT 1`;
+  assert(legacyLoraVersion, '缺少历史 LoRA 工作流版本');
+  const legacyLoraJobId = randomUUID();
+  await sql`INSERT INTO jobs(id,project_id,app_key,name,parameters,created_by,status,progress,stage,design_conversation_id,workflow_version_id)
+    VALUES (${legacyLoraJobId},${projectId},'text-to-image-lora','保留历史 LoRA 结果',${sql.json({ prompt: '历史 LoRA 提示词', loraStrength: 1 })},${user1.id},'succeeded',100,'历史夹具',${designConversation.envelope.data.id},${legacyLoraVersion.id})`;
+  await sql`INSERT INTO job_outputs(job_id,asset_id,position) VALUES (${legacyLoraJobId},${prepared.envelope.data.asset.id},0)`;
+  await sql`INSERT INTO design_conversation_drafts(conversation_id,app_key,design_mode,parameter_values,input_asset_ids)
+    VALUES (${designConversation.envelope.data.id},'text-to-image-lora','cabin',${sql.json({ prompt: '尚未发送的旧草稿', loraStrength: 0.8 })},'{}')`;
+  const retirementMigration = await readFile(
+    new URL('../migrations/054_retire_lora_text_entry.sql', import.meta.url),
+    'utf8',
+  );
+  await sql.begin(async (tx) => {
+    await tx`SAVEPOINT retirement_check`;
+    const snapshot = () => tx`SELECT jsonb_build_object(
+      'job',(SELECT to_jsonb(j) FROM jobs j WHERE id=${legacyLoraJobId}),
+      'outputs',(SELECT jsonb_agg(to_jsonb(o)) FROM job_outputs o WHERE job_id=${legacyLoraJobId}),
+      'draft',(SELECT to_jsonb(d) FROM design_conversation_drafts d WHERE conversation_id=${designConversation.envelope.data.id} AND app_key='text-to-image-lora' AND design_mode='cabin'),
+      'version',(SELECT to_jsonb(v) FROM workflow_versions v WHERE id=${legacyLoraVersion.id})
+    ) AS data`;
+    const [before] = await snapshot();
+    await tx`UPDATE applications SET visible=true WHERE key='text-to-image-lora'`;
+    await tx`UPDATE capabilities SET status='published' WHERE app_key='text-to-image-lora'`;
+    await tx`UPDATE design_mode_applications SET application_keys='["text-to-image-lora","image-upscale","text-to-image"]',default_image_application_key='image-upscale' WHERE design_mode='cabin'`;
+    await tx`UPDATE design_mode_applications SET application_keys='["text-to-image-lora","image-upscale"]',default_image_application_key='text-to-image-lora' WHERE design_mode='component'`;
+    await tx`UPDATE design_mode_applications SET application_keys='["text-to-image","image-upscale"]',default_image_application_key='image-upscale' WHERE design_mode='cmf'`;
+    const [cmfBefore] =
+      await tx`SELECT revision FROM design_mode_applications WHERE design_mode='cmf'`;
+    await tx.unsafe(retirementMigration);
+    const once =
+      await tx`SELECT design_mode,application_keys,default_image_application_key,revision,updated_at FROM design_mode_applications ORDER BY design_mode`;
+    await tx.unsafe(retirementMigration);
+    const twice =
+      await tx`SELECT design_mode,application_keys,default_image_application_key,revision,updated_at FROM design_mode_applications ORDER BY design_mode`;
+    const cabin = once.find((row) => row.design_mode === 'cabin');
+    const component = once.find((row) => row.design_mode === 'component');
+    assert(
+      isDeepStrictEqual(cabin?.application_keys, [
+        'image-upscale',
+        'text-to-image',
+      ]),
+      '已有文生图位置/目录顺序被改变',
+    );
+    assert(
+      isDeepStrictEqual(component?.application_keys, [
+        'text-to-image',
+        'image-upscale',
+      ]) && component?.default_image_application_key === 'image-upscale',
+      '旧独立入口未按原位置替换或默认项修复失败',
+    );
+    assert(
+      once.find((row) => row.design_mode === 'cmf')?.revision ===
+        cmfBefore?.revision,
+      '无关目录版本被修改',
+    );
+    assert(isDeepStrictEqual(once, twice), '054迁移重复执行不幂等');
+    const [after] = await snapshot();
+    assert(
+      isDeepStrictEqual(before?.data, after?.data),
+      '撤下入口改写了历史任务/结果/草稿/工作流',
+    );
+    await tx`ROLLBACK TO SAVEPOINT retirement_check`;
+  });
+  const legacyJobList = await apiRequest<
+    Array<{
+      appKey: string;
+      id: string;
+      outputs: { assetId: string }[];
+    }>
+  >(`/jobs?projectId=${projectId}`, { session: user1 });
+  const legacyJobView = legacyJobList.envelope.data.find(
+    (job) => job.id === legacyLoraJobId,
+  );
+  assert(
+    legacyJobView?.appKey === 'text-to-image-lora' &&
+      legacyJobView.outputs[0]?.assetId === prepared.envelope.data.asset.id,
+    '旧任务及结果不可读取',
+  );
+  const legacyEntry = WORKFLOW_CATALOG.find(
+    (entry) => entry.application.key === 'text-to-image-lora',
+  );
+  assert(legacyEntry, '缺少兼容目录');
+  await seedWorkflowCatalogEntry(
+    legacyEntry,
+    JSON.parse(
+      await readFile(
+        new URL(
+          `../workflows/comfyui/${legacyEntry.fileName}`,
+          import.meta.url,
+        ),
+        'utf8',
+      ),
+    ),
+    admin.id,
+  );
+  const [afterSeed] =
+    await sql`SELECT a.visible,c.status FROM applications a JOIN capabilities c ON c.app_key=a.key WHERE a.key='text-to-image-lora'`;
+  assert(
+    afterSeed && !afterSeed.visible && afterSeed.status === 'disabled',
+    '初始化复活了旧 LoRA 入口',
+  );
+  console.warn(
+    '文生图入口合并通过：旧入口拒绝新建/重新启用、目录有序迁移与幂等、历史任务/结果/草稿/版本保留、重复种子不复活。',
   );
 
   const designDraftPath = `/design-conversations/${designConversation.envelope.data.id}/drafts/${flowTarget.key}`;

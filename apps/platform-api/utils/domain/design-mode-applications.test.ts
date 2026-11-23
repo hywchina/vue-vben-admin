@@ -24,6 +24,7 @@ describe('design module function settings', () => {
       applicationKeys: ['text-to-image-lora'],
       defaultImageApplicationKey: 'text-to-image-lora',
     },
+    { applicationKeys: ['single-image-edit', 'text-to-image-lora'] },
     { defaultImageApplicationKey: 'inpaint-single' },
     {
       applicationKeys: ['screen-capture-edit'],

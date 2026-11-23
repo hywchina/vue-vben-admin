@@ -2,7 +2,11 @@ import type { DesignModeKey } from './design-modes';
 import type { DesignImageResultActionKey } from './design-result-actions';
 import type { PlatformAsset, PlatformJobOutput } from './types';
 
-import { baseEditReplacements, retiredBaseEditKey } from './design-generation';
+import {
+  baseEditReplacements,
+  retiredBaseEditKey,
+  retiredLoraTextKey,
+} from './design-generation';
 import {
   designImageResultActions,
   designResultActionAvailable,
@@ -52,6 +56,10 @@ export function assetImageActionUnavailable(
     return '图片或操作不可用';
   if (action.key === 'rerun' && !asset.sourceJobId)
     return '上传图片没有可复用的生成任务';
+  if (action.key === 'rerun' && asset.sourceAppKey === retiredLoraTextKey)
+    return availableKeys.includes('text-to-image')
+      ? ''
+      : '文生图能力未配置或不可用';
   if (action.key === 'rerun' && asset.sourceAppKey === retiredBaseEditKey)
     return baseEditReplacements.some(({ key }) => availableKeys.includes(key))
       ? ''

@@ -29,7 +29,10 @@ import {
   cameraViewsKey,
   cameraViewValues,
 } from '#/modules/platform/camera-views';
-import { retiredBaseEditKey } from '#/modules/platform/design-generation';
+import {
+  retiredBaseEditKey,
+  retiredLoraTextKey,
+} from '#/modules/platform/design-generation';
 import {
   designImageResultActions,
   designResultActionAvailable,
@@ -233,7 +236,7 @@ const promptEntry = computed(() => {
   if (cameraViews.value.length > 0) return undefined;
   const historicalPrompt = props.job.parameters.prompt;
   if (
-    props.job.appKey === retiredBaseEditKey &&
+    [retiredBaseEditKey, retiredLoraTextKey].includes(props.job.appKey) &&
     typeof historicalPrompt === 'string' &&
     historicalPrompt.trim()
   )
@@ -291,9 +294,18 @@ const resultActions = computed(() => {
   const mode = businessResultMode.value;
   if (!mode) return [];
   const actions = designImageResultActions(mode);
-  return props.job.appKey === retiredBaseEditKey && props.conversationLayout
+  return [retiredBaseEditKey, retiredLoraTextKey].includes(props.job.appKey) &&
+    props.conversationLayout
     ? actions.map((action) =>
-        action.key === 'rerun' ? { ...action, label: '继续编辑' } : action,
+        action.key === 'rerun'
+          ? {
+              ...action,
+              label:
+                props.job.appKey === retiredLoraTextKey
+                  ? '用文生图复用'
+                  : '继续编辑',
+            }
+          : action,
       )
     : actions;
 });

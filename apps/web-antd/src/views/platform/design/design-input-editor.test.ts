@@ -4,6 +4,8 @@ import { createApp, defineComponent, h, nextTick, reactive } from 'vue';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { designModeDefaultPrompt } from '#/modules/platform/design-modes';
+
 import generatedSchemas from '../../../../../platform-api/workflows/comfyui/parameter-schemas.generated.json';
 import CapabilityMediaField from '../workspace/capability-media-field.vue';
 import Design from './index.vue';
@@ -353,6 +355,91 @@ describe('workflow input editor routing', () => {
     );
     expect(root.textContent?.includes('应用分区')).toBe(
       appKey.startsWith('region-'),
+    );
+  });
+});
+
+describe('single text generation entry', () => {
+  it('hides the duplicate selector even when an old server returns a visible LoRA entry', async () => {
+    const root = await configure('text-to-image');
+    mocks.store.applications.push({
+      ...mocks.store.applications[0],
+      key: 'text-to-image-lora',
+      name: 'LoRA 客室生成',
+    });
+    await settle();
+    expect(
+      root.querySelector('[data-testid="active-design-category"]'),
+    ).not.toBeNull();
+    expect(
+      root.querySelector('[data-testid="active-design-application"]'),
+    ).toBeNull();
+  });
+  it('opens a retired text link in standard generation', async () => {
+    mocks.appKey = 'text-to-image-lora';
+    mocks.store.applications[0] = {
+      key: 'text-to-image',
+      name: '文生图',
+      visible: true,
+      capabilityCode: 'text-to-image',
+    };
+    mocks.capability.mockResolvedValue({
+      fields: schemas['text-to-image'],
+      presentation: { quickFieldKeys: [] },
+    });
+    const root = await render();
+    expect(
+      root.querySelector('[data-generation-category="text"]'),
+    ).not.toBeNull();
+    expect(mocks.capability).toHaveBeenCalledWith('text-to-image');
+    expect(mocks.capability).not.toHaveBeenCalledWith('text-to-image-lora');
+  });
+  it('prefills a legacy task without submitting it or carrying the fixed LoRA', async () => {
+    const root = await configure('text-to-image');
+    mocks.store.currentJobs = [
+      {
+        id: 'legacy-lora',
+        appKey: 'text-to-image-lora',
+        name: '历史 LoRA',
+        designMode: 'cabin',
+        designConversationId: 'conversation',
+        projectId: 'project',
+        ownedByCurrentUser: true,
+        status: 'succeeded',
+        createdAt: '2026-11-23T00:00:00Z',
+        inputs: [],
+        outputs: [],
+        parameters: {
+          prompt: '历史客室提示词',
+          width: 2048,
+          height: 1080,
+          seed: 123,
+          steps: 4,
+          loraStrength: 1,
+          obsoleteModel: 'old.safetensors',
+        },
+      },
+    ];
+    await settle();
+    root
+      .querySelector<HTMLButtonElement>('[data-testid="rerun-history"]')
+      ?.click();
+    await settle();
+    expect(mocks.submit).not.toHaveBeenCalled();
+    expect(
+      root.querySelector<HTMLTextAreaElement>(
+        '[data-testid="design-prompt-input"]',
+      )?.value,
+    ).toBe('历史客室提示词');
+    expect(mocks.save.mock.lastCall?.[0]).toMatchObject({
+      appKey: 'text-to-image',
+      parameterValues: { prompt: '历史客室提示词', seed: 123 },
+    });
+    expect(mocks.save.mock.lastCall?.[0].parameterValues).not.toHaveProperty(
+      'loraStrength',
+    );
+    expect(mocks.save.mock.lastCall?.[0].parameterValues).not.toHaveProperty(
+      'obsoleteModel',
     );
   });
 });
@@ -862,6 +949,78 @@ describe('disabled workflow replay', () => {
 });
 
 describe('unified reference image editing', () => {
+  it.each(['automatic', 'saved', 'saved-empty', 'user-cleared'])(
+    'changes only untouched defaults when reference count changes (%s)',
+    async (scenario) => {
+      mocks.appKey = 'reference-image-edit';
+      const family = ['single-image-edit', 'image-edit-kv', 'multi-image-edit'];
+      mocks.store.applications = [mocks.appKey, ...family].map((key) => ({
+        key,
+        name: key,
+        shortName: key,
+        capabilityCode: key,
+        visible: true,
+        designModes:
+          key === mocks.appKey
+            ? { cabin: { order: 0, defaultImage: true } }
+            : {},
+      }));
+      mocks.capability.mockImplementation(async (key: string) => ({
+        appKey: key,
+        fields: schemas[key],
+      }));
+      const saved = scenario.startsWith('saved');
+      mocks.draft.mockResolvedValue({
+        updatedAt: saved ? '2026-11-23' : null,
+        parameterValues: { prompt: scenario === 'saved' ? '我的设计要求' : '' },
+        inputAssetIds: {},
+      });
+      const root = await render();
+      const prompt = () => {
+        const area = root.querySelector<HTMLTextAreaElement>(
+          '[data-testid="design-prompt-input"]',
+        );
+        if (!area) throw new Error('Missing prompt input');
+        return area;
+      };
+      const expected = (appKey: string) => {
+        if (scenario === 'automatic')
+          return designModeDefaultPrompt('cabin', appKey);
+        return scenario === 'saved' ? '我的设计要求' : '';
+      };
+      if (scenario === 'user-cleared') {
+        prompt().value = '';
+        prompt().dispatchEvent(new Event('input', { bubbles: true }));
+        await settle();
+      }
+      const assets = ['base', 'design', 'material'].map((id) => ({
+        id,
+        name: id,
+        projectId: 'project',
+        type: 'image',
+        status: 'available',
+      }));
+      mocks.store.currentAssets = assets;
+      const input = root.querySelector<HTMLInputElement>('input[type="file"]');
+      if (!input) throw new Error('Missing file input');
+      for (const [index, asset] of assets.entries()) {
+        mocks.upload.mockResolvedValueOnce(asset);
+        Object.defineProperty(input, 'files', {
+          configurable: true,
+          value: [new File(['fixture'], 'image.png', { type: 'image/png' })],
+        });
+        input.dispatchEvent(new Event('change'));
+        await settle();
+        expect(prompt().value).toBe(expected(family[index] ?? ''));
+      }
+      root
+        .querySelector<HTMLButtonElement>('[aria-label="移除design"]')
+        ?.click();
+      await settle();
+      expect(prompt().value).toBe(expected('image-edit-kv'));
+      expect(mocks.submit).not.toHaveBeenCalled();
+    },
+  );
   it('reveals one next slot and preserves the prompt as the workflow changes', async () => {
     const family = ['single-image-edit', 'image-edit-kv', 'multi-image-edit'];
     const alias = 'reference-image-edit';

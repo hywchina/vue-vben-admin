@@ -4,10 +4,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applicationsForDesignMode,
+  designModeDefaultPrompt,
   designModeDefaults,
   designModeForApplication,
   designModes,
   getDesignMode,
+  resolveDesignPrompt,
 } from '#/modules/platform/design-modes';
 import { designImageResultActions } from '#/modules/platform/design-result-actions';
 
@@ -104,7 +106,77 @@ describe('design mode catalog', () => {
     expect(designModeDefaults('component', 'text-to-image').prompt).toContain(
       '座椅',
     );
-    expect(designModeDefaults('cabin', 'image-upscale')).toEqual({});
+    expect(designModeDefaults('cabin', 'image-upscale').prompt).toContain(
+      '清晰',
+    );
+    for (const key of [
+      'camera-control-multi',
+      'multiview-to-3d',
+      'unknown',
+      'toString',
+    ])
+      expect(designModeDefaults('cmf', key)).toEqual({});
+    expect(designModeDefaults('report', 'text-to-image')).toEqual({});
+  });
+
+  it.each(['cabin', 'component', 'cmf'] as const)(
+    'covers image-input roles and protected editing in %s',
+    (mode) => {
+      const single = designModeDefaultPrompt(mode, 'single-image-edit');
+      const dual = designModeDefaultPrompt(mode, 'image-edit-kv');
+      const triple = designModeDefaultPrompt(mode, 'multi-image-edit');
+      expect(single).toContain('图1');
+      expect(single).not.toContain('图2');
+      expect(dual).toContain('图2');
+      expect(dual).not.toContain('图3');
+      expect(triple).toContain('图3');
+      expect(new Set([dual, single, triple]).size).toBe(3);
+      expect(designModeDefaultPrompt(mode, 'inpaint-single')).toContain(
+        '未遮罩',
+      );
+      expect(designModeDefaultPrompt(mode, 'region-marker-edit')).toContain(
+        '未标记',
+      );
+      expect(designModeDefaultPrompt(mode, 'image-understanding')).toMatch(
+        /推测|无法确认|不得/,
+      );
+      expect(designModeDefaultPrompt(mode, 'reference-image-edit')).toBe(
+        single,
+      );
+      expect(designModeDefaultPrompt(mode, 'local-image-edit')).toBe(
+        designModeDefaultPrompt(mode, 'inpaint-single'),
+      );
+    },
+  );
+  it('separates business subjects, floor plans and configured administrator intent', () => {
+    expect(designModeDefaultPrompt('component', 'multi-image-edit')).toContain(
+      '零部件',
+    );
+    expect(designModeDefaultPrompt('cmf', 'multi-image-edit')).toContain(
+      '重复节奏',
+    );
+    expect(designModeDefaultPrompt('cabin', 'multi-image-edit')).toContain(
+      '空间',
+    );
+    expect(
+      resolveDesignPrompt(
+        'cabin',
+        'single-image-edit',
+        null,
+        undefined,
+        'floor-plan-coloring',
+      ),
+    ).toContain('俯视');
+    expect(resolveDesignPrompt('cmf', 'text-to-image', '管理员定制')).toBe(
+      '管理员定制',
+    );
+    expect(resolveDesignPrompt('cmf', 'text-to-image', '')).toBe('');
+    expect(
+      resolveDesignPrompt('cmf', 'future-workflow', null, 'JSON默认'),
+    ).toBe('JSON默认');
+    expect(
+      resolveDesignPrompt('cmf', 'text-to-image', null, 'JSON默认'),
+    ).toContain('四方连续');
   });
 
   it('keeps each image mode quick-tool order and placeholder stable', () => {

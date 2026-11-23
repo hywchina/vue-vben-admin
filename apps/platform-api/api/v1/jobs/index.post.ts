@@ -190,6 +190,13 @@ export default apiHandler(async (event) => {
   if (!application.visible && !hasAdministrativeRole(identity)) {
     throw new ApiError(404, 'APPLICATION_NOT_FOUND', '应用不存在');
   }
+  if (input.appKey === 'text-to-image-lora') {
+    throw new ApiError(
+      409,
+      'APPLICATION_RETIRED',
+      'LoRA 客室生成独立入口已撤下，请使用文生图及 LoRA 开关',
+    );
+  }
   if (input.appKey === 'image-edit-base') {
     throw new ApiError(
       409,
