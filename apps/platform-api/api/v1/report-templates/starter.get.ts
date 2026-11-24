@@ -14,7 +14,9 @@ export default apiHandler(async (event) => {
     event,
     z.object({
       format: z.enum(['docx', 'pptx']),
-      kind: z.enum(['report', 'contract', 'patent', 'bid']).default('report'),
+      kind: z
+        .enum(['report', 'compact', 'contract', 'patent', 'bid'])
+        .default('report'),
     }),
   );
   const { source, snapshot } = await getStarterTemplate(format, kind);

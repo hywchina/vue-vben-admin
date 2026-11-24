@@ -47,9 +47,12 @@ export function getDesignConversationInputAssetApi(
 }
 
 export function getDesignConversationApi(id: string) {
-  return requestClient.get<{ id: string; projectId: string; title: string }>(
-    `/design-conversations/${id}`,
-  );
+  return requestClient.get<{
+    id: string;
+    lastContext?: null | { appKey: string; designMode: string };
+    projectId: string;
+    title: string;
+  }>(`/design-conversations/${id}`);
 }
 
 export function getDesignConversationsApi(projectId: string) {

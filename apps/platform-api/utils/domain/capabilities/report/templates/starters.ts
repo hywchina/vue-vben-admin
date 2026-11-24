@@ -1,5 +1,6 @@
 import type { TemplateSnapshot } from './repository';
 
+import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 
 import {
@@ -7,6 +8,7 @@ import {
   Document,
   Footer,
   HeadingLevel,
+  ImageRun,
   LineRuleType,
   Packer,
   PageNumber,
@@ -20,6 +22,7 @@ import { createDesignWordTemplate } from './word-design';
 
 export const STARTER_NAMES = {
   report: '工程设计报告',
+  compact: '紧凑图文设计报告',
   contract: '合同编制参考',
   patent: '专利技术交底书',
   bid: '投标响应文件参考',
@@ -56,7 +59,8 @@ async function build(format: 'docx' | 'pptx', kind: StarterKind) {
         '围绕技术问题、技术方案、实施方式及有益效果编制；未验证内容保留为待验证。',
       bid: '按采购文件逐项响应；资格、报价、承诺及证明材料须核实，不自动推定满足要求。',
     };
-    const note = kind === 'report' ? undefined : notes[kind];
+    const note =
+      kind === 'report' || kind === 'compact' ? undefined : notes[kind];
     const doc =
       kind === 'report'
         ? createDesignWordTemplate()
@@ -169,9 +173,24 @@ async function build(format: 'docx' | 'pptx', kind: StarterKind) {
                     heading: HeadingLevel.HEADING_1,
                   }),
                   paragraph('{{section_body}}'),
-                  paragraph('{{images}}', {
+                  new Paragraph({
                     alignment: AlignmentType.CENTER,
                     keepNext: true,
+                    children: [
+                      new TextRun('{{images}}'),
+                      ...(kind === 'compact'
+                        ? [
+                            new ImageRun({
+                              type: 'png',
+                              data: Buffer.from(
+                                'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=',
+                                'base64',
+                              ),
+                              transformation: { width: 520, height: 180 },
+                            }),
+                          ]
+                        : []),
+                    ],
                   }),
                   paragraph('{{caption}}', { style: 'RailCaption' }),
                 ],
@@ -307,8 +326,9 @@ async function build(format: 'docx' | 'pptx', kind: StarterKind) {
         x: 5.85,
         y: y + 2.1,
         w: 6.75,
-        h: 0.28,
-        fontSize: 10,
+        h: 0.45,
+        fontSize: 14,
+        align: 'center',
         color: '667085',
         margin: 0,
       });
@@ -347,8 +367,9 @@ async function build(format: 'docx' | 'pptx', kind: StarterKind) {
       x: 5.85,
       y: 6.25,
       w: 6.75,
-      h: 0.35,
-      fontSize: 10,
+      h: 0.5,
+      fontSize: 14,
+      align: 'center',
       color: '667085',
       margin: 0,
     });
@@ -403,8 +424,9 @@ async function build(format: 'docx' | 'pptx', kind: StarterKind) {
           x,
           y: y + h + 0.08,
           w,
-          h: 0.35,
-          fontSize: 10,
+          h: 0.5,
+          fontSize: 14,
+          align: 'center',
           color: '667085',
           margin: 0,
         });
@@ -422,7 +444,7 @@ async function build(format: 'docx' | 'pptx', kind: StarterKind) {
       projectId: '',
       name: STARTER_NAMES[kind],
       format,
-      revision: format === 'docx' ? 3 : 2,
+      revision: kind === 'compact' ? 1 : 3,
       objectKey: '',
       sha256: createHash('sha256').update(source).digest('hex'),
       manifest,

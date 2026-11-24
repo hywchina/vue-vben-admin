@@ -41,6 +41,7 @@ export interface CreateReportInput {
   name: string;
   projectId: string;
   reportType: ReportType;
+  reportLayout?: 'compact' | 'design';
   reportTemplateId?: string;
   reportTemplateRevision?: number;
   templateValues?: Record<string, string>;

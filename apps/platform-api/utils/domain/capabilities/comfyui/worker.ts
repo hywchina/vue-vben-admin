@@ -36,12 +36,19 @@ import {
   workflowValidationErrorMessage,
 } from '../../workflows/schema';
 import { ComfyUiClient } from './client';
+import {
+  constrainCameraScene,
+  finalText,
+  textFactInstruction,
+} from './quality';
 
 interface ExecutionRow {
   apiJson: Record<string, unknown>;
   appKey: string;
   capabilityName: string;
   createdBy: string;
+  designConversationId: null | string;
+  designMode: string;
   externalJobId: null | string;
   inputAssets: Array<{
     filename: string;
@@ -93,6 +100,7 @@ export function normalizeComfyOutputMetadata(input: {
 export function extractComfyOutputFiles(
   outputs: Record<string, Record<string, unknown>>,
   rawSchema: unknown,
+  textSource?: string,
 ) {
   const schema = workflowOutputSchema.array().parse(rawSchema);
   const mapped: ComfyMappedOutput[] = [];
@@ -105,7 +113,7 @@ export function extractComfyOutputFiles(
         definition.kind === 'text' &&
         ['boolean', 'number', 'string'].includes(typeof candidate)
       ) {
-        const content = String(candidate);
+        const content = finalText(String(candidate), textSource);
         const digest = createHash('sha256').update(content).digest('hex');
         mapped.push({
           definition,
@@ -398,7 +406,13 @@ export class ComfyUiWorker {
         : {};
       let mapped: ComfyMappedOutput[];
       if (count === undefined) {
-        mapped = extractComfyOutputFiles(outputs, job.outputSchema);
+        mapped = extractComfyOutputFiles(
+          outputs,
+          job.outputSchema,
+          job.appKey === 'text-chat'
+            ? String(job.parameters.prompt ?? '')
+            : undefined,
+        );
       } else {
         const plan = planImageGeneration(
           job.appKey,
@@ -450,7 +464,7 @@ export class ComfyUiWorker {
           SET
             status = 'succeeded',
             progress = 100,
-            stage = '输出已登记为项目资产',
+            stage = '生成完成，可保存到资产中心',
             error = null,
             completed_at = now(),
             updated_at = now()
@@ -458,8 +472,11 @@ export class ComfyUiWorker {
         `;
       });
       await createNotification({
-        link: '/assets',
-        message: 'ComfyUI 输出已写入对象存储并登记为项目资产。',
+        link: job.designConversationId
+          ? `/design?conversationId=${encodeURIComponent(job.designConversationId)}`
+          : '/jobs',
+        message:
+          '生成结果已暂存，可返回设计会话继续编辑，或主动保存到资产中心。',
         title: `${job.capabilityName}任务已完成`,
         type: 'job',
         userId: job.createdBy,
@@ -638,6 +655,8 @@ export class ComfyUiWorker {
         j.name AS "jobName",
         j.parameters,
         j.created_by AS "createdBy",
+        j.design_conversation_id AS "designConversationId",
+        j.design_mode AS "designMode",
         COALESCE((
           SELECT jsonb_agg(
             jsonb_build_object(
@@ -871,6 +890,22 @@ export class ComfyUiWorker {
               count,
               views,
             ).apply(materialized);
+      if (
+        ['camera-control-multi', 'camera-control-single'].includes(job.appKey)
+      )
+        prompt = constrainCameraScene(
+          prompt as Parameters<typeof constrainCameraScene>[0],
+          job.designMode,
+        );
+      if (job.appKey === 'text-chat')
+        for (const node of Object.values(
+          prompt as Parameters<typeof constrainCameraScene>[0],
+        ))
+          if (
+            node.class_type === 'TextGenerate' &&
+            typeof node.inputs.prompt === 'string'
+          )
+            node.inputs.prompt += textFactInstruction;
     } catch (error) {
       await this.#fail(
         job,

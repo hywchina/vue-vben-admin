@@ -1,0 +1,465 @@
+{
+  "date": "2026-11-24",
+  "scope": "local-only",
+  "platformBaseline": "797c62b85aa410feaca2c440630b918e86d91a05",
+  "productionTouched": false,
+  "gitCommitted": false,
+  "newDatabaseMigration": null,
+  "fixedIssues": [
+    "workflow-binding-contract",
+    "conversation-context-restoration",
+    "unsaved-result-notification",
+    "flux2-vae-formats",
+    "shared-project-asset-cache"
+  ],
+  "gates": {
+    "unit": {
+      "files": 152,
+      "passed": 1165
+    },
+    "typecheck": "passed",
+    "integration": "seven isolated suites passed",
+    "productionBuild": "passed",
+    "deploymentPython": {
+      "run": 161,
+      "skipped": 6
+    },
+    "trainingVaeCpu": {
+      "passed": 3
+    },
+    "fullLint": {
+      "status": "blocked-existing-debt",
+      "contractFormatFiles": 59
+    },
+    "scopedStaticChecks": "format, type-aware Oxlint, ESLint and Stylelint passed; existing test-stub warnings retained",
+    "presentonTargetedPytest": {
+      "passed": 50,
+      "warnings": 1,
+      "scope": "template report planning, v2 generation, runtime limits; isolated test-only wheels"
+    },
+    "trainingUi": {
+      "passed": 5,
+      "typecheck": "passed"
+    }
+  },
+  "gpu": [
+    {
+      "case": "text-to-image",
+      "status": "success",
+      "seconds": 18.06,
+      "promptId": "d3014d43-0e51-433c-bd88-c8a44b7b3c15",
+      "savedImages": 1,
+      "size": [2048, 1080]
+    },
+    {
+      "case": "single-image-edit",
+      "status": "success",
+      "seconds": 21.05,
+      "promptId": "9f1d15a6-3fc2-4f0e-9be8-4148f2df6c79",
+      "savedImages": 1,
+      "size": [1536, 1040]
+    },
+    {
+      "case": "image-edit-kv",
+      "status": "success",
+      "seconds": 14.04,
+      "promptId": "6b044a8e-6f75-4a1c-bd08-bcfa08b84b76",
+      "savedImages": 1,
+      "size": [1248, 832]
+    },
+    {
+      "case": "multi-image-edit",
+      "status": "success",
+      "seconds": 71.46,
+      "promptId": "e8b6dd39-eb40-41ac-9e64-a9fde8db22a3",
+      "savedImages": 1,
+      "size": [1536, 1040]
+    },
+    {
+      "case": "inpaint-single",
+      "status": "success",
+      "seconds": 25.06,
+      "promptId": "16385bce-8f17-4bde-9718-8bdc2fec432f",
+      "savedImages": 1,
+      "size": [1024, 688],
+      "outsideMax255": 0.0,
+      "insideMae255": 3.1168235392948587
+    },
+    {
+      "case": "inpaint-reference",
+      "status": "success",
+      "seconds": 45.09,
+      "promptId": "79ca652e-3e8e-4d79-9027-45b068231ec4",
+      "savedImages": 1,
+      "size": [1024, 688],
+      "outsideMax255": 0.0,
+      "insideMae255": 7.106837747316364
+    },
+    {
+      "case": "outpaint",
+      "status": "success",
+      "seconds": 12.04,
+      "promptId": "84cdc47d-dc37-4479-8dff-28d3eb2d4599",
+      "savedImages": 1,
+      "size": [2032, 688],
+      "outsideMax255": 0.0,
+      "insideMae255": 45.96095699933952
+    },
+    {
+      "case": "camera-control-single",
+      "status": "success",
+      "seconds": 45.12,
+      "promptId": "0a351547-b608-49a5-a89e-b03b73902a29",
+      "savedImages": 1,
+      "size": [1024, 688]
+    },
+    {
+      "case": "camera-control-multi",
+      "status": "success",
+      "seconds": 138.37,
+      "promptId": "a806525e-9c0a-47d2-8288-479e061917e5",
+      "savedImages": 5,
+      "size": [1024, 688]
+    },
+    {
+      "case": "image-upscale",
+      "status": "success",
+      "seconds": 68.14,
+      "promptId": "bd004645-c847-423d-9f2c-adb696df5e30",
+      "savedImages": 0
+    },
+    {
+      "case": "image-understanding",
+      "status": "success",
+      "seconds": 15.04,
+      "promptId": "5db1a9da-2035-4e45-a560-c8456bee1981",
+      "savedImages": 0
+    },
+    {
+      "case": "text-chat",
+      "status": "success",
+      "seconds": 43.1,
+      "promptId": "4d2b177d-9c88-4427-914a-fcfbfdb0e35a",
+      "savedImages": 0
+    },
+    {
+      "case": "multiview-to-3d",
+      "status": "success",
+      "seconds": 49.3,
+      "promptId": "649610be-8749-4cd7-8ed5-b20dbb76832c",
+      "savedImages": 0
+    },
+    {
+      "case": "region-two-instructions",
+      "status": "success",
+      "seconds": 17.32,
+      "promptId": "6776dbea-6287-4702-b4c8-08e2e419f1cb",
+      "savedImages": 1,
+      "outsideMax255": 0.0
+    },
+    {
+      "case": "lora-enabled",
+      "status": "success",
+      "seconds": 4.01,
+      "promptId": "a15fdad2-8a53-4bea-a568-3210451b28e0",
+      "savedImages": 1,
+      "size": [512, 512]
+    },
+    {
+      "case": "text-eight",
+      "status": "success",
+      "seconds": 16.05,
+      "promptId": "f90fb1e0-7d0c-473e-b7a5-fbca713b3cde",
+      "savedImages": 8,
+      "uniquePixelHashes": 8
+    },
+    {
+      "case": "prompt-cabin",
+      "status": "success",
+      "seconds": 14.04,
+      "promptId": "f952e54d-9e5f-4db2-b020-b8ca49957836",
+      "savedImages": 1,
+      "size": [2048, 1080]
+    },
+    {
+      "case": "prompt-component",
+      "status": "success",
+      "seconds": 15.05,
+      "promptId": "181f5de8-8a1e-4b69-8fd3-4fef3c3ab075",
+      "savedImages": 1,
+      "size": [2048, 1080]
+    },
+    {
+      "case": "prompt-cmf",
+      "status": "success",
+      "seconds": 15.03,
+      "promptId": "dfb453ae-1034-433f-877f-b17ddf9e2272",
+      "savedImages": 1,
+      "size": [2048, 1080]
+    }
+  ],
+  "mesh": {
+    "bytes": 10153848,
+    "glbVersion": 2,
+    "meshes": [
+      {
+        "vertices": 268150,
+        "triangles": 577498
+      }
+    ]
+  },
+  "training": {
+    "validation": [
+      {
+        "name": "rail_lora_tsk_00000011.safetensors",
+        "bytes": 82866792,
+        "sha256": "83503565af69a86be3f9701af3fbd749975cb58186f2692287326f8283f8e975",
+        "tensors": 224,
+        "allFinite": true,
+        "upTensors": 112,
+        "nonzeroUpTensors": 112
+      }
+    ],
+    "steps": 20,
+    "rank": 16,
+    "resolution": 512,
+    "frontendProgress": 100,
+    "lossPoints": [
+      {
+        "step": 10,
+        "wall_time": 1795500768.427695,
+        "value": 1.6387279033660889
+      }
+    ],
+    "productionImageBuilt": false,
+    "qualityConvergenceProven": false
+  },
+  "reports": [
+    {
+      "mode": "template",
+      "format": "docx",
+      "jobId": "4332a387-b508-435c-aa78-3077965a1179",
+      "status": "succeeded",
+      "progress": 100,
+      "bytes": 2474653,
+      "imagePlacements": 21,
+      "artifact": "template.docx"
+    },
+    {
+      "mode": "template",
+      "format": "pptx",
+      "jobId": "c68082ae-1b0a-43ab-a614-768e925191ce",
+      "status": "succeeded",
+      "progress": 100,
+      "bytes": 2334740,
+      "imagePlacements": 21,
+      "artifact": "template.pptx"
+    },
+    {
+      "mode": "template",
+      "format": "md",
+      "jobId": "770fb40a-5b6e-40a1-bee1-9ee96dd74eba",
+      "status": "succeeded",
+      "progress": 100,
+      "bytes": 22718214,
+      "imagePlacements": 21,
+      "artifact": "template.md"
+    },
+    {
+      "mode": "ai",
+      "format": "docx",
+      "jobId": "a464b013-077c-4921-a6cd-4d444f2a6984",
+      "status": "succeeded",
+      "progress": 100,
+      "bytes": 2474700,
+      "imagePlacements": 21,
+      "artifact": "ai.docx"
+    },
+    {
+      "mode": "ai",
+      "format": "pptx",
+      "jobId": "2373753c-1953-426f-8a84-d11458e57daf",
+      "status": "succeeded",
+      "progress": 100,
+      "bytes": 2334787,
+      "imagePlacements": 21,
+      "artifact": "ai.pptx"
+    },
+    {
+      "mode": "ai",
+      "format": "md",
+      "jobId": "5709b5a5-244d-4654-b779-955f869e607c",
+      "status": "succeeded",
+      "progress": 100,
+      "bytes": 2706309,
+      "imagePlacements": 21,
+      "artifact": "ai.md"
+    }
+  ],
+  "wordCompatibility": {
+    "office": "LibreOffice 24.2.7.2 420(Build:2)",
+    "aiValidation": "live-model",
+    "results": [
+      {
+        "name": "template-design-template",
+        "pages": 9,
+        "fullImages": 5,
+        "ai": "not-used"
+      },
+      {
+        "name": "template-uploaded-exact-line",
+        "pages": 3,
+        "fullImages": 5,
+        "ai": "not-used"
+      },
+      {
+        "name": "template-clipping-negative-control",
+        "pages": 1,
+        "fullImages": 0,
+        "ai": "not-used"
+      },
+      {
+        "name": "ai-design-template",
+        "pages": 9,
+        "fullImages": 5,
+        "ai": "live-model"
+      },
+      {
+        "name": "ai-uploaded-exact-line",
+        "pages": 3,
+        "fullImages": 5,
+        "ai": "live-model"
+      }
+    ]
+  },
+  "pptxCompatibility": [
+    {
+      "mode": "template",
+      "pages": 9,
+      "office": "LibreOffice 24.2.7.2",
+      "textRetained": true,
+      "rendered": true
+    },
+    {
+      "mode": "ai",
+      "pages": 9,
+      "office": "LibreOffice 24.2.7.2",
+      "textRetained": true,
+      "rendered": true
+    }
+  ],
+  "contractInputs": {
+    "initialFileCount": 253,
+    "changed": []
+  },
+  "qualityOpen": [
+    "large camera movement can leave original scene",
+    "CMF tile seamlessness not guaranteed",
+    "original PDF style Word template leaves large whitespace",
+    "text workflow returns think blocks and unverified dimensions",
+    "embedded repeated Markdown images enlarge exports"
+  ],
+  "notVerified": [
+    "physical screen/camera capture",
+    "new AITK production image build",
+    "browser 3D interactions",
+    "all retired workflow inference",
+    "long-run LoRA convergence",
+    "multi-GPU or production load and fault injection"
+  ],
+  "evidence": {
+    "rawRoot": "scripts/deployment/work/system-audit-20261124",
+    "screenshots": [
+      {
+        "path": "assets/system-audit-20261124/gpu-extra-contact.png",
+        "sha256": "e719e3838be5b472b865451373bab78a5bfc3300dc0ba42ff23b72938cec02ca"
+      },
+      {
+        "path": "assets/system-audit-20261124/lora-completed.jpg",
+        "sha256": "61e90b598206eaf47f3cf274cf3d63a789c3f6b65bed9c69de4a9c25c3209a83"
+      },
+      {
+        "path": "assets/system-audit-20261124/region-result.jpg",
+        "sha256": "52df2bca23acb2d013c5274d210007f6dc823a394fd930b0e4730413e8ddf53b"
+      },
+      {
+        "path": "assets/system-audit-20261124/reports-completed.jpg",
+        "sha256": "de5bc3533227b2ed517acc537ab86e165f607cfc23c0d0afd091ec718ecd717a"
+      },
+      {
+        "path": "assets/system-audit-20261124/session-restored.jpg",
+        "sha256": "24e3801a4653f216ee320d26cbd1cf4631f1755b4eb985dec72ef453290ff7ab"
+      }
+    ]
+  },
+  "cleanup": {
+    "remainingTestDatabases": 1,
+    "remainingAuditBuckets": 0,
+    "ownedContainersRemoved": true,
+    "remainingDatabaseContainsCurrentAuditProject": false,
+    "unrelatedTestDatabasePreserved": true
+  },
+  "qualityFollowup": {
+    "scope": "local only; no git/package/deployment",
+    "rawEvidence": "scripts/deployment/work/quality-20261124",
+    "camera": {
+      "sameInputSeed180Before": "exterior",
+      "after": "interior",
+      "otherRuns": ["45-degree single", "two selected views"],
+      "strictGeometryProven": false
+    },
+    "cmf": {
+      "workflowVersion": 3,
+      "beforeRgbMeanEdgeX": 37.501543209876544,
+      "beforeRgbMeanEdgeY": 36.769694010416664,
+      "afterRgbMeanEdges": 0,
+      "centreUnchanged": true,
+      "newCmfDraftDefault": true,
+      "disabledDraftSurvivesReload": true,
+      "periodicMotifGuaranteed": false
+    },
+    "word": {
+      "same21PlacementsLibreOffice24_2": {
+        "originalPages": 25,
+        "compactPages": 6
+      },
+      "compactBundledRuntimePages": 8,
+      "nativeStylesAndAllImagesKept": true,
+      "modes": ["template", "real AI"]
+    },
+    "pptx": {
+      "captionFontPt": 14,
+      "oldCaptionFontPt": 10,
+      "centred": true,
+      "modes": ["template", "real AI"]
+    },
+    "text": {
+      "realModelRun": true,
+      "rawThinkingReturned": true,
+      "finalThinkingRemoved": true,
+      "unverifiedNumbersMarked": true,
+      "automaticFactAudit": false
+    },
+    "presenton": {
+      "reproducedFailure": "The AI omitted or duplicated a required image",
+      "fix": "provider schema const source sequence above four images; strict validation retained",
+      "unitTestsPassed": 51,
+      "realModelAfterFix": "docx and pptx passed"
+    },
+    "platformUnit": {
+      "files": 153,
+      "passed": 1174
+    },
+    "comfyCpuTests": 3,
+    "productionImagesBuilt": false,
+    "gpuCases": ["camera-180", "camera-45", "multi", "cmf", "text"],
+    "gates": {
+      "types": "passed",
+      "unit": "1174 passed",
+      "integration": "7 isolated suites passed",
+      "build": "passed",
+      "scopedStatic": "passed with existing test-stub warnings",
+      "globalLint": "59 existing contract format files"
+    }
+  }
+}

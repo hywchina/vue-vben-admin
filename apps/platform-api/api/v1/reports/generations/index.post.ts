@@ -35,7 +35,8 @@ export default apiHandler(async (event) => {
   }
   let templateSnapshot = await snapshotReportTemplate(identity, input);
   if (!templateSnapshot && input.format !== 'md') {
-    let starterKind: 'bid' | 'contract' | 'patent' | 'report' = 'report';
+    let starterKind: 'bid' | 'compact' | 'contract' | 'patent' | 'report' =
+      input.reportLayout === 'compact' ? 'compact' : 'report';
     if (input.reportType === 'contract') starterKind = 'contract';
     else if (input.reportType === 'patent-disclosure') starterKind = 'patent';
     else if (input.reportType === 'bid-response') starterKind = 'bid';

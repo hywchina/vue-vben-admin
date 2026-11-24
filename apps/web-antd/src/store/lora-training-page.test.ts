@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   projectId: '11111111-1111-4111-8111-111111111111',
   status: vi.fn(),
   refresh: vi.fn(),
+  refreshAssets: vi.fn().mockResolvedValue(undefined),
   preview: vi.fn(),
   assets: [] as Array<{
     id: string;
@@ -46,6 +47,7 @@ vi.mock('#/store', async () => {
         currentAssets: mocks.assets,
         currentJobs: mocks.jobs,
         refreshCurrentProjectJobs: mocks.refresh,
+        refreshCurrentProjectAssets: mocks.refreshAssets,
         uploadAsset: mocks.upload,
       };
     },
@@ -393,4 +395,9 @@ it('keeps submission disabled when the training status request fails', async () 
   mocks.status.mockRejectedValueOnce(new Error('unreachable'));
   const root = await render();
   expect(button(root, '开始训练').disabled).toBe(true);
+});
+
+it('reloads the complete project asset cache before showing training images', async () => {
+  await render();
+  expect(mocks.refreshAssets).toHaveBeenCalledWith();
 });

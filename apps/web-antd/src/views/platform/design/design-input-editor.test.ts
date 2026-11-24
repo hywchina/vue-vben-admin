@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   capability: vi.fn(),
   draft: vi.fn(),
   conversations: vi.fn(),
+  conversationContext: vi.fn(),
   save: vi.fn(),
   initialize: vi.fn(),
   upload: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock('#/api', () => ({
   getDesignConversationDraftApi: mocks.draft,
   getDesignConversationInputAssetApi: mocks.input,
   getDesignConversationsApi: mocks.conversations,
+  getDesignConversationApi: mocks.conversationContext,
   saveDesignConversationDraftApi: mocks.save,
   saveDesignConversationDraftOnUnloadApi: mocks.unload,
   archiveDesignConversationApi: vi.fn(),
@@ -224,6 +226,11 @@ beforeEach(() => {
         (asset: { id: string }) => asset.id === id,
       ),
   );
+  mocks.conversationContext.mockImplementation(async (id: string) => ({
+    id,
+    projectId: 'project',
+    lastContext: null,
+  }));
   mocks.initialize.mockResolvedValue(undefined);
   mocks.save.mockResolvedValue(undefined);
   mocks.unload.mockResolvedValue({});
@@ -1155,3 +1162,116 @@ describe('draft lifecycle protection', () => {
     );
   });
 });
+
+it('restores the persisted module and its own prompt when reopening a shared text capability', async () => {
+  mocks.appKey = 'text-to-image';
+  mocks.store.applications[0] = {
+    key: 'text-to-image',
+    name: '文生图',
+    capabilityCode: 'text-to-image',
+    visible: true,
+    designModes: { cabin: { order: 0 }, component: { order: 0 } },
+  };
+  mocks.conversationContext.mockResolvedValue({
+    id: 'conversation',
+    projectId: 'project',
+    lastContext: { appKey: 'text-to-image', designMode: 'component' },
+  });
+  mocks.capability.mockResolvedValue({
+    fields: schemas['text-to-image'],
+    presentation: { quickFieldKeys: [] },
+  });
+  mocks.draft.mockImplementation(
+    async (
+      _conversation: string,
+      _project: string,
+      _app: string,
+      mode: string,
+    ) => ({
+      updatedAt: '2026-11-24T06:00:00Z',
+      inputAssetIds: {},
+      parameterValues: {
+        prompt: mode === 'component' ? '独立座椅草稿' : '客室草稿',
+      },
+    }),
+  );
+  const root = await render();
+  expect(
+    root.querySelector<HTMLTextAreaElement>(
+      '[data-testid="design-prompt-input"]',
+    )?.value,
+  ).toBe('独立座椅草稿');
+  expect(mocks.draft.mock.calls.at(-1)?.[3]).toBe('component');
+});
+
+it('ignores a late context response after selecting another conversation', async () => {
+  mocks.conversations.mockResolvedValue([
+    { id: 'conversation', title: 'A' },
+    { id: 'second', title: 'B' },
+    { id: 'third', title: 'C' },
+  ]);
+  const root = await configure('text-to-image');
+  let resolveContext!: (context: unknown) => void;
+  mocks.conversationContext.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        resolveContext = resolve;
+      }),
+  );
+  root.querySelector<HTMLElement>('[data-conversation-id="second"]')?.click();
+  await settle();
+  root.querySelector<HTMLElement>('[data-conversation-id="third"]')?.click();
+  await settle();
+  expect(
+    root.querySelector<HTMLElement>('.conversation-item.active')?.dataset
+      .conversationId,
+  ).toBe('third');
+  resolveContext({
+    id: 'second',
+    projectId: 'project',
+    lastContext: { appKey: 'text-to-image', designMode: 'component' },
+  });
+  await settle();
+  expect(
+    root.querySelector<HTMLElement>('.conversation-item.active')?.dataset
+      .conversationId,
+  ).toBe('third');
+});
+
+it.each(['new', 'disabled', 'legacy'])(
+  'defaults new CMF tiles on but preserves an explicitly disabled saved draft (%s)',
+  async (scenario) => {
+    const saved = scenario !== 'new';
+    mocks.appKey = 'text-to-image';
+    mocks.store.applications[0] = {
+      key: 'text-to-image',
+      name: '文生图',
+      capabilityCode: 'text-to-image',
+      visible: true,
+      designModes: { cmf: { order: 0 } },
+    };
+    mocks.conversationContext.mockResolvedValue({
+      id: 'conversation',
+      projectId: 'project',
+      lastContext: { appKey: 'text-to-image', designMode: 'cmf' },
+    });
+    mocks.capability.mockResolvedValue({
+      fields: schemas['text-to-image'],
+      presentation: { quickFieldKeys: [] },
+    });
+    mocks.draft.mockResolvedValue({
+      updatedAt: saved ? '2026-11-24T00:00:00Z' : null,
+      inputAssetIds: {},
+      parameterValues: saved
+        ? {
+            prompt: '平面纹样',
+            ...(scenario === 'disabled' ? { tileable: false } : {}),
+          }
+        : {},
+    });
+    const root = await render();
+    root.querySelector<HTMLButtonElement>('.composer-submit')?.click();
+    await settle();
+    expect(mocks.submit.mock.lastCall?.[3].tileable).toBe(!saved);
+  },
+);

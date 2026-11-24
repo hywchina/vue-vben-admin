@@ -199,11 +199,21 @@ export const WORKFLOW_CATALOG_BASE: WorkflowCatalogEntry[] = [
       description: '将业务提示词与受控生成参数映射到 Flux2 Klein 工作流。',
       name: '文生图',
     },
-    fileName: 'flux2-klein-text-to-image-v2.json',
+    fileName: 'flux2-klein-text-to-image-v3.json',
     version: {
       modelRequirements: fluxModels,
       outputSchema: [output('356', 'images', 'image', ['ComfyUI', '文生图'])],
       parameterSchema: [
+        scalar({
+          key: 'tileable',
+          label: '平铺边缘衔接',
+          type: 'boolean',
+          nodeId: 'rail_tile',
+          inputName: 'enabled',
+          defaultValue: false,
+          required: false,
+          help: '渐变衔接相对边缘，中央纹样保持不变；CMF新文生图默认启用，可关闭。',
+        }),
         prompt(
           '357',
           '现代轨道交通客室设计，空间关系清晰，材质真实，工业设计效果图',

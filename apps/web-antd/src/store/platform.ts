@@ -98,7 +98,15 @@ export const usePlatformStore = defineStore('rail-platform', () => {
       return;
     }
     const projectId = currentProjectId.value;
-    const nextAssets = await getAssetsApi(projectId, options);
+    // Shared consumers (training, report and workflow inputs) need the whole
+    // project, not a folder/owner-filtered browser result. Browsers own their
+    // filtered lists; only ordering may be applied to this shared cache.
+    const nextAssets = await (options?.sortBy || options?.sortOrder
+      ? getAssetsApi(projectId, {
+          sortBy: options.sortBy,
+          sortOrder: options.sortOrder,
+        })
+      : getAssetsApi(projectId));
     if (currentProjectId.value === projectId) assets.value = nextAssets;
   }
 

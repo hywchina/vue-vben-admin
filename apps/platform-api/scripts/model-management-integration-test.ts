@@ -640,8 +640,20 @@ try {
             class_type: 'SaveImage',
             inputs: { filename_prefix: 'model-validation' },
           },
+          '3': {
+            class_type: 'CLIPTextEncode',
+            inputs: { text: 'model acceptance prompt' },
+          },
         },
         parameterSchema: [
+          {
+            key: 'prompt',
+            label: '提示词',
+            type: 'textarea',
+            nodeId: '3',
+            inputName: 'text',
+            defaultValue: 'model acceptance prompt',
+          },
           {
             key: 'lora',
             label: '模型',

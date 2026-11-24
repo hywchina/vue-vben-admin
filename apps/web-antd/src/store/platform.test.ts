@@ -328,7 +328,6 @@ describe('platform store with real API contract', () => {
     expect(api.setAssetFavoriteApi).toHaveBeenCalledWith(asset.id, true);
     expect(api.getAssetFoldersApi).toHaveBeenLastCalledWith(firstProject.id);
     expect(api.getAssetsApi).toHaveBeenLastCalledWith(firstProject.id, {
-      folderId: 'root',
       sortBy: 'createdAt',
       sortOrder: 'desc',
     });
@@ -388,6 +387,36 @@ describe('platform store with real API contract', () => {
       projectId: firstProject.id,
       targetFolderId: folder.id,
     });
+  });
+
+  it('keeps nested assets in the shared project cache after folder or owner scoped operations', async () => {
+    const store = usePlatformStore();
+    await store.initialize();
+    const nested = {
+      ...asset,
+      id: 'nested-asset',
+      folderId: 'nested-folder',
+      name: '子目录图片',
+    };
+    api.getAssetsApi.mockImplementation(
+      async (
+        _project: string,
+        options?: { folderId?: string; ownerId?: string },
+      ) => (options?.folderId || options?.ownerId ? [asset] : [asset, nested]),
+    );
+    api.batchAssetsApi.mockResolvedValue({ movedCount: 1 });
+    await store.batchAssets([asset.id], 'move', 'nested-folder', 'root');
+    expect(store.currentAssets.map((item) => item.id)).toContain(
+      'nested-asset',
+    );
+    await store.refreshCurrentProjectAssets({
+      folderId: 'root',
+      ownerId: 'another-owner',
+    });
+    expect(api.getAssetsApi).toHaveBeenLastCalledWith(firstProject.id);
+    expect(store.currentAssets.map((item) => item.id)).toContain(
+      'nested-asset',
+    );
   });
 
   it('renames and pins projects from server-backed preferences', async () => {

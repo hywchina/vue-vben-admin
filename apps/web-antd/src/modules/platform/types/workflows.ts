@@ -87,6 +87,8 @@ export interface WorkflowOutputDefinition {
 
 export interface WorkflowVersion {
   activeCapabilities: string[];
+  /** Server-validated input/output compatibility; omitted in cached old responses. */
+  compatibleCapabilities?: string[];
   apiJson: Record<string, unknown>;
   checksum: string;
   createdAt: string;

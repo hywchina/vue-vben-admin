@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 
 import { useDatabase } from '../../database';
 import { ApiError } from '../../response';
+import { workflowBindingCompatible } from './binding-compatibility';
 import { cameraViewsField } from './camera-views';
 import {
   imageGenerationCountField,
@@ -331,6 +332,7 @@ export async function listWorkflowManagement() {
   `;
   const capabilities = await sql<
     {
+      appKey: string;
       code: string;
       name: string;
       ready: boolean;
@@ -340,6 +342,7 @@ export async function listWorkflowManagement() {
   >`
     SELECT
       c.code,
+      c.app_key AS "appKey",
       c.name,
       c.status,
       (
@@ -379,6 +382,23 @@ export async function listWorkflowManagement() {
       : null,
     workflows: workflows.map((workflow) => ({
       ...workflow,
+      versions: workflow.versions.map((value) => {
+        const version = value as Record<string, unknown>;
+        return {
+          ...version,
+          compatibleCapabilities: capabilities
+            .filter(
+              (capability) =>
+                capability.status === 'published' &&
+                workflowBindingCompatible(
+                  capability.appKey,
+                  version.parameterSchema,
+                  version.outputSchema,
+                ),
+            )
+            .map((capability) => capability.code),
+        };
+      }),
       createdAt: workflow.createdAt.toISOString(),
       updatedAt: workflow.updatedAt.toISOString(),
     })),
@@ -576,22 +596,57 @@ export async function bindCapabilityWorkflow(
         'MODEL_TEST_REQUIRED',
         '模型更新须通过试运行后从模型管理发布',
       );
-    const [compatible] = await transaction<{ found: boolean }[]>`
-      SELECT true AS found
-      FROM capabilities c
-      CROSS JOIN workflow_versions wv
+    // Serialize replacements for the same capability before deactivating its old binding.
+    const [capability] = await transaction<{ appKey: string }[]>`
+      SELECT app_key AS "appKey" FROM capabilities
+      WHERE code = ${capabilityCode} AND status = 'published' FOR UPDATE
+    `;
+    const [compatible] = await transaction<
+      {
+        defaultPrompt: null | string;
+        outputSchema: unknown;
+        parameterSchema: unknown;
+      }[]
+    >`
+      SELECT wv.parameter_schema AS "parameterSchema", wv.output_schema AS "outputSchema", wd.default_prompt AS "defaultPrompt"
+      FROM workflow_versions wv
       JOIN workflow_definitions wd ON wd.id = wv.workflow_id
-      WHERE c.code = ${capabilityCode}
-        AND wv.id = ${workflowVersionId}
+      WHERE wv.id = ${workflowVersionId}
         AND wd.status = 'published' AND wd.deleted_at IS NULL
       FOR UPDATE OF wd
     `;
-    if (!compatible) {
+    if (!capability || !compatible) {
       throw new ApiError(
         400,
         'WORKFLOW_BINDING_INVALID',
         '能力或已发布工作流版本不存在',
       );
+    }
+    if (
+      !workflowBindingCompatible(
+        capability.appKey,
+        compatible.parameterSchema,
+        compatible.outputSchema,
+      )
+    )
+      throw new ApiError(
+        400,
+        'WORKFLOW_CONTRACT_MISMATCH',
+        '工作流的输入类型、图片数量或输出类型与该能力不兼容，原绑定未更改',
+      );
+    if (compatible.defaultPrompt) {
+      try {
+        validateWorkflowDefaultPrompt(
+          compatible.defaultPrompt,
+          compatible.parameterSchema,
+        );
+      } catch (error) {
+        throw new ApiError(
+          400,
+          'WORKFLOW_DEFAULT_PROMPT_INVALID',
+          error instanceof Error ? error.message : '默认提示词无效',
+        );
+      }
     }
     await transaction`
       UPDATE capability_workflows

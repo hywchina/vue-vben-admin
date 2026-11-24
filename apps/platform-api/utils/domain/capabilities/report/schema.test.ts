@@ -29,6 +29,19 @@ function validInput() {
 }
 
 describe('report generation schema', () => {
+  it('accepts compact design reports without silently replacing professional legal templates', () => {
+    expect(
+      createReportSchema.parse({ ...validInput(), reportLayout: 'compact' })
+        .reportLayout,
+    ).toBe('compact');
+    expect(() =>
+      createReportSchema.parse({
+        ...validInput(),
+        reportType: 'contract',
+        reportLayout: 'compact',
+      }),
+    ).toThrow('专业模板');
+  });
   it('accepts a controlled report and preserves unique asset order', () => {
     const parsed = createReportSchema.parse({
       ...validInput(),

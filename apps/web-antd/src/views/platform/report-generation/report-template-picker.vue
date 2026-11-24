@@ -28,8 +28,15 @@ import {
   listReportTemplatesApi,
   prepareReportTemplateApi,
 } from '#/api/platform/report-templates';
-const props = defineProps<{ format: string; projectId: string }>();
+const props = defineProps<{
+  allowCompact?: boolean;
+  format: string;
+  projectId: string;
+}>();
 const selected = defineModel<ReportTemplateView | undefined>();
+const layout = defineModel<'compact' | 'design'>('layout', {
+  default: 'design',
+});
 const templates = ref<ReportTemplateView[]>([]);
 const input = ref<HTMLInputElement>();
 const busy = ref(false);
@@ -41,14 +48,20 @@ const config = reactive<TemplateConfiguration>({
   bindings: [],
 });
 const starterKind = ref('report');
+const officeTemplateName = computed(() =>
+  props.format === 'docx' ? '工业设计方案模板 · v3' : '平台工程设计模板 · v3',
+);
 const options = computed(() => [
   {
     label:
-      props.format === 'docx'
-        ? '工业设计方案模板 · v3'
-        : '平台工程设计模板 · v2',
+      props.allowCompact === false
+        ? '专业文档模板（按报告类型）'
+        : officeTemplateName.value,
     value: '',
   },
+  ...(props.allowCompact === false || props.format !== 'docx'
+    ? []
+    : [{ label: '紧凑图文模板 · v1', value: 'builtin:compact' }]),
   ...templates.value
     .filter((item) => item.format === props.format && item.status === 'ready')
     .map((item) => ({
@@ -79,6 +92,7 @@ async function refresh() {
     );
 }
 function select(id: string) {
+  layout.value = id === 'builtin:compact' ? 'compact' : 'design';
   selected.value = templates.value.find((item) => item.id === id);
 }
 function edit(item: ReportTemplateView) {
@@ -196,6 +210,7 @@ watch(
   () => props.format,
   () => {
     if (selected.value?.format !== props.format) selected.value = undefined;
+    layout.value = 'design';
   },
 );
 </script>
@@ -207,7 +222,12 @@ watch(
     </div>
     <div class="template-picker__controls">
       <Select
-        :value="selected?.id ?? ''"
+        :value="
+          selected?.id ??
+          (layout === 'compact' && allowCompact !== false && format === 'docx'
+            ? 'builtin:compact'
+            : '')
+        "
         :options="options"
         :disabled="format === 'md' || !projectId"
         aria-label="报告格式模板"
@@ -221,6 +241,16 @@ watch(
     <p v-if="format === 'md'">
       Markdown 使用文本结构，不应用 Office 字体和分页；请选 Word 或 PPT
       使用上传的模板。
+    </p>
+    <p
+      v-else-if="
+        !selected &&
+        layout === 'compact' &&
+        allowCompact !== false &&
+        format === 'docx'
+      "
+    >
+      紧凑版：正文与配图连续排版，图片等比适配，减少强制分页；原工业设计模板保持可选。
     </p>
     <p v-else-if="selected">
       {{ selected.name }} · r{{ selected.revision }} ·

@@ -59,12 +59,24 @@ export const createReportSchema = z
       )
       .optional(),
     reportType: reportTypeSchema,
+    reportLayout: z.enum(['design', 'compact']).optional(),
     sections: z.array(reportSectionSchema).min(1).max(REPORT_LIMITS.sections),
     summary: z.string().trim().max(2000).default(''),
     templateKey: z.literal(REPORT_TEMPLATE_KEY).default(REPORT_TEMPLATE_KEY),
     title: z.string().trim().min(1).max(160),
   })
   .superRefine((input, context) => {
+    if (
+      input.reportLayout === 'compact' &&
+      ['bid-response', 'contract', 'patent-disclosure'].includes(
+        input.reportType,
+      )
+    )
+      context.addIssue({
+        code: 'custom',
+        message: '合同、专利和投标文件请使用对应专业模板',
+        path: ['reportLayout'],
+      });
     if (
       Boolean(input.reportTemplateId) !== Boolean(input.reportTemplateRevision)
     )

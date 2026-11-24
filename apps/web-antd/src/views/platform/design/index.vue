@@ -1366,6 +1366,8 @@ function resetCapabilityParameters(
       parameterValues[field.key] = field.defaultValue;
     }
   }
+  if ('tileable' in parameterValues && selectedModeKey.value === 'cmf')
+    parameterValues.tileable = true;
   if (
     count !== undefined &&
     (!nextCapability || imageGenerationCountKey in parameterValues)
@@ -1574,6 +1576,13 @@ async function loadCapability(appKey = effectiveApplicationKey.value) {
         .map((field) => field.key),
     );
     const values = draft.updatedAt ? draft.parameterValues : {};
+    // Existing drafts predate the optional post-process and retain their output behaviour.
+    if (
+      draft.updatedAt &&
+      'tileable' in parameterValues &&
+      !Object.hasOwn(values, 'tileable')
+    )
+      parameterValues.tileable = false;
     for (const [key, value] of Object.entries(values)) {
       if (scalarKeys.has(key)) parameterValues[key] = value;
     }
@@ -1755,6 +1764,15 @@ async function selectConversation(
   }
   await saveDraftNow();
   if (!isCurrent()) return;
+  const conversation = await getDesignConversationApi(conversationId);
+  if (!isCurrent()) return;
+  const lastContext = conversation.lastContext;
+  // Explicit result-flow/deep-link choices win; otherwise resume this session's
+  // latest persisted draft (or last round), never another session's UI state.
+  preferredAppKey ??=
+    lastContext?.appKey === retiredLoraTextKey
+      ? DEFAULT_APP_KEY
+      : lastContext?.appKey;
   selectedModeKey.value = 'cabin';
   selectedBusinessToolKey.value = '';
   activeConversationId.value = conversationId;
@@ -1773,6 +1791,14 @@ async function selectConversation(
       (mode) =>
         route.query.conversationId === conversationId &&
         route.query.designMode === mode.key &&
+        availablePreferredApp &&
+        availableApplicationKeysForMode(mode.key).includes(
+          availablePreferredApp,
+        ),
+    ) ??
+    designModes.find(
+      (mode) =>
+        mode.key === lastContext?.designMode &&
         availablePreferredApp &&
         availableApplicationKeysForMode(mode.key).includes(
           availablePreferredApp,

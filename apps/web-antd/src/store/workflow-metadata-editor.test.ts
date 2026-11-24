@@ -519,3 +519,51 @@ it('deletes an unbound workflow only after confirmation and reloads the registry
   expect(api.delete).toHaveBeenCalledExactlyOnceWith(workflow.id);
   expect(api.get).toHaveBeenCalledTimes(2);
 });
+
+it('hides incompatible and unpublished text binding actions', async () => {
+  const root = await render();
+  expect(root.textContent).not.toContain('绑定文生图');
+  expect(api.bind).not.toHaveBeenCalled();
+});
+
+it('confirms a compatible replacement and preserves history', async () => {
+  const candidate = structuredClone(workflow);
+  candidate.status = 'published';
+  const version = candidate.versions[0];
+  if (!version) throw new Error('Missing candidate');
+  Object.assign(version, {
+    compatibleCapabilities: ['text-to-image'],
+  });
+  api.get.mockResolvedValue({ capabilities: [], workflows: [candidate] });
+  const root = await render();
+  click(root, '绑定文生图');
+  expect(api.bind).not.toHaveBeenCalled();
+  const options = api.confirm.mock.calls[0]?.[0];
+  expect(options.content).toContain('历史任务和结果保留');
+  api.bind.mockResolvedValue({});
+  await options.onOk();
+  expect(api.bind).toHaveBeenCalledExactlyOnceWith(
+    'text-to-image',
+    'version-id',
+  );
+  expect(api.get).toHaveBeenCalledTimes(2);
+});
+
+it('shows a binding failure without reporting success or reloading', async () => {
+  const candidate = structuredClone(workflow);
+  candidate.status = 'published';
+  const version = candidate.versions[0];
+  if (!version) throw new Error('Missing candidate');
+  Object.assign(version, {
+    compatibleCapabilities: ['text-to-image'],
+  });
+  api.get.mockResolvedValue({ capabilities: [], workflows: [candidate] });
+  const root = await render();
+  click(root, '绑定文生图');
+  api.bind.mockRejectedValueOnce(new Error('契约已变化'));
+  await expect(api.confirm.mock.calls[0]?.[0].onOk()).rejects.toThrow(
+    '契约已变化',
+  );
+  expect(api.error).toHaveBeenCalledWith('契约已变化');
+  expect(api.get).toHaveBeenCalledTimes(1);
+});

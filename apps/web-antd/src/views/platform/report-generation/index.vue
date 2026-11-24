@@ -85,6 +85,7 @@ const previews = reactive(new Map<string, string>());
 const form = reactive({
   format: 'docx' as ReportFormat,
   generationMode: 'template' as ReportGenerationMode,
+  reportLayout: 'design' as 'compact' | 'design',
   reportType: 'design-proposal' as ReportType,
   summary: '',
   title: '',
@@ -347,6 +348,13 @@ async function submitReport() {
       name: `${form.title.trim()} · ${form.format.toUpperCase()}`,
       projectId,
       reportType: form.reportType,
+      reportLayout:
+        selectedTemplate.value ||
+        ['bid-response', 'contract', 'patent-disclosure'].includes(
+          form.reportType,
+        )
+          ? 'design'
+          : form.reportLayout,
       reportTemplateId: selectedTemplate.value?.id,
       reportTemplateRevision: selectedTemplate.value?.revision,
       templateValues: Object.fromEntries(
@@ -583,6 +591,12 @@ onBeforeUnmount(() => {
           </div>
           <ReportTemplatePicker
             v-model="selectedTemplate"
+            v-model:layout="form.reportLayout"
+            :allow-compact="
+              !['contract', 'patent-disclosure', 'bid-response'].includes(
+                form.reportType,
+              )
+            "
             :project-id="platformStore.currentProjectId ?? ''"
             :format="form.format"
           />

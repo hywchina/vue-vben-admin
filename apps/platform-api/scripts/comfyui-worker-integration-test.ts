@@ -261,6 +261,17 @@ async function main() {
       throw new Error('Worker 未完成任务、输出回执或结果未保持暂存状态');
     }
     assetId = result.assetId;
+    const [completionNotice] = await sql<{ link: string; message: string }[]>`
+      SELECT link, message FROM notifications WHERE user_id = ${testUserId}
+        AND type = 'job' ORDER BY created_at DESC LIMIT 1
+    `;
+    if (
+      completionNotice?.link !==
+        `/design?conversationId=${designConversationId}` ||
+      !completionNotice.message.includes('暂存') ||
+      completionNotice.message.includes('已登记为项目资产')
+    )
+      throw new Error('生成完成通知误导用户认为已入库，或没有返回设计会话');
     objectKey = result.objectKey;
     const [conversation] = await sql<{ publicId: string }[]>`
       SELECT public_id AS "publicId" FROM design_conversations WHERE id = ${designConversationId}

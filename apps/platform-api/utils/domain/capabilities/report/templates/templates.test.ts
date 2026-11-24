@@ -70,6 +70,26 @@ function input(): RenderReportInput {
   };
 }
 describe('native reviewed report templates', () => {
+  it('adds an independent compact template without replacing the approved design master', async () => {
+    const original = await getStarterTemplate('docx');
+    const compact = await getStarterTemplate('docx', 'compact');
+    expect(compact.snapshot.id).not.toBe(original.snapshot.id);
+    const image = compact.snapshot.manifest.elements.find(
+      (item) => item.role === 'images',
+    );
+    expect(image?.height).toBe(180 * 9525);
+    expect(image?.width).toBe(520 * 9525);
+    const output = await renderOfficeTemplate(
+      input(),
+      compact.snapshot,
+      compact.source,
+    );
+    expect(
+      inspectOfficeTemplate(output.bytes, 'docx').elements.some((item) =>
+        item.text.includes('{{'),
+      ),
+    ).toBe(false);
+  });
   it('discovers native positions and rejects invalid packages and XML entities', async () => {
     const starter = await getStarterTemplate('docx');
     expect(

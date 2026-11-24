@@ -3,6 +3,22 @@
     {
       "acceptedKinds": [],
       "advanced": false,
+      "defaultValue": false,
+      "help": "渐变衔接相对边缘，中央纹样保持不变；CMF新文生图默认启用，可关闭。",
+      "inputName": "enabled",
+      "integer": false,
+      "key": "tileable",
+      "label": "平铺边缘衔接",
+      "nodeId": "rail_tile",
+      "options": [],
+      "required": false,
+      "targets": [],
+      "type": "boolean",
+      "uiControl": "default"
+    },
+    {
+      "acceptedKinds": [],
+      "advanced": false,
       "defaultValue": "现代轨道交通客室设计，空间关系清晰，材质真实，工业设计效果图",
       "inputName": "value",
       "integer": false,

@@ -191,6 +191,7 @@ watch(
       ? `${platformStore.currentProject.name} · LoRA 训练`
       : '';
     await refreshJobs();
+    await platformStore.refreshCurrentProjectAssets();
     await loadPreviews();
   },
 );
@@ -199,7 +200,12 @@ onMounted(async () => {
   parameters.name = platformStore.currentProject
     ? `${platformStore.currentProject.name} · LoRA 训练`
     : '';
-  await Promise.all([loadAdapterStatus(), refreshJobs(), loadPreviews()]);
+  await Promise.all([
+    loadAdapterStatus(),
+    refreshJobs(),
+    platformStore.refreshCurrentProjectAssets(),
+  ]);
+  await loadPreviews();
   pollingTimer = setInterval(async () => {
     if (polling) return;
     polling = true;

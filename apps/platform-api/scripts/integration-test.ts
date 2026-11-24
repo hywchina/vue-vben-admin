@@ -2784,6 +2784,79 @@ async function run() {
     '工作流删除集成通过：认证、权限、绑定/排队保护、历史保留、初始化不复活及审计。',
   );
 
+  // Binding must preserve the capability contract, even for a privileged administrator.
+  const [textBinding] = await sql<{ id: string }[]>`
+    SELECT workflow_version_id AS id FROM capability_workflows
+    WHERE capability_code = 'text-to-image' AND active = true
+  `;
+  const [modelBinding] = await sql<{ id: string }[]>`
+    SELECT workflow_version_id AS id FROM capability_workflows
+    WHERE capability_code = 'multiview-to-3d' AND active = true
+  `;
+  const [loraTextVersion] = await sql<{ id: string }[]>`
+    SELECT cw.workflow_version_id AS id FROM capability_workflows cw
+    JOIN workflow_versions wv ON wv.id = cw.workflow_version_id
+    JOIN workflow_definitions wd ON wd.id = wv.workflow_id
+    WHERE cw.capability_code = 'text-to-image-lora' AND wd.status = 'published'
+    ORDER BY wv.version DESC LIMIT 1
+  `;
+  assert(
+    textBinding && modelBinding && loraTextVersion,
+    '缺少绑定回归用的内置工作流',
+  );
+  const bindPath = '/capabilities/text-to-image/workflow';
+  await apiRequest(bindPath, {
+    method: 'PUT',
+    expectedStatus: 401,
+    body: { workflowVersionId: modelBinding.id },
+  });
+  await apiRequest(bindPath, {
+    method: 'PUT',
+    expectedStatus: 403,
+    session: user1,
+    body: { workflowVersionId: modelBinding.id },
+  });
+  const incompatible = await apiRequest(bindPath, {
+    method: 'PUT',
+    expectedStatus: 400,
+    session: admin,
+    body: { workflowVersionId: modelBinding.id },
+  });
+  assert(
+    incompatible.envelope.code === 'WORKFLOW_CONTRACT_MISMATCH',
+    '误绑定未返回明确契约错误',
+  );
+  const [unchangedBinding] = await sql<{ id: string }[]>`
+    SELECT workflow_version_id AS id FROM capability_workflows
+    WHERE capability_code = 'text-to-image' AND active = true
+  `;
+  assert(unchangedBinding?.id === textBinding.id, '拒绝误绑定时破坏了原绑定');
+  try {
+    await Promise.all(
+      [textBinding, loraTextVersion].map((version) =>
+        apiRequest(bindPath, {
+          method: 'PUT',
+          session: admin,
+          body: { workflowVersionId: version.id },
+        }),
+      ),
+    );
+    const [active] = await sql<{ count: number }[]>`
+      SELECT count(*)::int AS count FROM capability_workflows
+      WHERE capability_code = 'text-to-image' AND active = true
+    `;
+    assert(active?.count === 1, '并发替换后出现多个有效绑定');
+  } finally {
+    await apiRequest(bindPath, {
+      method: 'PUT',
+      session: admin,
+      body: { workflowVersionId: textBinding.id },
+    });
+  }
+  console.warn(
+    '工作流绑定集成通过：认证、权限、输入输出契约、不误改原绑定及并发替换。',
+  );
+
   const reportLimits = await apiRequest<{
     limits: { imagesPerSection: number; sections: number; totalImages: number };
   }>('/reports/status', { session: user1 });
@@ -3677,6 +3750,41 @@ async function run() {
       cabinDraft.envelope.data.parameterValues.prompt ===
         '在同一设计会话中继续编辑',
     '不同业务模式的草稿相互覆盖',
+  );
+  const conversationContextPath = `/design-conversations/${designConversation.envelope.data.id}`;
+  const resumedDraft = await apiRequest<{
+    lastContext: { appKey: string; designMode: string };
+  }>(conversationContextPath, { session: user1 });
+  assert(
+    resumedDraft.envelope.data.lastContext?.appKey === flowTarget.key &&
+      resumedDraft.envelope.data.lastContext.designMode === 'cmf',
+    '会话未返回最近的CMF草稿上下文',
+  );
+  const contextJobId = randomUUID();
+  await sql`INSERT INTO jobs (id, project_id, app_key, name, parameters, created_by, status, progress, stage, design_conversation_id, design_mode)
+    VALUES (${contextJobId}, ${projectId}, 'text-to-image', '会话上下文验收', '{}'::jsonb, ${user1.id}, 'succeeded', 100, '测试夹具', ${designConversation.envelope.data.id}, 'component')`;
+  try {
+    const resumedRound = await apiRequest<{
+      lastContext: { appKey: string; designMode: string };
+    }>(conversationContextPath, { session: user1 });
+    assert(
+      resumedRound.envelope.data.lastContext?.appKey === 'text-to-image' &&
+        resumedRound.envelope.data.lastContext.designMode === 'component',
+      '会话未优先返回晚于草稿的新一轮上下文',
+    );
+    await apiRequest(conversationContextPath, {
+      session: user2,
+      expectedStatus: 404,
+    });
+    await apiRequest(conversationContextPath, {
+      session: admin,
+      expectedStatus: 404,
+    });
+  } finally {
+    await sql`DELETE FROM jobs WHERE id = ${contextJobId}`;
+  }
+  console.warn(
+    '会话恢复上下文通过：最近草稿/最新轮次、模块分类、本人隔离及管理员拒绝。',
   );
   await apiRequest(`${designDraftPath}?projectId=${projectId}&designMode=cmf`, {
     session: user2,

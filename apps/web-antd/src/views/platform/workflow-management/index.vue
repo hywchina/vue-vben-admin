@@ -235,15 +235,35 @@ async function toggleWorkflow(workflow: WorkflowDefinition) {
   await loadOverview();
 }
 
-async function bindTextToImage(workflow: WorkflowDefinition) {
+function canBindTextToImage(workflow: WorkflowDefinition) {
   const version = workflow.versions[0];
-  if (!version) {
-    message.warning('请先发布一个工作流版本');
-    return;
-  }
-  await bindCapabilityWorkflowApi('text-to-image', version.id);
-  message.success('已切换文生图能力使用的工作流版本');
-  await loadOverview();
+  return (
+    workflow.status === 'published' &&
+    version?.compatibleCapabilities?.includes('text-to-image') &&
+    !version.activeCapabilities?.includes('text-to-image')
+  );
+}
+
+function bindTextToImage(workflow: WorkflowDefinition) {
+  if (!canBindTextToImage(workflow)) return;
+  const version = workflow.versions[0];
+  if (!version) return;
+  Modal.confirm({
+    title: '更换文生图工作流？',
+    content: `将使用“${workflow.name}” v${version.version}，替换当前文生图绑定。历史任务和结果保留。`,
+    okText: '确认更换',
+    cancelText: '取消',
+    async onOk() {
+      try {
+        await bindCapabilityWorkflowApi('text-to-image', version.id);
+        message.success('已切换文生图能力使用的工作流版本');
+        await loadOverview();
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : '绑定失败');
+        throw error;
+      }
+    },
+  });
 }
 
 async function readWorkflowFile(file: File) {
@@ -392,6 +412,7 @@ onMounted(loadOverview);
                     编辑
                   </Button>
                   <Button
+                    v-if="canBindTextToImage(workflowRecord(record))"
                     size="small"
                     @click="bindTextToImage(workflowRecord(record))"
                   >
